@@ -6,12 +6,13 @@ import { getSessionsByGranter, getSessionsByGrantee, getAllowedMsgTypes } from "
 import { useWallet } from "@/contexts/WalletContext";
 import { SessionMsgTypeUrls } from "@/lib/tx";
 import { truncateAddress, formatTime } from "@/lib/utils";
-import { DENOM, DISPLAY_DENOM } from "@/lib/chain";
+import { useChainConfig } from "@/contexts/ChainConfigContext";
 
 type Tab = "granted" | "received";
 
 export default function SessionsPage() {
   const { address, connected, signAndBroadcast } = useWallet();
+  const { config: { denom: DENOM, displayDenom: DISPLAY_DENOM } } = useChainConfig();
 
   const [tab, setTab] = useState<Tab>("granted");
   const [grantedSessions, setGrantedSessions] = useState<Session[]>([]);

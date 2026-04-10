@@ -1,6 +1,6 @@
 // REST API client for blog and commons module LCD endpoints.
 
-import { LCD_ENDPOINT } from "./chain";
+import { defaults } from "./chain";
 import type {
   ListPostResponse,
   ShowPostResponse,
@@ -29,7 +29,10 @@ import type {
   SessionParamsResponse,
 } from "@/types/session";
 
-const BASE = LCD_ENDPOINT;
+// In the browser, route through our Next.js proxy to avoid CORS issues.
+// On the server (SSR), call the LCD endpoint directly.
+const BASE =
+  typeof window !== "undefined" ? "/api/lcd" : defaults.lcdEndpoint;
 
 function paginationParams(p?: PaginationRequest): URLSearchParams {
   const params = new URLSearchParams();
@@ -42,11 +45,9 @@ function paginationParams(p?: PaginationRequest): URLSearchParams {
 }
 
 async function get<T>(path: string, params?: URLSearchParams): Promise<T> {
-  const url = new URL(path, BASE);
-  if (params) {
-    params.forEach((v, k) => url.searchParams.set(k, v));
-  }
-  const res = await fetch(url.toString());
+  const qs = params?.toString();
+  const url = `${BASE}${path}${qs ? `?${qs}` : ""}`;
+  const res = await fetch(url);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`API error ${res.status}: ${text}`);

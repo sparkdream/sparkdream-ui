@@ -1,50 +1,60 @@
-// Keplr chain suggestion configuration for Spark Dream
+// Chain configuration — defaults are used for SSR and as fallback.
+// At runtime the client fetches /api/config for the actual values.
 
-export const CHAIN_ID = process.env.NEXT_PUBLIC_CHAIN_ID || "sparkdream-test-1";
-export const LCD_ENDPOINT = process.env.NEXT_PUBLIC_LCD_ENDPOINT || "https://api-test.sparkdream.io";
-export const RPC_ENDPOINT = process.env.NEXT_PUBLIC_RPC_ENDPOINT || "https://rpc-test.sparkdream.io";
-export const DENOM = process.env.NEXT_PUBLIC_DENOM || "uspark";
-export const DISPLAY_DENOM = process.env.NEXT_PUBLIC_DISPLAY_DENOM || "SPARK";
-export const BECH32_PREFIX = process.env.NEXT_PUBLIC_BECH32_PREFIX || "sprkdrm";
+export interface ChainConfig {
+  chainId: string;
+  chainName: string;
+  lcdEndpoint: string;
+  rpcEndpoint: string;
+  denom: string;
+  displayDenom: string;
+  bech32Prefix: string;
+}
 
-export const chainInfo = {
-  chainId: CHAIN_ID,
+export const defaults: ChainConfig = {
+  chainId: process.env.NEXT_PUBLIC_CHAIN_ID || "sparkdream-test-1",
   chainName: process.env.NEXT_PUBLIC_CHAIN_NAME || "Spark Dream",
-  rpc: RPC_ENDPOINT,
-  rest: LCD_ENDPOINT,
-  bip44: {
-    coinType: 118,
-  },
-  bech32Config: {
-    bech32PrefixAccAddr: BECH32_PREFIX,
-    bech32PrefixAccPub: `${BECH32_PREFIX}pub`,
-    bech32PrefixValAddr: `${BECH32_PREFIX}valoper`,
-    bech32PrefixValPub: `${BECH32_PREFIX}valoperpub`,
-    bech32PrefixConsAddr: `${BECH32_PREFIX}valcons`,
-    bech32PrefixConsPub: `${BECH32_PREFIX}valconspub`,
-  },
-  currencies: [
-    {
-      coinDenom: DISPLAY_DENOM,
-      coinMinimalDenom: DENOM,
-      coinDecimals: 6,
-    },
-  ],
-  feeCurrencies: [
-    {
-      coinDenom: DISPLAY_DENOM,
-      coinMinimalDenom: DENOM,
-      coinDecimals: 6,
-      gasPriceStep: {
-        low: 0.01,
-        average: 0.025,
-        high: 0.04,
-      },
-    },
-  ],
-  stakeCurrency: {
-    coinDenom: DISPLAY_DENOM,
-    coinMinimalDenom: DENOM,
-    coinDecimals: 6,
-  },
+  lcdEndpoint: process.env.NEXT_PUBLIC_LCD_ENDPOINT || "https://api-test.sparkdream.io",
+  rpcEndpoint: process.env.NEXT_PUBLIC_RPC_ENDPOINT || "https://rpc-test.sparkdream.io",
+  denom: process.env.NEXT_PUBLIC_DENOM || "uspark",
+  displayDenom: process.env.NEXT_PUBLIC_DISPLAY_DENOM || "SPARK",
+  bech32Prefix: process.env.NEXT_PUBLIC_BECH32_PREFIX || "sprkdrm",
 };
+
+export function buildChainInfo(c: ChainConfig) {
+  return {
+    chainId: c.chainId,
+    chainName: c.chainName,
+    rpc: c.rpcEndpoint,
+    rest: c.lcdEndpoint,
+    bip44: { coinType: 118 },
+    bech32Config: {
+      bech32PrefixAccAddr: c.bech32Prefix,
+      bech32PrefixAccPub: `${c.bech32Prefix}pub`,
+      bech32PrefixValAddr: `${c.bech32Prefix}valoper`,
+      bech32PrefixValPub: `${c.bech32Prefix}valoperpub`,
+      bech32PrefixConsAddr: `${c.bech32Prefix}valcons`,
+      bech32PrefixConsPub: `${c.bech32Prefix}valconspub`,
+    },
+    currencies: [
+      {
+        coinDenom: c.displayDenom,
+        coinMinimalDenom: c.denom,
+        coinDecimals: 6,
+      },
+    ],
+    feeCurrencies: [
+      {
+        coinDenom: c.displayDenom,
+        coinMinimalDenom: c.denom,
+        coinDecimals: 6,
+        gasPriceStep: { low: 0.01, average: 0.025, high: 0.04 },
+      },
+    ],
+    stakeCurrency: {
+      coinDenom: c.displayDenom,
+      coinMinimalDenom: c.denom,
+      coinDecimals: 6,
+    },
+  };
+}

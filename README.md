@@ -28,29 +28,30 @@ sudo apt-get install -y podman
 ### Build the image
 
 ```bash
-docker build -t sparkdream-ui:latest .
+docker build -t sparkdreamnft/sparkdream-ui:v1.0.2 .
 ```
 
-To override chain endpoints at build time:
-
-```bash
-docker build \
-  --build-arg NEXT_PUBLIC_LCD_ENDPOINT=https://api.sparkdream.io \
-  --build-arg NEXT_PUBLIC_RPC_ENDPOINT=https://rpc.sparkdream.io \
-  --build-arg NEXT_PUBLIC_CHAIN_ID=sparkdream-1 \
-  -t sparkdream-ui:latest .
-```
+No `--build-arg` flags are needed. Chain endpoints and other configuration are set at runtime via environment variables in the SDL.
 
 ### Push to a registry
 
 ```bash
-docker tag sparkdream-ui:latest <YOUR_REGISTRY>/sparkdream-ui:latest
+docker tag sparkdreamnft/sparkdream-ui:latest <YOUR_REGISTRY>/sparkdream-ui:latest
 docker push <YOUR_REGISTRY>/sparkdream-ui:latest
 ```
 
 ### Deploy on Akash
 
-Update the `image:` field in `deploy.sdl.yml` to match your registry image, then:
+Update the `image:` field in `deploy.sdl.yml` to match your registry image, then configure the chain endpoints in the `env:` section of the SDL:
+
+```yaml
+env:
+  - NEXT_PUBLIC_CHAIN_ID=sparkdream-test-1
+  - NEXT_PUBLIC_LCD_ENDPOINT=https://api-test.sparkdream.io
+  - NEXT_PUBLIC_RPC_ENDPOINT=https://rpc-test.sparkdream.io
+```
+
+Deploy with:
 
 ```bash
 akash tx deployment create deploy.sdl.yml --from <your-key> --chain-id akashnet-2 --node <akash-rpc>
@@ -59,6 +60,8 @@ akash tx deployment create deploy.sdl.yml --from <your-key> --chain-id akashnet-
 The SDL is configured with 0.5 CPU, 512Mi RAM, and exposes port 3000 as port 80.
 
 ## Environment Variables
+
+All configuration is read at runtime. Set these as environment variables in the SDL or container.
 
 | Variable | Default | Description |
 |---|---|---|

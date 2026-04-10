@@ -3,10 +3,12 @@ version: "2.0"
 
 services:
   web:
-    image: <YOUR_REGISTRY>/sparkdream-ui:latest
+    image: <YOUR_REGISTRY>/sparkdream-ui:v1.0.0
     expose:
       - port: 3000
         as: 80
+        accept:
+          - app-test.sparkdream.io
         to:
           - global: true
     env:
@@ -32,7 +34,7 @@ profiles:
     dcloud:
       pricing:
         web:
-          denom: uakt
+          denom: uact
           amount: 1000
 
 deployment:

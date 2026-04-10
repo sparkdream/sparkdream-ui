@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
-import { CHAIN_ID, chainInfo, RPC_ENDPOINT, DENOM } from "@/lib/chain";
+import { useChainConfig } from "./ChainConfigContext";
 
 interface WalletState {
   address: string | null;
@@ -30,6 +30,7 @@ export function useWallet() {
 }
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
+  const { config, chainInfo } = useChainConfig();
   const [address, setAddress] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -43,17 +44,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     setConnecting(true);
     try {
-      // Suggest the chain to Keplr
       await window.keplr.experimentalSuggestChain(chainInfo);
-      await window.keplr.enable(CHAIN_ID);
+      await window.keplr.enable(config.chainId);
 
-      const key = await window.keplr.getKey(CHAIN_ID);
+      const key = await window.keplr.getKey(config.chainId);
       setName(key.name);
       setIsLedger(!!key.isNanoLedger);
 
       const offlineSigner = key.isNanoLedger
-        ? window.keplr.getOfflineSignerOnlyAmino(CHAIN_ID)
-        : window.keplr.getOfflineSigner(CHAIN_ID);
+        ? window.keplr.getOfflineSignerOnlyAmino(config.chainId)
+        : window.keplr.getOfflineSigner(config.chainId);
       const accounts = await offlineSigner.getAccounts();
       if (accounts.length > 0) {
         setAddress(accounts[0].address);
@@ -65,7 +65,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setConnecting(false);
     }
-  }, []);
+  }, [config.chainId, chainInfo]);
 
   const disconnect = useCallback(() => {
     setAddress(null);
@@ -83,7 +83,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const { SigningStargateClient, AminoTypes } = await import("@cosmjs/stargate");
       const { Registry } = await import("@cosmjs/proto-signing");
 
-      // Proto registry (for Direct signing)
       const { load: loadBlog } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx.registry");
       const { load: loadSession } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx.registry");
       const { load: loadCommons } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx.registry");
@@ -92,26 +91,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       loadSession(registry);
       loadCommons(registry);
 
-      // Amino types (for Ledger/Amino signing)
       const { AminoConverter: blogAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx.amino");
       const { AminoConverter: sessionAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx.amino");
       const { AminoConverter: commonsAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx.amino");
       const aminoTypes = new AminoTypes({ ...blogAmino, ...sessionAmino, ...commonsAmino });
 
-      // Use amino-only signer for Ledger, auto signer otherwise
-      const key = await window.keplr.getKey(CHAIN_ID);
+      const key = await window.keplr.getKey(config.chainId);
       const offlineSigner = key.isNanoLedger
-        ? window.keplr.getOfflineSignerOnlyAmino(CHAIN_ID)
-        : window.keplr.getOfflineSigner(CHAIN_ID);
+        ? window.keplr.getOfflineSignerOnlyAmino(config.chainId)
+        : window.keplr.getOfflineSigner(config.chainId);
 
       const client = await SigningStargateClient.connectWithSigner(
-        RPC_ENDPOINT,
+        config.rpcEndpoint,
         offlineSigner,
         { registry, aminoTypes }
       );
 
       const fee = {
-        amount: [{ denom: DENOM, amount: "5000" }],
+        amount: [{ denom: config.denom, amount: "5000" }],
         gas: "300000",
       };
 
@@ -121,7 +118,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       return result.transactionHash;
     },
-    [address]
+    [address, config.chainId, config.rpcEndpoint, config.denom]
   );
 
   // Auto-reconnect on page load if previously connected

@@ -12,15 +12,6 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Build-time env vars (override at build or runtime)
-ARG NEXT_PUBLIC_CHAIN_ID
-ARG NEXT_PUBLIC_LCD_ENDPOINT
-ARG NEXT_PUBLIC_RPC_ENDPOINT
-ARG NEXT_PUBLIC_DENOM
-ARG NEXT_PUBLIC_DISPLAY_DENOM
-ARG NEXT_PUBLIC_BECH32_PREFIX
-ARG NEXT_PUBLIC_CHAIN_NAME
-
 RUN npm run build
 
 # --- Production ---

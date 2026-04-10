@@ -1,29 +1,5 @@
 // Transaction signing helpers using CosmJS + Keplr.
 
-import { SigningStargateClient } from "@cosmjs/stargate";
-import { Registry } from "@cosmjs/proto-signing";
-import { RPC_ENDPOINT, DENOM } from "./chain";
-
-// Default fee for blog transactions
-export function defaultFee(gas: string = "200000") {
-  return {
-    amount: [{ denom: DENOM, amount: "5000" }],
-    gas,
-  };
-}
-
-// Get a signing client connected to the chain via Keplr
-export async function getSigningClient(
-  offlineSigner: ReturnType<typeof window.keplr.getOfflineSigner>
-): Promise<SigningStargateClient> {
-  const client = await SigningStargateClient.connectWithSigner(
-    RPC_ENDPOINT,
-    await offlineSigner,
-    { registry: new Registry() }
-  );
-  return client;
-}
-
 // Commons transaction message type URLs
 export const CommonsMsgTypeUrls = {
   SubmitProposal: "/sparkdream.commons.v1.MsgSubmitProposal",
@@ -58,8 +34,6 @@ export const MsgTypeUrls = {
 } as const;
 
 // Build a blog message for signing.
-// Since these are custom module messages not in the default registry,
-// we use amino signing via Keplr's signAndBroadcast.
 export function buildBlogMsg(typeUrl: string, value: Record<string, unknown>) {
   return { typeUrl, value };
 }
