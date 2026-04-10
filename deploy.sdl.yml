@@ -1,0 +1,42 @@
+---
+version: "2.0"
+
+services:
+  web:
+    image: <YOUR_REGISTRY>/sparkdream-ui:latest
+    expose:
+      - port: 3000
+        as: 80
+        to:
+          - global: true
+    env:
+      - NEXT_PUBLIC_CHAIN_ID=sparkdream-test-1
+      - NEXT_PUBLIC_LCD_ENDPOINT=https://api-test.sparkdream.io
+      - NEXT_PUBLIC_RPC_ENDPOINT=https://rpc-test.sparkdream.io
+      - NEXT_PUBLIC_DENOM=uspark
+      - NEXT_PUBLIC_DISPLAY_DENOM=SPARK
+      - NEXT_PUBLIC_BECH32_PREFIX=sprkdrm
+      - NEXT_PUBLIC_CHAIN_NAME=Spark Dream
+
+profiles:
+  compute:
+    web:
+      resources:
+        cpu:
+          units: 0.5
+        memory:
+          size: 512Mi
+        storage:
+          size: 1Gi
+  placement:
+    dcloud:
+      pricing:
+        web:
+          denom: uakt
+          amount: 1000
+
+deployment:
+  web:
+    dcloud:
+      profile: web
+      count: 1
