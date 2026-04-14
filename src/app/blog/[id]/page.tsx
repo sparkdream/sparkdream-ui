@@ -174,7 +174,7 @@ export default function PostDetailPage() {
         }`}
       >
         {/* Status badges */}
-        <div className="mb-3 flex items-center gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           {post.pinned_by && (
             <span className="rounded bg-amber-900/30 px-2 py-0.5 text-xs text-amber-400">
               Pinned
@@ -208,7 +208,7 @@ export default function PostDetailPage() {
         </div>
 
         {/* Meta */}
-        <div className="mb-3 flex items-center gap-2 text-sm text-zinc-500">
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-zinc-500">
           <span className="font-mono">{truncateAddress(post.creator)}</span>
           <span>&middot;</span>
           <span title={formatTime(post.created_at)}>{timeAgo(post.created_at)}</span>
@@ -233,10 +233,10 @@ export default function PostDetailPage() {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-between border-t border-zinc-800 pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 pt-4">
           <ReactionBar postId={post.id} />
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {connected && !isDeleted && !post.pinned_by && post.expires_at && post.expires_at !== "0" && (
               <button
                 onClick={handlePin}

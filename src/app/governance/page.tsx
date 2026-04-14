@@ -14,7 +14,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { truncateAddress, formatTime } from "@/lib/utils";
 
 export default function GovernancePage() {
-  const { address, connected, signAndBroadcast } = useWallet();
+  const { address, connected, ready, signAndBroadcast } = useWallet();
 
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
@@ -191,6 +191,32 @@ export default function GovernancePage() {
       .join(", ");
   }
 
+  if (!ready) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-8">
+        <div className="mb-8">
+          <div className="h-7 w-36 animate-pulse rounded bg-zinc-800" />
+          <div className="mt-2 h-4 w-56 animate-pulse rounded bg-zinc-800/60" />
+        </div>
+        <div className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-8 rounded bg-zinc-800" />
+              <div className="h-4 w-14 rounded bg-zinc-800" />
+              <div className="h-3 w-28 rounded bg-zinc-800" />
+            </div>
+            <div className="h-3 w-12 rounded bg-zinc-800" />
+          </div>
+          <div className="mb-2 h-4 w-3/5 rounded bg-zinc-800" />
+          <div className="flex gap-4">
+            <div className="h-3 w-24 rounded bg-zinc-800" />
+            <div className="h-3 w-20 rounded bg-zinc-800" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!connected) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-8">
@@ -204,7 +230,7 @@ export default function GovernancePage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Governance</h1>
           <p className="mt-1 text-sm text-zinc-500">
@@ -214,7 +240,7 @@ export default function GovernancePage() {
         {isMember && (
           <button
             onClick={() => setShowInvite(!showInvite)}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+            className="w-fit rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
           >
             {showInvite ? "Cancel" : "Invite Member"}
           </button>
@@ -295,7 +321,7 @@ export default function GovernancePage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="inviteWeight" className="mb-1.5 block text-sm font-medium text-zinc-300">
                 Voting Weight
@@ -353,13 +379,20 @@ export default function GovernancePage() {
       )}
 
       {loading ? (
-        <div className="space-y-4">
-          {[1, 2].map((i) => (
-            <div
-              key={i}
-              className="h-28 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50"
-            />
-          ))}
+        <div className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-8 rounded bg-zinc-800" />
+              <div className="h-4 w-14 rounded bg-zinc-800" />
+              <div className="h-3 w-28 rounded bg-zinc-800" />
+            </div>
+            <div className="h-3 w-12 rounded bg-zinc-800" />
+          </div>
+          <div className="mb-2 h-4 w-3/5 rounded bg-zinc-800" />
+          <div className="flex gap-4">
+            <div className="h-3 w-24 rounded bg-zinc-800" />
+            <div className="h-3 w-20 rounded bg-zinc-800" />
+          </div>
         </div>
       ) : proposals.length === 0 ? (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
@@ -424,8 +457,8 @@ function ProposalCard({
 
   return (
     <article className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
-      <div className="mb-2 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-zinc-500">#{proposal.id}</span>
           {statusBadge(proposal.status)}
           <span className="text-xs text-zinc-500">
@@ -444,7 +477,7 @@ function ProposalCard({
         <p className="mb-2 text-sm text-zinc-300">{proposal.metadata}</p>
       )}
 
-      <div className="flex items-center gap-4 text-xs text-zinc-500">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
         <span>by {truncateAddress(proposal.proposer)}</span>
         <span>{formatTime(proposal.submit_time)}</span>
         {proposal.voting_deadline && proposal.voting_deadline !== "0" && (
@@ -455,7 +488,7 @@ function ProposalCard({
       {expanded && detail && (
         <div className="mt-4 border-t border-zinc-800 pt-4">
           {/* Tally */}
-          <div className="mb-3 grid grid-cols-4 gap-2 text-center text-xs">
+          <div className="mb-3 grid grid-cols-2 gap-2 text-center text-xs sm:grid-cols-4">
             <div className="rounded bg-green-900/20 p-2">
               <div className="font-medium text-green-400">{detail.tally.yes_weight || "0"}</div>
               <div className="text-zinc-500">Yes</div>
@@ -490,7 +523,7 @@ function ProposalCard({
 
       {/* Actions */}
       {isMember && (isVoting || isAccepted) && (
-        <div className="mt-3 flex items-center gap-2 border-t border-zinc-800 pt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-3">
           {isVoting && (
             <>
               {[VoteOption.YES, VoteOption.NO, VoteOption.ABSTAIN, VoteOption.NO_WITH_VETO].map(

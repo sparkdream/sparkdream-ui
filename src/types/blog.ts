@@ -194,7 +194,7 @@ export const CONTENT_TYPE_INFO: Record<number, { label: string; description: str
 
 // Map reaction type strings to display info
 export const REACTION_INFO: Record<string, { emoji: string; label: string }> = {
-  [ReactionType.LIKE]: { emoji: "\u{1F44D}", label: "Like" },
+  [ReactionType.LIKE]: { emoji: "\u{2764}\u{FE0F}", label: "Like" },
   [ReactionType.INSIGHTFUL]: { emoji: "\u{1F4A1}", label: "Insightful" },
   [ReactionType.DISAGREE]: { emoji: "\u{1F914}", label: "Disagree" },
   [ReactionType.FUNNY]: { emoji: "\u{1F602}", label: "Funny" },

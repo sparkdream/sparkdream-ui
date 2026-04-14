@@ -85,8 +85,11 @@ export async function getReactionCounts(
   postId: string,
   replyId: string = "0"
 ): Promise<ReactionCountsResponse> {
+  const params = new URLSearchParams();
+  if (replyId !== "0") params.set("reply_id", replyId);
   return get<ReactionCountsResponse>(
-    `/sparkdream/blog/v1/reaction_counts/${postId}/${replyId}`
+    `/sparkdream/blog/v1/reaction_counts/${postId}`,
+    params.toString() ? params : undefined
   );
 }
 
@@ -96,8 +99,11 @@ export async function getUserReaction(
   postId: string,
   replyId: string = "0"
 ): Promise<UserReactionResponse> {
+  const params = new URLSearchParams();
+  if (replyId !== "0") params.set("reply_id", replyId);
   return get<UserReactionResponse>(
-    `/sparkdream/blog/v1/user_reaction/${creator}/${postId}/${replyId}`
+    `/sparkdream/blog/v1/user_reaction/${creator}/${postId}`,
+    params.toString() ? params : undefined
   );
 }
 

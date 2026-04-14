@@ -1,40 +1,77 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import React, { createContext, useContext, useRef, useState, useCallback, useEffect } from "react";
 import { useChainConfig } from "./ChainConfigContext";
+import type { Session } from "@/types/session";
+import { getSessionsByGrantee } from "@/lib/api";
+import { SessionMsgTypeUrls } from "@/lib/tx";
 
 interface WalletState {
+  /** Returns the granter address when session mode is active, otherwise the connected wallet address. */
   address: string | null;
+  /** Always returns the actual connected wallet (hot wallet) address. */
+  signerAddress: string | null;
   name: string | null;
   connected: boolean;
   connecting: boolean;
+  /** True once the initial auto-reconnect attempt has resolved (or was skipped). */
+  ready: boolean;
   isLedger: boolean;
   connect: () => Promise<void>;
   disconnect: () => void;
   signAndBroadcast: (msgs: readonly { typeUrl: string; value: unknown }[], memo?: string) => Promise<string>;
+  // Session mode
+  sessionActive: boolean;
+  activeSession: Session | null;
+  availableSessions: Session[];
+  activateSession: (session: Session) => void;
+  deactivateSession: () => void;
 }
 
 const WalletContext = createContext<WalletState>({
   address: null,
+  signerAddress: null,
   name: null,
   connected: false,
   connecting: false,
+  ready: false,
   isLedger: false,
   connect: async () => {},
   disconnect: () => {},
   signAndBroadcast: async () => "",
+  sessionActive: false,
+  activeSession: null,
+  availableSessions: [],
+  activateSession: () => {},
+  deactivateSession: () => {},
 });
 
 export function useWallet() {
   return useContext(WalletContext);
 }
 
+// Session management message typeUrls that should never be wrapped in MsgExecSession
+const SESSION_MGMT_TYPES: Set<string> = new Set([
+  SessionMsgTypeUrls.CreateSession,
+  SessionMsgTypeUrls.RevokeSession,
+  SessionMsgTypeUrls.ExecSession,
+]);
+
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const { config, chainInfo } = useChainConfig();
-  const [address, setAddress] = useState<string | null>(null);
+  const [rawAddress, setRawAddress] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [isLedger, setIsLedger] = useState(false);
+  const [ready, setReady] = useState(false);
+  const needsSessionRestore = useRef(false);
+
+  // Session mode state
+  const [activeSession, setActiveSession] = useState<Session | null>(null);
+  const [availableSessions, setAvailableSessions] = useState<Session[]>([]);
+
+  const sessionActive = activeSession !== null;
+  const address = activeSession ? activeSession.granter : rawAddress;
 
   const connect = useCallback(async () => {
     if (typeof window === "undefined" || !window.keplr) {
@@ -56,7 +93,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         : window.keplr.getOfflineSigner(config.chainId);
       const accounts = await offlineSigner.getAccounts();
       if (accounts.length > 0) {
-        setAddress(accounts[0].address);
+        setRawAddress(accounts[0].address);
       }
 
       localStorage.setItem("wallet_connected", "true");
@@ -68,15 +105,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [config.chainId, chainInfo]);
 
   const disconnect = useCallback(() => {
-    setAddress(null);
+    setRawAddress(null);
     setName(null);
     setIsLedger(false);
+    setActiveSession(null);
+    setAvailableSessions([]);
     localStorage.removeItem("wallet_connected");
+    localStorage.removeItem("session_granter");
   }, []);
 
   const signAndBroadcast = useCallback(
     async (msgs: readonly { typeUrl: string; value: unknown }[], memo = "") => {
-      if (!address || !window.keplr) {
+      if (!rawAddress || !window.keplr) {
         throw new Error("Wallet not connected");
       }
 
@@ -112,19 +152,105 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         gas: "300000",
       };
 
-      const result = await client.signAndBroadcast(address, msgs as any, fee, memo);
+      // Wrap messages in MsgExecSession when session mode is active,
+      // unless the messages are session management operations themselves.
+      let finalMsgs = msgs;
+      const isSessionMgmt = msgs.some((m) => SESSION_MGMT_TYPES.has(m.typeUrl));
+      if (activeSession && !isSessionMgmt) {
+        // Validate session hasn't expired
+        if (activeSession.expiration && new Date(activeSession.expiration) < new Date()) {
+          setActiveSession(null);
+          localStorage.removeItem("session_granter");
+          throw new Error("Session has expired. Session mode has been deactivated.");
+        }
+
+        // Encode each inner message to protobuf Any
+        const encodedInnerMsgs = msgs.map((msg) => {
+          const msgType = registry.lookupType(msg.typeUrl);
+          if (!msgType) {
+            throw new Error(`Unknown message type: ${msg.typeUrl}`);
+          }
+          const encoded = (msgType as any).encode((msgType as any).fromPartial(msg.value)).finish();
+          return { typeUrl: msg.typeUrl, value: encoded };
+        });
+
+        finalMsgs = [
+          {
+            typeUrl: SessionMsgTypeUrls.ExecSession,
+            value: {
+              grantee: rawAddress,
+              granter: activeSession.granter,
+              msgs: encodedInnerMsgs,
+            },
+          },
+        ];
+      }
+
+      const result = await client.signAndBroadcast(rawAddress, finalMsgs as any, fee, memo);
       if (result.code !== 0) {
         throw new Error(`Transaction failed: ${result.rawLog}`);
       }
       return result.transactionHash;
     },
-    [address, config.chainId, config.rpcEndpoint, config.denom]
+    [rawAddress, activeSession, config.chainId, config.rpcEndpoint, config.denom]
   );
+
+  const activateSession = useCallback((session: Session) => {
+    setActiveSession(session);
+    localStorage.setItem("session_granter", session.granter);
+  }, []);
+
+  const deactivateSession = useCallback(() => {
+    setActiveSession(null);
+    localStorage.removeItem("session_granter");
+  }, []);
+
+  // Fetch available sessions (where this wallet is the grantee)
+  useEffect(() => {
+    if (!rawAddress) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await getSessionsByGrantee(rawAddress);
+        const now = new Date();
+        const valid = (res.sessions || []).filter(
+          (s) => !s.expiration || new Date(s.expiration) > now
+        );
+        if (!cancelled) {
+          setAvailableSessions(valid);
+
+          // Restore persisted session mode
+          const savedGranter = localStorage.getItem("session_granter");
+          if (savedGranter) {
+            const match = valid.find((s) => s.granter === savedGranter);
+            if (match) {
+              setActiveSession(match);
+            } else {
+              localStorage.removeItem("session_granter");
+            }
+          }
+        }
+      } catch {
+        // Session fetch is best-effort
+      } finally {
+        if (!cancelled && needsSessionRestore.current) {
+          needsSessionRestore.current = false;
+          setReady(true);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [rawAddress]);
 
   // Auto-reconnect on page load if previously connected
   useEffect(() => {
     if (typeof window !== "undefined" && window.keplr && localStorage.getItem("wallet_connected")) {
-      connect();
+      needsSessionRestore.current = !!localStorage.getItem("session_granter");
+      connect().finally(() => {
+        if (!needsSessionRestore.current) setReady(true);
+      });
+    } else {
+      setReady(true);
     }
   }, [connect]);
 
@@ -132,24 +258,31 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (typeof window !== "undefined" && window.keplr) {
       const handler = () => {
-        if (address) connect();
+        if (rawAddress) connect();
       };
       window.addEventListener("keplr_keystorechange", handler);
       return () => window.removeEventListener("keplr_keystorechange", handler);
     }
-  }, [address, connect]);
+  }, [rawAddress, connect]);
 
   return (
     <WalletContext.Provider
       value={{
         address,
+        signerAddress: rawAddress,
         name,
-        connected: !!address,
+        connected: !!rawAddress,
         connecting,
+        ready,
         isLedger,
         connect,
         disconnect,
         signAndBroadcast,
+        sessionActive,
+        activeSession,
+        availableSessions,
+        activateSession,
+        deactivateSession,
       }}
     >
       {children}

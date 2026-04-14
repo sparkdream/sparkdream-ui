@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import type { Post } from "@/types/blog";
 import { PostStatus } from "@/types/blog";
@@ -17,6 +17,7 @@ export default function BlogPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nextKey, setNextKey] = useState<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const [memberAddresses, setMemberAddresses] = useState<Set<string>>(
     new Set()
@@ -25,6 +26,17 @@ export default function BlogPage() {
 
   const [filter, setFilter] = useState<FilterOption>("members");
   const [sort, setSort] = useState<SortOption>("newest");
+  const [filterRestored, setFilterRestored] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("blog-filter");
+    if (saved === "members" || saved === "all") setFilter(saved);
+    setFilterRestored(true);
+  }, []);
+
+  useEffect(() => {
+    if (filterRestored) localStorage.setItem("blog-filter", filter);
+  }, [filter, filterRestored]);
 
   // Fetch all member addresses once
   useEffect(() => {
@@ -64,6 +76,27 @@ export default function BlogPage() {
     fetchPosts();
   }, [fetchPosts]);
 
+  // Infinite scroll
+  const nextKeyRef = useRef(nextKey);
+  nextKeyRef.current = nextKey;
+  const loadingRef = useRef(loading);
+  loadingRef.current = loading;
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && nextKeyRef.current && !loadingRef.current) {
+          fetchPosts(nextKeyRef.current);
+        }
+      },
+      { rootMargin: "200px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fetchPosts]);
+
   const filteredAndSorted = useMemo(() => {
     let result = posts;
 
@@ -81,9 +114,41 @@ export default function BlogPage() {
     return result;
   }, [posts, filter, sort, memberAddresses]);
 
+  if (!filterRestored) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-8 animate-pulse">
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-transparent">Blog</h1>
+            <p className="mt-1 text-sm text-transparent">
+              On-chain posts from the Spark Dream community
+            </p>
+          </div>
+        </div>
+        <div className="mb-6 flex items-center gap-3">
+          <div className="flex rounded-lg border border-zinc-800 bg-zinc-900/50 p-0.5">
+            <div className="rounded-md bg-zinc-800 px-3 py-1.5 text-xs font-medium text-transparent">Members</div>
+            <div className="rounded-md px-3 py-1.5 text-xs font-medium text-transparent">All Posts</div>
+          </div>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-1.5 text-xs text-transparent">Newest first</div>
+        </div>
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <div className="h-3 w-24 rounded bg-zinc-800" />
+            <div className="h-3 w-3 rounded-full bg-zinc-800" />
+            <div className="h-3 w-16 rounded bg-zinc-800" />
+          </div>
+          <div className="mb-3 h-5 w-3/5 rounded bg-zinc-800" />
+          <div className="mb-1.5 h-3.5 w-full rounded bg-zinc-800" />
+          <div className="h-3.5 w-4/5 rounded bg-zinc-800" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Blog</h1>
           <p className="mt-1 text-sm text-zinc-500">
@@ -93,7 +158,7 @@ export default function BlogPage() {
         {connected && (
           <Link
             href="/blog/new"
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+            className="w-fit rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
           >
             New Post
           </Link>
@@ -134,7 +199,7 @@ export default function BlogPage() {
           <option value="oldest">Oldest first</option>
         </select>
 
-        {membersLoading && filter === "members" && (
+        {membersLoading && filter === "members" && posts.length > 0 && (
           <span className="text-xs text-zinc-600">Loading members...</span>
         )}
       </div>
@@ -151,14 +216,23 @@ export default function BlogPage() {
         </div>
       )}
 
-      {loading && posts.length === 0 ? (
-        <div className="space-y-4">
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="h-32 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50"
-            />
-          ))}
+      {(loading && posts.length === 0) || (membersLoading && filter === "members") ? (
+        <div className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <div className="h-3 w-24 rounded bg-zinc-800" />
+            <div className="h-3 w-3 rounded-full bg-zinc-800" />
+            <div className="h-3 w-16 rounded bg-zinc-800" />
+          </div>
+          <div className="mb-3 h-5 w-3/5 rounded bg-zinc-800" />
+          <div className="mb-1.5 h-3.5 w-full rounded bg-zinc-800" />
+          <div className="mb-4 h-3.5 w-4/5 rounded bg-zinc-800" />
+          <div className="flex items-center justify-between">
+            <div className="flex gap-3">
+              <div className="h-3 w-8 rounded bg-zinc-800" />
+              <div className="h-3 w-8 rounded bg-zinc-800" />
+            </div>
+            <div className="h-3 w-16 rounded bg-zinc-800" />
+          </div>
         </div>
       ) : filteredAndSorted.length === 0 ? (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
@@ -193,15 +267,17 @@ export default function BlogPage() {
             ))}
           </div>
 
-          {nextKey && (
-            <div className="mt-6 text-center">
-              <button
-                onClick={() => fetchPosts(nextKey)}
-                disabled={loading}
-                className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-400 transition-colors hover:border-zinc-600 hover:text-white disabled:opacity-50"
-              >
-                {loading ? "Loading..." : "Load More"}
-              </button>
+          <div ref={sentinelRef} className="h-px" />
+          {loading && posts.length > 0 && (
+            <div className="mt-4 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <div className="h-3 w-24 rounded bg-zinc-800" />
+                <div className="h-3 w-3 rounded-full bg-zinc-800" />
+                <div className="h-3 w-16 rounded bg-zinc-800" />
+              </div>
+              <div className="mb-3 h-5 w-3/5 rounded bg-zinc-800" />
+              <div className="mb-1.5 h-3.5 w-full rounded bg-zinc-800" />
+              <div className="h-3.5 w-4/5 rounded bg-zinc-800" />
             </div>
           )}
         </>

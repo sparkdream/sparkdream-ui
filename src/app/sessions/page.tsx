@@ -11,7 +11,7 @@ import { useChainConfig } from "@/contexts/ChainConfigContext";
 type Tab = "granted" | "received";
 
 export default function SessionsPage() {
-  const { address, connected, signAndBroadcast } = useWallet();
+  const { signerAddress, connected, ready, signAndBroadcast, activeSession, activateSession, deactivateSession } = useWallet();
   const { config: { denom: DENOM, displayDenom: DISPLAY_DENOM } } = useChainConfig();
 
   const [tab, setTab] = useState<Tab>("granted");
@@ -33,12 +33,12 @@ export default function SessionsPage() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   const fetchSessions = useCallback(async () => {
-    if (!address) return;
+    if (!signerAddress) return;
     try {
       setLoading(true);
       const [granted, received, msgTypes] = await Promise.all([
-        getSessionsByGranter(address),
-        getSessionsByGrantee(address),
+        getSessionsByGranter(signerAddress),
+        getSessionsByGrantee(signerAddress),
         getAllowedMsgTypes(),
       ]);
       setGrantedSessions(granted.sessions || []);
@@ -50,15 +50,16 @@ export default function SessionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [address]);
+  }, [signerAddress]);
 
   useEffect(() => {
-    if (connected && address) {
+    if (!ready) return;
+    if (connected && signerAddress) {
       fetchSessions();
     } else {
       setLoading(false);
     }
-  }, [connected, address, fetchSessions]);
+  }, [ready, connected, signerAddress, fetchSessions]);
 
   const handleRevoke = async (session: Session) => {
     if (!confirm(`Revoke session for ${truncateAddress(session.grantee)}?`)) return;
@@ -69,7 +70,7 @@ export default function SessionsPage() {
         {
           typeUrl: SessionMsgTypeUrls.RevokeSession,
           value: {
-            granter: address,
+            granter: signerAddress,
             grantee: session.grantee,
           },
         },
@@ -97,7 +98,7 @@ export default function SessionsPage() {
         {
           typeUrl: SessionMsgTypeUrls.CreateSession,
           value: {
-            granter: address,
+            granter: signerAddress,
             grantee: grantee.trim(),
             allowedMsgTypes: selectedMsgTypes,
             spendLimit: {
@@ -131,9 +132,10 @@ export default function SessionsPage() {
     );
   };
 
-  const selectAllBlogTypes = () => {
-    const blogTypes = allowedTypes.filter((t) => t.includes(".blog."));
-    setSelectedMsgTypes(blogTypes);
+  const selectAllTypes = () => {
+    setSelectedMsgTypes(
+      selectedMsgTypes.length === allowedTypes.length ? [] : [...allowedTypes]
+    );
   };
 
   function msgTypeLabel(typeUrl: string): string {
@@ -151,6 +153,35 @@ export default function SessionsPage() {
 
   const sessions = tab === "granted" ? grantedSessions : receivedSessions;
 
+  if (!ready) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-8">
+        <div className="mb-8">
+          <div className="h-7 w-36 animate-pulse rounded bg-zinc-800" />
+          <div className="mt-2 h-4 w-56 animate-pulse rounded bg-zinc-800/60" />
+        </div>
+        <div className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-16 rounded bg-zinc-800" />
+              <div className="h-3 w-28 rounded bg-zinc-800" />
+            </div>
+            <div className="h-5 w-14 rounded bg-zinc-800" />
+          </div>
+          <div className="mb-3 flex gap-1.5">
+            <div className="h-5 w-24 rounded bg-zinc-800" />
+            <div className="h-5 w-20 rounded bg-zinc-800" />
+            <div className="h-5 w-28 rounded bg-zinc-800" />
+          </div>
+          <div className="flex gap-4">
+            <div className="h-3 w-20 rounded bg-zinc-800" />
+            <div className="h-3 w-24 rounded bg-zinc-800" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!connected) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-8">
@@ -164,7 +195,7 @@ export default function SessionsPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Session Keys</h1>
           <p className="mt-1 text-sm text-zinc-500">
@@ -173,7 +204,7 @@ export default function SessionsPage() {
         </div>
         <button
           onClick={() => setShowCreate(!showCreate)}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+          className="w-fit rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
         >
           {showCreate ? "Cancel" : "New Session"}
         </button>
@@ -211,10 +242,10 @@ export default function SessionsPage() {
               </label>
               <button
                 type="button"
-                onClick={selectAllBlogTypes}
+                onClick={selectAllTypes}
                 className="text-xs text-indigo-400 hover:text-indigo-300"
               >
-                Select all blog
+                {selectedMsgTypes.length === allowedTypes.length ? "Deselect all" : "Select all"}
               </button>
             </div>
             <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-800/50 p-3">
@@ -244,7 +275,7 @@ export default function SessionsPage() {
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <label htmlFor="spendAmount" className="mb-1.5 block text-sm font-medium text-zinc-300">
                 Spend Limit ({DISPLAY_DENOM})
@@ -341,13 +372,23 @@ export default function SessionsPage() {
       )}
 
       {loading ? (
-        <div className="space-y-4">
-          {[1, 2].map((i) => (
-            <div
-              key={i}
-              className="h-28 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50"
-            />
-          ))}
+        <div className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-16 rounded bg-zinc-800" />
+              <div className="h-3 w-28 rounded bg-zinc-800" />
+            </div>
+            <div className="h-5 w-14 rounded bg-zinc-800" />
+          </div>
+          <div className="mb-3 flex gap-1.5">
+            <div className="h-5 w-24 rounded bg-zinc-800" />
+            <div className="h-5 w-20 rounded bg-zinc-800" />
+            <div className="h-5 w-28 rounded bg-zinc-800" />
+          </div>
+          <div className="flex gap-4">
+            <div className="h-3 w-20 rounded bg-zinc-800" />
+            <div className="h-3 w-24 rounded bg-zinc-800" />
+          </div>
         </div>
       ) : sessions.length === 0 ? (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
@@ -371,7 +412,7 @@ export default function SessionsPage() {
                   expired ? "opacity-50" : ""
                 }`}
               >
-                <div className="mb-3 flex items-center justify-between">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-xs">
                     <span className="text-zinc-500">
                       {isGranter ? "Grantee:" : "Granter:"}
@@ -385,15 +426,35 @@ export default function SessionsPage() {
                       </span>
                     )}
                   </div>
-                  {isGranter && !expired && (
-                    <button
-                      onClick={() => handleRevoke(session)}
-                      disabled={actionLoading === key}
-                      className="rounded px-3 py-1 text-xs text-red-500 transition-colors hover:bg-red-900/20 hover:text-red-400 disabled:opacity-50"
-                    >
-                      {actionLoading === key ? "Revoking..." : "Revoke"}
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {!isGranter && !expired && (
+                      <button
+                        onClick={() => {
+                          if (activeSession?.granter === session.granter) {
+                            deactivateSession();
+                          } else {
+                            activateSession(session);
+                          }
+                        }}
+                        className={`rounded px-3 py-1 text-xs transition-colors ${
+                          activeSession?.granter === session.granter
+                            ? "text-amber-400 hover:bg-amber-900/20"
+                            : "text-indigo-400 hover:bg-indigo-900/20"
+                        }`}
+                      >
+                        {activeSession?.granter === session.granter ? "Deactivate" : "Activate"}
+                      </button>
+                    )}
+                    {isGranter && !expired && (
+                      <button
+                        onClick={() => handleRevoke(session)}
+                        disabled={actionLoading === key}
+                        className="rounded px-3 py-1 text-xs text-red-500 transition-colors hover:bg-red-900/20 hover:text-red-400 disabled:opacity-50"
+                      >
+                        {actionLoading === key ? "Revoking..." : "Revoke"}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="mb-3 flex flex-wrap gap-1.5">

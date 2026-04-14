@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import type { Post } from "@/types/blog";
 import { PostStatus } from "@/types/blog";
@@ -9,11 +9,12 @@ import PostCard from "@/components/PostCard";
 import { useWallet } from "@/contexts/WalletContext";
 
 export default function MyPostsPage() {
-  const { address, connected } = useWallet();
+  const { address, connected, ready } = useWallet();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nextKey, setNextKey] = useState<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const fetchPosts = useCallback(
     async (paginationKey?: string) => {
@@ -44,12 +45,55 @@ export default function MyPostsPage() {
   );
 
   useEffect(() => {
+    if (!ready) return;
     if (connected && address) {
       fetchPosts();
     } else {
       setLoading(false);
     }
-  }, [connected, address, fetchPosts]);
+  }, [ready, connected, address, fetchPosts]);
+
+  // Infinite scroll
+  const nextKeyRef = useRef(nextKey);
+  nextKeyRef.current = nextKey;
+  const loadingRef = useRef(loading);
+  loadingRef.current = loading;
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && nextKeyRef.current && !loadingRef.current) {
+          fetchPosts(nextKeyRef.current);
+        }
+      },
+      { rootMargin: "200px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fetchPosts]);
+
+  if (!ready) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-8">
+        <div className="mb-8">
+          <div className="h-7 w-32 animate-pulse rounded bg-zinc-800" />
+          <div className="mt-2 h-4 w-48 animate-pulse rounded bg-zinc-800/60" />
+        </div>
+        <div className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <div className="h-3 w-24 rounded bg-zinc-800" />
+            <div className="h-3 w-3 rounded-full bg-zinc-800" />
+            <div className="h-3 w-16 rounded bg-zinc-800" />
+          </div>
+          <div className="mb-3 h-5 w-3/5 rounded bg-zinc-800" />
+          <div className="mb-1.5 h-3.5 w-full rounded bg-zinc-800" />
+          <div className="h-3.5 w-4/5 rounded bg-zinc-800" />
+        </div>
+      </div>
+    );
+  }
 
   if (!connected) {
     return (
@@ -92,13 +136,22 @@ export default function MyPostsPage() {
       )}
 
       {loading && posts.length === 0 ? (
-        <div className="space-y-4">
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="h-32 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50"
-            />
-          ))}
+        <div className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <div className="h-3 w-24 rounded bg-zinc-800" />
+            <div className="h-3 w-3 rounded-full bg-zinc-800" />
+            <div className="h-3 w-16 rounded bg-zinc-800" />
+          </div>
+          <div className="mb-3 h-5 w-3/5 rounded bg-zinc-800" />
+          <div className="mb-1.5 h-3.5 w-full rounded bg-zinc-800" />
+          <div className="mb-4 h-3.5 w-4/5 rounded bg-zinc-800" />
+          <div className="flex items-center justify-between">
+            <div className="flex gap-3">
+              <div className="h-3 w-8 rounded bg-zinc-800" />
+              <div className="h-3 w-8 rounded bg-zinc-800" />
+            </div>
+            <div className="h-3 w-16 rounded bg-zinc-800" />
+          </div>
         </div>
       ) : posts.length === 0 ? (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
@@ -118,15 +171,17 @@ export default function MyPostsPage() {
             ))}
           </div>
 
-          {nextKey && (
-            <div className="mt-6 text-center">
-              <button
-                onClick={() => fetchPosts(nextKey)}
-                disabled={loading}
-                className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-400 transition-colors hover:border-zinc-600 hover:text-white disabled:opacity-50"
-              >
-                {loading ? "Loading..." : "Load More"}
-              </button>
+          <div ref={sentinelRef} className="h-px" />
+          {loading && posts.length > 0 && (
+            <div className="mt-4 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <div className="h-3 w-24 rounded bg-zinc-800" />
+                <div className="h-3 w-3 rounded-full bg-zinc-800" />
+                <div className="h-3 w-16 rounded bg-zinc-800" />
+              </div>
+              <div className="mb-3 h-5 w-3/5 rounded bg-zinc-800" />
+              <div className="mb-1.5 h-3.5 w-full rounded bg-zinc-800" />
+              <div className="h-3.5 w-4/5 rounded bg-zinc-800" />
             </div>
           )}
         </>
