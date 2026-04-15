@@ -2,37 +2,30 @@
 
 import { useEffect, useState, useCallback } from "react";
 import type { Group, Proposal, Member } from "@/types/commons";
-import { ProposalStatus, VoteOption, VOTE_OPTION_LABELS } from "@/types/commons";
-import {
-  listGroups,
-  getCouncilMembers,
-  listProposals,
-  getProposal,
-} from "@/lib/api";
-import { CommonsMsgTypeUrls } from "@/lib/tx";
+import { listGroups, getCouncilMembers, listProposals } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
-import { truncateAddress, formatTime } from "@/lib/utils";
+import CommunityProposals from "@/components/governance/CommunityProposals";
+import CommunityMembers from "@/components/governance/CommunityMembers";
+import ChainProposals from "@/components/governance/ChainProposals";
+
+type View = "community-proposals" | "community-members" | "chain-proposals";
 
 export default function GovernancePage() {
-  const { address, connected, ready, signAndBroadcast } = useWallet();
+  const { connected, ready } = useWallet();
 
+  // Sidebar state
+  const [view, setView] = useState<View>("community-proposals");
+  const [communityOpen, setCommunityOpen] = useState(true);
+  const [chainOpen, setChainOpen] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // Community data
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [communityLoading, setCommunityLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-
-  // Invite form
-  const [showInvite, setShowInvite] = useState(false);
-  const [inviteAddress, setInviteAddress] = useState("");
-  const [inviteWeight, setInviteWeight] = useState("1");
-  const [inviteMetadata, setInviteMetadata] = useState("");
-  const [inviting, setInviting] = useState(false);
-  const [inviteError, setInviteError] = useState<string | null>(null);
-
-  const isMember = members.some((m) => m.address === address);
 
   const fetchGroups = useCallback(async () => {
     try {
@@ -49,7 +42,7 @@ export default function GovernancePage() {
   const fetchGroupData = useCallback(async () => {
     if (!selectedGroup) return;
     try {
-      setLoading(true);
+      setCommunityLoading(true);
       const [membersRes, proposalsRes] = await Promise.all([
         getCouncilMembers(selectedGroup.index),
         listProposals(selectedGroup.index, { reverse: true, limit: "50" }),
@@ -60,7 +53,7 @@ export default function GovernancePage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
     } finally {
-      setLoading(false);
+      setCommunityLoading(false);
     }
   }, [selectedGroup]);
 
@@ -72,145 +65,25 @@ export default function GovernancePage() {
     if (selectedGroup) fetchGroupData();
   }, [selectedGroup, fetchGroupData]);
 
-  const handleInvite = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!connected || !selectedGroup || !inviteAddress.trim()) return;
-
-    setInviting(true);
-    setInviteError(null);
-
-    try {
-      // Encode the inner MsgUpdateGroupMembers as an Any
-      const { MsgUpdateGroupMembers } = await import(
-        "@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx"
-      );
-      const innerMsg = MsgUpdateGroupMembers.encode({
-        authority: selectedGroup.policy_address,
-        groupPolicyAddress: selectedGroup.policy_address,
-        membersToAdd: [inviteAddress.trim()],
-        weightsToAdd: [inviteWeight || "1"],
-        membersToRemove: [],
-      }).finish();
-
-      await signAndBroadcast([
-        {
-          typeUrl: CommonsMsgTypeUrls.SubmitProposal,
-          value: {
-            proposer: address,
-            policyAddress: selectedGroup.policy_address,
-            messages: [
-              {
-                typeUrl: CommonsMsgTypeUrls.UpdateGroupMembers,
-                value: innerMsg,
-              },
-            ],
-            metadata: inviteMetadata.trim() || `Invite ${truncateAddress(inviteAddress.trim())} as member`,
-          },
-        },
-      ]);
-
-      setInviteAddress("");
-      setInviteWeight("1");
-      setInviteMetadata("");
-      setShowInvite(false);
-      await fetchGroupData();
-    } catch (err) {
-      setInviteError(err instanceof Error ? err.message : "Failed to submit proposal");
-    } finally {
-      setInviting(false);
-    }
+  const switchView = (v: View) => {
+    setView(v);
+    setMobileSidebarOpen(false);
   };
 
-  const handleVote = async (proposalId: string, option: number) => {
-    setActionLoading(`vote-${proposalId}`);
-    try {
-      await signAndBroadcast([
-        {
-          typeUrl: CommonsMsgTypeUrls.VoteProposal,
-          value: {
-            voter: address,
-            proposalId: BigInt(proposalId),
-            option,
-            metadata: "",
-          },
-        },
-      ]);
-      await fetchGroupData();
-    } catch (err) {
-      console.error("Vote failed:", err);
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleExecute = async (proposalId: string) => {
-    setActionLoading(`exec-${proposalId}`);
-    try {
-      await signAndBroadcast([
-        {
-          typeUrl: CommonsMsgTypeUrls.ExecuteProposal,
-          value: {
-            proposalId: BigInt(proposalId),
-            executor: address,
-          },
-        },
-      ]);
-      await fetchGroupData();
-    } catch (err) {
-      console.error("Execute failed:", err);
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  function statusBadge(status: string) {
-    const map: Record<string, { bg: string; text: string; label: string }> = {
-      [ProposalStatus.SUBMITTED]: { bg: "bg-blue-900/30", text: "text-blue-400", label: "Voting" },
-      [ProposalStatus.ACCEPTED]: { bg: "bg-green-900/30", text: "text-green-400", label: "Accepted" },
-      [ProposalStatus.REJECTED]: { bg: "bg-red-900/30", text: "text-red-400", label: "Rejected" },
-      [ProposalStatus.EXECUTED]: { bg: "bg-emerald-900/30", text: "text-emerald-400", label: "Executed" },
-      [ProposalStatus.FAILED]: { bg: "bg-red-900/30", text: "text-red-400", label: "Failed" },
-      [ProposalStatus.VETOED]: { bg: "bg-orange-900/30", text: "text-orange-400", label: "Vetoed" },
-      [ProposalStatus.EXPIRED]: { bg: "bg-zinc-800", text: "text-zinc-500", label: "Expired" },
-    };
-    const s = map[status] || { bg: "bg-zinc-800", text: "text-zinc-500", label: status };
-    return (
-      <span className={`rounded px-2 py-0.5 text-xs ${s.bg} ${s.text}`}>
-        {s.label}
-      </span>
-    );
-  }
-
-  function describeMessages(msgs: { type_url: string }[]): string {
-    if (!msgs?.length) return "No messages";
-    return msgs
-      .map((m) => {
-        const parts = m.type_url.split(".");
-        return parts[parts.length - 1].replace("Msg", "");
-      })
-      .join(", ");
-  }
-
+  // Skeleton while wallet resolves
   if (!ready) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
+      <div className="mx-auto max-w-5xl px-4 py-8">
         <div className="mb-8">
           <div className="h-7 w-36 animate-pulse rounded bg-zinc-800" />
           <div className="mt-2 h-4 w-56 animate-pulse rounded bg-zinc-800/60" />
         </div>
-        <div className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="h-3 w-8 rounded bg-zinc-800" />
-              <div className="h-4 w-14 rounded bg-zinc-800" />
-              <div className="h-3 w-28 rounded bg-zinc-800" />
-            </div>
-            <div className="h-3 w-12 rounded bg-zinc-800" />
+        <div className="flex gap-6">
+          <div className="hidden w-56 shrink-0 md:block">
+            <div className="h-64 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
           </div>
-          <div className="mb-2 h-4 w-3/5 rounded bg-zinc-800" />
-          <div className="flex gap-4">
-            <div className="h-3 w-24 rounded bg-zinc-800" />
-            <div className="h-3 w-20 rounded bg-zinc-800" />
+          <div className="flex-1">
+            <div className="h-48 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
           </div>
         </div>
       </div>
@@ -219,338 +92,219 @@ export default function GovernancePage() {
 
   if (!connected) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
+      <div className="mx-auto max-w-5xl px-4 py-8">
         <h1 className="mb-6 text-2xl font-bold text-white">Governance</h1>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
-          <p className="text-zinc-400">Connect your wallet to participate in governance</p>
+          <p className="text-zinc-400">
+            Connect your wallet to participate in governance
+          </p>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Governance</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Council proposals and member management
-          </p>
-        </div>
-        {isMember && (
-          <button
-            onClick={() => setShowInvite(!showInvite)}
-            className="w-fit rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
-          >
-            {showInvite ? "Cancel" : "Invite Member"}
-          </button>
-        )}
-      </div>
-
-      {/* Group selector */}
-      {groups.length > 1 && (
-        <div className="mb-6">
-          <select
-            value={selectedGroup?.index || ""}
-            onChange={(e) => {
-              const g = groups.find((g) => g.index === e.target.value);
-              if (g) setSelectedGroup(g);
-            }}
-            className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-600 focus:outline-none"
-          >
-            {groups.map((g) => (
-              <option key={g.index} value={g.index}>
-                {g.index}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {/* Members */}
-      {selectedGroup && (
-        <div className="mb-6 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-          <h2 className="mb-3 text-sm font-medium text-zinc-400">
-            {selectedGroup.index} &middot; {members.length} members
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            {members.map((m) => (
-              <span
-                key={m.address}
-                className={`rounded-lg px-2.5 py-1 text-xs font-mono ${
-                  m.address === address
-                    ? "bg-indigo-900/30 text-indigo-400 border border-indigo-500/30"
-                    : "bg-zinc-800 text-zinc-400"
-                }`}
-                title={`${m.metadata || m.address} (weight: ${m.weight})`}
-              >
-                {m.metadata && m.metadata !== "N/A"
-                  ? <><span className="font-sans font-medium">{m.metadata}</span>{" "}<span className="text-zinc-500">{truncateAddress(m.address)}</span></>
-                  : truncateAddress(m.address)}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Invite form */}
-      {showInvite && selectedGroup && (
-        <form
-          onSubmit={handleInvite}
-          className="mb-8 space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-5"
-        >
-          <h2 className="text-lg font-semibold text-white">
-            Propose New Member
-          </h2>
-          <p className="text-xs text-zinc-500">
-            This will submit a governance proposal to add the address as a member of {selectedGroup.index}.
-            Other council members will need to vote to approve it.
-          </p>
-
-          <div>
-            <label htmlFor="inviteAddr" className="mb-1.5 block text-sm font-medium text-zinc-300">
-              Address to Invite
-            </label>
-            <input
-              id="inviteAddr"
-              type="text"
-              value={inviteAddress}
-              onChange={(e) => setInviteAddress(e.target.value)}
-              placeholder="sprkdrm1..."
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono text-sm"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="inviteWeight" className="mb-1.5 block text-sm font-medium text-zinc-300">
-                Voting Weight
-              </label>
-              <input
-                id="inviteWeight"
-                type="number"
-                min="1"
-                value={inviteWeight}
-                onChange={(e) => setInviteWeight(e.target.value)}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm"
-              />
-            </div>
-            <div>
-              <label htmlFor="inviteMeta" className="mb-1.5 block text-sm font-medium text-zinc-300">
-                Proposal Note (optional)
-              </label>
-              <input
-                id="inviteMeta"
-                type="text"
-                value={inviteMetadata}
-                onChange={(e) => setInviteMetadata(e.target.value)}
-                placeholder="Reason for invite"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm"
-              />
-            </div>
-          </div>
-
-          {inviteError && (
-            <div className="rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-              {inviteError}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={inviting || !inviteAddress.trim()}
-            className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
-          >
-            {inviting ? "Submitting..." : "Submit Proposal"}
-          </button>
-        </form>
-      )}
-
-      {/* Proposals */}
-      <h2 className="mb-4 text-lg font-semibold text-white">Proposals</h2>
-
-      {error && (
-        <div className="mb-6 rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-          {error}
-          <button onClick={fetchGroupData} className="ml-2 underline hover:text-red-300">
-            Retry
-          </button>
-        </div>
-      )}
-
-      {loading ? (
-        <div className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="h-3 w-8 rounded bg-zinc-800" />
-              <div className="h-4 w-14 rounded bg-zinc-800" />
-              <div className="h-3 w-28 rounded bg-zinc-800" />
-            </div>
-            <div className="h-3 w-12 rounded bg-zinc-800" />
-          </div>
-          <div className="mb-2 h-4 w-3/5 rounded bg-zinc-800" />
-          <div className="flex gap-4">
-            <div className="h-3 w-24 rounded bg-zinc-800" />
-            <div className="h-3 w-20 rounded bg-zinc-800" />
-          </div>
-        </div>
-      ) : proposals.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
-          <p className="text-zinc-400">No proposals yet</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {proposals.map((proposal) => (
-            <ProposalCard
-              key={proposal.id}
-              proposal={proposal}
-              isMember={isMember}
-              actionLoading={actionLoading}
-              onVote={handleVote}
-              onExecute={handleExecute}
-              statusBadge={statusBadge}
-              describeMessages={describeMessages}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ProposalCard({
-  proposal,
-  isMember,
-  actionLoading,
-  onVote,
-  onExecute,
-  statusBadge,
-  describeMessages,
-}: {
-  proposal: Proposal;
-  isMember: boolean;
-  actionLoading: string | null;
-  onVote: (id: string, option: number) => void;
-  onExecute: (id: string) => void;
-  statusBadge: (s: string) => React.ReactNode;
-  describeMessages: (msgs: { type_url: string }[]) => string;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [detail, setDetail] = useState<{ votes: { voter: string; option: number }[]; tally: { yes_weight: string; no_weight: string; abstain_weight: string; no_with_veto_weight: string } } | null>(null);
-
-  const loadDetail = async () => {
-    if (detail) {
-      setExpanded(!expanded);
-      return;
-    }
-    try {
-      const res = await getProposal(proposal.id);
-      setDetail({ votes: res.votes || [], tally: res.tally });
-      setExpanded(true);
-    } catch {
-      setExpanded(!expanded);
-    }
-  };
-
-  const isVoting = proposal.status === ProposalStatus.SUBMITTED;
-  const isAccepted = proposal.status === ProposalStatus.ACCEPTED;
-
-  return (
-    <article className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-zinc-500">#{proposal.id}</span>
-          {statusBadge(proposal.status)}
-          <span className="text-xs text-zinc-500">
-            {describeMessages(proposal.messages)}
-          </span>
-        </div>
+  const sidebarContent = (
+    <nav className="space-y-1">
+      {/* Community section */}
+      <div>
         <button
-          onClick={loadDetail}
-          className="text-xs text-zinc-500 hover:text-zinc-300"
+          onClick={() => setCommunityOpen(!communityOpen)}
+          className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold text-zinc-200 transition-colors hover:bg-zinc-800/50"
         >
-          {expanded ? "Hide" : "Details"}
+          <span>Community</span>
+          <svg
+            className={`h-4 w-4 text-zinc-500 transition-transform ${communityOpen ? "rotate-0" : "-rotate-90"}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
         </button>
-      </div>
 
-      {proposal.metadata && (
-        <p className="mb-2 text-sm text-zinc-300">{proposal.metadata}</p>
-      )}
+        {communityOpen && (
+          <div className="mt-1 space-y-0.5 pl-1">
+            {/* Council selector */}
+            {groups.length > 1 && (
+              <div className="px-2 py-1.5">
+                <select
+                  value={selectedGroup?.index || ""}
+                  onChange={(e) => {
+                    const g = groups.find((g) => g.index === e.target.value);
+                    if (g) setSelectedGroup(g);
+                  }}
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-2.5 py-1.5 text-xs text-zinc-300 focus:border-zinc-600 focus:outline-none"
+                >
+                  {groups.map((g) => (
+                    <option key={g.index} value={g.index}>
+                      {g.index}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {groups.length === 1 && selectedGroup && (
+              <div className="px-3 py-1.5 text-xs text-zinc-500">
+                {selectedGroup.index}
+              </div>
+            )}
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
-        <span>by {truncateAddress(proposal.proposer)}</span>
-        <span>{formatTime(proposal.submit_time)}</span>
-        {proposal.voting_deadline && proposal.voting_deadline !== "0" && (
-          <span>Deadline: {formatTime(proposal.voting_deadline)}</span>
+            <button
+              onClick={() => switchView("community-proposals")}
+              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
+                view === "community-proposals"
+                  ? "bg-indigo-600/15 text-indigo-400"
+                  : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"
+              }`}
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15a2.25 2.25 0 012.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
+              </svg>
+              Proposals
+            </button>
+
+            <button
+              onClick={() => switchView("community-members")}
+              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
+                view === "community-members"
+                  ? "bg-indigo-600/15 text-indigo-400"
+                  : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"
+              }`}
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+              </svg>
+              Members
+            </button>
+          </div>
         )}
       </div>
 
-      {expanded && detail && (
-        <div className="mt-4 border-t border-zinc-800 pt-4">
-          {/* Tally */}
-          <div className="mb-3 grid grid-cols-2 gap-2 text-center text-xs sm:grid-cols-4">
-            <div className="rounded bg-green-900/20 p-2">
-              <div className="font-medium text-green-400">{detail.tally.yes_weight || "0"}</div>
-              <div className="text-zinc-500">Yes</div>
-            </div>
-            <div className="rounded bg-red-900/20 p-2">
-              <div className="font-medium text-red-400">{detail.tally.no_weight || "0"}</div>
-              <div className="text-zinc-500">No</div>
-            </div>
-            <div className="rounded bg-zinc-800 p-2">
-              <div className="font-medium text-zinc-400">{detail.tally.abstain_weight || "0"}</div>
-              <div className="text-zinc-500">Abstain</div>
-            </div>
-            <div className="rounded bg-orange-900/20 p-2">
-              <div className="font-medium text-orange-400">{detail.tally.no_with_veto_weight || "0"}</div>
-              <div className="text-zinc-500">Veto</div>
-            </div>
-          </div>
+      {/* Chain section */}
+      <div className="pt-2">
+        <button
+          onClick={() => setChainOpen(!chainOpen)}
+          className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold text-zinc-200 transition-colors hover:bg-zinc-800/50"
+        >
+          <span>Chain</span>
+          <svg
+            className={`h-4 w-4 text-zinc-500 transition-transform ${chainOpen ? "rotate-0" : "-rotate-90"}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
 
-          {/* Votes */}
-          {detail.votes.length > 0 && (
-            <div className="mb-3 space-y-1">
-              {detail.votes.map((v) => (
-                <div key={v.voter} className="flex items-center gap-2 text-xs">
-                  <span className="font-mono text-zinc-400">{truncateAddress(v.voter)}</span>
-                  <span className="text-zinc-500">{VOTE_OPTION_LABELS[v.option] || "?"}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Actions */}
-      {isMember && (isVoting || isAccepted) && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-3">
-          {isVoting && (
-            <>
-              {[VoteOption.YES, VoteOption.NO, VoteOption.ABSTAIN, VoteOption.NO_WITH_VETO].map(
-                (opt) => (
-                  <button
-                    key={opt}
-                    onClick={() => onVote(proposal.id, opt)}
-                    disabled={actionLoading === `vote-${proposal.id}`}
-                    className="rounded-lg border border-zinc-700 px-3 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-500 hover:text-white disabled:opacity-50"
-                  >
-                    {VOTE_OPTION_LABELS[opt]}
-                  </button>
-                )
-              )}
-            </>
-          )}
-          {isAccepted && (
+        {chainOpen && (
+          <div className="mt-1 space-y-0.5 pl-1">
             <button
-              onClick={() => onExecute(proposal.id)}
-              disabled={actionLoading === `exec-${proposal.id}`}
-              className="rounded-lg bg-green-600/20 border border-green-500/30 px-3 py-1 text-xs text-green-400 transition-colors hover:bg-green-600/30 disabled:opacity-50"
+              onClick={() => switchView("chain-proposals")}
+              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
+                view === "chain-proposals"
+                  ? "bg-indigo-600/15 text-indigo-400"
+                  : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"
+              }`}
             >
-              {actionLoading === `exec-${proposal.id}` ? "Executing..." : "Execute"}
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 21v-7.5a.75.75 0 01.75-.75h3a.75.75 0 01.75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349m-16.5 11.65V9.35m0 0a3.001 3.001 0 003.75-.615A2.993 2.993 0 009.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 002.25 1.016c.896 0 1.7-.393 2.25-1.016a3.001 3.001 0 003.75.614m-16.5 0a3.004 3.004 0 01-.621-4.72L4.318 3.44A1.5 1.5 0 015.378 3h13.243a1.5 1.5 0 011.06.44l1.19 1.189a3 3 0 01-.621 4.72m-13.5 8.65h3.75a.75.75 0 00.75-.75V13.5a.75.75 0 00-.75-.75H6.75a.75.75 0 00-.75.75v3.15c0 .415.336.75.75.75z" />
+              </svg>
+              Proposals
             </button>
+          </div>
+        )}
+      </div>
+    </nav>
+  );
+
+  return (
+    <div className="mx-auto max-w-5xl px-4 py-8">
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-white">Governance</h1>
+        <p className="mt-1 text-sm text-zinc-500">
+          Community council and chain governance
+        </p>
+      </div>
+
+      {/* Mobile sidebar toggle */}
+      <div className="mb-4 md:hidden">
+        <button
+          onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
+          className="flex w-full items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-300"
+        >
+          <span>
+            {view === "community-proposals" && "Community / Proposals"}
+            {view === "community-members" && "Community / Members"}
+            {view === "chain-proposals" && "Chain / Proposals"}
+          </span>
+          <svg
+            className={`h-4 w-4 text-zinc-500 transition-transform ${mobileSidebarOpen ? "rotate-180" : ""}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {mobileSidebarOpen && (
+          <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-900/80 p-3">
+            {sidebarContent}
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-6">
+        {/* Desktop sidebar */}
+        <div className="hidden w-52 shrink-0 md:block">
+          <div className="sticky top-24 rounded-xl border border-zinc-800 bg-zinc-900/50 p-3">
+            {sidebarContent}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="min-w-0 flex-1">
+          {error && (
+            <div className="mb-6 rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
+              {error}
+              <button
+                onClick={fetchGroupData}
+                className="ml-2 underline hover:text-red-300"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {view === "community-proposals" && selectedGroup && (
+            <CommunityProposals
+              group={selectedGroup}
+              members={members}
+              proposals={proposals}
+              loading={communityLoading}
+              onRefresh={fetchGroupData}
+            />
+          )}
+
+          {view === "community-members" && selectedGroup && (
+            <CommunityMembers group={selectedGroup} members={members} />
+          )}
+
+          {view === "chain-proposals" && <ChainProposals />}
+
+          {/* Show message if no groups loaded yet for community views */}
+          {view.startsWith("community-") && !selectedGroup && !error && (
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+              <p className="text-zinc-400">Loading councils...</p>
+            </div>
           )}
         </div>
-      )}
-    </article>
+      </div>
+    </div>
   );
 }

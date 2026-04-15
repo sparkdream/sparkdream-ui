@@ -1,11 +1,27 @@
 // Transaction signing helpers using CosmJS + Keplr.
 
+// Cosmos SDK x/gov transaction message type URLs
+export const GovMsgTypeUrls = {
+  Vote: "/cosmos.gov.v1beta1.MsgVote",
+  Deposit: "/cosmos.gov.v1beta1.MsgDeposit",
+  SubmitProposal: "/cosmos.gov.v1.MsgSubmitProposal",
+} as const;
+
+// Cosmos SDK x/upgrade message type URLs (used inside gov proposals)
+export const UpgradeMsgTypeUrls = {
+  SoftwareUpgrade: "/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade",
+} as const;
+
 // Commons transaction message type URLs
 export const CommonsMsgTypeUrls = {
   SubmitProposal: "/sparkdream.commons.v1.MsgSubmitProposal",
   VoteProposal: "/sparkdream.commons.v1.MsgVoteProposal",
   ExecuteProposal: "/sparkdream.commons.v1.MsgExecuteProposal",
   UpdateGroupMembers: "/sparkdream.commons.v1.MsgUpdateGroupMembers",
+  SpendFromCommons: "/sparkdream.commons.v1.MsgSpendFromCommons",
+  RenewGroup: "/sparkdream.commons.v1.MsgRenewGroup",
+  RegisterGroup: "/sparkdream.commons.v1.MsgRegisterGroup",
+  UpdateGroupConfig: "/sparkdream.commons.v1.MsgUpdateGroupConfig",
 } as const;
 
 // Session transaction message type URLs

@@ -22,6 +22,14 @@ import type {
   ListProposalsResponse,
 } from "@/types/commons";
 import type {
+  ListGovProposalsResponse,
+  GetGovProposalResponse,
+  ListGovVotesResponse,
+  GetGovTallyResponse,
+  GetGovParamsResponse,
+  ListGovDepositsResponse,
+} from "@/types/gov";
+import type {
   GetSessionResponse,
   SessionsByGranterResponse,
   SessionsByGranteeResponse,
@@ -252,6 +260,73 @@ export async function getAllowedMsgTypes(): Promise<AllowedMsgTypesResponse> {
 // Get session module params
 export async function getSessionParams(): Promise<SessionParamsResponse> {
   return get<SessionParamsResponse>("/sparkdream/session/v1/params");
+}
+
+// ── Module params (for param change proposals) ─────────────────────
+
+// Generic param fetcher — returns the raw JSON response
+export async function getModuleParams(path: string): Promise<Record<string, unknown>> {
+  return get<Record<string, unknown>>(path);
+}
+
+// ── Cosmos SDK x/gov ────────────────────────────────────────────────
+
+// List gov proposals with optional status filter
+export async function listGovProposals(
+  status?: string,
+  pagination?: PaginationRequest
+): Promise<ListGovProposalsResponse> {
+  const params = paginationParams(pagination);
+  if (status) params.set("proposal_status", status);
+  return get<ListGovProposalsResponse>("/cosmos/gov/v1/proposals", params);
+}
+
+// Get a specific gov proposal
+export async function getGovProposal(
+  proposalId: string
+): Promise<GetGovProposalResponse> {
+  return get<GetGovProposalResponse>(`/cosmos/gov/v1/proposals/${proposalId}`);
+}
+
+// Get votes for a gov proposal
+export async function getGovProposalVotes(
+  proposalId: string,
+  pagination?: PaginationRequest
+): Promise<ListGovVotesResponse> {
+  return get<ListGovVotesResponse>(
+    `/cosmos/gov/v1/proposals/${proposalId}/votes`,
+    paginationParams(pagination)
+  );
+}
+
+// Get tally for a gov proposal
+export async function getGovProposalTally(
+  proposalId: string
+): Promise<GetGovTallyResponse> {
+  return get<GetGovTallyResponse>(
+    `/cosmos/gov/v1/proposals/${proposalId}/tally`
+  );
+}
+
+// Get gov module params
+export async function getGovParams(): Promise<GetGovParamsResponse> {
+  return get<GetGovParamsResponse>("/cosmos/gov/v1/params/tallying");
+}
+
+// Get gov deposit params
+export async function getGovDepositParams(): Promise<GetGovParamsResponse> {
+  return get<GetGovParamsResponse>("/cosmos/gov/v1/params/deposit");
+}
+
+// Get deposits for a gov proposal
+export async function getGovProposalDeposits(
+  proposalId: string,
+  pagination?: PaginationRequest
+): Promise<ListGovDepositsResponse> {
+  return get<ListGovDepositsResponse>(
+    `/cosmos/gov/v1/proposals/${proposalId}/deposits`,
+    paginationParams(pagination)
+  );
 }
 
 // ── Commons module ──────────────────────────────────────────────────

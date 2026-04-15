@@ -120,13 +120,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Wallet not connected");
       }
 
-      const { SigningStargateClient, AminoTypes } = await import("@cosmjs/stargate");
+      const { SigningStargateClient, AminoTypes, defaultRegistryTypes, createDefaultAminoConverters } = await import("@cosmjs/stargate");
       const { Registry } = await import("@cosmjs/proto-signing");
 
       const { load: loadBlog } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx.registry");
       const { load: loadSession } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx.registry");
       const { load: loadCommons } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx.registry");
-      const registry = new Registry();
+      // Gov v1 + upgrade types (not in defaultRegistryTypes which only has v1beta1)
+      const { MsgSubmitProposal: GovV1MsgSubmitProposal } = await import("cosmjs-types/cosmos/gov/v1/tx");
+      const { MsgSoftwareUpgrade } = await import("cosmjs-types/cosmos/upgrade/v1beta1/tx");
+
+      const registry = new Registry(defaultRegistryTypes);
+      registry.register("/cosmos.gov.v1.MsgSubmitProposal", GovV1MsgSubmitProposal as any);
+      registry.register("/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade", MsgSoftwareUpgrade as any);
       loadBlog(registry);
       loadSession(registry);
       loadCommons(registry);
@@ -134,7 +140,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const { AminoConverter: blogAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx.amino");
       const { AminoConverter: sessionAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx.amino");
       const { AminoConverter: commonsAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx.amino");
-      const aminoTypes = new AminoTypes({ ...blogAmino, ...sessionAmino, ...commonsAmino });
+      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino });
 
       const key = await window.keplr.getKey(config.chainId);
       const offlineSigner = key.isNanoLedger
