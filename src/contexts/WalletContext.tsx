@@ -127,6 +127,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const { load: loadSession } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx.registry");
       const { load: loadCommons } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx.registry");
       const { load: loadRep } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx.registry");
+      const { load: loadCollect } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/tx.registry");
       // Gov v1 + upgrade types (not in defaultRegistryTypes which only has v1beta1)
       const { MsgSubmitProposal: GovV1MsgSubmitProposal } = await import("cosmjs-types/cosmos/gov/v1/tx");
       const { MsgSoftwareUpgrade } = await import("cosmjs-types/cosmos/upgrade/v1beta1/tx");
@@ -138,12 +139,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       loadSession(registry);
       loadCommons(registry);
       loadRep(registry);
+      loadCollect(registry);
 
       const { AminoConverter: blogAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx.amino");
       const { AminoConverter: sessionAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx.amino");
       const { AminoConverter: commonsAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx.amino");
       const { AminoConverter: repAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx.amino");
-      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino });
+      const { AminoConverter: collectAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/tx.amino");
+      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino });
 
       const key = await window.keplr.getKey(config.chainId);
       const offlineSigner = key.isNanoLedger

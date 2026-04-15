@@ -37,6 +37,22 @@ import type {
   SessionParamsResponse,
 } from "@/types/session";
 import type {
+  GetCollectionResponse,
+  ListCollectionsResponse,
+  GetItemResponse,
+  ListItemsResponse,
+  ListCollaboratorsResponse,
+  GetCuratorResponse,
+  ListCuratorsResponse,
+  GetCurationSummaryResponse,
+  ListCurationReviewsResponse,
+  GetSponsorshipRequestResponse,
+  ListSponsorshipRequestsResponse,
+  GetEndorsementResponse,
+  CollectionConvictionResponse,
+  CollectParamsResponse,
+} from "@/types/collect";
+import type {
   GetMemberResponse,
   ListMemberResponse,
   MembersByTrustLevelResponse,
@@ -477,6 +493,143 @@ export async function collectTags(): Promise<string[]> {
     for (const t of i.tags || []) tags.add(t);
   }
   return Array.from(tags).sort();
+}
+
+// ── Commons module ──────────────────────────────────────────────────
+
+// ── Collect module ─────────────────────────────────────────────────
+
+export async function getCollection(id: string): Promise<GetCollectionResponse> {
+  return get<GetCollectionResponse>(`/sparkdream/collect/v1/collection/${id}`);
+}
+
+export async function getCollectionsByOwner(
+  owner: string,
+  pagination?: PaginationRequest
+): Promise<ListCollectionsResponse> {
+  return get<ListCollectionsResponse>(
+    `/sparkdream/collect/v1/collections_by_owner/${owner}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function listPublicCollections(
+  pagination?: PaginationRequest
+): Promise<ListCollectionsResponse> {
+  return get<ListCollectionsResponse>(
+    "/sparkdream/collect/v1/public_collections",
+    paginationParams(pagination)
+  );
+}
+
+export async function listPublicCollectionsByType(
+  collectionType: string,
+  pagination?: PaginationRequest
+): Promise<ListCollectionsResponse> {
+  return get<ListCollectionsResponse>(
+    `/sparkdream/collect/v1/public_collections_by_type/${collectionType}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getCollectionsByCollaborator(
+  address: string,
+  pagination?: PaginationRequest
+): Promise<ListCollectionsResponse> {
+  return get<ListCollectionsResponse>(
+    `/sparkdream/collect/v1/collections_by_collaborator/${address}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getCollectionItem(id: string): Promise<GetItemResponse> {
+  return get<GetItemResponse>(`/sparkdream/collect/v1/item/${id}`);
+}
+
+export async function listCollectionItems(
+  collectionId: string,
+  pagination?: PaginationRequest
+): Promise<ListItemsResponse> {
+  return get<ListItemsResponse>(
+    `/sparkdream/collect/v1/items/${collectionId}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getCollaborators(
+  collectionId: string
+): Promise<ListCollaboratorsResponse> {
+  return get<ListCollaboratorsResponse>(
+    `/sparkdream/collect/v1/collaborators/${collectionId}`
+  );
+}
+
+export async function getCurator(address: string): Promise<GetCuratorResponse> {
+  return get<GetCuratorResponse>(`/sparkdream/collect/v1/curator/${address}`);
+}
+
+export async function listActiveCurators(
+  pagination?: PaginationRequest
+): Promise<ListCuratorsResponse> {
+  return get<ListCuratorsResponse>(
+    "/sparkdream/collect/v1/active_curators",
+    paginationParams(pagination)
+  );
+}
+
+export async function getCurationSummary(
+  collectionId: string
+): Promise<GetCurationSummaryResponse> {
+  return get<GetCurationSummaryResponse>(
+    `/sparkdream/collect/v1/curation_summary/${collectionId}`
+  );
+}
+
+export async function listCurationReviews(
+  collectionId: string,
+  pagination?: PaginationRequest
+): Promise<ListCurationReviewsResponse> {
+  return get<ListCurationReviewsResponse>(
+    `/sparkdream/collect/v1/curation_reviews/${collectionId}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getSponsorshipRequest(
+  collectionId: string
+): Promise<GetSponsorshipRequestResponse> {
+  return get<GetSponsorshipRequestResponse>(
+    `/sparkdream/collect/v1/sponsorship_request/${collectionId}`
+  );
+}
+
+export async function listSponsorshipRequests(
+  pagination?: PaginationRequest
+): Promise<ListSponsorshipRequestsResponse> {
+  return get<ListSponsorshipRequestsResponse>(
+    "/sparkdream/collect/v1/sponsorship_requests",
+    paginationParams(pagination)
+  );
+}
+
+export async function getEndorsement(
+  collectionId: string
+): Promise<GetEndorsementResponse> {
+  return get<GetEndorsementResponse>(
+    `/sparkdream/collect/v1/endorsement/${collectionId}`
+  );
+}
+
+export async function getCollectionConviction(
+  collectionId: string
+): Promise<CollectionConvictionResponse> {
+  return get<CollectionConvictionResponse>(
+    `/sparkdream/collect/v1/collection_conviction/${collectionId}`
+  );
+}
+
+export async function getCollectParams(): Promise<CollectParamsResponse> {
+  return get<CollectParamsResponse>("/sparkdream/collect/v1/params");
 }
 
 // ── Commons module ──────────────────────────────────────────────────

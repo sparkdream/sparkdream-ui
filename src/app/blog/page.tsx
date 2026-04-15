@@ -9,10 +9,10 @@ import PostCard from "@/components/PostCard";
 import { useWallet } from "@/contexts/WalletContext";
 
 type SortOption = "newest" | "oldest";
-type FilterOption = "members" | "all";
+type FilterOption = "my-posts" | "members" | "all";
 
 export default function BlogPage() {
-  const { connected } = useWallet();
+  const { connected, address } = useWallet();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +30,14 @@ export default function BlogPage() {
 
   useEffect(() => {
     const saved = localStorage.getItem("blog-filter");
-    if (saved === "members" || saved === "all") setFilter(saved);
+    if (saved === "my-posts" || saved === "members" || saved === "all") {
+      // Only restore "my-posts" if connected
+      if (saved === "my-posts" && !connected) {
+        setFilter("members");
+      } else {
+        setFilter(saved);
+      }
+    }
     setFilterRestored(true);
   }, []);
 
@@ -100,7 +107,9 @@ export default function BlogPage() {
   const filteredAndSorted = useMemo(() => {
     let result = posts;
 
-    if (filter === "members" && memberAddresses.size > 0) {
+    if (filter === "my-posts" && address) {
+      result = result.filter((p) => p.creator === address);
+    } else if (filter === "members" && memberAddresses.size > 0) {
       result = result.filter((p) => memberAddresses.has(p.creator));
     }
 
@@ -112,7 +121,7 @@ export default function BlogPage() {
     // "newest" is already the default API order
 
     return result;
-  }, [posts, filter, sort, memberAddresses]);
+  }, [posts, filter, sort, memberAddresses, address]);
 
   if (!filterRestored) {
     return (
@@ -168,6 +177,18 @@ export default function BlogPage() {
       {/* Filter & Sort Controls */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <div className="flex items-center rounded-lg border border-zinc-800 bg-zinc-900/50 p-0.5">
+          {connected && (
+            <button
+              onClick={() => setFilter("my-posts")}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                filter === "my-posts"
+                  ? "bg-zinc-700 text-white"
+                  : "text-zinc-400 hover:text-zinc-300"
+              }`}
+            >
+              My Posts
+            </button>
+          )}
           <button
             onClick={() => setFilter("members")}
             className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${

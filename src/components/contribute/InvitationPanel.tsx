@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { invitationsByInviter, listRepInvitations, collectTags } from "@/lib/api";
-import TagPicker from "@/components/reputation/TagPicker";
+import TagPicker from "@/components/contribute/TagPicker";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { truncateAddress, formatTime } from "@/lib/utils";
 import type { Invitation } from "@/types/rep";
@@ -18,7 +18,11 @@ function statusColor(status: string): string {
   }
 }
 
-export default function InvitationPanel() {
+interface InvitationPanelProps {
+  defaultShowForm?: boolean;
+}
+
+export default function InvitationPanel({ defaultShowForm = false }: InvitationPanelProps) {
   const { address, signAndBroadcast } = useWallet();
   const [sentInvitations, setSentInvitations] = useState<Invitation[]>([]);
   const [pendingForMe, setPendingForMe] = useState<Invitation[]>([]);
@@ -26,7 +30,7 @@ export default function InvitationPanel() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [sentNextKey, setSentNextKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(defaultShowForm);
   const [submitting, setSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 

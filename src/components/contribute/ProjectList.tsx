@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { listRepProjects, listGroups, collectTags } from "@/lib/api";
-import TagPicker from "@/components/reputation/TagPicker";
+import TagPicker from "@/components/contribute/TagPicker";
 import type { Group } from "@/types/commons";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import type { RepProject } from "@/types/rep";

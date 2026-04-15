@@ -1,14 +1,22 @@
-// Truncate a bech32 address for display: sprkdrm1abc...xyz
-export function truncateAddress(address: string, prefixLen = 10, suffixLen = 4): string {
+// Truncate a bech32 address for display: sprkdrm1234...5678
+export function truncateAddress(address: string, prefixLen = 11, suffixLen = 4): string {
   if (address.length <= prefixLen + suffixLen + 3) return address;
   return `${address.slice(0, prefixLen)}...${address.slice(-suffixLen)}`;
 }
 
-// Format a unix timestamp (seconds as string) to a readable date
+// Format a timestamp string to a readable date.
+// Accepts both RFC 3339 / ISO 8601 strings and unix seconds.
 export function formatTime(timestampStr: string): string {
-  const ts = parseInt(timestampStr, 10);
-  if (!ts || ts === 0) return "";
-  const date = new Date(ts * 1000);
+  if (!timestampStr) return "";
+  let date: Date;
+  if (/^\d+$/.test(timestampStr)) {
+    const ts = parseInt(timestampStr, 10);
+    if (ts === 0) return "";
+    date = new Date(ts * 1000);
+  } else {
+    date = new Date(timestampStr);
+    if (isNaN(date.getTime()) || date.getFullYear() <= 1) return "";
+  }
   return date.toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
@@ -20,8 +28,16 @@ export function formatTime(timestampStr: string): string {
 
 // Relative time (e.g., "2 hours ago")
 export function timeAgo(timestampStr: string): string {
-  const ts = parseInt(timestampStr, 10);
-  if (!ts || ts === 0) return "";
+  if (!timestampStr) return "";
+  let ts: number;
+  if (/^\d+$/.test(timestampStr)) {
+    ts = parseInt(timestampStr, 10);
+  } else {
+    const date = new Date(timestampStr);
+    if (isNaN(date.getTime()) || date.getFullYear() <= 1) return "";
+    ts = Math.floor(date.getTime() / 1000);
+  }
+  if (ts === 0) return "";
   const now = Math.floor(Date.now() / 1000);
   const diff = now - ts;
 
@@ -104,6 +120,35 @@ const MSG_TYPE_LABELS: Record<string, string> = {
   "/sparkdream.rep.v1.MsgCreateChallenge": "Create Challenge",
   "/sparkdream.rep.v1.MsgRespondToChallenge": "Respond to Challenge",
   "/sparkdream.rep.v1.MsgSubmitJurorVote": "Submit Juror Vote",
+  "/sparkdream.collect.v1.MsgUpdateParams": "Collect Param Change",
+  "/sparkdream.collect.v1.MsgUpdateOperationalParams": "Collect Op Param Change",
+  "/sparkdream.collect.v1.MsgCreateCollection": "Create Collection",
+  "/sparkdream.collect.v1.MsgUpdateCollection": "Update Collection",
+  "/sparkdream.collect.v1.MsgDeleteCollection": "Delete Collection",
+  "/sparkdream.collect.v1.MsgAddItem": "Add Item",
+  "/sparkdream.collect.v1.MsgAddItems": "Add Items",
+  "/sparkdream.collect.v1.MsgUpdateItem": "Update Item",
+  "/sparkdream.collect.v1.MsgRemoveItem": "Remove Item",
+  "/sparkdream.collect.v1.MsgRemoveItems": "Remove Items",
+  "/sparkdream.collect.v1.MsgReorderItem": "Reorder Item",
+  "/sparkdream.collect.v1.MsgAddCollaborator": "Add Collaborator",
+  "/sparkdream.collect.v1.MsgRemoveCollaborator": "Remove Collaborator",
+  "/sparkdream.collect.v1.MsgUpdateCollaboratorRole": "Update Collaborator Role",
+  "/sparkdream.collect.v1.MsgRegisterCurator": "Register Curator",
+  "/sparkdream.collect.v1.MsgUnregisterCurator": "Unregister Curator",
+  "/sparkdream.collect.v1.MsgRateCollection": "Rate Collection",
+  "/sparkdream.collect.v1.MsgChallengeReview": "Challenge Review",
+  "/sparkdream.collect.v1.MsgRequestSponsorship": "Request Sponsorship",
+  "/sparkdream.collect.v1.MsgCancelSponsorshipRequest": "Cancel Sponsorship",
+  "/sparkdream.collect.v1.MsgSponsorCollection": "Sponsor Collection",
+  "/sparkdream.collect.v1.MsgUpvoteContent": "Upvote",
+  "/sparkdream.collect.v1.MsgDownvoteContent": "Downvote",
+  "/sparkdream.collect.v1.MsgFlagContent": "Flag Content",
+  "/sparkdream.collect.v1.MsgHideContent": "Hide Content",
+  "/sparkdream.collect.v1.MsgAppealHide": "Appeal Hide",
+  "/sparkdream.collect.v1.MsgEndorseCollection": "Endorse Collection",
+  "/sparkdream.collect.v1.MsgSetSeekingEndorsement": "Seek Endorsement",
+  "/sparkdream.collect.v1.MsgPinCollection": "Pin Collection",
 };
 
 export function messageTypeLabel(typeUrl: string): string {

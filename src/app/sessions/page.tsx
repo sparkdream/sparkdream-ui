@@ -480,15 +480,15 @@ export default function SessionsPage() {
                       Execs: {session.exec_count || "0"}/{session.max_exec_count}
                     </span>
                   )}
-                  <span>Created {formatTime(session.created_at)}</span>
-                  {session.expiration && (
-                    <span>
-                      {expired ? "Expired" : "Expires"} {new Date(session.expiration).toLocaleDateString()}
-                    </span>
-                  )}
-                  {session.last_used_at && session.last_used_at !== "0001-01-01T00:00:00Z" && (
-                    <span>Last used {formatTime(session.last_used_at)}</span>
-                  )}
+                  <span className="flex items-center gap-4 whitespace-nowrap">
+                    <span>Created {formatTime(session.created_at)}</span>
+                    {session.last_used_at && session.last_used_at !== "0001-01-01T00:00:00Z" && (
+                      <span>Last used {formatTime(session.last_used_at)}</span>
+                    )}
+                    {session.expiration && (
+                      <span>{expired ? "Expired" : "Expires"} {formatTime(session.expiration)}</span>
+                    )}
+                  </span>
                 </div>
               </article>
             );

@@ -24,8 +24,11 @@ export default function SessionModeSwitcher() {
           onClick={() => setOpen(!open)}
           className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-900/20 px-2.5 py-1 text-xs text-amber-400 transition-colors hover:bg-amber-900/30"
         >
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
-          Acting as {truncateAddress(activeSession.granter)}
+          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+          <span className="flex flex-col leading-tight">
+            <span>Acting as</span>
+            <span>{truncateAddress(activeSession.granter)}</span>
+          </span>
         </button>
       ) : (
         <button

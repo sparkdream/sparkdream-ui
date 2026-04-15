@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { Group, Member } from "@/types/commons";
 import { useWallet } from "@/contexts/WalletContext";
 import { truncateAddress } from "@/lib/utils";
@@ -14,12 +15,22 @@ export default function CommunityMembers({ group, members }: CommunityMembersPro
 
   return (
     <div>
-      <h2 className="mb-4 text-lg font-semibold text-white">
-        Members
-        <span className="ml-2 text-sm font-normal text-zinc-500">
-          {members.length} in {group.index}
-        </span>
-      </h2>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-white">
+          Members
+          <span className="ml-2 text-sm font-normal text-zinc-500">
+            {members.length} in {group.index}
+          </span>
+        </h2>
+        {group.index === "Commons Council" && (
+          <Link
+            href="/contribute?view=invitations"
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-500"
+          >
+            Invite Member
+          </Link>
+        )}
+      </div>
 
       {members.length === 0 ? (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
@@ -45,10 +56,16 @@ export default function CommunityMembers({ group, members }: CommunityMembersPro
                   {m.metadata && m.metadata !== "N/A" ? (
                     <>
                       <span className="font-sans font-medium">{m.metadata}</span>{" "}
-                      <span className="text-zinc-500">{truncateAddress(m.address)}</span>
+                      {/* Full address on desktop, truncated on mobile */}
+                      <span className="hidden text-zinc-500 sm:inline">{m.address}</span>
+                      <span className="text-zinc-500 sm:hidden">{truncateAddress(m.address)}</span>
                     </>
                   ) : (
-                    truncateAddress(m.address)
+                    <>
+                      {/* Full address on desktop, truncated on mobile */}
+                      <span className="hidden sm:inline">{m.address}</span>
+                      <span className="sm:hidden">{truncateAddress(m.address)}</span>
+                    </>
                   )}
                 </span>
               </div>

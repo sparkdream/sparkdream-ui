@@ -14,7 +14,7 @@ import { RepMsgTypeUrls } from "@/lib/tx";
 import { truncateAddress } from "@/lib/utils";
 import type { RepStake } from "@/types/rep";
 import { STAKE_TARGET_LABELS, StakeTargetType } from "@/types/rep";
-import SearchableSelect from "@/components/reputation/SearchableSelect";
+import SearchableSelect from "@/components/contribute/SearchableSelect";
 
 interface TargetOption {
   value: string;

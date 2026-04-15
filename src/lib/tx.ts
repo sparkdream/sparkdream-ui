@@ -72,6 +72,37 @@ export const RepMsgTypeUrls = {
   SubmitJurorVote: "/sparkdream.rep.v1.MsgSubmitJurorVote",
 } as const;
 
+// Collect transaction message type URLs
+export const CollectMsgTypeUrls = {
+  CreateCollection: "/sparkdream.collect.v1.MsgCreateCollection",
+  UpdateCollection: "/sparkdream.collect.v1.MsgUpdateCollection",
+  DeleteCollection: "/sparkdream.collect.v1.MsgDeleteCollection",
+  AddItem: "/sparkdream.collect.v1.MsgAddItem",
+  AddItems: "/sparkdream.collect.v1.MsgAddItems",
+  UpdateItem: "/sparkdream.collect.v1.MsgUpdateItem",
+  RemoveItem: "/sparkdream.collect.v1.MsgRemoveItem",
+  RemoveItems: "/sparkdream.collect.v1.MsgRemoveItems",
+  ReorderItem: "/sparkdream.collect.v1.MsgReorderItem",
+  AddCollaborator: "/sparkdream.collect.v1.MsgAddCollaborator",
+  RemoveCollaborator: "/sparkdream.collect.v1.MsgRemoveCollaborator",
+  UpdateCollaboratorRole: "/sparkdream.collect.v1.MsgUpdateCollaboratorRole",
+  RegisterCurator: "/sparkdream.collect.v1.MsgRegisterCurator",
+  UnregisterCurator: "/sparkdream.collect.v1.MsgUnregisterCurator",
+  RateCollection: "/sparkdream.collect.v1.MsgRateCollection",
+  ChallengeReview: "/sparkdream.collect.v1.MsgChallengeReview",
+  RequestSponsorship: "/sparkdream.collect.v1.MsgRequestSponsorship",
+  CancelSponsorshipRequest: "/sparkdream.collect.v1.MsgCancelSponsorshipRequest",
+  SponsorCollection: "/sparkdream.collect.v1.MsgSponsorCollection",
+  UpvoteContent: "/sparkdream.collect.v1.MsgUpvoteContent",
+  DownvoteContent: "/sparkdream.collect.v1.MsgDownvoteContent",
+  FlagContent: "/sparkdream.collect.v1.MsgFlagContent",
+  HideContent: "/sparkdream.collect.v1.MsgHideContent",
+  AppealHide: "/sparkdream.collect.v1.MsgAppealHide",
+  EndorseCollection: "/sparkdream.collect.v1.MsgEndorseCollection",
+  SetSeekingEndorsement: "/sparkdream.collect.v1.MsgSetSeekingEndorsement",
+  PinCollection: "/sparkdream.collect.v1.MsgPinCollection",
+} as const;
+
 // Build a blog message for signing.
 export function buildBlogMsg(typeUrl: string, value: Record<string, unknown>) {
   return { typeUrl, value };

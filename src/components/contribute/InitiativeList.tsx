@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { listRepInitiatives, availableInitiatives, initiativesByAssignee, listRepProjects, collectTags } from "@/lib/api";
-import TagPicker from "@/components/reputation/TagPicker";
+import TagPicker from "@/components/contribute/TagPicker";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { truncateAddress } from "@/lib/utils";
 import type { Initiative, RepProject } from "@/types/rep";
@@ -15,7 +15,7 @@ import {
   InitiativeTier,
   InitiativeCategory,
 } from "@/types/rep";
-import SearchableSelect from "@/components/reputation/SearchableSelect";
+import SearchableSelect from "@/components/contribute/SearchableSelect";
 
 type Tab = "all" | "available" | "mine";
 

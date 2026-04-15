@@ -2,9 +2,26 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import { truncateAddress } from "@/lib/utils";
 import SessionModeSwitcher from "@/components/SessionModeSwitcher";
+
+function NavLink({ href, exact, children, onClick }: { href: string; exact?: boolean; children: React.ReactNode; onClick?: () => void }) {
+  const pathname = usePathname();
+  const active = exact ? pathname === href : (pathname === href || pathname.startsWith(href + "/"));
+  return (
+    <Link
+      href={href}
+      className={`text-sm transition-colors ${
+        active ? "text-white" : "text-zinc-400 hover:text-white"
+      }`}
+      onClick={onClick}
+    >
+      {children}
+    </Link>
+  );
+}
 
 export default function Header() {
   const { address, signerAddress, name, connected, connecting, connect, disconnect, sessionActive } = useWallet();
@@ -12,45 +29,23 @@ export default function Header() {
 
   const navLinks = (
     <>
-      {connected && (
-        <Link
-          href="/blog/my-posts"
-          className="text-sm text-zinc-400 transition-colors hover:text-white"
-          onClick={() => setMenuOpen(false)}
-        >
-          My Posts
-        </Link>
-      )}
-      <Link
-        href="/blog"
-        className="text-sm text-zinc-400 transition-colors hover:text-white"
-        onClick={() => setMenuOpen(false)}
-      >
+      <NavLink href="/blog" exact onClick={() => setMenuOpen(false)}>
         Blog
-      </Link>
+      </NavLink>
       {connected && (
         <>
-          <Link
-            href="/governance"
-            className="text-sm text-zinc-400 transition-colors hover:text-white"
-            onClick={() => setMenuOpen(false)}
-          >
+          <NavLink href="/governance" onClick={() => setMenuOpen(false)}>
             Governance
-          </Link>
-          <Link
-            href="/reputation"
-            className="text-sm text-zinc-400 transition-colors hover:text-white"
-            onClick={() => setMenuOpen(false)}
-          >
-            Reputation
-          </Link>
-          <Link
-            href="/sessions"
-            className="text-sm text-zinc-400 transition-colors hover:text-white"
-            onClick={() => setMenuOpen(false)}
-          >
+          </NavLink>
+          <NavLink href="/collections" onClick={() => setMenuOpen(false)}>
+            Collections
+          </NavLink>
+          <NavLink href="/contribute" onClick={() => setMenuOpen(false)}>
+            Contribute
+          </NavLink>
+          <NavLink href="/sessions" onClick={() => setMenuOpen(false)}>
             Sessions
-          </Link>
+          </NavLink>
         </>
       )}
     </>
@@ -58,18 +53,19 @@ export default function Header() {
 
   return (
     <header className="border-b border-zinc-800 bg-zinc-950">
-      <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
-        <div className="flex items-center gap-6">
-          <Link href="/" className="text-lg font-bold text-white">
-            Spark Dream
-          </Link>
-          <nav className="hidden items-center gap-4 md:flex">
-            {navLinks}
-          </nav>
-        </div>
+      <div className="mx-auto flex h-16 max-w-5xl items-center px-4">
+        <Link href="/" className="shrink-0 text-lg font-bold text-white">
+          Spark Dream
+        </Link>
+        <nav className="ml-6 hidden items-center gap-3 md:flex">
+          {navLinks}
+        </nav>
+
+        {/* Spacer pushes wallet area to the right */}
+        <div className="min-w-6 flex-1" />
 
         {/* Desktop wallet area */}
-        <div className="hidden items-center gap-3 md:flex">
+        <div className="hidden shrink-0 items-center gap-3 md:flex">
           {connected ? (
             <div className="flex items-center gap-3">
               <SessionModeSwitcher />
@@ -79,7 +75,7 @@ export default function Header() {
                 )}
                 <div className="text-xs text-zinc-500">
                   {sessionActive
-                    ? `${truncateAddress(signerAddress!)} → ${truncateAddress(address!)}`
+                    ? truncateAddress(signerAddress!)
                     : truncateAddress(address!)}
                 </div>
               </div>
@@ -135,7 +131,7 @@ export default function Header() {
                   )}
                   <div className="text-xs text-zinc-500">
                     {sessionActive
-                      ? `${truncateAddress(signerAddress!)} → ${truncateAddress(address!)}`
+                      ? truncateAddress(signerAddress!)
                       : truncateAddress(address!)}
                   </div>
                 </div>
