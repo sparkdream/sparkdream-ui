@@ -36,6 +36,25 @@ import type {
   AllowedMsgTypesResponse,
   SessionParamsResponse,
 } from "@/types/session";
+import type {
+  GetMemberResponse,
+  ListMemberResponse,
+  MembersByTrustLevelResponse,
+  GetProjectResponse,
+  ListProjectResponse,
+  GetInitiativeResponse,
+  ListInitiativeResponse,
+  InitiativesByProjectResponse,
+  InitiativesByAssigneeResponse,
+  AvailableInitiativesResponse,
+  GetStakeResponse,
+  StakesByStakerResponse,
+  PendingStakeRewardsResponse,
+  GetInvitationResponse,
+  ListInvitationResponse,
+  InvitationsByInviterResponse,
+  RepParamsResponse,
+} from "@/types/rep";
 
 // In the browser, route through our Next.js proxy to avoid CORS issues.
 // On the server (SSR), call the LCD endpoint directly.
@@ -327,6 +346,137 @@ export async function getGovProposalDeposits(
     `/cosmos/gov/v1/proposals/${proposalId}/deposits`,
     paginationParams(pagination)
   );
+}
+
+// ── Rep module ─────────────────────────────────────────────────────
+
+export async function getRepMember(address: string): Promise<GetMemberResponse> {
+  return get<GetMemberResponse>(`/sparkdream/rep/v1/member/${address}`);
+}
+
+export async function listRepMembers(
+  pagination?: PaginationRequest
+): Promise<ListMemberResponse> {
+  return get<ListMemberResponse>("/sparkdream/rep/v1/member", paginationParams(pagination));
+}
+
+export async function membersByTrustLevel(
+  trustLevel: string,
+  pagination?: PaginationRequest
+): Promise<MembersByTrustLevelResponse> {
+  return get<MembersByTrustLevelResponse>(
+    `/sparkdream/rep/v1/members_by_trust_level/${trustLevel}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getRepProject(id: string): Promise<GetProjectResponse> {
+  return get<GetProjectResponse>(`/sparkdream/rep/v1/project/${id}`);
+}
+
+export async function listRepProjects(
+  pagination?: PaginationRequest
+): Promise<ListProjectResponse> {
+  return get<ListProjectResponse>("/sparkdream/rep/v1/project", paginationParams(pagination));
+}
+
+export async function getRepInitiative(id: string): Promise<GetInitiativeResponse> {
+  return get<GetInitiativeResponse>(`/sparkdream/rep/v1/initiative/${id}`);
+}
+
+export async function listRepInitiatives(
+  pagination?: PaginationRequest
+): Promise<ListInitiativeResponse> {
+  return get<ListInitiativeResponse>("/sparkdream/rep/v1/initiative", paginationParams(pagination));
+}
+
+export async function initiativesByProject(
+  projectId: string,
+  pagination?: PaginationRequest
+): Promise<InitiativesByProjectResponse> {
+  return get<InitiativesByProjectResponse>(
+    `/sparkdream/rep/v1/initiatives_by_project/${projectId}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function initiativesByAssignee(
+  assignee: string,
+  pagination?: PaginationRequest
+): Promise<InitiativesByAssigneeResponse> {
+  return get<InitiativesByAssigneeResponse>(
+    `/sparkdream/rep/v1/initiatives_by_assignee/${assignee}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function availableInitiatives(
+  pagination?: PaginationRequest
+): Promise<AvailableInitiativesResponse> {
+  return get<AvailableInitiativesResponse>(
+    "/sparkdream/rep/v1/available_initiatives",
+    paginationParams(pagination)
+  );
+}
+
+export async function getRepStake(id: string): Promise<GetStakeResponse> {
+  return get<GetStakeResponse>(`/sparkdream/rep/v1/stake/${id}`);
+}
+
+export async function stakesByStaker(
+  staker: string,
+  pagination?: PaginationRequest
+): Promise<StakesByStakerResponse> {
+  return get<StakesByStakerResponse>(
+    `/sparkdream/rep/v1/stakes_by_staker/${staker}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function pendingStakeRewards(stakeId: string): Promise<PendingStakeRewardsResponse> {
+  return get<PendingStakeRewardsResponse>(
+    `/sparkdream/rep/v1/stake/${stakeId}/pending_rewards`
+  );
+}
+
+export async function getRepInvitation(id: string): Promise<GetInvitationResponse> {
+  return get<GetInvitationResponse>(`/sparkdream/rep/v1/invitation/${id}`);
+}
+
+export async function listRepInvitations(
+  pagination?: PaginationRequest
+): Promise<ListInvitationResponse> {
+  return get<ListInvitationResponse>("/sparkdream/rep/v1/invitation", paginationParams(pagination));
+}
+
+export async function invitationsByInviter(
+  inviter: string,
+  pagination?: PaginationRequest
+): Promise<InvitationsByInviterResponse> {
+  return get<InvitationsByInviterResponse>(
+    `/sparkdream/rep/v1/invitations_by_inviter/${inviter}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getRepParams(): Promise<RepParamsResponse> {
+  return get<RepParamsResponse>("/sparkdream/rep/v1/params");
+}
+
+/** Collect unique tags from all projects and initiatives. */
+export async function collectTags(): Promise<string[]> {
+  const [projects, initiatives] = await Promise.all([
+    listRepProjects({ limit: "200" }).catch(() => ({ project: [], pagination: { next_key: null, total: "0" } })),
+    listRepInitiatives({ limit: "200" }).catch(() => ({ initiative: [], pagination: { next_key: null, total: "0" } })),
+  ]);
+  const tags = new Set<string>();
+  for (const p of projects.project || []) {
+    for (const t of p.tags || []) tags.add(t);
+  }
+  for (const i of initiatives.initiative || []) {
+    for (const t of i.tags || []) tags.add(t);
+  }
+  return Array.from(tags).sort();
 }
 
 // ── Commons module ──────────────────────────────────────────────────

@@ -38,6 +38,13 @@ export default function Header() {
             Governance
           </Link>
           <Link
+            href="/reputation"
+            className="text-sm text-zinc-400 transition-colors hover:text-white"
+            onClick={() => setMenuOpen(false)}
+          >
+            Reputation
+          </Link>
+          <Link
             href="/sessions"
             className="text-sm text-zinc-400 transition-colors hover:text-white"
             onClick={() => setMenuOpen(false)}

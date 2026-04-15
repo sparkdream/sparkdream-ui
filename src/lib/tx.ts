@@ -49,6 +49,29 @@ export const MsgTypeUrls = {
   PinReply: "/sparkdream.blog.v1.MsgPinReply",
 } as const;
 
+// Rep transaction message type URLs
+export const RepMsgTypeUrls = {
+  InviteMember: "/sparkdream.rep.v1.MsgInviteMember",
+  AcceptInvitation: "/sparkdream.rep.v1.MsgAcceptInvitation",
+  TransferDream: "/sparkdream.rep.v1.MsgTransferDream",
+  ProposeProject: "/sparkdream.rep.v1.MsgProposeProject",
+  ApproveProjectBudget: "/sparkdream.rep.v1.MsgApproveProjectBudget",
+  CancelProject: "/sparkdream.rep.v1.MsgCancelProject",
+  CreateInitiative: "/sparkdream.rep.v1.MsgCreateInitiative",
+  AssignInitiative: "/sparkdream.rep.v1.MsgAssignInitiative",
+  SubmitInitiativeWork: "/sparkdream.rep.v1.MsgSubmitInitiativeWork",
+  ApproveInitiative: "/sparkdream.rep.v1.MsgApproveInitiative",
+  AbandonInitiative: "/sparkdream.rep.v1.MsgAbandonInitiative",
+  CompleteInitiative: "/sparkdream.rep.v1.MsgCompleteInitiative",
+  Stake: "/sparkdream.rep.v1.MsgStake",
+  Unstake: "/sparkdream.rep.v1.MsgUnstake",
+  ClaimStakingRewards: "/sparkdream.rep.v1.MsgClaimStakingRewards",
+  CompoundStakingRewards: "/sparkdream.rep.v1.MsgCompoundStakingRewards",
+  CreateChallenge: "/sparkdream.rep.v1.MsgCreateChallenge",
+  RespondToChallenge: "/sparkdream.rep.v1.MsgRespondToChallenge",
+  SubmitJurorVote: "/sparkdream.rep.v1.MsgSubmitJurorVote",
+} as const;
+
 // Build a blog message for signing.
 export function buildBlogMsg(typeUrl: string, value: Record<string, unknown>) {
   return { typeUrl, value };

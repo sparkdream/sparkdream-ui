@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Group, Member } from "@/types/commons";
 import { CommonsMsgTypeUrls } from "@/lib/tx";
+import { listGroups } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { truncateAddress } from "@/lib/utils";
@@ -16,10 +17,10 @@ type ProposalType =
 
 const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string }[] = [
   { value: "general", label: "General Vote", description: "Signaling vote with no executable action" },
+  { value: "treasury-spend", label: "Treasury Spend", description: "Propose sending funds from the council treasury" },
   { value: "invite", label: "Invite Member", description: "Propose adding a new council member" },
   { value: "remove", label: "Remove Member", description: "Propose removing a council member" },
-  { value: "treasury-spend", label: "Treasury Spend", description: "Propose sending funds from the council treasury" },
-  { value: "update-config", label: "Update Config", description: "Propose changing council settings" },
+  { value: "update-config", label: "Update Config", description: "Propose changing a child committee's settings" },
 ];
 
 interface NewCommunityProposalProps {
@@ -42,6 +43,20 @@ export default function NewCommunityProposal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Target group for member changes — own group or parent
+  // Only governance committees can manage their parent council's membership.
+  // A real parent group has a 32-byte policy address (~66 chars bech32);
+  // module authority accounts are 20 bytes (~46 chars) and don't count.
+  const isGovernanceCommittee = group.index.toLowerCase().includes("governance");
+  const hasParent = isGovernanceCommittee
+    && !!group.parent_policy_address
+    && group.parent_policy_address !== group.policy_address
+    && group.parent_policy_address.length > 50;
+  const [memberTarget, setMemberTarget] = useState<"self" | "parent">(hasParent ? "parent" : "self");
+  const targetPolicyAddress = memberTarget === "parent" && hasParent
+    ? group.parent_policy_address
+    : group.policy_address;
+
   // Invite fields
   const [inviteAddress, setInviteAddress] = useState("");
   const [inviteWeight, setInviteWeight] = useState("1");
@@ -53,7 +68,9 @@ export default function NewCommunityProposal({
   const [spendRecipient, setSpendRecipient] = useState("");
   const [spendAmount, setSpendAmount] = useState("");
 
-  // Update config fields
+  // Update config fields — targets a child group, not self
+  const [childGroups, setChildGroups] = useState<Group[]>([]);
+  const [configTargetGroup, setConfigTargetGroup] = useState("");
   const [configVoteThreshold, setConfigVoteThreshold] = useState("");
   const [configVotingPeriod, setConfigVotingPeriod] = useState("");
   const [configMinExecPeriod, setConfigMinExecPeriod] = useState("");
@@ -61,6 +78,31 @@ export default function NewCommunityProposal({
   const [configMaxMembers, setConfigMaxMembers] = useState("");
   const [configTermDuration, setConfigTermDuration] = useState("");
   const [configPolicyType, setConfigPolicyType] = useState("");
+
+  // Fetch child groups for update-config targeting.
+  // A child is linked via parent_policy_address OR is the electoral committee.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadChildren() {
+      try {
+        const res = await listGroups();
+        const children = (res.group || []).filter(
+          (g) =>
+            g.policy_address !== group.policy_address &&
+            (g.parent_policy_address === group.policy_address ||
+             g.policy_address === group.electoral_policy_address)
+        );
+        if (!cancelled) {
+          setChildGroups(children);
+          if (children.length > 0) setConfigTargetGroup((prev) => prev || children[0].index);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    loadChildren();
+    return () => { cancelled = true; };
+  }, [group.policy_address]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,7 +122,7 @@ export default function NewCommunityProposal({
           value: MsgUpdateGroupMembers.encode(
             MsgUpdateGroupMembers.fromPartial({
               authority: group.policy_address,
-              groupPolicyAddress: group.policy_address,
+              groupPolicyAddress: targetPolicyAddress,
               membersToAdd: [inviteAddress.trim()],
               weightsToAdd: [inviteWeight || "1"],
               membersToRemove: [],
@@ -97,7 +139,7 @@ export default function NewCommunityProposal({
           value: MsgUpdateGroupMembers.encode(
             MsgUpdateGroupMembers.fromPartial({
               authority: group.policy_address,
-              groupPolicyAddress: group.policy_address,
+              groupPolicyAddress: targetPolicyAddress,
               membersToAdd: [],
               weightsToAdd: [],
               membersToRemove: [removeAddress],
@@ -122,6 +164,7 @@ export default function NewCommunityProposal({
           ).finish(),
         });
       } else if (type === "update-config") {
+        if (!configTargetGroup) throw new Error("Select a child group to configure");
         const { MsgUpdateGroupConfig } = await import(
           "@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx"
         );
@@ -130,7 +173,7 @@ export default function NewCommunityProposal({
           value: MsgUpdateGroupConfig.encode(
             MsgUpdateGroupConfig.fromPartial({
               authority: group.policy_address,
-              groupName: group.index,
+              groupName: configTargetGroup,
               ...(configVoteThreshold ? { voteThreshold: configVoteThreshold } : {}),
               ...(configVotingPeriod ? { votingPeriod: BigInt(parseInt(configVotingPeriod) * 3600) } : {}),
               ...(configMinExecPeriod ? { minExecutionPeriod: BigInt(parseInt(configMinExecPeriod) * 3600) } : {}),
@@ -213,6 +256,41 @@ export default function NewCommunityProposal({
           ))}
         </div>
       </div>
+
+      {/* Target group selector for member changes */}
+      {hasParent && (type === "invite" || type === "remove") && (
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-zinc-300">
+            Target Group
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setMemberTarget("parent")}
+              className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                memberTarget === "parent"
+                  ? "border-indigo-500/50 bg-indigo-600/15 text-indigo-400"
+                  : "border-zinc-700 bg-zinc-800/30 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300"
+              }`}
+            >
+              <div className="font-medium">Parent Council</div>
+              <div className="mt-0.5 text-xs text-zinc-500">Manage parent group members</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMemberTarget("self")}
+              className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                memberTarget === "self"
+                  ? "border-indigo-500/50 bg-indigo-600/15 text-indigo-400"
+                  : "border-zinc-700 bg-zinc-800/30 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300"
+              }`}
+            >
+              <div className="font-medium">This Committee</div>
+              <div className="mt-0.5 text-xs text-zinc-500">Manage own members</div>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Type-specific fields */}
       {type === "invite" && (
@@ -298,8 +376,28 @@ export default function NewCommunityProposal({
         </div>
       )}
 
-      {type === "update-config" && (
+      {type === "update-config" && childGroups.length === 0 && (
+        <div className="rounded-lg border border-zinc-700 bg-zinc-800/30 px-3 py-3 text-sm text-zinc-500">
+          This group has no child committees to configure.
+        </div>
+      )}
+
+      {type === "update-config" && childGroups.length > 0 && (
         <div className="space-y-3">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-300">
+              Target Committee
+            </label>
+            <select
+              value={configTargetGroup}
+              onChange={(e) => setConfigTargetGroup(e.target.value)}
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              {childGroups.map((g) => (
+                <option key={g.index} value={g.index}>{g.index}</option>
+              ))}
+            </select>
+          </div>
           <p className="text-xs text-zinc-500">
             Leave fields blank to keep their current values.
           </p>
@@ -394,8 +492,8 @@ export default function NewCommunityProposal({
         </div>
       )}
 
-      {/* Metadata / description */}
-      <div>
+      {/* Metadata / description — hide when update-config has no children */}
+      {!(type === "update-config" && childGroups.length === 0) && <div>
         <label className="mb-1.5 block text-sm font-medium text-zinc-300">
           {type === "general" ? "Description" : "Proposal Note (optional)"}
         </label>
@@ -415,7 +513,7 @@ export default function NewCommunityProposal({
             A description is recommended for general votes.
           </p>
         )}
-      </div>
+      </div>}
 
       {error && (
         <div className="rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
@@ -426,7 +524,7 @@ export default function NewCommunityProposal({
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || (type === "update-config" && childGroups.length === 0)}
           className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
         >
           {submitting ? "Submitting..." : "Submit Proposal"}

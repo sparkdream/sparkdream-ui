@@ -505,8 +505,12 @@ export default function NewChainProposal({
               </label>
               <input
                 type="text"
+                inputMode="decimal"
                 value={councilVoteThreshold}
-                onChange={(e) => setCouncilVoteThreshold(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "" || /^\d*\.?\d*$/.test(v)) setCouncilVoteThreshold(v);
+                }}
                 placeholder="0.51"
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
               />
