@@ -34,14 +34,17 @@ export default function Header() {
       </NavLink>
       {connected && (
         <>
-          <NavLink href="/governance" onClick={() => setMenuOpen(false)}>
-            Governance
-          </NavLink>
           <NavLink href="/collections" onClick={() => setMenuOpen(false)}>
             Collections
           </NavLink>
           <NavLink href="/contribute" onClick={() => setMenuOpen(false)}>
             Contribute
+          </NavLink>
+          <NavLink href="/governance" onClick={() => setMenuOpen(false)}>
+            Governance
+          </NavLink>
+          <NavLink href="/names" onClick={() => setMenuOpen(false)}>
+            Names
           </NavLink>
           <NavLink href="/sessions" onClick={() => setMenuOpen(false)}>
             Sessions

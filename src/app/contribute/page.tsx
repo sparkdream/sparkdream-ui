@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import MemberProfile from "@/components/contribute/MemberProfile";
@@ -15,6 +15,21 @@ type View = "profile" | "staking" | "invitations" | "members" | "projects" | "in
 const VALID_VIEWS: View[] = ["profile", "staking", "invitations", "members", "projects", "initiatives"];
 
 export default function ReputationPage() {
+  return (
+    <Suspense fallback={
+      <div className="mx-auto max-w-5xl px-4 py-8">
+        <div className="mb-8">
+          <div className="h-7 w-36 animate-pulse rounded bg-zinc-800" />
+          <div className="mt-2 h-4 w-56 animate-pulse rounded bg-zinc-800/60" />
+        </div>
+      </div>
+    }>
+      <ReputationPageInner />
+    </Suspense>
+  );
+}
+
+function ReputationPageInner() {
   const { connected, ready } = useWallet();
   const searchParams = useSearchParams();
   const initialView = VALID_VIEWS.includes(searchParams.get("view") as View)

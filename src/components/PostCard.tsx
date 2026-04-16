@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { Post, ReactionCounts } from "@/types/blog";
 import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
-import { truncateAddress, timeAgo, countToNum } from "@/lib/utils";
+import { timeAgo, countToNum } from "@/lib/utils";
 import { getReactionCounts } from "@/lib/api";
+import NameOrAddress from "@/components/NameOrAddress";
 
 interface PostCardProps {
   post: Post;
@@ -33,7 +34,7 @@ export default function PostCard({ post }: PostCardProps) {
         }`}
       >
         <div className="mb-2 flex items-center gap-2 text-xs text-zinc-500">
-          <span className="font-mono">{truncateAddress(post.creator)}</span>
+          <NameOrAddress address={post.creator} className="font-mono" />
           <span>&middot;</span>
           <span>{timeAgo(post.created_at)}</span>
           {post.edited && (

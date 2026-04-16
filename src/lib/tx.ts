@@ -103,6 +103,16 @@ export const CollectMsgTypeUrls = {
   PinCollection: "/sparkdream.collect.v1.MsgPinCollection",
 } as const;
 
+// Name transaction message type URLs
+export const NameMsgTypeUrls = {
+  RegisterName: "/sparkdream.name.v1.MsgRegisterName",
+  SetPrimary: "/sparkdream.name.v1.MsgSetPrimary",
+  UpdateName: "/sparkdream.name.v1.MsgUpdateName",
+  FileDispute: "/sparkdream.name.v1.MsgFileDispute",
+  ContestDispute: "/sparkdream.name.v1.MsgContestDispute",
+  ResolveDispute: "/sparkdream.name.v1.MsgResolveDispute",
+} as const;
+
 // Build a blog message for signing.
 export function buildBlogMsg(typeUrl: string, value: Record<string, unknown>) {
   return { typeUrl, value };

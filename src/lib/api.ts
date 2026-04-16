@@ -71,6 +71,14 @@ import type {
   InvitationsByInviterResponse,
   RepParamsResponse,
 } from "@/types/rep";
+import type {
+  NameParamsResponse,
+  ResolveResponse,
+  ReverseResolveResponse,
+  ListNamesResponse,
+  GetDisputeResponse,
+  ListDisputeResponse,
+} from "@/types/name";
 
 // In the browser, route through our Next.js proxy to avoid CORS issues.
 // On the server (SSR), call the LCD endpoint directly.
@@ -630,6 +638,43 @@ export async function getCollectionConviction(
 
 export async function getCollectParams(): Promise<CollectParamsResponse> {
   return get<CollectParamsResponse>("/sparkdream/collect/v1/params");
+}
+
+// ── Name module ───────────────────────────────────────────────────
+
+export async function getNameParams(): Promise<NameParamsResponse> {
+  return get<NameParamsResponse>("/sparkdream/name/v1/params");
+}
+
+export async function resolveName(name: string): Promise<ResolveResponse> {
+  return get<ResolveResponse>(`/sparkdream/name/v1/resolve/${name}`);
+}
+
+export async function reverseResolveName(address: string): Promise<ReverseResolveResponse> {
+  return get<ReverseResolveResponse>(`/sparkdream/name/v1/reverse_resolve/${address}`);
+}
+
+export async function listNamesByOwner(
+  address: string,
+  pagination?: PaginationRequest
+): Promise<ListNamesResponse> {
+  return get<ListNamesResponse>(
+    `/sparkdream/name/v1/names/${address}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getDispute(name: string): Promise<GetDisputeResponse> {
+  return get<GetDisputeResponse>(`/sparkdream/name/v1/dispute/${name}`);
+}
+
+export async function listDisputes(
+  pagination?: PaginationRequest
+): Promise<ListDisputeResponse> {
+  return get<ListDisputeResponse>(
+    "/sparkdream/name/v1/dispute",
+    paginationParams(pagination)
+  );
 }
 
 // ── Commons module ──────────────────────────────────────────────────

@@ -149,6 +149,14 @@ const MSG_TYPE_LABELS: Record<string, string> = {
   "/sparkdream.collect.v1.MsgEndorseCollection": "Endorse Collection",
   "/sparkdream.collect.v1.MsgSetSeekingEndorsement": "Seek Endorsement",
   "/sparkdream.collect.v1.MsgPinCollection": "Pin Collection",
+  "/sparkdream.name.v1.MsgUpdateParams": "Name Param Change",
+  "/sparkdream.name.v1.MsgUpdateOperationalParams": "Name Op Param Change",
+  "/sparkdream.name.v1.MsgRegisterName": "Register Name",
+  "/sparkdream.name.v1.MsgSetPrimary": "Set Primary Name",
+  "/sparkdream.name.v1.MsgUpdateName": "Update Name",
+  "/sparkdream.name.v1.MsgFileDispute": "File Name Dispute",
+  "/sparkdream.name.v1.MsgContestDispute": "Contest Name Dispute",
+  "/sparkdream.name.v1.MsgResolveDispute": "Resolve Name Dispute",
 };
 
 export function messageTypeLabel(typeUrl: string): string {

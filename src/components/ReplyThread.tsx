@@ -3,8 +3,9 @@
 import { useState } from "react";
 import type { Reply } from "@/types/blog";
 import { ReplyStatus } from "@/types/blog";
-import { truncateAddress, timeAgo } from "@/lib/utils";
+import { timeAgo } from "@/lib/utils";
 import ReactionBar from "./ReactionBar";
+import NameOrAddress from "@/components/NameOrAddress";
 import ReplyForm from "./ReplyForm";
 import { useWallet } from "@/contexts/WalletContext";
 import { MsgTypeUrls } from "@/lib/tx";
@@ -102,7 +103,7 @@ function ReplyItem({
     <div className={depth > 0 ? "ml-6 border-l border-zinc-800 pl-4" : ""}>
       <div className={`py-3 ${isHidden ? "opacity-50" : ""}`}>
         <div className="mb-1 flex items-center gap-2 text-xs text-zinc-500">
-          <span className="font-mono">{truncateAddress(reply.creator)}</span>
+          <NameOrAddress address={reply.creator} className="font-mono" />
           <span>&middot;</span>
           <span>{timeAgo(reply.created_at)}</span>
           {reply.edited && (

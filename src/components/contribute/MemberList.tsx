@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { listRepMembers } from "@/lib/api";
 import { truncateAddress } from "@/lib/utils";
+import NameOrAddress from "@/components/NameOrAddress";
 import type { RepMember } from "@/types/rep";
 import { TRUST_LEVEL_LABELS, MEMBER_STATUS_LABELS, TrustLevel } from "@/types/rep";
 
@@ -129,7 +130,7 @@ export default function MemberList() {
                 className="flex w-full items-center justify-between px-4 py-3 text-left"
               >
                 <div className="flex items-center gap-3">
-                  <span className="font-mono text-sm text-zinc-300">{truncateAddress(m.address)}</span>
+                  <NameOrAddress address={m.address} className="font-mono text-sm text-zinc-300" />
                   {trustLevelBadge(m.trust_level)}
                 </div>
                 <div className="flex items-center gap-4">
@@ -172,7 +173,7 @@ export default function MemberList() {
                     {m.invited_by && (
                       <div>
                         <dt className="text-xs text-zinc-500">Invited by</dt>
-                        <dd className="font-mono text-xs text-zinc-300">{truncateAddress(m.invited_by)}</dd>
+                        <dd className="font-mono text-xs text-zinc-300"><NameOrAddress address={m.invited_by} /></dd>
                       </div>
                     )}
                   </dl>

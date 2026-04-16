@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { listPublicCollections, getCollectionsByOwner } from "@/lib/api";
-import { truncateAddress, timeAgo } from "@/lib/utils";
+import { timeAgo } from "@/lib/utils";
+import NameOrAddress from "@/components/NameOrAddress";
 import type { Collection } from "@/types/collect";
 import {
   COLLECTION_TYPE_LABELS,
@@ -170,7 +171,7 @@ export default function CollectionList({ mode, onSelect }: CollectionListProps) 
                   )}
                   <div className="mt-2 flex items-center gap-4 text-xs text-zinc-500">
                     <span>{c.item_count} item{c.item_count !== 1 ? "s" : ""}</span>
-                    {mode !== "my" && <span>{truncateAddress(c.owner)}</span>}
+                    {mode !== "my" && <NameOrAddress address={c.owner} />}
                     {c.created_at && <span>{timeAgo(c.created_at)}</span>}
                     {c.tags?.length > 0 && (
                       <span className="truncate">{c.tags.slice(0, 3).join(", ")}</span>

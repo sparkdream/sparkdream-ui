@@ -12,6 +12,7 @@ import {
   timeRemaining,
   describeProposalMessages,
 } from "@/lib/utils";
+import NameOrAddress from "@/components/NameOrAddress";
 import NewCommunityProposal from "./NewCommunityProposal";
 
 interface CommunityProposalsProps {
@@ -313,7 +314,7 @@ function CommonsProposalCard({
 
       {/* Info row */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
-        <span>by {truncateAddress(proposal.proposer)}</span>
+        <span>by <NameOrAddress address={proposal.proposer} /></span>
         <span>{formatTime(proposal.submit_time)}</span>
         {proposal.voting_deadline && proposal.voting_deadline !== "0" && (
           <span>Deadline: {formatTime(proposal.voting_deadline)}</span>
@@ -339,9 +340,7 @@ function CommonsProposalCard({
                   key={v.voter}
                   className="flex items-center gap-2 text-xs"
                 >
-                  <span className="font-mono text-zinc-400">
-                    {truncateAddress(v.voter)}
-                  </span>
+                  <NameOrAddress address={v.voter} className="font-mono text-zinc-400" />
                   <span className={voteColor(v.option)}>
                     {VOTE_OPTION_LABELS[v.option] || "?"}
                   </span>
