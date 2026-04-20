@@ -126,6 +126,35 @@ export interface Challenge {
   responded_at: string;
 }
 
+export interface Tag {
+  name: string;
+  usage_count: string;
+  created_at: string;
+  last_used_at: string;
+  expiration_index: string;
+}
+
+export interface TagBudget {
+  id: string;
+  group_account: string;
+  tag: string;
+  pool_balance: string;
+  members_only: boolean;
+  created_at: string;
+  active: boolean;
+}
+
+export interface TagBudgetAward {
+  id: string;
+  budget_id: string;
+  post_id: string;
+  recipient: string;
+  amount: string;
+  reason: string;
+  awarded_at: string;
+  awarded_by: string;
+}
+
 // Enums
 
 export const TrustLevel = {
@@ -394,4 +423,34 @@ export interface InvitationsByInviterResponse {
 
 export interface RepParamsResponse {
   params: Record<string, unknown>;
+}
+
+export interface GetTagResponse {
+  tag: Tag;
+}
+
+export interface ListTagResponse {
+  tag: Tag[];
+  pagination: Pagination;
+}
+
+export interface TagExistsResponse {
+  exists: boolean;
+  expiration_time: string;
+}
+
+export interface GetTagBudgetResponse {
+  tag_budget: TagBudget;
+}
+
+export interface ListTagBudgetResponse {
+  tag_budget: TagBudget[];
+  pagination: Pagination;
+}
+
+export interface TagBudgetAwardsResponse {
+  post_id: string;
+  recipient: string;
+  amount: string;
+  pagination: Pagination;
 }

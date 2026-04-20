@@ -13,7 +13,8 @@ type ProposalType =
   | "invite"
   | "remove"
   | "treasury-spend"
-  | "update-config";
+  | "update-config"
+  | "create-category";
 
 const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string }[] = [
   { value: "general", label: "General Vote", description: "Signaling vote with no executable action" },
@@ -21,6 +22,7 @@ const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string 
   { value: "invite", label: "Invite Member", description: "Propose adding a new council member" },
   { value: "remove", label: "Remove Member", description: "Propose removing a council member" },
   { value: "update-config", label: "Update Config", description: "Propose changing a child committee's settings" },
+  { value: "create-category", label: "Create Forum Category", description: "Propose creating a new forum category" },
 ];
 
 interface NewCommunityProposalProps {
@@ -78,6 +80,12 @@ export default function NewCommunityProposal({
   const [configMaxMembers, setConfigMaxMembers] = useState("");
   const [configTermDuration, setConfigTermDuration] = useState("");
   const [configPolicyType, setConfigPolicyType] = useState("");
+
+  // Create category fields
+  const [categoryTitle, setCategoryTitle] = useState("");
+  const [categoryDescription, setCategoryDescription] = useState("");
+  const [categoryMembersOnly, setCategoryMembersOnly] = useState(false);
+  const [categoryAdminOnly, setCategoryAdminOnly] = useState(false);
 
   // Fetch child groups for update-config targeting.
   // A child is linked via parent_policy_address OR is the electoral committee.
@@ -184,6 +192,23 @@ export default function NewCommunityProposal({
             })
           ).finish(),
         });
+      } else if (type === "create-category") {
+        if (!categoryTitle.trim()) throw new Error("Category title is required");
+        const { MsgCreateCategory } = await import(
+          "@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx"
+        );
+        innerMessages.push({
+          typeUrl: CommonsMsgTypeUrls.CreateCategory,
+          value: MsgCreateCategory.encode(
+            MsgCreateCategory.fromPartial({
+              creator: group.policy_address,
+              title: categoryTitle.trim(),
+              description: categoryDescription.trim(),
+              membersOnlyWrite: categoryMembersOnly,
+              adminOnlyWrite: categoryAdminOnly,
+            })
+          ).finish(),
+        });
       }
       // "general" has no inner messages — signaling vote only
 
@@ -195,6 +220,7 @@ export default function NewCommunityProposal({
           spendRecipient,
           spendAmount,
           displayDenom: config.displayDenom,
+          categoryTitle,
         });
 
       await signAndBroadcast([
@@ -492,6 +518,55 @@ export default function NewCommunityProposal({
         </div>
       )}
 
+      {type === "create-category" && (
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-300">
+              Category Title
+            </label>
+            <input
+              type="text"
+              value={categoryTitle}
+              onChange={(e) => setCategoryTitle(e.target.value)}
+              placeholder="e.g. Technical, Off-Topic"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-300">
+              Description
+            </label>
+            <input
+              type="text"
+              value={categoryDescription}
+              onChange={(e) => setCategoryDescription(e.target.value)}
+              placeholder="What this category is for..."
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 text-sm text-zinc-300">
+              <input
+                type="checkbox"
+                checked={categoryMembersOnly}
+                onChange={(e) => setCategoryMembersOnly(e.target.checked)}
+                className="rounded border-zinc-600 bg-zinc-800"
+              />
+              Members only write
+            </label>
+            <label className="flex items-center gap-2 text-sm text-zinc-300">
+              <input
+                type="checkbox"
+                checked={categoryAdminOnly}
+                onChange={(e) => setCategoryAdminOnly(e.target.checked)}
+                className="rounded border-zinc-600 bg-zinc-800"
+              />
+              Admin only write
+            </label>
+          </div>
+        </div>
+      )}
+
       {/* Metadata / description — hide when update-config has no children */}
       {!(type === "update-config" && childGroups.length === 0) && <div>
         <label className="mb-1.5 block text-sm font-medium text-zinc-300">
@@ -549,6 +624,7 @@ function defaultMetadata(
     spendRecipient: string;
     spendAmount: string;
     displayDenom: string;
+    categoryTitle?: string;
   }
 ): string {
   switch (type) {
@@ -562,6 +638,8 @@ function defaultMetadata(
       return `Spend ${ctx.spendAmount} ${ctx.displayDenom} to ${truncateAddress(ctx.spendRecipient.trim())}`;
     case "update-config":
       return "Update council configuration";
+    case "create-category":
+      return `Create forum category "${ctx.categoryTitle || ""}"`;
     default:
       return "";
   }

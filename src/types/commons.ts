@@ -56,6 +56,17 @@ export interface TallyResult {
   no_with_veto_weight: string;
 }
 
+// Category defines a governance-curated content category. Created by the
+// Commons Council (or Operations Committee). Consumed by x/forum, x/blog,
+// x/collect, and other content modules.
+export interface Category {
+  category_id: string;
+  title: string;
+  description: string;
+  members_only_write: boolean;
+  admin_only_write: boolean;
+}
+
 export const ProposalStatus = {
   UNSPECIFIED: "PROPOSAL_STATUS_UNSPECIFIED",
   SUBMITTED: "PROPOSAL_STATUS_SUBMITTED",
@@ -104,6 +115,18 @@ export interface GetProposalResponse {
 
 export interface ListProposalsResponse {
   proposals: Proposal[];
+  pagination: {
+    next_key: string | null;
+    total: string;
+  };
+}
+
+export interface GetCategoryResponse {
+  category: Category;
+}
+
+export interface ListCategoryResponse {
+  category: Category[];
   pagination: {
     next_key: string | null;
     total: string;

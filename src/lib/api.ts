@@ -20,6 +20,7 @@ import type {
   GetCouncilMembersResponse,
   GetProposalResponse,
   ListProposalsResponse,
+  ListCategoryResponse,
 } from "@/types/commons";
 import type {
   ListGovProposalsResponse,
@@ -70,6 +71,11 @@ import type {
   ListInvitationResponse,
   InvitationsByInviterResponse,
   RepParamsResponse,
+  ListTagResponse,
+  TagExistsResponse,
+  GetTagBudgetResponse,
+  ListTagBudgetResponse,
+  TagBudgetAwardsResponse,
 } from "@/types/rep";
 import type {
   NameParamsResponse,
@@ -79,6 +85,34 @@ import type {
   GetDisputeResponse,
   ListDisputeResponse,
 } from "@/types/name";
+import type {
+  GetPostResponse as ForumGetPostResponse,
+  ListPostResponse as ForumListPostResponse,
+  PostsResponse,
+  ThreadResponse,
+  UserPostsResponse,
+  GetBountyResponse,
+  ListBountyResponse,
+  ActiveBountiesResponse,
+  BountyByThreadResponse,
+  UserBountiesResponse,
+  GetThreadMetadataResponse,
+  ThreadFollowersResponse,
+  UserFollowedThreadsResponse,
+  IsFollowingThreadResponse,
+  ThreadFollowCountResponse,
+  GetPostFlagResponse,
+  FlagReviewQueueResponse,
+  ForumStatusResponse,
+  ForumParamsResponse,
+  PinnedPostsResponse,
+  LockedThreadsResponse,
+  TopPostsResponse,
+  SentinelStatusResponse,
+  SentinelBondCommitmentResponse,
+  GetSentinelActivityResponse,
+  MemberStandingResponse,
+} from "@/types/forum";
 
 // In the browser, route through our Next.js proxy to avoid CORS issues.
 // On the server (SSR), call the LCD endpoint directly.
@@ -678,6 +712,242 @@ export async function listDisputes(
 }
 
 // ── Commons module ──────────────────────────────────────────────────
+
+// ── Forum module ──────────────────────────────────────────────────
+
+export async function getForumParams(): Promise<ForumParamsResponse> {
+  return get<ForumParamsResponse>("/sparkdream/forum/v1/params");
+}
+
+export async function getForumStatus(): Promise<ForumStatusResponse> {
+  return get<ForumStatusResponse>("/sparkdream/forum/v1/forum_status");
+}
+
+export async function listCategories(
+  pagination?: PaginationRequest
+): Promise<ListCategoryResponse> {
+  return get<ListCategoryResponse>("/sparkdream/commons/v1/category", paginationParams(pagination));
+}
+
+export async function getForumPost(postId: string): Promise<ForumGetPostResponse> {
+  return get<ForumGetPostResponse>(`/sparkdream/forum/v1/post/${postId}`);
+}
+
+export async function listForumPosts(
+  pagination?: PaginationRequest
+): Promise<ForumListPostResponse> {
+  return get<ForumListPostResponse>("/sparkdream/forum/v1/post", paginationParams(pagination));
+}
+
+export async function listForumPostsByCategory(
+  categoryId: string,
+  status: string,
+  pagination?: PaginationRequest
+): Promise<PostsResponse> {
+  return get<PostsResponse>(
+    `/sparkdream/forum/v1/posts/${categoryId}/${status}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getForumThread(
+  rootId: string,
+  pagination?: PaginationRequest
+): Promise<ThreadResponse> {
+  return get<ThreadResponse>(
+    `/sparkdream/forum/v1/thread/${rootId}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getUserForumPosts(
+  author: string,
+  pagination?: PaginationRequest
+): Promise<UserPostsResponse> {
+  return get<UserPostsResponse>(
+    `/sparkdream/forum/v1/user_posts/${author}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getTopForumPosts(
+  categoryId: string,
+  timeRange: string,
+  pagination?: PaginationRequest
+): Promise<TopPostsResponse> {
+  return get<TopPostsResponse>(
+    `/sparkdream/forum/v1/top_posts/${categoryId}/${timeRange}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getPinnedForumPosts(
+  categoryId: string
+): Promise<PinnedPostsResponse> {
+  return get<PinnedPostsResponse>(`/sparkdream/forum/v1/pinned_posts/${categoryId}`);
+}
+
+export async function getLockedThreads(
+  pagination?: PaginationRequest
+): Promise<LockedThreadsResponse> {
+  return get<LockedThreadsResponse>(
+    "/sparkdream/forum/v1/locked_threads",
+    paginationParams(pagination)
+  );
+}
+
+export async function getForumThreadMetadata(
+  threadId: string
+): Promise<GetThreadMetadataResponse> {
+  return get<GetThreadMetadataResponse>(`/sparkdream/forum/v1/thread_metadata/${threadId}`);
+}
+
+export async function getThreadFollowCount(
+  threadId: string
+): Promise<ThreadFollowCountResponse> {
+  return get<ThreadFollowCountResponse>(`/sparkdream/forum/v1/thread_follow_count/${threadId}`);
+}
+
+export async function getThreadFollowers(
+  threadId: string,
+  pagination?: PaginationRequest
+): Promise<ThreadFollowersResponse> {
+  return get<ThreadFollowersResponse>(
+    `/sparkdream/forum/v1/thread_followers/${threadId}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getUserFollowedThreads(
+  user: string,
+  pagination?: PaginationRequest
+): Promise<UserFollowedThreadsResponse> {
+  return get<UserFollowedThreadsResponse>(
+    `/sparkdream/forum/v1/user_followed_threads/${user}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function isFollowingThread(
+  threadId: string,
+  user: string
+): Promise<IsFollowingThreadResponse> {
+  return get<IsFollowingThreadResponse>(
+    `/sparkdream/forum/v1/is_following_thread/${threadId}/${user}`
+  );
+}
+
+// Bounties
+
+export async function getForumBounty(id: string): Promise<GetBountyResponse> {
+  return get<GetBountyResponse>(`/sparkdream/forum/v1/bounty/${id}`);
+}
+
+export async function listForumBounties(
+  pagination?: PaginationRequest
+): Promise<ListBountyResponse> {
+  return get<ListBountyResponse>("/sparkdream/forum/v1/bounty", paginationParams(pagination));
+}
+
+export async function getActiveBounties(
+  pagination?: PaginationRequest
+): Promise<ActiveBountiesResponse> {
+  return get<ActiveBountiesResponse>(
+    "/sparkdream/forum/v1/active_bounties",
+    paginationParams(pagination)
+  );
+}
+
+export async function getBountyByThread(threadId: string): Promise<BountyByThreadResponse> {
+  return get<BountyByThreadResponse>(`/sparkdream/forum/v1/bounty_by_thread/${threadId}`);
+}
+
+export async function getUserBounties(
+  user: string,
+  pagination?: PaginationRequest
+): Promise<UserBountiesResponse> {
+  return get<UserBountiesResponse>(
+    `/sparkdream/forum/v1/user_bounties/${user}`,
+    paginationParams(pagination)
+  );
+}
+
+// Tag budgets
+
+export async function getTagBudget(id: string): Promise<GetTagBudgetResponse> {
+  return get<GetTagBudgetResponse>(`/sparkdream/rep/v1/tag_budget/${id}`);
+}
+
+export async function listTagBudgets(
+  pagination?: PaginationRequest
+): Promise<ListTagBudgetResponse> {
+  return get<ListTagBudgetResponse>("/sparkdream/rep/v1/tag_budget", paginationParams(pagination));
+}
+
+export async function getTagBudgetAwards(
+  budgetId: string,
+  pagination?: PaginationRequest
+): Promise<TagBudgetAwardsResponse> {
+  return get<TagBudgetAwardsResponse>(
+    `/sparkdream/rep/v1/tag_budget_awards/${budgetId}`,
+    paginationParams(pagination)
+  );
+}
+
+// Flags & moderation
+
+export async function getPostFlags(postId: string): Promise<GetPostFlagResponse> {
+  return get<GetPostFlagResponse>(`/sparkdream/forum/v1/post_flags/${postId}`);
+}
+
+export async function getFlagReviewQueue(
+  pagination?: PaginationRequest
+): Promise<FlagReviewQueueResponse> {
+  return get<FlagReviewQueueResponse>(
+    "/sparkdream/forum/v1/flag_review_queue",
+    paginationParams(pagination)
+  );
+}
+
+// Sentinels
+
+export async function getSentinelStatus(address: string): Promise<SentinelStatusResponse> {
+  return get<SentinelStatusResponse>(`/sparkdream/forum/v1/sentinel_status/${address}`);
+}
+
+export async function getSentinelBondCommitment(
+  address: string
+): Promise<SentinelBondCommitmentResponse> {
+  return get<SentinelBondCommitmentResponse>(
+    `/sparkdream/forum/v1/sentinel_bond_commitment/${address}`
+  );
+}
+
+export async function getSentinelActivity(
+  address: string
+): Promise<GetSentinelActivityResponse> {
+  return get<GetSentinelActivityResponse>(
+    `/sparkdream/forum/v1/sentinel_activity/${address}`
+  );
+}
+
+// Member standing
+
+export async function getMemberStanding(member: string): Promise<MemberStandingResponse> {
+  return get<MemberStandingResponse>(`/sparkdream/forum/v1/member_standing/${member}`);
+}
+
+// Tags
+
+export async function listTags(
+  pagination?: PaginationRequest
+): Promise<ListTagResponse> {
+  return get<ListTagResponse>("/sparkdream/rep/v1/tag", paginationParams(pagination));
+}
+
+export async function checkTagExists(tagName: string): Promise<TagExistsResponse> {
+  return get<TagExistsResponse>(`/sparkdream/rep/v1/tag_exists/${tagName}`);
+}
 
 // Fetch all member addresses across every council and return as a Set
 export async function getAllMemberAddresses(): Promise<Set<string>> {

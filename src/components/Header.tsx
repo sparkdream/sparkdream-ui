@@ -37,6 +37,9 @@ export default function Header() {
           <NavLink href="/collections" onClick={() => setMenuOpen(false)}>
             Collections
           </NavLink>
+          <NavLink href="/forum" onClick={() => setMenuOpen(false)}>
+            Forum
+          </NavLink>
           <NavLink href="/contribute" onClick={() => setMenuOpen(false)}>
             Contribute
           </NavLink>

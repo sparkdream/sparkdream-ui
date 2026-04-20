@@ -22,6 +22,7 @@ export const CommonsMsgTypeUrls = {
   RenewGroup: "/sparkdream.commons.v1.MsgRenewGroup",
   RegisterGroup: "/sparkdream.commons.v1.MsgRegisterGroup",
   UpdateGroupConfig: "/sparkdream.commons.v1.MsgUpdateGroupConfig",
+  CreateCategory: "/sparkdream.commons.v1.MsgCreateCategory",
 } as const;
 
 // Session transaction message type URLs
@@ -70,6 +71,11 @@ export const RepMsgTypeUrls = {
   CreateChallenge: "/sparkdream.rep.v1.MsgCreateChallenge",
   RespondToChallenge: "/sparkdream.rep.v1.MsgRespondToChallenge",
   SubmitJurorVote: "/sparkdream.rep.v1.MsgSubmitJurorVote",
+  CreateTagBudget: "/sparkdream.rep.v1.MsgCreateTagBudget",
+  AwardFromTagBudget: "/sparkdream.rep.v1.MsgAwardFromTagBudget",
+  TopUpTagBudget: "/sparkdream.rep.v1.MsgTopUpTagBudget",
+  ToggleTagBudget: "/sparkdream.rep.v1.MsgToggleTagBudget",
+  WithdrawTagBudget: "/sparkdream.rep.v1.MsgWithdrawTagBudget",
 } as const;
 
 // Collect transaction message type URLs
@@ -111,6 +117,36 @@ export const NameMsgTypeUrls = {
   FileDispute: "/sparkdream.name.v1.MsgFileDispute",
   ContestDispute: "/sparkdream.name.v1.MsgContestDispute",
   ResolveDispute: "/sparkdream.name.v1.MsgResolveDispute",
+} as const;
+
+// Forum transaction message type URLs
+export const ForumMsgTypeUrls = {
+  CreatePost: "/sparkdream.forum.v1.MsgCreatePost",
+  EditPost: "/sparkdream.forum.v1.MsgEditPost",
+  DeletePost: "/sparkdream.forum.v1.MsgDeletePost",
+  UpvotePost: "/sparkdream.forum.v1.MsgUpvotePost",
+  DownvotePost: "/sparkdream.forum.v1.MsgDownvotePost",
+  FlagPost: "/sparkdream.forum.v1.MsgFlagPost",
+  FollowThread: "/sparkdream.forum.v1.MsgFollowThread",
+  UnfollowThread: "/sparkdream.forum.v1.MsgUnfollowThread",
+  CreateBounty: "/sparkdream.forum.v1.MsgCreateBounty",
+  AwardBounty: "/sparkdream.forum.v1.MsgAwardBounty",
+  IncreaseBounty: "/sparkdream.forum.v1.MsgIncreaseBounty",
+  CancelBounty: "/sparkdream.forum.v1.MsgCancelBounty",
+  HidePost: "/sparkdream.forum.v1.MsgHidePost",
+  AppealPost: "/sparkdream.forum.v1.MsgAppealPost",
+  LockThread: "/sparkdream.forum.v1.MsgLockThread",
+  UnlockThread: "/sparkdream.forum.v1.MsgUnlockThread",
+  MoveThread: "/sparkdream.forum.v1.MsgMoveThread",
+  PinPost: "/sparkdream.forum.v1.MsgPinPost",
+  UnpinPost: "/sparkdream.forum.v1.MsgUnpinPost",
+  PinReply: "/sparkdream.forum.v1.MsgPinReply",
+  UnpinReply: "/sparkdream.forum.v1.MsgUnpinReply",
+  MarkAcceptedReply: "/sparkdream.forum.v1.MsgMarkAcceptedReply",
+  BondSentinel: "/sparkdream.forum.v1.MsgBondSentinel",
+  UnbondSentinel: "/sparkdream.forum.v1.MsgUnbondSentinel",
+  FreezeThread: "/sparkdream.forum.v1.MsgFreezeThread",
+  UnarchiveThread: "/sparkdream.forum.v1.MsgUnarchiveThread",
 } as const;
 
 // Build a blog message for signing.
