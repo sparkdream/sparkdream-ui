@@ -86,6 +86,24 @@ import type {
   ListDisputeResponse,
 } from "@/types/name";
 import type {
+  CurrentSeasonResponse,
+  SeasonStatsResponse,
+  GetMemberProfileResponse,
+  ListAchievementsResponse,
+  ListTitlesResponse,
+  ListQuestResponse,
+  ListMemberQuestProgressResponse,
+  SeasonParamsResponse,
+  ListGuildResponse,
+  GetGuildResponse,
+  ListGuildMembershipResponse,
+  GetGuildMembershipResponse,
+  ListGuildInviteResponse,
+  ListNominationsResponse,
+  ListNominationStakesResponse,
+  ListRetroRewardHistoryResponse,
+} from "@/types/season";
+import type {
   GetPostResponse as ForumGetPostResponse,
   ListPostResponse as ForumListPostResponse,
   PostsResponse,
@@ -947,6 +965,128 @@ export async function listTags(
 
 export async function checkTagExists(tagName: string): Promise<TagExistsResponse> {
   return get<TagExistsResponse>(`/sparkdream/rep/v1/tag_exists/${tagName}`);
+}
+
+// ── Season module ──────────────────────────────────────────────────
+
+export async function getCurrentSeason(): Promise<CurrentSeasonResponse> {
+  return get<CurrentSeasonResponse>("/sparkdream/season/v1/current_season");
+}
+
+export async function getSeasonStats(season: string): Promise<SeasonStatsResponse> {
+  return get<SeasonStatsResponse>(`/sparkdream/season/v1/season_stats/${season}`);
+}
+
+export async function getMemberProfile(address: string): Promise<GetMemberProfileResponse> {
+  return get<GetMemberProfileResponse>(`/sparkdream/season/v1/member_profile/${address}`);
+}
+
+export async function listAchievements(
+  pagination?: PaginationRequest
+): Promise<ListAchievementsResponse> {
+  return get<ListAchievementsResponse>(
+    "/sparkdream/season/v1/achievements",
+    paginationParams(pagination)
+  );
+}
+
+export async function listTitles(
+  pagination?: PaginationRequest
+): Promise<ListTitlesResponse> {
+  return get<ListTitlesResponse>(
+    "/sparkdream/season/v1/titles",
+    paginationParams(pagination)
+  );
+}
+
+export async function listQuests(
+  pagination?: PaginationRequest
+): Promise<ListQuestResponse> {
+  return get<ListQuestResponse>(
+    "/sparkdream/season/v1/quest",
+    paginationParams(pagination)
+  );
+}
+
+export async function listMemberQuestProgress(
+  pagination?: PaginationRequest
+): Promise<ListMemberQuestProgressResponse> {
+  return get<ListMemberQuestProgressResponse>(
+    "/sparkdream/season/v1/member_quest_progress",
+    paginationParams(pagination)
+  );
+}
+
+export async function getSeasonParams(): Promise<SeasonParamsResponse> {
+  return get<SeasonParamsResponse>("/sparkdream/season/v1/params");
+}
+
+export async function listGuilds(
+  pagination?: PaginationRequest
+): Promise<ListGuildResponse> {
+  return get<ListGuildResponse>(
+    "/sparkdream/season/v1/guild",
+    paginationParams(pagination)
+  );
+}
+
+export async function getGuild(id: string): Promise<GetGuildResponse> {
+  return get<GetGuildResponse>(`/sparkdream/season/v1/guild/${id}`);
+}
+
+export async function listGuildMemberships(
+  pagination?: PaginationRequest
+): Promise<ListGuildMembershipResponse> {
+  return get<ListGuildMembershipResponse>(
+    "/sparkdream/season/v1/guild_membership",
+    paginationParams(pagination)
+  );
+}
+
+export async function getGuildMembership(
+  member: string
+): Promise<GetGuildMembershipResponse> {
+  return get<GetGuildMembershipResponse>(
+    `/sparkdream/season/v1/guild_membership/${member}`
+  );
+}
+
+export async function listGuildInvites(
+  pagination?: PaginationRequest
+): Promise<ListGuildInviteResponse> {
+  return get<ListGuildInviteResponse>(
+    "/sparkdream/season/v1/guild_invite",
+    paginationParams(pagination)
+  );
+}
+
+export async function listNominations(
+  pagination?: PaginationRequest
+): Promise<ListNominationsResponse> {
+  return get<ListNominationsResponse>(
+    "/sparkdream/season/v1/nominations",
+    paginationParams(pagination)
+  );
+}
+
+export async function listNominationStakes(
+  nominationId: string,
+  pagination?: PaginationRequest
+): Promise<ListNominationStakesResponse> {
+  return get<ListNominationStakesResponse>(
+    `/sparkdream/season/v1/nomination_stakes/${nominationId}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function listRetroRewardHistory(
+  season: string,
+  pagination?: PaginationRequest
+): Promise<ListRetroRewardHistoryResponse> {
+  return get<ListRetroRewardHistoryResponse>(
+    `/sparkdream/season/v1/retro_reward_history/${season}`,
+    paginationParams(pagination)
+  );
 }
 
 // Fetch all member addresses across every council and return as a Set

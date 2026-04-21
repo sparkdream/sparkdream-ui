@@ -149,6 +149,33 @@ export const ForumMsgTypeUrls = {
   UnarchiveThread: "/sparkdream.forum.v1.MsgUnarchiveThread",
 } as const;
 
+// Season transaction message type URLs
+export const SeasonMsgTypeUrls = {
+  SetDisplayName: "/sparkdream.season.v1.MsgSetDisplayName",
+  SetUsername: "/sparkdream.season.v1.MsgSetUsername",
+  SetDisplayTitle: "/sparkdream.season.v1.MsgSetDisplayTitle",
+  StartQuest: "/sparkdream.season.v1.MsgStartQuest",
+  ClaimQuestReward: "/sparkdream.season.v1.MsgClaimQuestReward",
+  AbandonQuest: "/sparkdream.season.v1.MsgAbandonQuest",
+  CreateGuild: "/sparkdream.season.v1.MsgCreateGuild",
+  JoinGuild: "/sparkdream.season.v1.MsgJoinGuild",
+  LeaveGuild: "/sparkdream.season.v1.MsgLeaveGuild",
+  InviteToGuild: "/sparkdream.season.v1.MsgInviteToGuild",
+  AcceptGuildInvite: "/sparkdream.season.v1.MsgAcceptGuildInvite",
+  RevokeGuildInvite: "/sparkdream.season.v1.MsgRevokeGuildInvite",
+  KickFromGuild: "/sparkdream.season.v1.MsgKickFromGuild",
+  PromoteToOfficer: "/sparkdream.season.v1.MsgPromoteToOfficer",
+  DemoteOfficer: "/sparkdream.season.v1.MsgDemoteOfficer",
+  TransferGuildFounder: "/sparkdream.season.v1.MsgTransferGuildFounder",
+  DissolveGuild: "/sparkdream.season.v1.MsgDissolveGuild",
+  ClaimGuildFounder: "/sparkdream.season.v1.MsgClaimGuildFounder",
+  SetGuildInviteOnly: "/sparkdream.season.v1.MsgSetGuildInviteOnly",
+  UpdateGuildDescription: "/sparkdream.season.v1.MsgUpdateGuildDescription",
+  Nominate: "/sparkdream.season.v1.MsgNominate",
+  StakeNomination: "/sparkdream.season.v1.MsgStakeNomination",
+  UnstakeNomination: "/sparkdream.season.v1.MsgUnstakeNomination",
+} as const;
+
 // Build a blog message for signing.
 export function buildBlogMsg(typeUrl: string, value: Record<string, unknown>) {
   return { typeUrl, value };

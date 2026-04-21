@@ -392,6 +392,7 @@ option { background: #18181b; color: #e4e4e7; }
   color: var(--ink);
   box-shadow: 0 0 0 1px var(--rule-strong);
 }
+.sd-seg.wrap { flex-wrap: wrap; }
 
 .sd-select {
   background: var(--panel);
@@ -430,6 +431,12 @@ option { background: #18181b; color: #e4e4e7; }
   color: var(--ink-soft);
   border: 1px solid var(--rule);
 }
+.sd-pill.rarity-common    { background: var(--panel-2); color: var(--ink-soft); border: 1px solid var(--rule); }
+.sd-pill.rarity-uncommon  { background: var(--green-soft); color: var(--green); }
+.sd-pill.rarity-rare      { background: rgba(96, 165, 250, 0.14); color: #60a5fa; }
+.sd-pill.rarity-epic      { background: var(--violet-soft); color: var(--violet-hi); }
+.sd-pill.rarity-legendary { background: var(--amber-soft); color: var(--amber); }
+.sd-pill.rarity-unique    { background: var(--rose-soft); color: var(--rose); }
 
 .sd-avatar {
   width: 28px;
@@ -1087,6 +1094,7 @@ option { background: #18181b; color: #e4e4e7; }
     grid-template-areas: none;
   }
   .sd-blog-toolbar .sd-seg { order: 1; width: 100%; overflow-x: auto; justify-self: stretch; }
+  .sd-blog-toolbar .sd-seg.wrap { overflow-x: visible; }
   .sd-blog-toolbar .search {
     order: 2;
     flex: 1 1 100%;
