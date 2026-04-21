@@ -46,7 +46,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
       ]);
       router.push(`/blog/${post.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update post");
+      setError(err instanceof Error ? err.message : "Failed to update scroll");
     } finally {
       setSubmitting(false);
     }
@@ -55,7 +55,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
   if (!connected || address !== post.creator) {
     return (
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
-        <p className="text-zinc-400">You can only edit your own posts</p>
+        <p className="text-zinc-400">You can only edit your own scrolls</p>
       </div>
     );
   }
@@ -71,7 +71,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Post title"
+          placeholder="Scroll title"
           maxLength={256}
           className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
@@ -103,7 +103,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
           id="body"
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="Write your post..."
+          placeholder="Write your scroll..."
           rows={10}
           className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-3 text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />

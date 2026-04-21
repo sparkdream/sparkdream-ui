@@ -18,7 +18,7 @@ export default function EditPostPage() {
     getPost(id)
       .then((res) => setPost(res.post))
       .catch((err) =>
-        setError(err instanceof Error ? err.message : "Failed to load post")
+        setError(err instanceof Error ? err.message : "Failed to load scroll")
       )
       .finally(() => setLoading(false));
   }, [id]);
@@ -36,7 +36,7 @@ export default function EditPostPage() {
     return (
       <div className="mx-auto max-w-3xl px-4 py-8">
         <div className="rounded-xl border border-red-800 bg-red-900/20 p-6 text-center">
-          <p className="text-red-400">{error || "Post not found"}</p>
+          <p className="text-red-400">{error || "Scroll not found"}</p>
           <Link
             href="/blog"
             className="mt-3 inline-block text-sm text-indigo-400 hover:text-indigo-300"
@@ -50,7 +50,7 @@ export default function EditPostPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-6 text-2xl font-bold text-white">Edit Post</h1>
+      <h1 className="mb-6 text-2xl font-bold text-white">Edit Scroll</h1>
       <EditPostForm post={post} />
     </div>
   );

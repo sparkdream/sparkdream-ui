@@ -36,7 +36,7 @@ export default function MyPostsPage() {
         setNextKey(res.pagination?.next_key || null);
         setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load posts");
+        setError(err instanceof Error ? err.message : "Failed to load scrolls");
       } finally {
         setLoading(false);
       }
@@ -98,9 +98,9 @@ export default function MyPostsPage() {
   if (!connected) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-8">
-        <h1 className="mb-6 text-2xl font-bold text-white">My Posts</h1>
+        <h1 className="mb-6 text-2xl font-bold text-white">My Scrolls</h1>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
-          <p className="text-zinc-400">Connect your wallet to see your posts</p>
+          <p className="text-zinc-400">Connect your wallet to see your scrolls</p>
         </div>
       </div>
     );
@@ -110,16 +110,16 @@ export default function MyPostsPage() {
     <div className="mx-auto max-w-3xl px-4 py-8">
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">My Posts</h1>
+          <h1 className="text-2xl font-bold text-white">My Scrolls</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Posts published by your account
+            Scrolls published by your account
           </p>
         </div>
         <Link
           href="/blog/new"
           className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
         >
-          New Post
+          New Scroll
         </Link>
       </div>
 
@@ -155,12 +155,12 @@ export default function MyPostsPage() {
         </div>
       ) : posts.length === 0 ? (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
-          <p className="text-zinc-400">You haven&apos;t published any posts yet</p>
+          <p className="text-zinc-400">You haven&apos;t published any scrolls yet</p>
           <Link
             href="/blog/new"
             className="mt-3 inline-block text-sm text-indigo-400 hover:text-indigo-300"
           >
-            Create your first post
+            Create your first scroll
           </Link>
         </div>
       ) : (

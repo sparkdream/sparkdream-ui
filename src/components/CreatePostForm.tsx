@@ -43,7 +43,7 @@ export default function CreatePostForm() {
       ]);
       router.push("/blog");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create post");
+      setError(err instanceof Error ? err.message : "Failed to create scroll");
     } finally {
       setSubmitting(false);
     }
@@ -52,7 +52,7 @@ export default function CreatePostForm() {
   if (!connected) {
     return (
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
-        <p className="text-zinc-400">Connect your wallet to create a post</p>
+        <p className="text-zinc-400">Connect your wallet to create a scroll</p>
       </div>
     );
   }
@@ -68,7 +68,7 @@ export default function CreatePostForm() {
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Post title"
+          placeholder="Scroll title"
           maxLength={256}
           className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
@@ -100,7 +100,7 @@ export default function CreatePostForm() {
           id="body"
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="Write your post..."
+          placeholder="Write your scroll..."
           rows={10}
           className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-3 text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
@@ -137,7 +137,7 @@ export default function CreatePostForm() {
               <option value={4}>4 (Highly Trusted)</option>
             </select>
             <p className="mt-1 text-xs text-zinc-600">
-              Minimum trust level required to reply to this post
+              Minimum trust level required to reply to this scroll
             </p>
           </div>
 
@@ -173,7 +173,7 @@ export default function CreatePostForm() {
           disabled={submitting || !title.trim() || !body.trim()}
           className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
         >
-          {submitting ? "Publishing..." : "Publish Post"}
+          {submitting ? "Publishing..." : "Publish Scroll"}
         </button>
         <button
           type="button"

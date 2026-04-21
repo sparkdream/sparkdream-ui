@@ -96,7 +96,7 @@ export default function BlogPage() {
       setNextKey(res.pagination?.next_key || null);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load posts");
+      setError(err instanceof Error ? err.message : "Failed to load scrolls");
     } finally {
       setLoading(false);
     }
@@ -195,7 +195,7 @@ export default function BlogPage() {
               <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path d="M4 6h16M4 12h16M4 18h10" />
               </svg>
-              All posts <span className="badge">{posts.length}</span>
+              All scrolls <span className="badge">{posts.length}</span>
             </button>
             <button
               type="button"
@@ -219,7 +219,7 @@ export default function BlogPage() {
                   <circle cx="12" cy="8" r="4" />
                   <path d="M4 21a8 8 0 0 1 16 0" />
                 </svg>
-                My posts <span className="badge">{myPostCount}</span>
+                My scrolls <span className="badge">{myPostCount}</span>
               </button>
             )}
           </>
@@ -269,14 +269,14 @@ export default function BlogPage() {
           <div className="sd-blog-toolbar">
             <div className="sd-seg">
               <button className={filter === "all" ? "on" : ""} onClick={() => setFilter("all")}>
-                All Posts
+                All Scrolls
               </button>
               <button className={filter === "members" ? "on" : ""} onClick={() => setFilter("members")}>
                 Members
               </button>
               {connected && (
                 <button className={filter === "my-posts" ? "on" : ""} onClick={() => setFilter("my-posts")}>
-                  My Posts
+                  My Scrolls
                 </button>
               )}
             </div>
@@ -285,7 +285,7 @@ export default function BlogPage() {
                 <circle cx="11" cy="11" r="7" />
                 <path d="m20 20-3.5-3.5" />
               </svg>
-              <input ref={searchRef} placeholder="Search posts, tags, or addresses…" />
+              <input ref={searchRef} placeholder="Search scrolls, tags, or addresses…" />
               <span className="k">⌘K</span>
             </label>
             <select
@@ -310,7 +310,7 @@ export default function BlogPage() {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <path d="M12 5v14M5 12h14" />
                   </svg>
-                  New Post
+                  New Scroll
                 </Link>
               )}
             </div>
@@ -395,7 +395,7 @@ export default function BlogPage() {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <path d="M12 5v14M5 12h14" />
                 </svg>
-                New Post
+                New Scroll
               </Link>
             )}
           </div>
@@ -511,7 +511,7 @@ function ActiveVoiceRow({ addr, count, idx }: { addr: string; count: number; idx
       </div>
       <div className="info">
         <span className="addr">{name || truncateAddress(addr)}</span>
-        <div className="meta">{count} {count === 1 ? "post" : "posts"}</div>
+        <div className="meta">{count} {count === 1 ? "scroll" : "scrolls"}</div>
       </div>
     </div>
   );
@@ -605,10 +605,10 @@ function EmptyState({
     >
       <p style={{ margin: 0 }}>
         {filter === "members" && hasAnyPosts
-          ? "No member posts found"
+          ? "No member scrolls found"
           : filter === "my-posts"
-            ? "You haven't posted yet"
-            : "No posts yet"}
+            ? "You haven't written a scroll yet"
+            : "No scrolls yet"}
       </p>
       {filter === "members" && hasAnyPosts ? (
         <button
@@ -622,11 +622,11 @@ function EmptyState({
             fontSize: 13,
           }}
         >
-          Show all posts
+          Show all scrolls
         </button>
       ) : connected ? (
         <Link href="/blog/new" style={{ display: "inline-block", marginTop: 12, color: "var(--violet-hi)", fontSize: 13 }}>
-          Create the first post
+          Create the first scroll
         </Link>
       ) : null}
     </div>
