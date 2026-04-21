@@ -17,7 +17,7 @@ const VALID_VIEWS: View[] = ["profile", "staking", "invitations", "members", "pr
 export default function ReputationPage() {
   return (
     <Suspense fallback={
-      <div className="mx-auto max-w-5xl px-4 py-8">
+      <div className="sd-page">
         <div className="mb-8">
           <div className="h-7 w-36 animate-pulse rounded bg-zinc-800" />
           <div className="mt-2 h-4 w-56 animate-pulse rounded bg-zinc-800/60" />
@@ -48,7 +48,7 @@ function ReputationPageInner() {
 
   if (!ready) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-8">
+      <div className="sd-page">
         <div className="mb-8">
           <div className="h-7 w-36 animate-pulse rounded bg-zinc-800" />
           <div className="mt-2 h-4 w-56 animate-pulse rounded bg-zinc-800/60" />
@@ -67,8 +67,11 @@ function ReputationPageInner() {
 
   if (!connected) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-8">
-        <h1 className="mb-6 text-2xl font-bold text-white">Contribute</h1>
+      <div className="sd-page">
+        <header className="sd-page-header">
+          <h1>Contribute</h1>
+          <p>DREAM tokens, reputation scores, and community work</p>
+        </header>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
           <p className="text-zinc-400">
             Connect your wallet to view the contribution system
@@ -222,13 +225,11 @@ function ReputationPageInner() {
   );
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Contribute</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          DREAM tokens, reputation scores, and community work
-        </p>
-      </div>
+    <div className="sd-page">
+      <header className="sd-page-header">
+        <h1>Contribute</h1>
+        <p>DREAM tokens, reputation scores, and community work</p>
+      </header>
 
       {/* Mobile sidebar toggle */}
       <div className="mb-4 md:hidden">

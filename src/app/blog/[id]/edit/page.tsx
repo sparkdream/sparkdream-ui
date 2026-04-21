@@ -41,7 +41,7 @@ export default function EditPostPage() {
             href="/blog"
             className="mt-3 inline-block text-sm text-indigo-400 hover:text-indigo-300"
           >
-            Back to blog
+            Back to scrolls
           </Link>
         </div>
       </div>

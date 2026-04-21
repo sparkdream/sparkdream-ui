@@ -5,47 +5,76 @@ import Link from "next/link";
 import type { Post } from "@/types/blog";
 import { PostStatus } from "@/types/blog";
 import { listPosts, getAllMemberAddresses } from "@/lib/api";
-import PostCard from "@/components/PostCard";
+import PostRow from "@/components/PostRow";
 import { useWallet } from "@/contexts/WalletContext";
+import { timeAgo, truncateAddress } from "@/lib/utils";
+import { useResolveName } from "@/hooks/useResolveName";
 
 type SortOption = "newest" | "oldest";
 type FilterOption = "my-posts" | "members" | "all";
 
 export default function BlogPage() {
-  const { connected, address } = useWallet();
+  const { connected, address, sessionActive, activeSession } = useWallet();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nextKey, setNextKey] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  const [memberAddresses, setMemberAddresses] = useState<Set<string>>(
-    new Set()
-  );
+  const [memberAddresses, setMemberAddresses] = useState<Set<string>>(new Set());
   const [membersLoading, setMembersLoading] = useState(true);
 
   const [filter, setFilter] = useState<FilterOption>("members");
   const [sort, setSort] = useState<SortOption>("newest");
   const [filterRestored, setFilterRestored] = useState(false);
+  const [feedCollapsed, setFeedCollapsed] = useState(false);
+  const [trustCollapsed, setTrustCollapsed] = useState(false);
+  const [tagsCollapsed, setTagsCollapsed] = useState(false);
+  const [collapseRestored, setCollapseRestored] = useState(false);
+
+  useEffect(() => {
+    setFeedCollapsed(localStorage.getItem("blog-feed-collapsed") === "1");
+    setTrustCollapsed(localStorage.getItem("blog-trust-collapsed") === "1");
+    setTagsCollapsed(localStorage.getItem("blog-tags-collapsed") === "1");
+    setCollapseRestored(true);
+  }, []);
+
+  useEffect(() => {
+    if (!collapseRestored) return;
+    localStorage.setItem("blog-feed-collapsed", feedCollapsed ? "1" : "0");
+    localStorage.setItem("blog-trust-collapsed", trustCollapsed ? "1" : "0");
+    localStorage.setItem("blog-tags-collapsed", tagsCollapsed ? "1" : "0");
+  }, [feedCollapsed, trustCollapsed, tagsCollapsed, collapseRestored]);
+
+  const TRUST_LEVELS: { key: string; label: string; cls: string }[] = [
+    { key: "core", label: "Core", cls: "trust-core" },
+    { key: "trusted", label: "Trusted", cls: "trust-trusted" },
+    { key: "established", label: "Established", cls: "trust-est" },
+    { key: "provisional", label: "Provisional", cls: "trust-prov" },
+  ];
+
+  const TAG_FILTERS: string[] = [
+    "governance",
+    "staking",
+    "collections",
+    "changelog",
+    "builders",
+  ];
 
   useEffect(() => {
     const saved = localStorage.getItem("blog-filter");
     if (saved === "my-posts" || saved === "members" || saved === "all") {
-      // Only restore "my-posts" if connected
-      if (saved === "my-posts" && !connected) {
-        setFilter("members");
-      } else {
-        setFilter(saved);
-      }
+      if (saved === "my-posts" && !connected) setFilter("members");
+      else setFilter(saved);
     }
     setFilterRestored(true);
-  }, []);
+  }, [connected]);
 
   useEffect(() => {
     if (filterRestored) localStorage.setItem("blog-filter", filter);
   }, [filter, filterRestored]);
 
-  // Fetch all member addresses once
   useEffect(() => {
     getAllMemberAddresses()
       .then(setMemberAddresses)
@@ -62,18 +91,12 @@ export default function BlogPage() {
         reverse: true,
         ...(paginationKey ? { key: paginationKey } : {}),
       });
-      const activePosts = (res.post || []).filter(
-        (p) => p.status !== PostStatus.DELETED
-      );
-      setPosts((prev) =>
-        paginationKey ? [...prev, ...activePosts] : activePosts
-      );
+      const active = (res.post || []).filter((p) => p.status !== PostStatus.DELETED);
+      setPosts((prev) => (paginationKey ? [...prev, ...active] : active));
       setNextKey(res.pagination?.next_key || null);
       setError(null);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to load posts"
-      );
+      setError(err instanceof Error ? err.message : "Failed to load posts");
     } finally {
       setLoading(false);
     }
@@ -88,11 +111,10 @@ export default function BlogPage() {
   nextKeyRef.current = nextKey;
   const loadingRef = useRef(loading);
   loadingRef.current = loading;
-
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
-    const observer = new IntersectionObserver(
+    const obs = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && nextKeyRef.current && !loadingRef.current) {
           fetchPosts(nextKeyRef.current);
@@ -100,209 +122,513 @@ export default function BlogPage() {
       },
       { rootMargin: "200px" }
     );
-    observer.observe(el);
-    return () => observer.disconnect();
+    obs.observe(el);
+    return () => obs.disconnect();
   }, [fetchPosts]);
+
+  // ⌘K / Ctrl-K focuses search
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   const filteredAndSorted = useMemo(() => {
     let result = posts;
-
     if (filter === "my-posts" && address) {
       result = result.filter((p) => p.creator === address);
     } else if (filter === "members" && memberAddresses.size > 0) {
       result = result.filter((p) => memberAddresses.has(p.creator));
     }
-
     if (sort === "oldest") {
       result = [...result].sort(
         (a, b) => parseInt(a.created_at, 10) - parseInt(b.created_at, 10)
       );
     }
-    // "newest" is already the default API order
-
     return result;
   }, [posts, filter, sort, memberAddresses, address]);
 
-  if (!filterRestored) {
-    return (
-      <div className="mx-auto max-w-3xl px-4 py-8 animate-pulse">
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-transparent">Blog</h1>
-            <p className="mt-1 text-sm text-transparent">
-              On-chain posts from the Spark Dream community
+  const featured = useMemo(
+    () => filteredAndSorted.find((p) => !!p.pinned_by) || null,
+    [filteredAndSorted]
+  );
+  const listPostsData = useMemo(
+    () => (featured ? filteredAndSorted.filter((p) => p.id !== featured.id) : filteredAndSorted),
+    [filteredAndSorted, featured]
+  );
+
+  const myPostCount = address
+    ? posts.filter((p) => p.creator === address).length
+    : 0;
+  const memberPostCount = posts.filter((p) => memberAddresses.has(p.creator)).length;
+
+  const collapseHead = (label: string, collapsed: boolean, toggle: () => void) => (
+    <button
+      type="button"
+      className="sd-side-group-head"
+      aria-expanded={!collapsed}
+      onClick={toggle}
+    >
+      {label}
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="6 9 12 15 18 9" />
+      </svg>
+    </button>
+  );
+
+  const feedFilters = (
+    <>
+      <div className={`sd-side-group${feedCollapsed ? " collapsed" : ""}`}>
+        {collapseHead("Feed", feedCollapsed, () => setFeedCollapsed((v) => !v))}
+        {!feedCollapsed && (
+          <>
+            <button
+              type="button"
+              className={`sd-side-item${filter === "all" ? " active" : ""}`}
+              onClick={() => setFilter("all")}
+            >
+              <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M4 6h16M4 12h16M4 18h10" />
+              </svg>
+              All posts <span className="badge">{posts.length}</span>
+            </button>
+            <button
+              type="button"
+              className={`sd-side-item${filter === "members" ? " active" : ""}`}
+              onClick={() => setFilter("members")}
+            >
+              <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M19 8v6M22 11h-6" />
+              </svg>
+              Members <span className="badge">{memberPostCount}</span>
+            </button>
+            {connected && (
+              <button
+                type="button"
+                className={`sd-side-item${filter === "my-posts" ? " active" : ""}`}
+                onClick={() => setFilter("my-posts")}
+              >
+                <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <circle cx="12" cy="8" r="4" />
+                  <path d="M4 21a8 8 0 0 1 16 0" />
+                </svg>
+                My posts <span className="badge">{myPostCount}</span>
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className={`sd-side-group${trustCollapsed ? " collapsed" : ""}`}>
+        {collapseHead("Trust level", trustCollapsed, () => setTrustCollapsed((v) => !v))}
+        {!trustCollapsed && (
+          <div className="sd-side-pills">
+            {TRUST_LEVELS.map((t) => (
+              <button key={t.key} type="button" className={`sd-pill ${t.cls}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className={`sd-side-group${tagsCollapsed ? " collapsed" : ""}`}>
+        {collapseHead("Tags", tagsCollapsed, () => setTagsCollapsed((v) => !v))}
+        {!tagsCollapsed && (
+          <div className="sd-side-pills">
+            {TAG_FILTERS.map((t) => (
+              <button key={t} type="button" className="sd-pill tag">
+                #{t}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+
+  return (
+    <div className="sd-page">
+      <header className="sd-page-header">
+        <h1>Scrolls</h1>
+        <p>Long-form posts, reactions, and pinned memos from the community</p>
+      </header>
+      <div className="sd-page-grid with-rail">
+        {/* LEFT SIDEBAR (desktop only) */}
+        <aside className="sd-side">{feedFilters}</aside>
+
+        {/* MAIN COLUMN */}
+        <section>
+          <div className="sd-blog-toolbar">
+            <div className="sd-seg">
+              <button className={filter === "all" ? "on" : ""} onClick={() => setFilter("all")}>
+                All Posts
+              </button>
+              <button className={filter === "members" ? "on" : ""} onClick={() => setFilter("members")}>
+                Members
+              </button>
+              {connected && (
+                <button className={filter === "my-posts" ? "on" : ""} onClick={() => setFilter("my-posts")}>
+                  My Posts
+                </button>
+              )}
+            </div>
+            <label className="search">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ color: "var(--ink-mute)" }}>
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <input ref={searchRef} placeholder="Search posts, tags, or addresses…" />
+              <span className="k">⌘K</span>
+            </label>
+            <select
+              className="sd-select"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortOption)}
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+            <div className="sd-toolbar-actions">
+              <button className="sd-btn sd-btn-secondary" title="RSS feed" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 11a9 9 0 0 1 9 9" />
+                  <path d="M4 4a16 16 0 0 1 16 16" />
+                  <circle cx="5" cy="19" r="1" fill="currentColor" />
+                </svg>
+                RSS
+              </button>
+              {connected && (
+                <Link href="/blog/new" className="sd-btn sd-btn-primary">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  New Post
+                </Link>
+              )}
+            </div>
+          </div>
+
+          {error && (
+            <div
+              style={{
+                marginBottom: 20,
+                padding: "10px 14px",
+                borderRadius: "var(--r-sm)",
+                border: "1px solid rgba(244,63,94,0.35)",
+                background: "rgba(244,63,94,0.08)",
+                color: "#fb7185",
+                fontSize: 13,
+              }}
+            >
+              {error}
+              <button
+                onClick={() => fetchPosts()}
+                style={{
+                  marginLeft: 10,
+                  background: "transparent",
+                  border: 0,
+                  color: "inherit",
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {featured && <FeaturedPost post={featured} />}
+
+          {(loading && posts.length === 0) ? (
+            <PostRowSkeleton />
+          ) : listPostsData.length === 0 && !featured ? (
+            <EmptyState
+              connected={connected}
+              filter={filter}
+              hasAnyPosts={posts.length > 0}
+              onShowAll={() => setFilter("all")}
+            />
+          ) : (
+            <>
+              <div className="sd-post-list">
+                {listPostsData.map((p) => (
+                  <PostRow key={p.id} post={p} />
+                ))}
+              </div>
+              <div ref={sentinelRef} style={{ height: 1 }} />
+              {loading && posts.length > 0 && <PostRowSkeleton />}
+              {!nextKey && posts.length > 0 && (
+                <div className="sd-load-more">
+                  End of feed · block {posts[posts.length - 1]?.created_at || "—"}
+                </div>
+              )}
+            </>
+          )}
+
+          {membersLoading && filter === "members" && posts.length > 0 && (
+            <div className="sd-load-more">Loading members…</div>
+          )}
+        </section>
+
+        {/* RIGHT RAIL */}
+        <aside className="sd-rail">
+          <div className="sd-rail-filters">{feedFilters}</div>
+          <div className="sd-col-actions">
+            <button className="sd-btn sd-btn-secondary" title="RSS feed" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M4 11a9 9 0 0 1 9 9" />
+                <path d="M4 4a16 16 0 0 1 16 16" />
+                <circle cx="5" cy="19" r="1" fill="currentColor" />
+              </svg>
+              RSS
+            </button>
+            {connected && (
+              <Link href="/blog/new" className="sd-btn sd-btn-primary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                New Post
+              </Link>
+            )}
+          </div>
+
+          <TrendingCard posts={posts.slice(0, 5)} />
+          <ActiveVoicesCard posts={posts} />
+          <SessionKeyCard
+            sessionActive={sessionActive}
+            granteeAddr={activeSession?.grantee || null}
+          />
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function FeaturedPost({ post }: { post: Post }) {
+  const { name } = useResolveName(post.creator);
+  return (
+    <Link href={`/blog/${post.id}`} className="sd-featured">
+      <div className="art">
+        <div className="glyph">
+          <div className="frame">
+            <b>◆ Pinned · Council Memo</b>
+            <span className="hash">block · {post.created_at}</span>
+          </div>
+        </div>
+      </div>
+      <div className="body">
+        <div className="meta-row">
+          <span className="pin">◆ Pinned</span>
+          <span>·</span>
+          <span>{timeAgo(post.created_at)}</span>
+        </div>
+        <h2>{post.title}</h2>
+        <p>{post.body}</p>
+        <div className="foot">
+          <div className="who">
+            <div className="sd-avatar">{(name || post.creator).charAt(name ? 0 : 8).toUpperCase()}</div>
+            <div>
+              <div className="name">{name || truncateAddress(post.creator)}</div>
+              <div className="addr">{truncateAddress(post.creator)}</div>
+            </div>
+          </div>
+          <div className="stats">
+            <span>💬 {post.reply_count} replies</span>
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function TrendingCard({ posts }: { posts: Post[] }) {
+  if (posts.length === 0) return null;
+  return (
+    <div className="sd-rail-card">
+      <h5>
+        Trending on-chain
+        <span className="live">
+          <span className="d" />
+          live
+        </span>
+      </h5>
+      {posts.map((p, i) => (
+        <Link
+          key={p.id}
+          href={`/blog/${p.id}`}
+          className="sd-trend-row"
+          style={{ textDecoration: "none" }}
+        >
+          <span className="num">{String(i + 1).padStart(2, "0")}</span>
+          <span className="title">{p.title}</span>
+          <span className="c">{p.reply_count}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function ActiveVoicesCard({ posts }: { posts: Post[] }) {
+  const voices = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of posts) map.set(p.creator, (map.get(p.creator) || 0) + 1);
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+  }, [posts]);
+
+  if (voices.length === 0) return null;
+  return (
+    <div className="sd-rail-card">
+      <h5>Active voices this week</h5>
+      {voices.map(([addr, count], i) => (
+        <ActiveVoiceRow key={addr} addr={addr} count={count} idx={i} />
+      ))}
+    </div>
+  );
+}
+
+function ActiveVoiceRow({ addr, count, idx }: { addr: string; count: number; idx: number }) {
+  const { name } = useResolveName(addr);
+  const gradients = [
+    "linear-gradient(135deg, var(--violet), var(--rose))",
+    "linear-gradient(135deg, var(--green), var(--violet))",
+    "linear-gradient(135deg, var(--amber), var(--rose))",
+  ];
+  const initial = (name || addr).charAt(name ? 0 : 8).toUpperCase();
+  return (
+    <div className="sd-member-row">
+      <div className="sd-avatar sm" style={{ background: gradients[idx % gradients.length] }}>
+        {initial}
+      </div>
+      <div className="info">
+        <span className="addr">{name || truncateAddress(addr)}</span>
+        <div className="meta">{count} {count === 1 ? "post" : "posts"}</div>
+      </div>
+    </div>
+  );
+}
+
+function SessionKeyCard({
+  sessionActive,
+  granteeAddr,
+}: {
+  sessionActive: boolean;
+  granteeAddr: string | null;
+}) {
+  return (
+    <div className="sd-rail-card">
+      <h5>Your session key</h5>
+      <div style={{ fontSize: 12, color: "var(--ink-soft)", lineHeight: 1.55 }}>
+        {sessionActive && granteeAddr ? (
+          <>
+            Granted to{" "}
+            <span className="sd-pill trust-core" style={{ fontFamily: "var(--font-geist-mono)" }}>
+              {truncateAddress(granteeAddr)}
+            </span>{" "}
+            with <span style={{ color: "var(--ink)" }}>CreatePost · CreateReply · React</span>.
+          </>
+        ) : (
+          <>
+            No active session. Visit{" "}
+            <Link href="/sessions" style={{ color: "var(--violet-hi)" }}>
+              Sessions
+            </Link>{" "}
+            to create a scoped key for bots or agents.
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PostRowSkeleton() {
+  return (
+    <div className="sd-post-list">
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          className="sd-post"
+          style={{ cursor: "default", pointerEvents: "none", opacity: 0.7 }}
+        >
+          <div className="who-col">
+            <div className="sd-avatar" style={{ background: "var(--panel-2)" }} />
+          </div>
+          <div className="body-col">
+            <div className="head">
+              <span className="addr" style={{ width: 120, background: "var(--panel-2)", borderRadius: 4 }}>
+                &nbsp;
+              </span>
+            </div>
+            <h3 style={{ background: "var(--panel-2)", color: "transparent", borderRadius: 4, display: "inline-block", width: "60%" }}>
+              &nbsp;
+            </h3>
+            <p className="excerpt" style={{ background: "var(--panel-2)", color: "transparent", borderRadius: 4 }}>
+              &nbsp;
             </p>
           </div>
         </div>
-        <div className="mb-6 flex items-center gap-3">
-          <div className="flex rounded-lg border border-zinc-800 bg-zinc-900/50 p-0.5">
-            <div className="rounded-md bg-zinc-800 px-3 py-1.5 text-xs font-medium text-transparent">Members</div>
-            <div className="rounded-md px-3 py-1.5 text-xs font-medium text-transparent">All Posts</div>
-          </div>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-1.5 text-xs text-transparent">Newest first</div>
-        </div>
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
-          <div className="mb-3 flex items-center gap-2">
-            <div className="h-3 w-24 rounded bg-zinc-800" />
-            <div className="h-3 w-3 rounded-full bg-zinc-800" />
-            <div className="h-3 w-16 rounded bg-zinc-800" />
-          </div>
-          <div className="mb-3 h-5 w-3/5 rounded bg-zinc-800" />
-          <div className="mb-1.5 h-3.5 w-full rounded bg-zinc-800" />
-          <div className="h-3.5 w-4/5 rounded bg-zinc-800" />
-        </div>
-      </div>
-    );
-  }
+      ))}
+    </div>
+  );
+}
 
+function EmptyState({
+  connected,
+  filter,
+  hasAnyPosts,
+  onShowAll,
+}: {
+  connected: boolean;
+  filter: FilterOption;
+  hasAnyPosts: boolean;
+  onShowAll: () => void;
+}) {
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Blog</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            On-chain posts from the Spark Dream community
-          </p>
-        </div>
-        {connected && (
-          <Link
-            href="/blog/new"
-            className="w-fit rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
-          >
-            New Post
-          </Link>
-        )}
-      </div>
-
-      {/* Filter & Sort Controls */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <div className="flex items-center rounded-lg border border-zinc-800 bg-zinc-900/50 p-0.5">
-          {connected && (
-            <button
-              onClick={() => setFilter("my-posts")}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                filter === "my-posts"
-                  ? "bg-zinc-700 text-white"
-                  : "text-zinc-400 hover:text-zinc-300"
-              }`}
-            >
-              My Posts
-            </button>
-          )}
-          <button
-            onClick={() => setFilter("members")}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              filter === "members"
-                ? "bg-zinc-700 text-white"
-                : "text-zinc-400 hover:text-zinc-300"
-            }`}
-          >
-            Members
-          </button>
-          <button
-            onClick={() => setFilter("all")}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              filter === "all"
-                ? "bg-zinc-700 text-white"
-                : "text-zinc-400 hover:text-zinc-300"
-            }`}
-          >
-            All Posts
-          </button>
-        </div>
-
-        <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value as SortOption)}
-          className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-1.5 text-xs text-zinc-400 focus:border-zinc-600 focus:outline-none"
+    <div
+      style={{
+        background: "var(--panel)",
+        border: "1px dashed var(--rule-strong)",
+        borderRadius: "var(--r-lg)",
+        padding: "48px 24px",
+        textAlign: "center",
+        color: "var(--ink-mute)",
+      }}
+    >
+      <p style={{ margin: 0 }}>
+        {filter === "members" && hasAnyPosts
+          ? "No member posts found"
+          : filter === "my-posts"
+            ? "You haven't posted yet"
+            : "No posts yet"}
+      </p>
+      {filter === "members" && hasAnyPosts ? (
+        <button
+          onClick={onShowAll}
+          style={{
+            marginTop: 12,
+            background: "transparent",
+            border: 0,
+            color: "var(--violet-hi)",
+            cursor: "pointer",
+            fontSize: 13,
+          }}
         >
-          <option value="newest">Newest first</option>
-          <option value="oldest">Oldest first</option>
-        </select>
-
-        {membersLoading && filter === "members" && posts.length > 0 && (
-          <span className="text-xs text-zinc-600">Loading members...</span>
-        )}
-      </div>
-
-      {error && (
-        <div className="mb-6 rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-          {error}
-          <button
-            onClick={() => fetchPosts()}
-            className="ml-2 underline hover:text-red-300"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {(loading && posts.length === 0) || (membersLoading && filter === "members") ? (
-        <div className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
-          <div className="mb-3 flex items-center gap-2">
-            <div className="h-3 w-24 rounded bg-zinc-800" />
-            <div className="h-3 w-3 rounded-full bg-zinc-800" />
-            <div className="h-3 w-16 rounded bg-zinc-800" />
-          </div>
-          <div className="mb-3 h-5 w-3/5 rounded bg-zinc-800" />
-          <div className="mb-1.5 h-3.5 w-full rounded bg-zinc-800" />
-          <div className="mb-4 h-3.5 w-4/5 rounded bg-zinc-800" />
-          <div className="flex items-center justify-between">
-            <div className="flex gap-3">
-              <div className="h-3 w-8 rounded bg-zinc-800" />
-              <div className="h-3 w-8 rounded bg-zinc-800" />
-            </div>
-            <div className="h-3 w-16 rounded bg-zinc-800" />
-          </div>
-        </div>
-      ) : filteredAndSorted.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
-          <p className="text-zinc-400">
-            {filter === "members" && posts.length > 0
-              ? "No member posts found"
-              : "No posts yet"}
-          </p>
-          {filter === "members" && posts.length > 0 ? (
-            <button
-              onClick={() => setFilter("all")}
-              className="mt-3 inline-block text-sm text-indigo-400 hover:text-indigo-300"
-            >
-              Show all posts
-            </button>
-          ) : (
-            connected && (
-              <Link
-                href="/blog/new"
-                className="mt-3 inline-block text-sm text-indigo-400 hover:text-indigo-300"
-              >
-                Create the first post
-              </Link>
-            )
-          )}
-        </div>
-      ) : (
-        <>
-          <div className="space-y-4">
-            {filteredAndSorted.map((post) => (
-              <PostCard key={post.id} post={post} />
-            ))}
-          </div>
-
-          <div ref={sentinelRef} className="h-px" />
-          {loading && posts.length > 0 && (
-            <div className="mt-4 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <div className="h-3 w-24 rounded bg-zinc-800" />
-                <div className="h-3 w-3 rounded-full bg-zinc-800" />
-                <div className="h-3 w-16 rounded bg-zinc-800" />
-              </div>
-              <div className="mb-3 h-5 w-3/5 rounded bg-zinc-800" />
-              <div className="mb-1.5 h-3.5 w-full rounded bg-zinc-800" />
-              <div className="h-3.5 w-4/5 rounded bg-zinc-800" />
-            </div>
-          )}
-        </>
-      )}
+          Show all posts
+        </button>
+      ) : connected ? (
+        <Link href="/blog/new" style={{ display: "inline-block", marginTop: 12, color: "var(--violet-hi)", fontSize: 13 }}>
+          Create the first post
+        </Link>
+      ) : null}
     </div>
   );
 }

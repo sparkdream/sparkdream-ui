@@ -73,7 +73,7 @@ export default function GovernancePage() {
   // Skeleton while wallet resolves
   if (!ready) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-8">
+      <div className="sd-page">
         <div className="mb-8">
           <div className="h-7 w-36 animate-pulse rounded bg-zinc-800" />
           <div className="mt-2 h-4 w-56 animate-pulse rounded bg-zinc-800/60" />
@@ -92,8 +92,12 @@ export default function GovernancePage() {
 
   if (!connected) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-8">
-        <h1 className="mb-6 text-2xl font-bold text-white">Governance</h1>
+      <div className="sd-page">
+        <header className="sd-page-header">
+          <span className="crumb">Govern</span>
+          <h1>Governance</h1>
+          <p>Community council and chain governance</p>
+        </header>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
           <p className="text-zinc-400">
             Connect your wallet to participate in governance
@@ -221,14 +225,12 @@ export default function GovernancePage() {
   );
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Governance</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Community council and chain governance
-        </p>
-      </div>
+    <div className="sd-page">
+      <header className="sd-page-header">
+        <span className="crumb">Govern</span>
+        <h1>Governance</h1>
+        <p>Community council and chain governance</p>
+      </header>
 
       {/* Mobile sidebar toggle */}
       <div className="mb-4 md:hidden">

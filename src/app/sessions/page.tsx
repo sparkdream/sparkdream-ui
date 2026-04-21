@@ -155,7 +155,7 @@ export default function SessionsPage() {
 
   if (!ready) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
+      <div className="sd-page">
         <div className="mb-8">
           <div className="h-7 w-36 animate-pulse rounded bg-zinc-800" />
           <div className="mt-2 h-4 w-56 animate-pulse rounded bg-zinc-800/60" />
@@ -184,8 +184,12 @@ export default function SessionsPage() {
 
   if (!connected) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
-        <h1 className="mb-6 text-2xl font-bold text-white">Session Keys</h1>
+      <div className="sd-page">
+        <header className="sd-page-header">
+          <span className="crumb">System</span>
+          <h1>Session Keys</h1>
+          <p>Delegate message signing to another address</p>
+        </header>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
           <p className="text-zinc-400">Connect your wallet to manage session keys</p>
         </div>
@@ -194,21 +198,19 @@ export default function SessionsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Session Keys</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Delegate message signing to another address
-          </p>
-        </div>
+    <div className="sd-page">
+      <header className="sd-page-header">
+        <span className="crumb">System</span>
+        <h1>Session Keys</h1>
+        <p>Delegate message signing to another address</p>
         <button
           onClick={() => setShowCreate(!showCreate)}
           className="w-fit rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+          style={{ marginLeft: "auto" }}
         >
           {showCreate ? "Cancel" : "New Session"}
         </button>
-      </div>
+      </header>
 
       {/* Create session form */}
       {showCreate && (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { reverseResolveName } from "@/lib/api";
+import { reverseResolveName, getSessionsByGrantee } from "@/lib/api";
 
 // Simple in-memory cache shared across all hook instances.
 // Key: address, Value: { name, timestamp }
@@ -10,6 +10,15 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // Pending fetches to avoid duplicate requests for the same address
 const pendingFetches = new Map<string, Promise<string>>();
+
+async function resolveDirect(address: string): Promise<string> {
+  try {
+    const res = await reverseResolveName(address);
+    return res.name || "";
+  } catch {
+    return "";
+  }
+}
 
 async function resolveWithCache(address: string): Promise<string> {
   const cached = nameCache.get(address);
@@ -20,19 +29,25 @@ async function resolveWithCache(address: string): Promise<string> {
   const pending = pendingFetches.get(address);
   if (pending) return pending;
 
-  const promise = reverseResolveName(address)
-    .then((res) => {
-      const name = res.name || "";
-      nameCache.set(address, { name, ts: Date.now() });
-      return name;
-    })
-    .catch(() => {
-      nameCache.set(address, { name: "", ts: Date.now() });
-      return "";
-    })
-    .finally(() => {
-      pendingFetches.delete(address);
-    });
+  const promise = (async () => {
+    let name = await resolveDirect(address);
+    if (!name) {
+      // Fallback: if the address is a session grantee, resolve the granter's name.
+      try {
+        const res = await getSessionsByGrantee(address);
+        const granter = res.sessions?.[0]?.granter;
+        if (granter && granter !== address) {
+          name = await resolveDirect(granter);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    nameCache.set(address, { name, ts: Date.now() });
+    return name;
+  })().finally(() => {
+    pendingFetches.delete(address);
+  });
 
   pendingFetches.set(address, promise);
   return promise;

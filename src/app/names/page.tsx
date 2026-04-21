@@ -22,7 +22,7 @@ export default function NamesPage() {
 
   if (!ready) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-8">
+      <div className="sd-page">
         <div className="mb-8">
           <div className="h-7 w-36 animate-pulse rounded bg-zinc-800" />
           <div className="mt-2 h-4 w-56 animate-pulse rounded bg-zinc-800/60" />
@@ -145,13 +145,12 @@ export default function NamesPage() {
   );
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Names</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Register and resolve human-readable names on-chain
-        </p>
-      </div>
+    <div className="sd-page">
+      <header className="sd-page-header">
+        <span className="crumb">System</span>
+        <h1>Names</h1>
+        <p>Register and resolve human-readable names on-chain</p>
+      </header>
 
       {/* Mobile sidebar toggle */}
       <div className="mb-4 md:hidden">

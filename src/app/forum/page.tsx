@@ -101,8 +101,11 @@ export default function ForumPage() {
 
   if (!connected) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-8">
-        <h1 className="mb-6 text-2xl font-bold text-white">Forum</h1>
+      <div className="sd-page">
+        <header className="sd-page-header">
+          <h1>Forum</h1>
+          <p>Community discussions, bounties, and moderation</p>
+        </header>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
           <p className="text-zinc-400">
             Connect your wallet to participate in the forum
@@ -323,13 +326,11 @@ export default function ForumPage() {
   );
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Forum</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Community discussions, bounties, and moderation
-        </p>
-      </div>
+    <div className="sd-page">
+      <header className="sd-page-header">
+        <h1>Forum</h1>
+        <p>Community discussions, bounties, and moderation</p>
+      </header>
 
       {/* Mobile sidebar toggle */}
       <div className="mb-4 md:hidden">
