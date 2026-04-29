@@ -45,16 +45,17 @@ const PAGE_SIZE = "20";
 interface CollectionListProps {
   mode: "public" | "my";
   onSelect: (collection: Collection) => void;
+  filterType?: string;
+  tagFilter?: string | null;
 }
 
-export default function CollectionList({ mode, onSelect }: CollectionListProps) {
+export default function CollectionList({ mode, onSelect, filterType = "all", tagFilter }: CollectionListProps) {
   const { address } = useWallet();
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nextKey, setNextKey] = useState<string | null>(null);
-  const [filterType, setFilterType] = useState<string>("all");
 
   const fetchCollections = useCallback(async () => {
     try {
@@ -103,9 +104,12 @@ export default function CollectionList({ mode, onSelect }: CollectionListProps) 
     fetchCollections();
   }, [fetchCollections]);
 
-  const filtered = filterType === "all"
+  let filtered = filterType === "all"
     ? collections
     : collections.filter((c) => c.type === filterType);
+  if (tagFilter) {
+    filtered = filtered.filter((c) => (c.tags || []).includes(tagFilter));
+  }
 
   if (loading) {
     return (
@@ -128,25 +132,8 @@ export default function CollectionList({ mode, onSelect }: CollectionListProps) 
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-white">
-          {mode === "my" ? "My Collections" : "Public Collections"}
-        </h2>
-        <select
-          value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
-          className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 text-xs text-zinc-300 focus:border-zinc-600 focus:outline-none"
-        >
-          <option value="all">All Types</option>
-          <option value={CollectionType.NFT}>NFT</option>
-          <option value={CollectionType.LINK}>Link</option>
-          <option value={CollectionType.ONCHAIN}>On-Chain</option>
-          <option value={CollectionType.MIXED}>Mixed</option>
-        </select>
-      </div>
-
       {filtered.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+        <div className="sd-hull-tile rounded-xl p-12 text-center">
           <p className="text-zinc-400">
             {mode === "my" ? "You have no collections yet" : "No public collections found"}
           </p>
@@ -157,7 +144,7 @@ export default function CollectionList({ mode, onSelect }: CollectionListProps) 
             <button
               key={c.id}
               onClick={() => onSelect(c)}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-800/50"
+              className="sd-hull-tile interactive w-full rounded-xl px-4 py-3 text-left"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">

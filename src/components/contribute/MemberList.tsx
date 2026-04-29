@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { listRepMembers } from "@/lib/api";
+import { listRepMembers, membersByTrustLevel } from "@/lib/api";
 import { truncateAddress } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import type { RepMember } from "@/types/rep";
@@ -43,8 +43,13 @@ export default function MemberList() {
     try {
       setLoading(true);
       setError(null);
-      const res = await listRepMembers({ limit: PAGE_SIZE });
-      setMembers(res.member || []);
+      const res = filterLevel === "all"
+        ? await listRepMembers({ limit: PAGE_SIZE })
+        : await membersByTrustLevel(filterLevel, { limit: PAGE_SIZE });
+      const list = filterLevel === "all"
+        ? (res as Awaited<ReturnType<typeof listRepMembers>>).member
+        : (res as Awaited<ReturnType<typeof membersByTrustLevel>>).members;
+      setMembers(list || []);
       setNextKey(res.pagination?.next_key || null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to load members";
@@ -56,29 +61,32 @@ export default function MemberList() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterLevel]);
 
   const loadMore = useCallback(async () => {
     if (!nextKey || loadingMore) return;
     try {
       setLoadingMore(true);
-      const res = await listRepMembers({ limit: PAGE_SIZE, key: nextKey });
-      setMembers((prev) => [...prev, ...(res.member || [])]);
+      const res = filterLevel === "all"
+        ? await listRepMembers({ limit: PAGE_SIZE, key: nextKey })
+        : await membersByTrustLevel(filterLevel, { limit: PAGE_SIZE, key: nextKey });
+      const list = filterLevel === "all"
+        ? (res as Awaited<ReturnType<typeof listRepMembers>>).member
+        : (res as Awaited<ReturnType<typeof membersByTrustLevel>>).members;
+      setMembers((prev) => [...prev, ...(list || [])]);
       setNextKey(res.pagination?.next_key || null);
     } catch (err) {
       console.error("Load more failed:", err);
     } finally {
       setLoadingMore(false);
     }
-  }, [nextKey, loadingMore]);
+  }, [nextKey, loadingMore, filterLevel]);
 
   useEffect(() => {
     fetchMembers();
   }, [fetchMembers]);
 
-  const filtered = filterLevel === "all"
-    ? members
-    : members.filter((m) => m.trust_level === filterLevel);
+  const filtered = members;
 
   if (loading) {
     return (

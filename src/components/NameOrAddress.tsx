@@ -1,6 +1,6 @@
 "use client";
 
-import { useResolveName } from "@/hooks/useResolveName";
+import { useDisplayName } from "@/hooks/useDisplayName";
 import { truncateAddress } from "@/lib/utils";
 
 interface NameOrAddressProps {
@@ -14,7 +14,7 @@ interface NameOrAddressProps {
  * Shows the full address as a tooltip on hover.
  */
 export default function NameOrAddress({ address, className }: NameOrAddressProps) {
-  const { name, loading } = useResolveName(address);
+  const { name, loading } = useDisplayName(address);
 
   if (loading) {
     return (

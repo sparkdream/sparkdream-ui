@@ -14,6 +14,8 @@ interface ReplyFormProps {
   onSubmitted?: () => void;
   onCancel?: () => void;
   compact?: boolean;
+  /** Entity palette for the submit button. Defaults to indigo. */
+  variant?: "spark" | "dream" | "collection";
 }
 
 export default function ReplyForm({
@@ -25,6 +27,7 @@ export default function ReplyForm({
   onSubmitted,
   onCancel,
   compact = false,
+  variant,
 }: ReplyFormProps) {
   const { address, connected, signAndBroadcast } = useWallet();
   const [body, setBody] = useState(initialBody);
@@ -149,7 +152,15 @@ export default function ReplyForm({
           <button
             type="submit"
             disabled={submitting || !body.trim()}
-            className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+            className={
+              variant === "spark"
+                ? "sd-btn-ember px-4 py-1.5"
+                : variant === "dream"
+                  ? "sd-btn-gold px-4 py-1.5"
+                  : variant === "collection"
+                    ? "sd-btn-crystal px-4 py-1.5"
+                    : "rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+            }
           >
             {submitting ? (isEditing ? "Saving..." : "Posting...") : (isEditing ? "Save" : "Reply")}
           </button>

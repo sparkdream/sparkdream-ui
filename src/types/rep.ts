@@ -295,11 +295,11 @@ export const STAKE_TARGET_LABELS: Record<string, string> = {
   [StakeTargetType.PROJECT]: "Project",
   [StakeTargetType.MEMBER]: "Member",
   [StakeTargetType.TAG]: "Tag",
-  [StakeTargetType.BLOG_CONTENT]: "Blog Content",
-  [StakeTargetType.FORUM_CONTENT]: "Forum Content",
-  [StakeTargetType.COLLECTION_CONTENT]: "Collection Content",
-  [StakeTargetType.BLOG_AUTHOR_BOND]: "Blog Author Bond",
-  [StakeTargetType.FORUM_AUTHOR_BOND]: "Forum Author Bond",
+  [StakeTargetType.BLOG_CONTENT]: "Dream",
+  [StakeTargetType.FORUM_CONTENT]: "Spark",
+  [StakeTargetType.COLLECTION_CONTENT]: "Collection",
+  [StakeTargetType.BLOG_AUTHOR_BOND]: "Dream Author Bond",
+  [StakeTargetType.FORUM_AUTHOR_BOND]: "Spark Author Bond",
   [StakeTargetType.COLLECTION_AUTHOR_BOND]: "Collection Author Bond",
 };
 
@@ -453,4 +453,73 @@ export interface TagBudgetAwardsResponse {
   recipient: string;
   amount: string;
   pagination: Pagination;
+}
+
+// Bonded roles — generic accountability primitive in x/rep that the forum
+// (sentinel), collect (curator), and federation (verifier) modules build on.
+
+// Numeric values match the on-chain RoleType enum and are accepted by the
+// REST URL templates (e.g. /sparkdream/rep/v1/bonded_role/{role_type}/{address}).
+export const RoleType = {
+  UNSPECIFIED: 0,
+  FORUM_SENTINEL: 1,
+  COLLECT_CURATOR: 2,
+  FEDERATION_VERIFIER: 3,
+} as const;
+
+export type RoleTypeValue = typeof RoleType[keyof typeof RoleType];
+
+export const ROLE_TYPE_LABELS: Record<number, string> = {
+  [RoleType.FORUM_SENTINEL]: "Sentinel",
+  [RoleType.COLLECT_CURATOR]: "Curator",
+  [RoleType.FEDERATION_VERIFIER]: "Verifier",
+};
+
+export const BondedRoleStatus = {
+  NORMAL: "BONDED_ROLE_STATUS_NORMAL",
+  RECOVERY: "BONDED_ROLE_STATUS_RECOVERY",
+  DEMOTED: "BONDED_ROLE_STATUS_DEMOTED",
+} as const;
+
+export const BONDED_ROLE_STATUS_LABELS: Record<string, string> = {
+  [BondedRoleStatus.NORMAL]: "Normal",
+  [BondedRoleStatus.RECOVERY]: "Recovery",
+  [BondedRoleStatus.DEMOTED]: "Demoted",
+};
+
+export interface BondedRole {
+  address: string;
+  role_type: string;
+  bond_status: string;
+  current_bond: string;
+  total_committed_bond: string;
+  registered_at: string;
+  last_active_epoch: string;
+  consecutive_inactive_epochs: string;
+  demotion_cooldown_until: string;
+  cumulative_rewards: string;
+  last_reward_epoch: string;
+}
+
+export interface BondedRoleConfig {
+  role_type: string;
+  min_bond: string;
+  min_rep_tier: string;
+  min_trust_level: string;
+  min_age_blocks: string;
+  demotion_cooldown: string;
+  demotion_threshold: string;
+}
+
+export interface BondedRoleResponse {
+  bonded_role: BondedRole;
+}
+
+export interface BondedRolesByTypeResponse {
+  bonded_roles: BondedRole[];
+  pagination: Pagination;
+}
+
+export interface BondedRoleConfigResponse {
+  bonded_role_config: BondedRoleConfig;
 }

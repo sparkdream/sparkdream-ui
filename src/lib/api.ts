@@ -43,8 +43,7 @@ import type {
   GetItemResponse,
   ListItemsResponse,
   ListCollaboratorsResponse,
-  GetCuratorResponse,
-  ListCuratorsResponse,
+  GetCuratorActivityResponse,
   GetCurationSummaryResponse,
   ListCurationReviewsResponse,
   GetSponsorshipRequestResponse,
@@ -126,11 +125,15 @@ import type {
   PinnedPostsResponse,
   LockedThreadsResponse,
   TopPostsResponse,
-  SentinelStatusResponse,
-  SentinelBondCommitmentResponse,
   GetSentinelActivityResponse,
   MemberStandingResponse,
 } from "@/types/forum";
+import type {
+  BondedRoleResponse,
+  BondedRolesByTypeResponse,
+  BondedRoleConfigResponse,
+  RoleTypeValue,
+} from "@/types/rep";
 
 // In the browser, route through our Next.js proxy to avoid CORS issues.
 // On the server (SSR), call the LCD endpoint directly.
@@ -362,6 +365,24 @@ export async function getSessionParams(): Promise<SessionParamsResponse> {
 // Generic param fetcher — returns the raw JSON response
 export async function getModuleParams(path: string): Promise<Record<string, unknown>> {
   return get<Record<string, unknown>>(path);
+}
+
+// ── Cosmos base / Tendermint ───────────────────────────────────────
+
+interface LatestBlockResponse {
+  block: {
+    header: {
+      height: string;
+    };
+  };
+}
+
+// Latest block height (decimal string). Falls back to throwing on transport errors.
+export async function getLatestBlockHeight(): Promise<string> {
+  const res = await get<LatestBlockResponse>(
+    "/cosmos/base/tendermint/v1beta1/blocks/latest"
+  );
+  return res.block.header.height;
 }
 
 // ── Cosmos SDK x/gov ────────────────────────────────────────────────
@@ -624,16 +645,14 @@ export async function getCollaborators(
   );
 }
 
-export async function getCurator(address: string): Promise<GetCuratorResponse> {
-  return get<GetCuratorResponse>(`/sparkdream/collect/v1/curator/${address}`);
-}
-
-export async function listActiveCurators(
-  pagination?: PaginationRequest
-): Promise<ListCuratorsResponse> {
-  return get<ListCuratorsResponse>(
-    "/sparkdream/collect/v1/active_curators",
-    paginationParams(pagination)
+// Curator activity. Bond and registration data moved to the generic
+// BondedRole record in x/rep (ROLE_TYPE_COLLECT_CURATOR); use getBondedRole
+// or listBondedRolesByType for those.
+export async function getCuratorActivity(
+  address: string
+): Promise<GetCuratorActivityResponse> {
+  return get<GetCuratorActivityResponse>(
+    `/sparkdream/collect/v1/curator_activity/${address}`
   );
 }
 
@@ -927,25 +946,44 @@ export async function getFlagReviewQueue(
   );
 }
 
-// Sentinels
-
-export async function getSentinelStatus(address: string): Promise<SentinelStatusResponse> {
-  return get<SentinelStatusResponse>(`/sparkdream/forum/v1/sentinel_status/${address}`);
-}
-
-export async function getSentinelBondCommitment(
-  address: string
-): Promise<SentinelBondCommitmentResponse> {
-  return get<SentinelBondCommitmentResponse>(
-    `/sparkdream/forum/v1/sentinel_bond_commitment/${address}`
-  );
-}
+// Sentinels — bond/status now flow through the generic bonded-role primitive
+// in x/rep (see getBondedRole below). Forum-specific action counters still
+// live here.
 
 export async function getSentinelActivity(
   address: string
 ): Promise<GetSentinelActivityResponse> {
   return get<GetSentinelActivityResponse>(
     `/sparkdream/forum/v1/sentinel_activity/${address}`
+  );
+}
+
+// Bonded roles (x/rep)
+
+export async function getBondedRole(
+  roleType: RoleTypeValue,
+  address: string
+): Promise<BondedRoleResponse> {
+  return get<BondedRoleResponse>(
+    `/sparkdream/rep/v1/bonded_role/${roleType}/${address}`
+  );
+}
+
+export async function listBondedRolesByType(
+  roleType: RoleTypeValue,
+  pagination?: PaginationRequest
+): Promise<BondedRolesByTypeResponse> {
+  return get<BondedRolesByTypeResponse>(
+    `/sparkdream/rep/v1/bonded_roles_by_type/${roleType}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getBondedRoleConfig(
+  roleType: RoleTypeValue
+): Promise<BondedRoleConfigResponse> {
+  return get<BondedRoleConfigResponse>(
+    `/sparkdream/rep/v1/bonded_role_config/${roleType}`
   );
 }
 

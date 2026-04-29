@@ -71,7 +71,7 @@ export default function CreateCollectionForm({ onCreated }: CreateCollectionForm
 
   return (
     <div>
-      <h2 className="mb-4 text-lg font-semibold text-white">Create Collection</h2>
+      <h2 className="mb-4 text-lg font-semibold text-white">New collection</h2>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
@@ -79,7 +79,7 @@ export default function CreateCollectionForm({ onCreated }: CreateCollectionForm
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="My Collection"
+            placeholder="My collection"
             required
             className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
           />
@@ -117,7 +117,7 @@ export default function CreateCollectionForm({ onCreated }: CreateCollectionForm
               <option value={CollectionType.MIXED}>Mixed</option>
               <option value={CollectionType.NFT}>NFT</option>
               <option value={CollectionType.LINK}>Link</option>
-              <option value={CollectionType.ONCHAIN}>On-Chain</option>
+              <option value={CollectionType.ONCHAIN}>Onchain</option>
             </select>
           </div>
           <div>
@@ -148,9 +148,9 @@ export default function CreateCollectionForm({ onCreated }: CreateCollectionForm
         <button
           type="submit"
           disabled={!name.trim() || loading}
-          className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+          className="sd-btn-crystal w-full px-4 py-2.5"
         >
-          {loading ? "Creating..." : "Create Collection"}
+          {loading ? "Creating..." : "Create collection"}
         </button>
       </form>
     </div>

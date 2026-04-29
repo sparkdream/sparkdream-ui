@@ -76,6 +76,11 @@ export const RepMsgTypeUrls = {
   TopUpTagBudget: "/sparkdream.rep.v1.MsgTopUpTagBudget",
   ToggleTagBudget: "/sparkdream.rep.v1.MsgToggleTagBudget",
   WithdrawTagBudget: "/sparkdream.rep.v1.MsgWithdrawTagBudget",
+  // Generic bonded-role bond/unbond. Used by sentinels (forum), curators
+  // (collect), and verifiers (federation); the role is selected with the
+  // numeric RoleType value (see types/rep.ts).
+  BondRole: "/sparkdream.rep.v1.MsgBondRole",
+  UnbondRole: "/sparkdream.rep.v1.MsgUnbondRole",
 } as const;
 
 // Collect transaction message type URLs
@@ -92,8 +97,6 @@ export const CollectMsgTypeUrls = {
   AddCollaborator: "/sparkdream.collect.v1.MsgAddCollaborator",
   RemoveCollaborator: "/sparkdream.collect.v1.MsgRemoveCollaborator",
   UpdateCollaboratorRole: "/sparkdream.collect.v1.MsgUpdateCollaboratorRole",
-  RegisterCurator: "/sparkdream.collect.v1.MsgRegisterCurator",
-  UnregisterCurator: "/sparkdream.collect.v1.MsgUnregisterCurator",
   RateCollection: "/sparkdream.collect.v1.MsgRateCollection",
   ChallengeReview: "/sparkdream.collect.v1.MsgChallengeReview",
   RequestSponsorship: "/sparkdream.collect.v1.MsgRequestSponsorship",
@@ -143,8 +146,6 @@ export const ForumMsgTypeUrls = {
   PinReply: "/sparkdream.forum.v1.MsgPinReply",
   UnpinReply: "/sparkdream.forum.v1.MsgUnpinReply",
   MarkAcceptedReply: "/sparkdream.forum.v1.MsgMarkAcceptedReply",
-  BondSentinel: "/sparkdream.forum.v1.MsgBondSentinel",
-  UnbondSentinel: "/sparkdream.forum.v1.MsgUnbondSentinel",
   FreezeThread: "/sparkdream.forum.v1.MsgFreezeThread",
   UnarchiveThread: "/sparkdream.forum.v1.MsgUnarchiveThread",
 } as const;

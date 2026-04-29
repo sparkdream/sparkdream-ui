@@ -22,7 +22,7 @@ const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string 
   { value: "invite", label: "Invite Member", description: "Propose adding a new council member" },
   { value: "remove", label: "Remove Member", description: "Propose removing a council member" },
   { value: "update-config", label: "Update Config", description: "Propose changing a child committee's settings" },
-  { value: "create-category", label: "Create Forum Category", description: "Propose creating a new forum category" },
+  { value: "create-category", label: "Create Swarm Category", description: "Propose creating a new Swarm category" },
 ];
 
 interface NewCommunityProposalProps {
@@ -639,7 +639,7 @@ function defaultMetadata(
     case "update-config":
       return "Update council configuration";
     case "create-category":
-      return `Create forum category "${ctx.categoryTitle || ""}"`;
+      return `Create Swarm category "${ctx.categoryTitle || ""}"`;
     default:
       return "";
   }

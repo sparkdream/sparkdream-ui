@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
+import { useDisplayName } from "@/hooks/useDisplayName";
 import { truncateAddress } from "@/lib/utils";
 import SessionModeSwitcher from "@/components/SessionModeSwitcher";
 
@@ -11,11 +12,45 @@ type NavLeaf = { href: string; label: string; desc?: string; icon: React.ReactNo
 type NavGroup = { id: string; label: string; items: NavLeaf[] };
 
 const PRIMARY_LINKS: { href: string; label: string }[] = [
-  { href: "/blog", label: "Scrolls" },
-  { href: "/forum", label: "Forum" },
-  { href: "/collections", label: "Collections" },
   { href: "/season", label: "Season" },
 ];
+
+const PUBLISH_GROUP: NavGroup = {
+  id: "publish",
+  label: "Publish",
+  items: [
+    {
+      href: "/imaginarium",
+      label: "Imaginarium",
+      desc: "Long-form dreams & self-published works",
+      icon: (
+        <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M4 6h16M4 12h16M4 18h10" />
+        </svg>
+      ),
+    },
+    {
+      href: "/swarm",
+      label: "Swarm",
+      desc: "Discussions, bounties, and moderation",
+      icon: (
+        <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+        </svg>
+      ),
+    },
+    {
+      href: "/wonders",
+      label: "Wonders",
+      desc: "Curated collections — NFTs, links & refs",
+      icon: (
+        <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+        </svg>
+      ),
+    },
+  ],
+};
 
 const CONTRIBUTE_GROUP: NavGroup = {
   id: "contribute",
@@ -91,7 +126,7 @@ const SYSTEM_GROUP: NavGroup = {
     {
       href: "/names",
       label: "Names",
-      desc: "Human-readable on-chain",
+      desc: "Human-readable onchain",
       icon: (
         <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
           <path d="M4 4h16v6H4zM4 14h16v6H4z" />
@@ -108,6 +143,18 @@ const SYSTEM_GROUP: NavGroup = {
         <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
           <rect x="3" y="11" width="18" height="11" rx="2" />
           <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </svg>
+      ),
+    },
+    {
+      href: "/rss",
+      label: "RSS feed",
+      desc: "Subscribe to onchain updates",
+      icon: (
+        <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M4 11a9 9 0 0 1 9 9" />
+          <path d="M4 4a16 16 0 0 1 16 16" />
+          <circle cx="5" cy="19" r="1" fill="currentColor" />
         </svg>
       ),
     },
@@ -209,13 +256,13 @@ export default function Header() {
   const {
     address,
     signerAddress,
-    name,
     connected,
     connecting,
     connect,
     disconnect,
     sessionActive,
   } = useWallet();
+  const { name } = useDisplayName(address);
 
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -261,6 +308,7 @@ export default function Header() {
         </Link>
 
         <nav className="sd-primary-nav">
+          <Dropdown group={PUBLISH_GROUP} trigger="text" activeHref={pathname} />
           {PRIMARY_LINKS.map((l) => (
             <Link
               key={l.href}
@@ -275,7 +323,7 @@ export default function Header() {
         </nav>
 
         <div className="sd-topnav-right">
-          {connected ? (
+          {connected && (
             <>
               <SessionModeSwitcher />
               <div className="sd-identity">
@@ -286,18 +334,53 @@ export default function Header() {
                     : truncateAddress(address!)}
                 </div>
               </div>
-              <Dropdown group={SYSTEM_GROUP} trigger="icon" align="right" activeHref={pathname} />
-              <button className="sd-btn-ghost" onClick={disconnect}>
-                Disconnect
-              </button>
             </>
+          )}
+          <div className="sd-topnav-icons">
+            <Dropdown group={SYSTEM_GROUP} trigger="icon" align="right" activeHref={pathname} />
+            <button
+              type="button"
+              className="sd-icon-btn"
+              aria-label="RSS feed"
+              title="RSS feed"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M4 11a9 9 0 0 1 9 9" />
+                <path d="M4 4a16 16 0 0 1 16 16" />
+                <circle cx="5" cy="19" r="1" fill="currentColor" />
+              </svg>
+            </button>
+          </div>
+          {connected ? (
+            <button
+              className="sd-btn-ghost sd-disconnect-btn"
+              onClick={disconnect}
+              aria-label="Disconnect"
+              title="Disconnect"
+            >
+              <svg className="sd-disconnect-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              <span className="sd-disconnect-label">Disconnect</span>
+            </button>
           ) : (
             <button
               onClick={connect}
               disabled={connecting}
-              className="sd-btn sd-btn-primary"
+              className="sd-btn sd-btn-primary sd-connect-btn"
+              aria-label={connecting ? "Connecting" : "Connect wallet"}
+              title="Connect wallet"
             >
-              {connecting ? "Connecting..." : "Connect Wallet"}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" />
+                <path d="M3 5v14a2 2 0 0 0 2 2h16v-5" />
+                <path d="M18 12a2 2 0 0 0 0 4h4v-4z" />
+              </svg>
+              <span className="sd-connect-label">
+                {connecting ? "Connecting..." : "Connect Wallet"}
+              </span>
             </button>
           )}
         </div>
@@ -392,6 +475,11 @@ function MobileMenu({
                 <span className="label">{l.label}</span>
               </Link>
             ))}
+          </div>
+
+          <div className="sd-mobile-section">
+            <div className="sd-mobile-heading">{PUBLISH_GROUP.label}</div>
+            {PUBLISH_GROUP.items.map(renderLeaf)}
           </div>
 
           <div className="sd-mobile-section">

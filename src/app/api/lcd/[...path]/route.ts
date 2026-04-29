@@ -16,6 +16,13 @@ export async function GET(
     headers: { Accept: "application/json" },
   });
 
+  // The name module returns 404 when an address has no registered name.
+  // That's an expected outcome, not a failure — translate to 200 with an
+  // empty name so it doesn't surface as a network error in the browser.
+  if (res.status === 404 && path[0] === "sparkdream" && path[1] === "name" && path[3] === "reverse_resolve") {
+    return NextResponse.json({ name: "" });
+  }
+
   const body = await res.text();
   return new NextResponse(body, {
     status: res.status,

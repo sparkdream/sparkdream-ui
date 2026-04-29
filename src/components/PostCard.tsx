@@ -27,7 +27,7 @@ export default function PostCard({ post }: PostCardProps) {
   const replyCount = countToNum(post.reply_count);
 
   return (
-    <Link href={`/blog/${post.id}`} className="block">
+    <Link href={`/imaginarium/${post.id}`} className="block">
       <article
         className={`rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 transition-colors hover:border-zinc-700 hover:bg-zinc-900 ${
           isHidden ? "opacity-50" : ""

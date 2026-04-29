@@ -212,8 +212,8 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     return (
       <div className="space-y-4">
         <div className="h-8 w-48 animate-pulse rounded bg-zinc-800" />
-        <div className="h-32 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
-        <div className="h-48 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+        <div className="h-32 animate-pulse sd-hull-tile rounded-xl" />
+        <div className="h-48 animate-pulse sd-hull-tile rounded-xl" />
       </div>
     );
   }
@@ -243,7 +243,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
       </button>
 
       {/* Collection header */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+      <div className="sd-hull-tile rounded-xl p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <h2 className="text-xl font-bold text-white">{collection.name || `Collection #${collection.id}`}</h2>
@@ -363,12 +363,12 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                 {!showAddItem ? (
                   <button
                     onClick={() => setShowAddItem(true)}
-                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+                    className="sd-btn-crystal px-4 py-2"
                   >
                     Add Item
                   </button>
                 ) : (
-                  <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+                  <div className="sd-hull-tile rounded-xl p-4">
                     <h3 className="mb-3 text-sm font-semibold text-white">Add Item</h3>
                     <div className="space-y-3">
                       <input
@@ -398,7 +398,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                         >
                           <option value={ReferenceType.LINK}>Link</option>
                           <option value={ReferenceType.NFT}>NFT</option>
-                          <option value={ReferenceType.ON_CHAIN}>On-Chain</option>
+                          <option value={ReferenceType.ON_CHAIN}>Onchain</option>
                           <option value={ReferenceType.CUSTOM}>Custom</option>
                         </select>
                         {newItemRefType === ReferenceType.LINK && (
@@ -414,7 +414,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                         <button
                           onClick={handleAddItem}
                           disabled={!newItemTitle.trim() || actionLoading === "add-item"}
-                          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                          className="sd-btn-crystal px-4 py-2"
                         >
                           {actionLoading === "add-item" ? "Adding..." : "Add"}
                         </button>
@@ -432,13 +432,13 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
             )}
 
             {items.length === 0 ? (
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
+              <div className="sd-hull-tile rounded-xl p-8 text-center">
                 <p className="text-zinc-400">No items in this collection</p>
               </div>
             ) : (
               <div className="space-y-2">
                 {items.map((item) => (
-                  <div key={item.id} className="rounded-xl border border-zinc-800 bg-zinc-900/50">
+                  <div key={item.id} className="sd-hull-tile rounded-xl">
                     <button
                       onClick={() => setExpandedItem(expandedItem === item.id ? null : item.id)}
                       className="flex w-full items-center justify-between px-4 py-3 text-left"
@@ -530,12 +530,12 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                 {!showAddCollab ? (
                   <button
                     onClick={() => setShowAddCollab(true)}
-                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+                    className="sd-btn-crystal px-4 py-2"
                   >
                     Add Collaborator
                   </button>
                 ) : (
-                  <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+                  <div className="sd-hull-tile rounded-xl p-4">
                     <h3 className="mb-3 text-sm font-semibold text-white">Add Collaborator</h3>
                     <div className="space-y-3">
                       <input
@@ -556,7 +556,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                         <button
                           onClick={handleAddCollaborator}
                           disabled={!newCollabAddress.trim() || actionLoading === "add-collab"}
-                          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                          className="sd-btn-crystal px-4 py-2"
                         >
                           {actionLoading === "add-collab" ? "Adding..." : "Add"}
                         </button>
@@ -574,13 +574,13 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
             )}
 
             {collaborators.length === 0 ? (
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
+              <div className="sd-hull-tile rounded-xl p-8 text-center">
                 <p className="text-zinc-400">No collaborators</p>
               </div>
             ) : (
               <div className="space-y-2">
                 {collaborators.map((c) => (
-                  <div key={c.address} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+                  <div key={c.address} className="flex items-center justify-between sd-hull-tile rounded-xl px-4 py-3">
                     <div className="flex items-center gap-3">
                       <span className="font-mono text-sm text-zinc-300">{truncateAddress(c.address)}</span>
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -612,7 +612,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         {tab === "curation" && (
           <div>
             {curation ? (
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+              <div className="sd-hull-tile rounded-xl p-5">
                 <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
                   <div>
                     <p className="text-xs text-zinc-500">Up Reviews</p>
@@ -643,7 +643,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                 )}
               </div>
             ) : (
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
+              <div className="sd-hull-tile rounded-xl p-8 text-center">
                 <p className="text-zinc-400">No curation data yet</p>
               </div>
             )}

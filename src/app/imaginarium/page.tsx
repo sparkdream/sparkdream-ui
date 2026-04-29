@@ -4,16 +4,34 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import type { Post } from "@/types/blog";
 import { PostStatus } from "@/types/blog";
-import { listPosts, getAllMemberAddresses } from "@/lib/api";
+import { listPosts, getAllMemberAddresses, membersByTrustLevel } from "@/lib/api";
+import { TrustLevel } from "@/types/rep";
 import PostRow from "@/components/PostRow";
+import CreatePostForm from "@/components/CreatePostForm";
+import DreamDetail from "@/components/DreamDetail";
+import {
+  ContentPageLayout,
+  ContentToolbar,
+  SidebarSection,
+} from "@/components/layout/ContentPageLayout";
 import { useWallet } from "@/contexts/WalletContext";
 import { timeAgo, truncateAddress } from "@/lib/utils";
-import { useResolveName } from "@/hooks/useResolveName";
+import { useDisplayName } from "@/hooks/useDisplayName";
+import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
+import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 
 type SortOption = "newest" | "oldest";
 type FilterOption = "my-posts" | "members" | "all";
 
-export default function BlogPage() {
+// Ordered high→low as rendered. `rank` is used for "this level and above" filtering.
+const TRUST_LEVELS: { key: string; label: string; cls: string; value: string; rank: number }[] = [
+  { key: "core", label: "Core", cls: "trust-core", value: TrustLevel.CORE, rank: 4 },
+  { key: "trusted", label: "Trusted", cls: "trust-trusted", value: TrustLevel.TRUSTED, rank: 3 },
+  { key: "established", label: "Established", cls: "trust-est", value: TrustLevel.ESTABLISHED, rank: 2 },
+  { key: "provisional", label: "Provisional", cls: "trust-prov", value: TrustLevel.PROVISIONAL, rank: 1 },
+];
+
+export default function ImaginariumPage() {
   const { connected, address, sessionActive, activeSession } = useWallet();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,46 +42,23 @@ export default function BlogPage() {
 
   const [memberAddresses, setMemberAddresses] = useState<Set<string>>(new Set());
   const [membersLoading, setMembersLoading] = useState(true);
+  const [trustFilter, setTrustFilter] = useState<string | null>(null);
+  const [trustAddresses, setTrustAddresses] = useState<Set<string> | null>(null);
 
   const [filter, setFilter] = useState<FilterOption>("members");
   const [sort, setSort] = useState<SortOption>("newest");
+  const [searchQuery, setSearchQuery] = useState("");
   const [filterRestored, setFilterRestored] = useState(false);
-  const [feedCollapsed, setFeedCollapsed] = useState(false);
-  const [trustCollapsed, setTrustCollapsed] = useState(false);
-  const [tagsCollapsed, setTagsCollapsed] = useState(false);
-  const [collapseRestored, setCollapseRestored] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+
+  const [feedOpen, setFeedOpen] = useLocalStorageBoolean("imaginarium-feed-open", true);
+  const [trustOpen, setTrustOpen] = useLocalStorageBoolean("imaginarium-trust-open", true);
+
+  useSearchShortcut(searchRef);
 
   useEffect(() => {
-    setFeedCollapsed(localStorage.getItem("blog-feed-collapsed") === "1");
-    setTrustCollapsed(localStorage.getItem("blog-trust-collapsed") === "1");
-    setTagsCollapsed(localStorage.getItem("blog-tags-collapsed") === "1");
-    setCollapseRestored(true);
-  }, []);
-
-  useEffect(() => {
-    if (!collapseRestored) return;
-    localStorage.setItem("blog-feed-collapsed", feedCollapsed ? "1" : "0");
-    localStorage.setItem("blog-trust-collapsed", trustCollapsed ? "1" : "0");
-    localStorage.setItem("blog-tags-collapsed", tagsCollapsed ? "1" : "0");
-  }, [feedCollapsed, trustCollapsed, tagsCollapsed, collapseRestored]);
-
-  const TRUST_LEVELS: { key: string; label: string; cls: string }[] = [
-    { key: "core", label: "Core", cls: "trust-core" },
-    { key: "trusted", label: "Trusted", cls: "trust-trusted" },
-    { key: "established", label: "Established", cls: "trust-est" },
-    { key: "provisional", label: "Provisional", cls: "trust-prov" },
-  ];
-
-  const TAG_FILTERS: string[] = [
-    "governance",
-    "staking",
-    "collections",
-    "changelog",
-    "builders",
-  ];
-
-  useEffect(() => {
-    const saved = localStorage.getItem("blog-filter");
+    const saved = localStorage.getItem("imaginarium-filter");
     if (saved === "my-posts" || saved === "members" || saved === "all") {
       if (saved === "my-posts" && !connected) setFilter("members");
       else setFilter(saved);
@@ -72,7 +67,7 @@ export default function BlogPage() {
   }, [connected]);
 
   useEffect(() => {
-    if (filterRestored) localStorage.setItem("blog-filter", filter);
+    if (filterRestored) localStorage.setItem("imaginarium-filter", filter);
   }, [filter, filterRestored]);
 
   useEffect(() => {
@@ -81,6 +76,32 @@ export default function BlogPage() {
       .catch(() => {})
       .finally(() => setMembersLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!trustFilter) {
+      setTrustAddresses(null);
+      return;
+    }
+    const selected = TRUST_LEVELS.find((t) => t.key === trustFilter);
+    if (!selected) return;
+    const levels = TRUST_LEVELS.filter((t) => t.rank >= selected.rank);
+    let cancelled = false;
+    Promise.all(levels.map((l) => membersByTrustLevel(l.value, { limit: "500" })))
+      .then((results) => {
+        if (cancelled) return;
+        const addrs = new Set<string>();
+        for (const res of results) {
+          for (const m of res.members || []) addrs.add(m.address);
+        }
+        setTrustAddresses(addrs);
+      })
+      .catch(() => {
+        if (!cancelled) setTrustAddresses(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [trustFilter]);
 
   const fetchPosts = useCallback(async (paginationKey?: string) => {
     try {
@@ -96,7 +117,7 @@ export default function BlogPage() {
       setNextKey(res.pagination?.next_key || null);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load scrolls");
+      setError(err instanceof Error ? err.message : "Failed to load dreams");
     } finally {
       setLoading(false);
     }
@@ -126,18 +147,6 @@ export default function BlogPage() {
     return () => obs.disconnect();
   }, [fetchPosts]);
 
-  // ⌘K / Ctrl-K focuses search
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
-
   const filteredAndSorted = useMemo(() => {
     let result = posts;
     if (filter === "my-posts" && address) {
@@ -145,13 +154,16 @@ export default function BlogPage() {
     } else if (filter === "members" && memberAddresses.size > 0) {
       result = result.filter((p) => memberAddresses.has(p.creator));
     }
+    if (trustFilter && trustAddresses) {
+      result = result.filter((p) => trustAddresses.has(p.creator));
+    }
     if (sort === "oldest") {
       result = [...result].sort(
         (a, b) => parseInt(a.created_at, 10) - parseInt(b.created_at, 10)
       );
     }
     return result;
-  }, [posts, filter, sort, memberAddresses, address]);
+  }, [posts, filter, sort, memberAddresses, address, trustFilter, trustAddresses]);
 
   const featured = useMemo(
     () => filteredAndSorted.find((p) => !!p.pinned_by) || null,
@@ -167,155 +179,132 @@ export default function BlogPage() {
     : 0;
   const memberPostCount = posts.filter((p) => memberAddresses.has(p.creator)).length;
 
-  const collapseHead = (label: string, collapsed: boolean, toggle: () => void) => (
-    <button
-      type="button"
-      className="sd-side-group-head"
-      aria-expanded={!collapsed}
-      onClick={toggle}
-    >
-      {label}
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <polyline points="6 9 12 15 18 9" />
-      </svg>
-    </button>
-  );
-
-  const feedFilters = (
+  const sidebarFilters = (
     <>
-      <div className={`sd-side-group${feedCollapsed ? " collapsed" : ""}`}>
-        {collapseHead("Feed", feedCollapsed, () => setFeedCollapsed((v) => !v))}
-        {!feedCollapsed && (
-          <>
-            <button
-              type="button"
-              className={`sd-side-item${filter === "all" ? " active" : ""}`}
-              onClick={() => setFilter("all")}
-            >
-              <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <path d="M4 6h16M4 12h16M4 18h10" />
-              </svg>
-              All scrolls <span className="badge">{posts.length}</span>
-            </button>
-            <button
-              type="button"
-              className={`sd-side-item${filter === "members" ? " active" : ""}`}
-              onClick={() => setFilter("members")}
-            >
-              <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M19 8v6M22 11h-6" />
-              </svg>
-              Members <span className="badge">{memberPostCount}</span>
-            </button>
-            {connected && (
-              <button
-                type="button"
-                className={`sd-side-item${filter === "my-posts" ? " active" : ""}`}
-                onClick={() => setFilter("my-posts")}
-              >
-                <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <circle cx="12" cy="8" r="4" />
-                  <path d="M4 21a8 8 0 0 1 16 0" />
-                </svg>
-                My scrolls <span className="badge">{myPostCount}</span>
-              </button>
-            )}
-          </>
+      <SidebarSection label="Feed" open={feedOpen} onToggle={() => setFeedOpen(!feedOpen)}>
+        <button
+          type="button"
+          className={`sd-side-item dream-item${filter === "all" ? " active" : ""}`}
+          onClick={() => setFilter("all")}
+        >
+          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M4 6h16M4 12h16M4 18h10" />
+          </svg>
+          All dreams <span className="badge">{posts.length}</span>
+        </button>
+        <button
+          type="button"
+          className={`sd-side-item dream-item${filter === "members" ? " active" : ""}`}
+          onClick={() => setFilter("members")}
+        >
+          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M19 8v6M22 11h-6" />
+          </svg>
+          Members <span className="badge">{memberPostCount}</span>
+        </button>
+        {connected && (
+          <button
+            type="button"
+            className={`sd-side-item dream-item${filter === "my-posts" ? " active" : ""}`}
+            onClick={() => setFilter("my-posts")}
+          >
+            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 21a8 8 0 0 1 16 0" />
+            </svg>
+            My dreams <span className="badge">{myPostCount}</span>
+          </button>
         )}
-      </div>
+      </SidebarSection>
 
-      <div className={`sd-side-group${trustCollapsed ? " collapsed" : ""}`}>
-        {collapseHead("Trust level", trustCollapsed, () => setTrustCollapsed((v) => !v))}
-        {!trustCollapsed && (
-          <div className="sd-side-pills">
-            {TRUST_LEVELS.map((t) => (
-              <button key={t.key} type="button" className={`sd-pill ${t.cls}`}>
+      <SidebarSection label="Trust level" open={trustOpen} onToggle={() => setTrustOpen(!trustOpen)}>
+        <div className="sd-side-pills">
+          {TRUST_LEVELS.map((t) => {
+            const selectedRank = TRUST_LEVELS.find((x) => x.key === trustFilter)?.rank ?? null;
+            const included = selectedRank !== null && t.rank >= selectedRank;
+            const isSelected = trustFilter === t.key;
+            const dim = selectedRank !== null && !included;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                className={`sd-pill ${t.cls}`}
+                style={{ opacity: dim ? 0.4 : 1, outline: isSelected ? "1px solid currentColor" : "none" }}
+                onClick={() => setTrustFilter(isSelected ? null : t.key)}
+                title={`${t.label} and above`}
+              >
                 {t.label}
               </button>
-            ))}
-          </div>
-        )}
-      </div>
+            );
+          })}
+        </div>
+      </SidebarSection>
 
-      <div className={`sd-side-group${tagsCollapsed ? " collapsed" : ""}`}>
-        {collapseHead("Tags", tagsCollapsed, () => setTagsCollapsed((v) => !v))}
-        {!tagsCollapsed && (
-          <div className="sd-side-pills">
-            {TAG_FILTERS.map((t) => (
-              <button key={t} type="button" className="sd-pill tag">
-                #{t}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
     </>
   );
 
+  const primaryAction = connected
+    ? { label: "New dream", variant: "dream" as const, onClick: () => setShowCreate(true) }
+    : null;
+
+  const handleSelectPost = (p: Post) => setSelectedPostId(p.id);
+  const handleBackFromDetail = () => setSelectedPostId(null);
+
+  const toolbar = !showCreate && !selectedPostId && (
+    <ContentToolbar
+      segments={
+        <>
+          <button className={filter === "all" ? "on" : ""} onClick={() => setFilter("all")}>
+            All dreams
+          </button>
+          <button className={filter === "members" ? "on" : ""} onClick={() => setFilter("members")}>
+            Members
+          </button>
+          {connected && (
+            <button className={filter === "my-posts" ? "on" : ""} onClick={() => setFilter("my-posts")}>
+              My dreams
+            </button>
+          )}
+        </>
+      }
+      searchPlaceholder="Search dreams, tags, or addresses…"
+      searchValue={searchQuery}
+      onSearchChange={setSearchQuery}
+      searchRef={searchRef}
+      sort={sort}
+      onSortChange={setSort}
+      primaryAction={primaryAction}
+    />
+  );
+
   return (
-    <div className="sd-page">
-      <header className="sd-page-header">
-        <h1>Scrolls</h1>
-        <p>Long-form posts, reactions, and pinned memos from the community</p>
-      </header>
-      <div className="sd-page-grid with-rail">
-        {/* LEFT SIDEBAR (desktop only) */}
-        <aside className="sd-side">{feedFilters}</aside>
-
-        {/* MAIN COLUMN */}
-        <section>
-          <div className="sd-blog-toolbar">
-            <div className="sd-seg">
-              <button className={filter === "all" ? "on" : ""} onClick={() => setFilter("all")}>
-                All Scrolls
-              </button>
-              <button className={filter === "members" ? "on" : ""} onClick={() => setFilter("members")}>
-                Members
-              </button>
-              {connected && (
-                <button className={filter === "my-posts" ? "on" : ""} onClick={() => setFilter("my-posts")}>
-                  My Scrolls
-                </button>
-              )}
-            </div>
-            <label className="search">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ color: "var(--ink-mute)" }}>
-                <circle cx="11" cy="11" r="7" />
-                <path d="m20 20-3.5-3.5" />
-              </svg>
-              <input ref={searchRef} placeholder="Search scrolls, tags, or addresses…" />
-              <span className="k">⌘K</span>
-            </label>
-            <select
-              className="sd-select"
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SortOption)}
-            >
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
-            </select>
-            <div className="sd-toolbar-actions">
-              <button className="sd-btn sd-btn-secondary" title="RSS feed" type="button">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M4 11a9 9 0 0 1 9 9" />
-                  <path d="M4 4a16 16 0 0 1 16 16" />
-                  <circle cx="5" cy="19" r="1" fill="currentColor" />
-                </svg>
-                RSS
-              </button>
-              {connected && (
-                <Link href="/blog/new" className="sd-btn sd-btn-primary">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M12 5v14M5 12h14" />
-                  </svg>
-                  New Scroll
-                </Link>
-              )}
-            </div>
-          </div>
-
+    <ContentPageLayout
+      title="Imaginarium"
+      subtitle="Personal dreams, reflections, and self-published works from members"
+      sidebar={sidebarFilters}
+      toolbar={toolbar}
+      railCards={
+        <>
+          <TrendingCard posts={posts.slice(0, 5)} onSelect={handleSelectPost} />
+          <ActiveVoicesCard posts={posts} />
+          <SessionKeyCard
+            sessionActive={sessionActive}
+            granteeAddr={activeSession?.grantee || null}
+          />
+        </>
+      }
+    >
+      {selectedPostId ? (
+        <DreamDetail postId={selectedPostId} onBack={handleBackFromDetail} />
+      ) : showCreate ? (
+        <CreatePostForm
+          onCreated={() => setShowCreate(false)}
+          onCancel={() => setShowCreate(false)}
+        />
+      ) : (
+        <>
           {error && (
             <div
               style={{
@@ -345,7 +334,7 @@ export default function BlogPage() {
             </div>
           )}
 
-          {featured && <FeaturedPost post={featured} />}
+          {featured && <FeaturedPost post={featured} onSelect={handleSelectPost} />}
 
           {(loading && posts.length === 0) ? (
             <PostRowSkeleton />
@@ -355,12 +344,13 @@ export default function BlogPage() {
               filter={filter}
               hasAnyPosts={posts.length > 0}
               onShowAll={() => setFilter("all")}
+              onCreate={() => setShowCreate(true)}
             />
           ) : (
             <>
               <div className="sd-post-list">
                 {listPostsData.map((p) => (
-                  <PostRow key={p.id} post={p} />
+                  <PostRow key={p.id} post={p} onSelect={handleSelectPost} />
                 ))}
               </div>
               <div ref={sentinelRef} style={{ height: 1 }} />
@@ -376,46 +366,21 @@ export default function BlogPage() {
           {membersLoading && filter === "members" && posts.length > 0 && (
             <div className="sd-load-more">Loading members…</div>
           )}
-        </section>
-
-        {/* RIGHT RAIL */}
-        <aside className="sd-rail">
-          <div className="sd-rail-filters">{feedFilters}</div>
-          <div className="sd-col-actions">
-            <button className="sd-btn sd-btn-secondary" title="RSS feed" type="button">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M4 11a9 9 0 0 1 9 9" />
-                <path d="M4 4a16 16 0 0 1 16 16" />
-                <circle cx="5" cy="19" r="1" fill="currentColor" />
-              </svg>
-              RSS
-            </button>
-            {connected && (
-              <Link href="/blog/new" className="sd-btn sd-btn-primary">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
-                New Scroll
-              </Link>
-            )}
-          </div>
-
-          <TrendingCard posts={posts.slice(0, 5)} />
-          <ActiveVoicesCard posts={posts} />
-          <SessionKeyCard
-            sessionActive={sessionActive}
-            granteeAddr={activeSession?.grantee || null}
-          />
-        </aside>
-      </div>
-    </div>
+        </>
+      )}
+    </ContentPageLayout>
   );
 }
 
-function FeaturedPost({ post }: { post: Post }) {
-  const { name } = useResolveName(post.creator);
+function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => void }) {
+  const { name } = useDisplayName(post.creator);
   return (
-    <Link href={`/blog/${post.id}`} className="sd-featured">
+    <button
+      type="button"
+      onClick={() => onSelect(post)}
+      className="sd-featured"
+      style={{ background: "none", border: 0, padding: 0, cursor: "pointer", width: "100%", textAlign: "left", font: "inherit" }}
+    >
       <div className="art">
         <div className="glyph">
           <div className="frame">
@@ -445,32 +410,37 @@ function FeaturedPost({ post }: { post: Post }) {
           </div>
         </div>
       </div>
-    </Link>
+    </button>
   );
 }
 
-function TrendingCard({ posts }: { posts: Post[] }) {
-  if (posts.length === 0) return null;
+function TrendingCard({ posts, onSelect }: { posts: Post[]; onSelect: (p: Post) => void }) {
   return (
-    <div className="sd-rail-card">
+    <div className="sd-rail-card dreams">
       <h5>
-        Trending on-chain
+        Trending onchain
         <span className="live">
           <span className="d" />
           live
         </span>
       </h5>
+      {posts.length === 0 && (
+        <div style={{ fontSize: 12, color: "var(--ink-soft)", padding: "4px 0" }}>
+          No dreams yet.
+        </div>
+      )}
       {posts.map((p, i) => (
-        <Link
+        <button
           key={p.id}
-          href={`/blog/${p.id}`}
+          type="button"
+          onClick={() => onSelect(p)}
           className="sd-trend-row"
-          style={{ textDecoration: "none" }}
+          style={{ background: "transparent", border: 0, width: "100%", textAlign: "left", cursor: "pointer" }}
         >
           <span className="num">{String(i + 1).padStart(2, "0")}</span>
           <span className="title">{p.title}</span>
           <span className="c">{p.reply_count}</span>
-        </Link>
+        </button>
       ))}
     </div>
   );
@@ -485,19 +455,24 @@ function ActiveVoicesCard({ posts }: { posts: Post[] }) {
       .slice(0, 3);
   }, [posts]);
 
-  if (voices.length === 0) return null;
   return (
     <div className="sd-rail-card">
       <h5>Active voices this week</h5>
-      {voices.map(([addr, count], i) => (
-        <ActiveVoiceRow key={addr} addr={addr} count={count} idx={i} />
-      ))}
+      {voices.length === 0 ? (
+        <div style={{ fontSize: 12, color: "var(--ink-soft)", padding: "4px 0" }}>
+          No voices yet.
+        </div>
+      ) : (
+        voices.map(([addr, count], i) => (
+          <ActiveVoiceRow key={addr} addr={addr} count={count} idx={i} />
+        ))
+      )}
     </div>
   );
 }
 
 function ActiveVoiceRow({ addr, count, idx }: { addr: string; count: number; idx: number }) {
-  const { name } = useResolveName(addr);
+  const { name } = useDisplayName(addr);
   const gradients = [
     "linear-gradient(135deg, var(--violet), var(--rose))",
     "linear-gradient(135deg, var(--green), var(--violet))",
@@ -511,7 +486,7 @@ function ActiveVoiceRow({ addr, count, idx }: { addr: string; count: number; idx
       </div>
       <div className="info">
         <span className="addr">{name || truncateAddress(addr)}</span>
-        <div className="meta">{count} {count === 1 ? "scroll" : "scrolls"}</div>
+        <div className="meta">{count} {count === 1 ? "dream" : "dreams"}</div>
       </div>
     </div>
   );
@@ -586,11 +561,13 @@ function EmptyState({
   filter,
   hasAnyPosts,
   onShowAll,
+  onCreate,
 }: {
   connected: boolean;
   filter: FilterOption;
   hasAnyPosts: boolean;
   onShowAll: () => void;
+  onCreate: () => void;
 }) {
   return (
     <div
@@ -605,10 +582,10 @@ function EmptyState({
     >
       <p style={{ margin: 0 }}>
         {filter === "members" && hasAnyPosts
-          ? "No member scrolls found"
+          ? "No member dreams found"
           : filter === "my-posts"
-            ? "You haven't written a scroll yet"
-            : "No scrolls yet"}
+            ? "You haven't published a dream yet"
+            : "No dreams yet"}
       </p>
       {filter === "members" && hasAnyPosts ? (
         <button
@@ -622,12 +599,24 @@ function EmptyState({
             fontSize: 13,
           }}
         >
-          Show all scrolls
+          Show all dreams
         </button>
       ) : connected ? (
-        <Link href="/blog/new" style={{ display: "inline-block", marginTop: 12, color: "var(--violet-hi)", fontSize: 13 }}>
-          Create the first scroll
-        </Link>
+        <button
+          type="button"
+          onClick={onCreate}
+          style={{
+            display: "inline-block",
+            marginTop: 12,
+            background: "transparent",
+            border: 0,
+            color: "var(--violet-hi)",
+            cursor: "pointer",
+            fontSize: 13,
+          }}
+        >
+          Publish the first dream
+        </button>
       ) : null}
     </div>
   );

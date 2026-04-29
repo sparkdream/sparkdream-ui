@@ -91,14 +91,18 @@ export interface Collaborator {
   added_at: string;
 }
 
-export interface Curator {
+// Collect-specific per-curator counters. The bond/status/registration record
+// for a curator now lives in x/rep as BondedRole (ROLE_TYPE_COLLECT_CURATOR);
+// see types/rep.ts.
+export interface CuratorActivity {
   address: string;
-  bond_amount: string;
-  registered_at: string;
-  total_reviews: number;
-  challenged_reviews: number;
-  active: boolean;
-  pending_challenges: number;
+  total_reviews: string;
+  challenged_reviews: string;
+  upheld_reviews: string;
+  overturned_reviews: string;
+  consecutive_overturns: string;
+  consecutive_upheld: string;
+  epoch_reviews: string;
 }
 
 export interface TagCount {
@@ -157,7 +161,7 @@ export const CollectionType = {
 export const COLLECTION_TYPE_LABELS: Record<string, string> = {
   [CollectionType.NFT]: "NFT",
   [CollectionType.LINK]: "Link",
-  [CollectionType.ONCHAIN]: "On-Chain",
+  [CollectionType.ONCHAIN]: "Onchain",
   [CollectionType.MIXED]: "Mixed",
 };
 
@@ -198,7 +202,7 @@ export const ReferenceType = {
 export const REFERENCE_TYPE_LABELS: Record<string, string> = {
   [ReferenceType.NFT]: "NFT",
   [ReferenceType.LINK]: "Link",
-  [ReferenceType.ON_CHAIN]: "On-Chain",
+  [ReferenceType.ON_CHAIN]: "Onchain",
   [ReferenceType.CUSTOM]: "Custom",
 };
 
@@ -251,13 +255,8 @@ export interface ListCollaboratorsResponse {
   collaborators: Collaborator[];
 }
 
-export interface GetCuratorResponse {
-  curator: Curator;
-}
-
-export interface ListCuratorsResponse {
-  curators: Curator[];
-  pagination: Pagination;
+export interface GetCuratorActivityResponse {
+  curator_activity: CuratorActivity;
 }
 
 export interface GetCurationSummaryResponse {

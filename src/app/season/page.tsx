@@ -76,7 +76,7 @@ const REQUIREMENT_LABEL: Record<RequirementType, string> = {
   REQUIREMENT_TYPE_JURY_DUTY: "Jury duties completed",
   REQUIREMENT_TYPE_SEASONS_ACTIVE: "Seasons active",
   REQUIREMENT_TYPE_VOTES_CAST: "Votes cast",
-  REQUIREMENT_TYPE_FORUM_HELPFUL: "Forum helpful marks",
+  REQUIREMENT_TYPE_FORUM_HELPFUL: "Swarm helpful marks",
   REQUIREMENT_TYPE_TOP_XP: "Top XP rank",
   REQUIREMENT_TYPE_MIN_LEVEL: "Minimum level",
   REQUIREMENT_TYPE_ACHIEVEMENT_COUNT: "Achievements earned",
@@ -804,7 +804,7 @@ export default function SeasonPage() {
       <div className="sd-page">
         <header className="sd-page-header">
           <h1>Season</h1>
-          <p>XP, achievements, and titles earned across on-chain activity</p>
+          <p>XP, achievements, and titles earned across onchain activity</p>
         </header>
         <div className="sd-page-grid with-rail">
           <aside className="sd-side">
@@ -827,7 +827,7 @@ export default function SeasonPage() {
     <div className="sd-page">
       <header className="sd-page-header">
         <h1>Season{season ? ` ${season.number} · ${season.name}` : ""}</h1>
-        <p>{season?.theme || "XP, achievements, and titles earned across on-chain activity"}</p>
+        <p>{season?.theme || "XP, achievements, and titles earned across onchain activity"}</p>
       </header>
 
       <div className="sd-page-grid with-rail">
@@ -1239,7 +1239,7 @@ function OverviewView({
             color: "var(--ink-mute)",
           }}
         >
-          No season profile yet. Start participating on-chain to begin earning XP.
+          No season profile yet. Start participating onchain to begin earning XP.
         </div>
       ) : (
         <>
@@ -1288,7 +1288,7 @@ function OverviewView({
               }}
             >
               <MiniStat label="Votes cast" value={formatNum(profile.votes_cast)} />
-              <MiniStat label="Forum helpful" value={formatNum(profile.forum_helpful_count)} />
+              <MiniStat label="Swarm helpful" value={formatNum(profile.forum_helpful_count)} />
               <MiniStat label="Challenges won" value={formatNum(profile.challenges_won)} />
               <MiniStat label="Jury duties" value={formatNum(profile.jury_duties_completed)} />
               <MiniStat label="Invites landed" value={formatNum(profile.invitations_successful)} />

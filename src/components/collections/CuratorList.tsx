@@ -1,9 +1,17 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { listActiveCurators } from "@/lib/api";
+import { listBondedRolesByType, getCuratorActivity } from "@/lib/api";
 import { truncateAddress, formatTime } from "@/lib/utils";
-import type { Curator } from "@/types/collect";
+import {
+  RoleType,
+  BondedRoleStatus,
+  BONDED_ROLE_STATUS_LABELS,
+} from "@/types/rep";
+import type { BondedRole } from "@/types/rep";
+import type { CuratorActivity } from "@/types/collect";
+
+const CURATOR_ROLE = RoleType.COLLECT_CURATOR;
 
 function formatBond(amount: string): string {
   if (!amount || amount === "0") return "0";
@@ -11,10 +19,21 @@ function formatBond(amount: string): string {
   return (n / BigInt(1000000)).toLocaleString();
 }
 
+function statusBadge(status: string) {
+  if (status === BondedRoleStatus.NORMAL) {
+    return "bg-emerald-500/15 text-emerald-400";
+  }
+  if (status === BondedRoleStatus.RECOVERY) {
+    return "bg-amber-500/15 text-amber-400";
+  }
+  return "bg-red-500/15 text-red-400";
+}
+
 const PAGE_SIZE = "50";
 
 export default function CuratorList() {
-  const [curators, setCurators] = useState<Curator[]>([]);
+  const [curators, setCurators] = useState<BondedRole[]>([]);
+  const [activity, setActivity] = useState<Record<string, CuratorActivity>>({});
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,8 +44,8 @@ export default function CuratorList() {
     try {
       setLoading(true);
       setError(null);
-      const res = await listActiveCurators({ limit: PAGE_SIZE });
-      setCurators(res.curators || []);
+      const res = await listBondedRolesByType(CURATOR_ROLE, { limit: PAGE_SIZE });
+      setCurators(res.bonded_roles || []);
       setNextKey(res.pagination?.next_key || null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to load curators";
@@ -44,8 +63,8 @@ export default function CuratorList() {
     if (!nextKey || loadingMore) return;
     try {
       setLoadingMore(true);
-      const res = await listActiveCurators({ limit: PAGE_SIZE, key: nextKey });
-      setCurators((prev) => [...prev, ...(res.curators || [])]);
+      const res = await listBondedRolesByType(CURATOR_ROLE, { limit: PAGE_SIZE, key: nextKey });
+      setCurators((prev) => [...prev, ...(res.bonded_roles || [])]);
       setNextKey(res.pagination?.next_key || null);
     } catch (err) {
       console.error("Load more failed:", err);
@@ -57,6 +76,16 @@ export default function CuratorList() {
   useEffect(() => {
     fetchCurators();
   }, [fetchCurators]);
+
+  const loadActivity = useCallback(async (address: string) => {
+    if (activity[address]) return;
+    try {
+      const res = await getCuratorActivity(address);
+      setActivity((prev) => ({ ...prev, [address]: res.curator_activity }));
+    } catch {
+      // Activity may be 404 for a freshly bonded curator with no reviews yet.
+    }
+  }, [activity]);
 
   if (loading) {
     return (
@@ -79,68 +108,82 @@ export default function CuratorList() {
 
   return (
     <div>
-      <h2 className="mb-4 text-lg font-semibold text-white">Active Curators</h2>
+      <h2 className="mb-4 text-lg font-semibold text-white">Bonded Curators</h2>
 
       {curators.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
-          <p className="text-zinc-400">No active curators found</p>
+        <div className="sd-hull-tile rounded-xl p-12 text-center">
+          <p className="text-zinc-400">No bonded curators found</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {curators.map((c) => (
-            <div key={c.address} className="rounded-xl border border-zinc-800 bg-zinc-900/50">
-              <button
-                onClick={() => setExpanded(expanded === c.address ? null : c.address)}
-                className="flex w-full items-center justify-between px-4 py-3 text-left"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-sm text-zinc-300">{truncateAddress(c.address)}</span>
-                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-400">
-                    Active
-                  </span>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-xs text-zinc-500">{formatBond(c.bond_amount)} bonded</span>
-                  <span className="text-xs text-zinc-500">{c.total_reviews} reviews</span>
-                  <svg
-                    className={`h-4 w-4 text-zinc-500 transition-transform ${expanded === c.address ? "rotate-180" : ""}`}
-                    fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
-              </button>
+          {curators.map((c) => {
+            const act = activity[c.address];
+            return (
+              <div key={c.address} className="sd-hull-tile rounded-xl">
+                <button
+                  onClick={() => {
+                    const next = expanded === c.address ? null : c.address;
+                    setExpanded(next);
+                    if (next) loadActivity(c.address);
+                  }}
+                  className="flex w-full items-center justify-between px-4 py-3 text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-sm text-zinc-300">{truncateAddress(c.address)}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(c.bond_status)}`}>
+                      {BONDED_ROLE_STATUS_LABELS[c.bond_status] || c.bond_status}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs text-zinc-500">{formatBond(c.current_bond)} bonded</span>
+                    <svg
+                      className={`h-4 w-4 text-zinc-500 transition-transform ${expanded === c.address ? "rotate-180" : ""}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </button>
 
-              {expanded === c.address && (
-                <div className="border-t border-zinc-800 px-4 py-3">
-                  <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
-                    <div>
-                      <dt className="text-xs text-zinc-500">Bond Amount</dt>
-                      <dd className="text-zinc-300">{formatBond(c.bond_amount)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-zinc-500">Total Reviews</dt>
-                      <dd className="text-zinc-300">{c.total_reviews}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-zinc-500">Challenged</dt>
-                      <dd className="text-zinc-300">{c.challenged_reviews}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-zinc-500">Pending Challenges</dt>
-                      <dd className="text-zinc-300">{c.pending_challenges}</dd>
-                    </div>
-                    {c.registered_at && (
+                {expanded === c.address && (
+                  <div className="border-t border-zinc-800 px-4 py-3">
+                    <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
                       <div>
-                        <dt className="text-xs text-zinc-500">Registered</dt>
-                        <dd className="text-zinc-300">{formatTime(c.registered_at)}</dd>
+                        <dt className="text-xs text-zinc-500">Current Bond</dt>
+                        <dd className="text-zinc-300">{formatBond(c.current_bond)}</dd>
                       </div>
-                    )}
-                  </dl>
-                </div>
-              )}
-            </div>
-          ))}
+                      <div>
+                        <dt className="text-xs text-zinc-500">Committed</dt>
+                        <dd className="text-zinc-300">{formatBond(c.total_committed_bond)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-zinc-500">Rewards</dt>
+                        <dd className="text-amber-400">{formatBond(c.cumulative_rewards)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-zinc-500">Total Reviews</dt>
+                        <dd className="text-zinc-300">{act?.total_reviews ?? "—"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-zinc-500">Challenged</dt>
+                        <dd className="text-zinc-300">{act?.challenged_reviews ?? "—"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-zinc-500">Overturned</dt>
+                        <dd className="text-zinc-300">{act?.overturned_reviews ?? "—"}</dd>
+                      </div>
+                      {c.registered_at && (
+                        <div>
+                          <dt className="text-xs text-zinc-500">Registered</dt>
+                          <dd className="text-zinc-300">{formatTime(c.registered_at)}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {nextKey && (
             <button
               onClick={loadMore}

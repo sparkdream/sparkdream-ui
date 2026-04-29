@@ -5,6 +5,7 @@ import { ChainConfigProvider } from "@/contexts/ChainConfigContext";
 import { WalletProvider } from "@/contexts/WalletContext";
 import Header from "@/components/Header";
 import Ticker from "@/components/Ticker";
+import BackgroundField from "@/components/BackgroundField";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,6 +33,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <BackgroundField />
         <ChainConfigProvider>
           <WalletProvider>
             <Ticker />

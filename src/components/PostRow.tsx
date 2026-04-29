@@ -6,7 +6,7 @@ import type { Post, ReactionCounts } from "@/types/blog";
 import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
 import { timeAgo, countToNum, truncateAddress } from "@/lib/utils";
 import { getReactionCounts } from "@/lib/api";
-import { useResolveName } from "@/hooks/useResolveName";
+import { useDisplayName } from "@/hooks/useDisplayName";
 
 const AVATAR_GRADIENTS = [
   "linear-gradient(135deg, #6366f1, #f472b6)",
@@ -29,9 +29,18 @@ function initialFor(name: string | null, addr: string): string {
   return (match ? match[0] : "•").toUpperCase();
 }
 
-export default function PostRow({ post }: { post: Post }) {
+export default function PostRow({
+  post,
+  onSelect,
+}: {
+  post: Post;
+  /** When provided, the row renders as a button that calls this handler
+      instead of navigating via Link. Used when the parent page wants to show
+      the detail view inline (like Swarm/Wonders). */
+  onSelect?: (post: Post) => void;
+}) {
   const [counts, setCounts] = useState<ReactionCounts | null>(null);
-  const { name } = useResolveName(post.creator);
+  const { name } = useDisplayName(post.creator);
 
   useEffect(() => {
     getReactionCounts(post.id)
@@ -44,8 +53,10 @@ export default function PostRow({ post }: { post: Post }) {
   const isHidden = post.status === PostStatus.HIDDEN;
   const replyCount = countToNum(post.reply_count);
 
-  return (
-    <Link href={`/blog/${post.id}`} className="sd-post" style={isHidden ? { opacity: 0.5 } : undefined}>
+  const commonStyle = isHidden ? { opacity: 0.5 } : undefined;
+
+  const inner = (
+    <>
       <div className="who-col">
         <div className="sd-avatar" style={{ background: gradientFor(post.creator) }}>
           {initialFor(name, post.creator)}
@@ -105,6 +116,25 @@ export default function PostRow({ post }: { post: Post }) {
           </div>
         )}
       </div>
+    </>
+  );
+
+  if (onSelect) {
+    return (
+      <button
+        type="button"
+        onClick={() => onSelect(post)}
+        className="sd-post"
+        style={{ ...commonStyle, textAlign: "left", width: "100%", font: "inherit" }}
+      >
+        {inner}
+      </button>
+    );
+  }
+
+  return (
+    <Link href={`/imaginarium/${post.id}`} className="sd-post" style={commonStyle}>
+      {inner}
     </Link>
   );
 }

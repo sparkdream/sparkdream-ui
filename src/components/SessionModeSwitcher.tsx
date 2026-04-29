@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
+import { useDisplayName } from "@/hooks/useDisplayName";
 import { truncateAddress } from "@/lib/utils";
 
 export default function SessionModeSwitcher() {
   const {
+    address,
     signerAddress,
     sessionActive,
     activeSession,
@@ -13,9 +15,11 @@ export default function SessionModeSwitcher() {
     activateSession,
     deactivateSession,
   } = useWallet();
+  const { name } = useDisplayName(address);
   const [open, setOpen] = useState(false);
 
-  if (!signerAddress || availableSessions.length === 0) return null;
+  if (!signerAddress) return null;
+  const hasSessions = availableSessions.length > 0;
 
   return (
     <div className="relative">
@@ -31,12 +35,25 @@ export default function SessionModeSwitcher() {
           </span>
         </button>
       ) : (
-        <button
-          onClick={() => setOpen(!open)}
-          className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-300"
-        >
-          Session Keys ({availableSessions.length})
-        </button>
+        <>
+          {hasSessions && (
+            <button
+              onClick={() => setOpen(!open)}
+              className="sd-session-keys-btn rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-300"
+            >
+              Session Keys ({availableSessions.length})
+            </button>
+          )}
+          <button
+            onClick={hasSessions ? () => setOpen(!open) : undefined}
+            className="sd-session-identity-btn"
+            aria-label={hasSessions ? "Session keys" : "Wallet"}
+            disabled={!hasSessions}
+          >
+            {name && <span className="name">{name}</span>}
+            <span className="addr">{truncateAddress(signerAddress)}</span>
+          </button>
+        </>
       )}
 
       {open && (

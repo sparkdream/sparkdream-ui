@@ -2,14 +2,21 @@
 
 import { useEffect, useState, useCallback } from "react";
 import {
-  getSentinelStatus,
+  getBondedRole,
+  getBondedRoleConfig,
   getSentinelActivity,
-  getSentinelBondCommitment,
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
-import { ForumMsgTypeUrls } from "@/lib/tx";
+import { RepMsgTypeUrls } from "@/lib/tx";
 import type { SentinelActivity } from "@/types/forum";
-import { SENTINEL_BOND_STATUS_LABELS, SentinelBondStatus } from "@/types/forum";
+import {
+  RoleType,
+  BondedRoleStatus,
+  BONDED_ROLE_STATUS_LABELS,
+} from "@/types/rep";
+import type { BondedRole, BondedRoleConfig } from "@/types/rep";
+
+const SENTINEL_ROLE = RoleType.FORUM_SENTINEL;
 
 function formatAmount(amount: string): string {
   if (!amount || amount === "0") return "0";
@@ -17,20 +24,26 @@ function formatAmount(amount: string): string {
   return (n / BigInt(1000000)).toLocaleString();
 }
 
+function accuracyRate(activity: SentinelActivity | null): string {
+  if (!activity) return "—";
+  const upheld = BigInt(activity.upheld_hides || "0");
+  const overturned = BigInt(activity.overturned_hides || "0");
+  const total = upheld + overturned;
+  if (total === BigInt(0)) return "—";
+  const pct = (upheld * BigInt(10000)) / total;
+  return `${(Number(pct) / 100).toFixed(1)}%`;
+}
+
 export default function SentinelPanel() {
   const { address, signAndBroadcast } = useWallet();
 
-  const [bondStatus, setBondStatus] = useState<string>("");
-  const [currentBond, setCurrentBond] = useState<string>("0");
-  const [accuracyRate, setAccuracyRate] = useState<string>("0");
-  const [availableBond, setAvailableBond] = useState<string>("0");
-  const [totalCommitted, setTotalCommitted] = useState<string>("0");
+  const [bond, setBond] = useState<BondedRole | null>(null);
+  const [config, setConfig] = useState<BondedRoleConfig | null>(null);
   const [activity, setActivity] = useState<SentinelActivity | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSentinel, setIsSentinel] = useState(false);
 
-  // Bond/unbond form
   const [showBondForm, setShowBondForm] = useState(false);
   const [bondAmount, setBondAmount] = useState("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -41,27 +54,21 @@ export default function SentinelPanel() {
       setLoading(true);
       setError(null);
 
-      const statusRes = await getSentinelStatus(address).catch(() => null);
-      if (statusRes) {
+      const [bondRes, configRes] = await Promise.all([
+        getBondedRole(SENTINEL_ROLE, address).catch(() => null),
+        getBondedRoleConfig(SENTINEL_ROLE).catch(() => null),
+      ]);
+      setConfig(configRes?.bonded_role_config ?? null);
+
+      if (bondRes) {
         setIsSentinel(true);
-        setBondStatus(statusRes.bond_status || "");
-        setCurrentBond(statusRes.current_bond || "0");
-        setAccuracyRate(statusRes.accuracy_rate || "0");
-
-        const [commitRes, activityRes] = await Promise.all([
-          getSentinelBondCommitment(address).catch(() => null),
-          getSentinelActivity(address).catch(() => null),
-        ]);
-
-        if (commitRes) {
-          setAvailableBond(commitRes.available_bond || "0");
-          setTotalCommitted(commitRes.total_committed_bond || "0");
-        }
-        if (activityRes) {
-          setActivity(activityRes.sentinel_activity);
-        }
+        setBond(bondRes.bonded_role);
+        const activityRes = await getSentinelActivity(address).catch(() => null);
+        setActivity(activityRes?.sentinel_activity ?? null);
       } else {
         setIsSentinel(false);
+        setBond(null);
+        setActivity(null);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to load sentinel data";
@@ -85,9 +92,10 @@ export default function SentinelPanel() {
     try {
       const amountUdream = (BigInt(Math.floor(parseFloat(bondAmount) * 1_000_000))).toString();
       await signAndBroadcast([{
-        typeUrl: ForumMsgTypeUrls.BondSentinel,
+        typeUrl: RepMsgTypeUrls.BondRole,
         value: {
           creator: address,
+          roleType: SENTINEL_ROLE,
           amount: amountUdream,
         },
       }]);
@@ -107,9 +115,10 @@ export default function SentinelPanel() {
     try {
       const amountUdream = (BigInt(Math.floor(parseFloat(bondAmount) * 1_000_000))).toString();
       await signAndBroadcast([{
-        typeUrl: ForumMsgTypeUrls.UnbondSentinel,
+        typeUrl: RepMsgTypeUrls.UnbondRole,
         value: {
           creator: address,
+          roleType: SENTINEL_ROLE,
           amount: amountUdream,
         },
       }]);
@@ -127,7 +136,7 @@ export default function SentinelPanel() {
     return (
       <div className="space-y-4">
         <div className="h-8 w-48 animate-pulse rounded bg-zinc-800" />
-        <div className="h-32 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+        <div className="h-32 animate-pulse sd-hull-tile rounded-xl" />
       </div>
     );
   }
@@ -141,15 +150,29 @@ export default function SentinelPanel() {
     );
   }
 
+  const currentBond = bond?.current_bond ?? "0";
+  const totalCommitted = bond?.total_committed_bond ?? "0";
+  const availableBond = bond
+    ? (BigInt(currentBond) - BigInt(totalCommitted)).toString()
+    : "0";
+  const bondStatus = bond?.bond_status ?? "";
+
   return (
     <div>
       <h2 className="mb-4 text-lg font-semibold text-white">Sentinel Status</h2>
 
       {!isSentinel ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-          <p className="mb-4 text-sm text-zinc-400">
+        <div className="sd-hull-tile rounded-xl p-6">
+          <p className="mb-2 text-sm text-zinc-400">
             You are not a sentinel. Bond DREAM tokens to become a sentinel and help moderate the forum.
           </p>
+          {config && (
+            <p className="mb-4 text-xs text-zinc-500">
+              Minimum bond: {formatAmount(config.min_bond)} DREAM
+              {config.min_trust_level && config.min_trust_level !== "TRUST_LEVEL_UNSPECIFIED" &&
+                ` · Min trust: ${config.min_trust_level.replace("TRUST_LEVEL_", "")}`}
+            </p>
+          )}
           {!showBondForm ? (
             <button
               onClick={() => setShowBondForm(true)}
@@ -187,16 +210,16 @@ export default function SentinelPanel() {
       ) : (
         <div className="space-y-4">
           {/* Bond overview */}
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="sd-hull-tile rounded-xl p-5">
             <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
               <div>
                 <p className="text-xs text-zinc-500">Status</p>
                 <p className={`font-medium ${
-                  bondStatus === SentinelBondStatus.NORMAL ? "text-emerald-400"
-                    : bondStatus === SentinelBondStatus.RECOVERY ? "text-amber-400"
+                  bondStatus === BondedRoleStatus.NORMAL ? "text-emerald-400"
+                    : bondStatus === BondedRoleStatus.RECOVERY ? "text-amber-400"
                       : "text-red-400"
                 }`}>
-                  {SENTINEL_BOND_STATUS_LABELS[bondStatus] || bondStatus}
+                  {BONDED_ROLE_STATUS_LABELS[bondStatus] || bondStatus}
                 </p>
               </div>
               <div>
@@ -209,9 +232,34 @@ export default function SentinelPanel() {
               </div>
               <div>
                 <p className="text-xs text-zinc-500">Accuracy</p>
-                <p className="font-medium text-zinc-200">{accuracyRate}%</p>
+                <p className="font-medium text-zinc-200">{accuracyRate(activity)}</p>
               </div>
             </div>
+
+            {config && (
+              <div className="mt-3 grid grid-cols-2 gap-3 border-t border-zinc-800/60 pt-3 text-xs text-zinc-500 sm:grid-cols-4">
+                <div>
+                  <span className="text-zinc-600">Min bond: </span>
+                  <span className="text-zinc-400">{formatAmount(config.min_bond)} DREAM</span>
+                </div>
+                <div>
+                  <span className="text-zinc-600">Demotion floor: </span>
+                  <span className="text-zinc-400">{formatAmount(config.demotion_threshold)} DREAM</span>
+                </div>
+                {bond?.cumulative_rewards && bond.cumulative_rewards !== "0" && (
+                  <div>
+                    <span className="text-zinc-600">Rewards: </span>
+                    <span className="text-amber-400">{formatAmount(bond.cumulative_rewards)} DREAM</span>
+                  </div>
+                )}
+                {bond?.last_active_epoch && (
+                  <div>
+                    <span className="text-zinc-600">Last active epoch: </span>
+                    <span className="text-zinc-400">{bond.last_active_epoch}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="mt-4 flex gap-2">
               {!showBondForm ? (
@@ -257,7 +305,7 @@ export default function SentinelPanel() {
 
           {/* Activity stats */}
           {activity && (
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+            <div className="sd-hull-tile rounded-xl p-5">
               <h3 className="mb-3 text-sm font-semibold text-zinc-300">Activity</h3>
               <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                 <div>
@@ -293,8 +341,8 @@ export default function SentinelPanel() {
                   <p className="text-emerald-400">{activity.confirmed_proposals}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-zinc-500">Rewards</p>
-                  <p className="text-amber-400">{formatAmount(activity.cumulative_rewards)} DREAM</p>
+                  <p className="text-xs text-zinc-500">Pending Hides</p>
+                  <p className="text-zinc-200">{activity.pending_hide_count}</p>
                 </div>
               </div>
             </div>

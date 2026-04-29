@@ -6,7 +6,12 @@ import { useWallet } from "@/contexts/WalletContext";
 import { MsgTypeUrls } from "@/lib/tx";
 import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
 
-export default function CreatePostForm() {
+interface CreatePostFormProps {
+  onCreated?: () => void;
+  onCancel?: () => void;
+}
+
+export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormProps = {}) {
   const router = useRouter();
   const { address, connected, signAndBroadcast } = useWallet();
   const [title, setTitle] = useState("");
@@ -41,9 +46,10 @@ export default function CreatePostForm() {
       await signAndBroadcast([
         { typeUrl: MsgTypeUrls.CreatePost, value },
       ]);
-      router.push("/blog");
+      if (onCreated) onCreated();
+      else router.push("/imaginarium");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create scroll");
+      setError(err instanceof Error ? err.message : "Failed to publish dream");
     } finally {
       setSubmitting(false);
     }
@@ -52,7 +58,7 @@ export default function CreatePostForm() {
   if (!connected) {
     return (
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
-        <p className="text-zinc-400">Connect your wallet to create a scroll</p>
+        <p className="text-zinc-400">Connect your wallet to publish a dream</p>
       </div>
     );
   }
@@ -68,7 +74,7 @@ export default function CreatePostForm() {
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Scroll title"
+          placeholder="Dream title"
           maxLength={256}
           className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
@@ -100,7 +106,7 @@ export default function CreatePostForm() {
           id="body"
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="Write your scroll..."
+          placeholder="Write your dream..."
           rows={10}
           className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-3 text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
@@ -137,7 +143,7 @@ export default function CreatePostForm() {
               <option value={4}>4 (Highly Trusted)</option>
             </select>
             <p className="mt-1 text-xs text-zinc-600">
-              Minimum trust level required to reply to this scroll
+              Minimum trust level required to reply to this dream
             </p>
           </div>
 
@@ -171,13 +177,13 @@ export default function CreatePostForm() {
         <button
           type="submit"
           disabled={submitting || !title.trim() || !body.trim()}
-          className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+          className="sd-btn-gold px-6 py-2.5"
         >
-          {submitting ? "Publishing..." : "Publish Scroll"}
+          {submitting ? "Publishing..." : "Publish dream"}
         </button>
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={() => (onCancel ? onCancel() : router.back())}
           className="rounded-lg px-4 py-2.5 text-sm text-zinc-400 transition-colors hover:text-white"
         >
           Cancel

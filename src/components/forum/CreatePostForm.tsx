@@ -62,16 +62,16 @@ export default function CreatePostForm({
       setTags([]);
       onCreated();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to create post");
+      alert(err instanceof Error ? err.message : "Failed to send spark");
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+    <div className="sd-hull-tile rounded-xl p-4">
       <h3 className="mb-3 text-sm font-semibold text-white">
-        {mode === "thread" ? "New Post" : "Reply"}
+        {mode === "thread" ? "New ´spark" : "Reply"}
       </h3>
       <div className="space-y-3">
         <textarea
@@ -97,9 +97,9 @@ export default function CreatePostForm({
           <button
             onClick={handleSubmit}
             disabled={!content.trim() || submitting}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+            className="sd-btn-ember px-4 py-2"
           >
-            {submitting ? "Posting..." : mode === "thread" ? "Create Post" : "Post Reply"}
+            {submitting ? "Sending..." : mode === "thread" ? "Send spark" : "Send reply"}
           </button>
           <button
             onClick={onCancel}

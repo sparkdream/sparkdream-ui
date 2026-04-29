@@ -136,6 +136,7 @@ function ReplyItem({
               editReplyId={reply.id}
               initialBody={reply.body}
               initialContentType={parseInt(reply.content_type) || undefined}
+              variant="dream"
               compact
               onCancel={() => setShowEditForm(false)}
               onSubmitted={() => {
@@ -203,6 +204,7 @@ function ReplyItem({
             <ReplyForm
               postId={postId}
               parentReplyId={reply.id}
+              variant="dream"
               compact
               onCancel={() => setShowReplyForm(false)}
               onSubmitted={() => {

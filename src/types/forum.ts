@@ -131,6 +131,9 @@ export interface ThreadMoveRecord {
   initiative_id: string;
 }
 
+// Forum-specific sentinel counters. Bond, bond status, registration, and
+// reward stamps now live on the generic BondedRole record in x/rep — see
+// types/rep.ts.
 export interface SentinelActivity {
   address: string;
   total_hides: string;
@@ -139,16 +142,10 @@ export interface SentinelActivity {
   unchallenged_hides: string;
   epoch_hides: string;
   epoch_appeals_resolved: string;
-  last_reward_epoch: string;
-  cumulative_rewards: string;
   overturn_cooldown_until: string;
   consecutive_overturns: string;
-  bond_status: string;
-  current_bond: string;
-  total_committed_bond: string;
   pending_hide_count: string;
   consecutive_upheld: string;
-  demotion_cooldown_until: string;
   epoch_appeals_filed: string;
   total_locks: string;
   upheld_locks: string;
@@ -166,8 +163,6 @@ export interface SentinelActivity {
   confirmed_proposals: string;
   rejected_proposals: string;
   epoch_curations: string;
-  last_active_epoch: string;
-  consecutive_inactive_epochs: string;
 }
 
 export interface MemberReport {
@@ -262,18 +257,6 @@ export const BOUNTY_STATUS_LABELS: Record<string, string> = {
   [BountyStatus.MODERATION_PENDING]: "Moderation Pending",
 };
 
-export const SentinelBondStatus = {
-  NORMAL: "SENTINEL_BOND_STATUS_NORMAL",
-  RECOVERY: "SENTINEL_BOND_STATUS_RECOVERY",
-  DEMOTED: "SENTINEL_BOND_STATUS_DEMOTED",
-} as const;
-
-export const SENTINEL_BOND_STATUS_LABELS: Record<string, string> = {
-  [SentinelBondStatus.NORMAL]: "Normal",
-  [SentinelBondStatus.RECOVERY]: "Recovery",
-  [SentinelBondStatus.DEMOTED]: "Demoted",
-};
-
 export const GovActionType = {
   WARNING: "GOV_ACTION_TYPE_WARNING",
   DEMOTION: "GOV_ACTION_TYPE_DEMOTION",
@@ -289,7 +272,7 @@ export const GOV_ACTION_TYPE_LABELS: Record<string, string> = {
   [GovActionType.DEMOTION]: "Demotion",
   [GovActionType.ZEROING]: "Zeroing",
   [GovActionType.TAG_REMOVAL]: "Tag Removal",
-  [GovActionType.FORUM_PAUSE]: "Forum Pause",
+  [GovActionType.FORUM_PAUSE]: "Swarm Pause",
   [GovActionType.THREAD_LOCK]: "Thread Lock",
   [GovActionType.THREAD_MOVE]: "Thread Move",
 };
@@ -444,19 +427,6 @@ export interface TopPostsResponse {
 export interface ThreadLockStatusResponse {
   locked: boolean;
   lock_record: ThreadLockRecord | null;
-}
-
-export interface SentinelStatusResponse {
-  address: string;
-  bond_status: string;
-  current_bond: string;
-  accuracy_rate: string;
-}
-
-export interface SentinelBondCommitmentResponse {
-  current_bond: string;
-  total_committed_bond: string;
-  available_bond: string;
 }
 
 export interface GetSentinelActivityResponse {

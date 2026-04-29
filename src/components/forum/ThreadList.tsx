@@ -33,9 +33,10 @@ interface ThreadListProps {
   mode: "category" | "all" | "my-posts" | "top";
   category?: Category | null;
   onSelectThread: (post: ForumPost) => void;
+  tagFilter?: string | null;
 }
 
-export default function ThreadList({ mode, category, onSelectThread }: ThreadListProps) {
+export default function ThreadList({ mode, category, onSelectThread, tagFilter }: ThreadListProps) {
   const { address } = useWallet();
   const [threads, setThreads] = useState<ForumPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,11 +61,13 @@ export default function ThreadList({ mode, category, onSelectThread }: ThreadLis
         nk = res.pagination?.next_key || null;
       } else if (mode === "my-posts" && address) {
         const res = await getUserForumPosts(address, { limit: PAGE_SIZE });
-        posts = res.posts || [];
+        posts = (res.posts || []).filter((p) => p.status !== PostStatus.DELETED);
         nk = res.pagination?.next_key || null;
       } else if (mode === "top") {
         const res = await listForumPosts({ limit: "50", reverse: true });
-        const rootPosts = (res.post || []).filter((p) => p.parent_id === "0" || !p.parent_id);
+        const rootPosts = (res.post || []).filter(
+          (p) => (p.parent_id === "0" || !p.parent_id) && p.status !== PostStatus.DELETED
+        );
         // Sort by net votes descending
         rootPosts.sort((a, b) => {
           const va = parseInt(a.upvote_count || "0", 10) - parseInt(a.downvote_count || "0", 10);
@@ -75,8 +78,10 @@ export default function ThreadList({ mode, category, onSelectThread }: ThreadLis
         nk = null; // client-side sort, no server pagination
       } else {
         const res = await listForumPosts({ limit: PAGE_SIZE, reverse: true });
-        // Filter to root posts only (threads)
-        posts = (res.post || []).filter((p) => p.parent_id === "0" || !p.parent_id);
+        // Filter to root posts only (threads), excluding deleted
+        posts = (res.post || []).filter(
+          (p) => (p.parent_id === "0" || !p.parent_id) && p.status !== PostStatus.DELETED
+        );
         nk = res.pagination?.next_key || null;
       }
 
@@ -111,11 +116,13 @@ export default function ThreadList({ mode, category, onSelectThread }: ThreadLis
         nk = res.pagination?.next_key || null;
       } else if (mode === "my-posts" && address) {
         const res = await getUserForumPosts(address, { limit: PAGE_SIZE, key: nextKey });
-        posts = res.posts || [];
+        posts = (res.posts || []).filter((p) => p.status !== PostStatus.DELETED);
         nk = res.pagination?.next_key || null;
       } else {
         const res = await listForumPosts({ limit: PAGE_SIZE, key: nextKey, reverse: true });
-        posts = (res.post || []).filter((p) => p.parent_id === "0" || !p.parent_id);
+        posts = (res.post || []).filter(
+          (p) => (p.parent_id === "0" || !p.parent_id) && p.status !== PostStatus.DELETED
+        );
         nk = res.pagination?.next_key || null;
       }
 
@@ -136,7 +143,7 @@ export default function ThreadList({ mode, category, onSelectThread }: ThreadLis
     return (
       <div className="space-y-3">
         {[...Array(4)].map((_, i) => (
-          <div key={i} className="h-20 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+          <div key={i} className="h-20 animate-pulse sd-hull-tile rounded-xl" />
         ))}
       </div>
     );
@@ -151,14 +158,18 @@ export default function ThreadList({ mode, category, onSelectThread }: ThreadLis
     );
   }
 
+  const visible = tagFilter
+    ? threads.filter((p) => (p.tags || []).includes(tagFilter))
+    : threads;
+
   const title =
     mode === "category" && category
       ? category.title
       : mode === "my-posts"
-        ? "My Posts"
+        ? "My sparks"
         : mode === "top"
-          ? "Top Posts"
-          : "All Posts";
+          ? "Top sparks"
+          : "All sparks";
 
   return (
     <div>
@@ -166,15 +177,15 @@ export default function ThreadList({ mode, category, onSelectThread }: ThreadLis
         <h2 className="text-lg font-semibold text-white">{title}</h2>
       </div>
 
-      {threads.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+      {visible.length === 0 ? (
+        <div className="sd-hull-tile rounded-xl p-12 text-center">
           <p className="text-zinc-400">
-            {mode === "my-posts" ? "You have no forum posts yet" : "No posts found"}
+            {mode === "my-posts" ? "You have no sparks yet" : "No sparks found"}
           </p>
         </div>
       ) : (
         <div className="space-y-2">
-          {threads.map((post) => {
+          {visible.map((post) => {
             const votes = (parseInt(post.upvote_count || "0", 10)) - (parseInt(post.downvote_count || "0", 10));
             const contentPreview = post.content?.length > 120
               ? post.content.slice(0, 120) + "..."
@@ -184,7 +195,7 @@ export default function ThreadList({ mode, category, onSelectThread }: ThreadLis
               <button
                 key={post.post_id}
                 onClick={() => onSelectThread(post)}
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-800/50"
+                className="sd-hull-tile interactive w-full rounded-xl px-4 py-3 text-left"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">

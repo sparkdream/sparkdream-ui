@@ -98,7 +98,7 @@ export default function BountyList({ mode, onSelectThread }: BountyListProps) {
     return (
       <div className="space-y-3">
         {[...Array(3)].map((_, i) => (
-          <div key={i} className="h-20 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+          <div key={i} className="h-20 animate-pulse sd-hull-tile rounded-xl" />
         ))}
       </div>
     );
@@ -120,7 +120,7 @@ export default function BountyList({ mode, onSelectThread }: BountyListProps) {
       </h2>
 
       {bounties.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+        <div className="sd-hull-tile rounded-xl p-12 text-center">
           <p className="text-zinc-400">
             {mode === "my" ? "You have no bounties" : "No active bounties"}
           </p>
@@ -131,13 +131,13 @@ export default function BountyList({ mode, onSelectThread }: BountyListProps) {
             <button
               key={b.id}
               onClick={() => onSelectThread(b.thread_id)}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-800/50"
+              className="sd-hull-tile interactive w-full rounded-xl px-4 py-3 text-left"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-zinc-100">
-                      Post #{b.thread_id}
+                      Spark #{b.thread_id}
                     </span>
                     {bountyStatusBadge(b.status)}
                   </div>

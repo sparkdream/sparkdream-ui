@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import Link from "next/link";
 import type { Post } from "@/types/blog";
 import { PostStatus } from "@/types/blog";
 import { listPostsByCreator } from "@/lib/api";
 import PostCard from "@/components/PostCard";
+import CreatePostForm from "@/components/CreatePostForm";
 import { useWallet } from "@/contexts/WalletContext";
 
 export default function MyPostsPage() {
@@ -13,6 +13,7 @@ export default function MyPostsPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
   const [nextKey, setNextKey] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -36,7 +37,7 @@ export default function MyPostsPage() {
         setNextKey(res.pagination?.next_key || null);
         setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load scrolls");
+        setError(err instanceof Error ? err.message : "Failed to load dreams");
       } finally {
         setLoading(false);
       }
@@ -81,7 +82,7 @@ export default function MyPostsPage() {
           <div className="h-7 w-32 animate-pulse rounded bg-zinc-800" />
           <div className="mt-2 h-4 w-48 animate-pulse rounded bg-zinc-800/60" />
         </div>
-        <div className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+        <div className="animate-pulse sd-hull-tile rounded-xl p-5">
           <div className="mb-3 flex items-center gap-2">
             <div className="h-3 w-24 rounded bg-zinc-800" />
             <div className="h-3 w-3 rounded-full bg-zinc-800" />
@@ -98,10 +99,22 @@ export default function MyPostsPage() {
   if (!connected) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-8">
-        <h1 className="mb-6 text-2xl font-bold text-white">My Scrolls</h1>
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
-          <p className="text-zinc-400">Connect your wallet to see your scrolls</p>
+        <h1 className="mb-6 text-2xl font-bold text-white">My dreams</h1>
+        <div className="sd-hull-tile rounded-xl p-12 text-center">
+          <p className="text-zinc-400">Connect your wallet to see your dreams</p>
         </div>
+      </div>
+    );
+  }
+
+  if (showCreate) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-8">
+        <h1 className="mb-6 text-2xl font-bold text-white">New ✦dream</h1>
+        <CreatePostForm
+          onCreated={() => setShowCreate(false)}
+          onCancel={() => setShowCreate(false)}
+        />
       </div>
     );
   }
@@ -110,17 +123,18 @@ export default function MyPostsPage() {
     <div className="mx-auto max-w-3xl px-4 py-8">
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">My Scrolls</h1>
+          <h1 className="text-2xl font-bold text-white">My dreams</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Scrolls published by your account
+            Dreams published by your account
           </p>
         </div>
-        <Link
-          href="/blog/new"
+        <button
+          type="button"
+          onClick={() => setShowCreate(true)}
           className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
         >
-          New Scroll
-        </Link>
+          <span aria-hidden="true">✦</span> New dream
+        </button>
       </div>
 
       {error && (
@@ -136,7 +150,7 @@ export default function MyPostsPage() {
       )}
 
       {loading && posts.length === 0 ? (
-        <div className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+        <div className="animate-pulse sd-hull-tile rounded-xl p-5">
           <div className="mb-3 flex items-center gap-2">
             <div className="h-3 w-24 rounded bg-zinc-800" />
             <div className="h-3 w-3 rounded-full bg-zinc-800" />
@@ -154,14 +168,15 @@ export default function MyPostsPage() {
           </div>
         </div>
       ) : posts.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
-          <p className="text-zinc-400">You haven&apos;t published any scrolls yet</p>
-          <Link
-            href="/blog/new"
+        <div className="sd-hull-tile rounded-xl p-12 text-center">
+          <p className="text-zinc-400">You haven&apos;t published any dreams yet</p>
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
             className="mt-3 inline-block text-sm text-indigo-400 hover:text-indigo-300"
           >
-            Create your first scroll
-          </Link>
+            Publish your first dream
+          </button>
         </div>
       ) : (
         <>
@@ -173,7 +188,7 @@ export default function MyPostsPage() {
 
           <div ref={sentinelRef} className="h-px" />
           {loading && posts.length > 0 && (
-            <div className="mt-4 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+            <div className="mt-4 animate-pulse sd-hull-tile rounded-xl p-5">
               <div className="mb-3 flex items-center gap-2">
                 <div className="h-3 w-24 rounded bg-zinc-800" />
                 <div className="h-3 w-3 rounded-full bg-zinc-800" />

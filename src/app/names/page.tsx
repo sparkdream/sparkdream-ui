@@ -149,7 +149,7 @@ export default function NamesPage() {
       <header className="sd-page-header">
         <span className="crumb">System</span>
         <h1>Names</h1>
-        <p>Register and resolve human-readable names on-chain</p>
+        <p>Register and resolve human-readable names onchain</p>
       </header>
 
       {/* Mobile sidebar toggle */}

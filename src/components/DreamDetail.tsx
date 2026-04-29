@@ -1,21 +1,24 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useParams } from "next/navigation";
 import Link from "next/link";
 import type { Post, Reply } from "@/types/blog";
 import { PostStatus } from "@/types/blog";
 import { getPost, listReplies } from "@/lib/api";
 import { truncateAddress, formatTime, timeAgo } from "@/lib/utils";
-import ReactionBar from "@/components/ReactionBar";
-import ReplyThread from "@/components/ReplyThread";
-import ReplyForm from "@/components/ReplyForm";
+import ReactionBar from "./ReactionBar";
+import ReplyThread from "./ReplyThread";
+import ReplyForm from "./ReplyForm";
 import { useWallet } from "@/contexts/WalletContext";
 import { MsgTypeUrls } from "@/lib/tx";
 
-export default function PostDetailPage() {
-  const params = useParams();
-  const id = params.id as string;
+export default function DreamDetail({
+  postId,
+  onBack,
+}: {
+  postId: string;
+  onBack: () => void;
+}) {
   const { address, connected, signAndBroadcast } = useWallet();
 
   const [post, setPost] = useState<Post | null>(null);
@@ -28,31 +31,31 @@ export default function PostDetailPage() {
     try {
       setLoading(true);
       const [postRes, repliesRes] = await Promise.all([
-        getPost(id),
-        listReplies(id, { limit: "100", countTotal: true }),
+        getPost(postId),
+        listReplies(postId, { limit: "100", countTotal: true }),
       ]);
       setPost(postRes.post);
       setReplies(repliesRes.replies || []);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load scroll");
+      setError(err instanceof Error ? err.message : "Failed to load dream");
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [postId]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   const handleDelete = async () => {
-    if (!confirm("Are you sure you want to delete this scroll?")) return;
+    if (!confirm("Are you sure you want to delete this dream?")) return;
     setActionLoading(true);
     try {
       await signAndBroadcast([
         {
           typeUrl: MsgTypeUrls.DeletePost,
-          value: { creator: address, id: parseInt(id) },
+          value: { creator: address, id: parseInt(postId) },
         },
       ]);
       await fetchData();
@@ -70,7 +73,7 @@ export default function PostDetailPage() {
       await signAndBroadcast([
         {
           typeUrl: isHidden ? MsgTypeUrls.UnhidePost : MsgTypeUrls.HidePost,
-          value: { creator: address, id: parseInt(id) },
+          value: { creator: address, id: parseInt(postId) },
         },
       ]);
       await fetchData();
@@ -91,7 +94,7 @@ export default function PostDetailPage() {
           typeUrl: MsgTypeUrls.UpdatePost,
           value: {
             creator: address,
-            id: parseInt(id),
+            id: parseInt(postId),
             title: post.title,
             body: post.body,
             contentType: parseInt(post.content_type) || 0,
@@ -114,7 +117,7 @@ export default function PostDetailPage() {
       await signAndBroadcast([
         {
           typeUrl: MsgTypeUrls.PinPost,
-          value: { creator: address, id: parseInt(id) },
+          value: { creator: address, id: parseInt(postId) },
         },
       ]);
       await fetchData();
@@ -127,24 +130,27 @@ export default function PostDetailPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
+      <div>
         <div className="h-8 w-48 animate-pulse rounded bg-zinc-800" />
-        <div className="mt-4 h-64 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+        <div className="mt-4 h-64 animate-pulse sd-hull-tile rounded-xl" />
       </div>
     );
   }
 
   if (error || !post) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
+      <div>
+        <button
+          onClick={onBack}
+          className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+          Back
+        </button>
         <div className="rounded-xl border border-red-800 bg-red-900/20 p-6 text-center">
-          <p className="text-red-400">{error || "Scroll not found"}</p>
-          <Link
-            href="/blog"
-            className="mt-3 inline-block text-sm text-indigo-400 hover:text-indigo-300"
-          >
-            Back to scrolls
-          </Link>
+          <p className="text-red-400">{error || "Dream not found"}</p>
         </div>
       </div>
     );
@@ -155,25 +161,18 @@ export default function PostDetailPage() {
   const isDeleted = post.status === PostStatus.DELETED;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      {/* Breadcrumb */}
-      <Link
-        href="/blog"
+    <div>
+      <button
+        onClick={onBack}
         className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
         </svg>
-        Back to scrolls
-      </Link>
+        Back
+      </button>
 
-      {/* Post */}
-      <article
-        className={`rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 ${
-          isHidden ? "opacity-60" : ""
-        }`}
-      >
-        {/* Status badges */}
+      <article className={`sd-hull-tile rounded-xl p-6 ${isHidden ? "opacity-60" : ""}`}>
         <div className="mb-3 flex flex-wrap items-center gap-2">
           {post.pinned_by && (
             <span className="rounded bg-amber-900/30 px-2 py-0.5 text-xs text-amber-400">
@@ -191,7 +190,10 @@ export default function PostDetailPage() {
             </span>
           )}
           {post.expires_at && post.expires_at !== "0" && (
-            <span className="rounded bg-yellow-900/30 px-2 py-0.5 text-xs text-yellow-400" title={`Expires ${formatTime(post.expires_at)}`}>
+            <span
+              className="rounded bg-yellow-900/30 px-2 py-0.5 text-xs text-yellow-400"
+              title={`Expires ${formatTime(post.expires_at)}`}
+            >
               Ephemeral
             </span>
           )}
@@ -207,7 +209,6 @@ export default function PostDetailPage() {
           )}
         </div>
 
-        {/* Meta */}
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-zinc-500">
           <span className="font-mono">{truncateAddress(post.creator)}</span>
           <span>&middot;</span>
@@ -222,17 +223,15 @@ export default function PostDetailPage() {
           )}
         </div>
 
-        {/* Title & Body */}
         <h1 className="mb-4 text-2xl font-bold text-white">{post.title}</h1>
         <div className="mb-6 whitespace-pre-wrap text-zinc-300 leading-relaxed">
           {isDeleted ? (
-            <p className="italic text-zinc-600">[This scroll has been deleted]</p>
+            <p className="italic text-zinc-600">[This dream has been deleted]</p>
           ) : (
             post.body
           )}
         </div>
 
-        {/* Actions */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 pt-4">
           <ReactionBar postId={post.id} />
 
@@ -249,7 +248,7 @@ export default function PostDetailPage() {
             {isOwner && !isDeleted && (
               <>
                 <Link
-                  href={`/blog/${id}/edit`}
+                  href={`/imaginarium/${postId}/edit`}
                   className="rounded px-3 py-1 text-xs text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
                 >
                   Edit
@@ -274,7 +273,6 @@ export default function PostDetailPage() {
         </div>
       </article>
 
-      {/* Replies section */}
       {!isDeleted && (
         <section className="mt-8">
           <div className="mb-4 flex items-center justify-between">
@@ -308,15 +306,14 @@ export default function PostDetailPage() {
           </div>
 
           {!post.replies_enabled ? (
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 text-center text-sm text-zinc-500">
-              Replies are disabled for this scroll.
+            <div className="sd-hull-tile rounded-xl p-6 text-center text-sm text-zinc-500">
+              Replies are disabled for this dream.
             </div>
           ) : (
             <>
               <div className="mb-6">
-                <ReplyForm postId={post.id} onSubmitted={fetchData} />
+                <ReplyForm postId={post.id} variant="dream" onSubmitted={fetchData} />
               </div>
-
               <ReplyThread
                 replies={replies}
                 postId={post.id}

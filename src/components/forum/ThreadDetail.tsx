@@ -76,7 +76,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
           .catch(() => setIsFollowing(false));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load post");
+      setError(err instanceof Error ? err.message : "Failed to load spark");
     } finally {
       setLoading(false);
     }
@@ -127,7 +127,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   };
 
   const handleDelete = async (postId: string) => {
-    if (!address || !confirm("Delete this post? This cannot be undone.")) return;
+    if (!address || !confirm("Delete this spark? This cannot be undone.")) return;
     setActionLoading(`delete-${postId}`);
     try {
       await signAndBroadcast([{
@@ -152,8 +152,8 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     return (
       <div className="space-y-4">
         <div className="h-8 w-48 animate-pulse rounded bg-zinc-800" />
-        <div className="h-40 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
-        <div className="h-24 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+        <div className="h-40 animate-pulse sd-hull-tile rounded-xl" />
+        <div className="h-24 animate-pulse sd-hull-tile rounded-xl" />
       </div>
     );
   }
@@ -165,7 +165,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
           &larr; Back
         </button>
         <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-          {error || "Post not found"}
+          {error || "Spark not found"}
           <button onClick={fetchData} className="ml-2 underline hover:text-red-300">Retry</button>
         </div>
       </div>
@@ -182,8 +182,8 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     return (
       <div
         key={post.post_id}
-        className={`rounded-xl border bg-zinc-900/50 p-4 ${
-          isAcceptedReply ? "border-emerald-700/50" : "border-zinc-800"
+        className={`sd-hull-tile rounded-xl p-4 ${
+          isAcceptedReply ? "!border-emerald-700/50" : ""
         }`}
         style={{ marginLeft: `${indent * 24}px` }}
       >
@@ -315,7 +315,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
           {!showReplyForm ? (
             <button
               onClick={() => { setReplyToId(threadId); setShowReplyForm(true); }}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+              className="sd-btn-ember px-4 py-2"
             >
               Reply
             </button>
