@@ -471,7 +471,7 @@ function CreateThreadView({ onCreated, onCancel }: { onCreated: () => void; onCa
         <select
           value={catId}
           onChange={(e) => setCatId(e.target.value)}
-          className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-600 focus:outline-none"
+          className="sd-select"
         >
           {categories.map((c) => (
             <option key={c.category_id} value={c.category_id}>

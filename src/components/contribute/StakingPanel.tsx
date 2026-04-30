@@ -269,8 +269,8 @@ export default function StakingPanel() {
   if (loading) {
     return (
       <div className="space-y-3">
-        <div className="h-20 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
-        <div className="h-20 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+        <div className="h-20 animate-pulse rounded-xl sd-hull-tile" />
+        <div className="h-20 animate-pulse rounded-xl sd-hull-tile" />
       </div>
     );
   }
@@ -297,13 +297,13 @@ export default function StakingPanel() {
       </div>
 
       {showForm && (
-        <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+        <div className="mb-4 rounded-xl sd-hull-tile p-4">
           <h3 className="mb-3 text-sm font-semibold text-zinc-200">Stake DREAM</h3>
           <div className="space-y-3">
             <select
               value={formTargetType}
               onChange={(e) => setFormTargetType(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none"
+              className="sd-select w-full"
             >
               {Object.entries(STAKE_TARGET_LABELS).map(([val, label]) => (
                 <option key={val} value={val}>{label}</option>
@@ -395,7 +395,7 @@ export default function StakingPanel() {
       )}
 
       {stakes.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+        <div className="rounded-xl sd-hull-tile p-12 text-center">
           <p className="text-zinc-400">No active stakes</p>
           <p className="mt-1 text-xs text-zinc-500">
             Stake DREAM on initiatives, projects, members, or tags to earn rewards
@@ -404,7 +404,7 @@ export default function StakingPanel() {
       ) : (
         <div className="space-y-2">
           {stakes.map((s) => (
-            <div key={s.id} className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+            <div key={s.id} className="rounded-xl sd-hull-tile px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2">

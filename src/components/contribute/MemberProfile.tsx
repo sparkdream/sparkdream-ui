@@ -61,8 +61,8 @@ export default function MemberProfile() {
   if (loading) {
     return (
       <div className="space-y-4">
-        <div className="h-32 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
-        <div className="h-48 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+        <div className="h-32 animate-pulse rounded-xl sd-hull-tile" />
+        <div className="h-48 animate-pulse rounded-xl sd-hull-tile" />
       </div>
     );
   }
@@ -78,7 +78,7 @@ export default function MemberProfile() {
 
   if (notFound || !member) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+      <div className="rounded-xl sd-hull-tile p-12 text-center">
         <svg className="mx-auto h-12 w-12 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
         </svg>
@@ -95,7 +95,7 @@ export default function MemberProfile() {
   return (
     <div className="space-y-4">
       {/* Balance & trust level card */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+      <div className="rounded-xl sd-hull-tile p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs text-zinc-500">Member</p>
@@ -132,7 +132,7 @@ export default function MemberProfile() {
       </div>
 
       {/* Reputation scores */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+      <div className="rounded-xl sd-hull-tile p-5">
         <h3 className="text-sm font-semibold text-zinc-200">Reputation Scores</h3>
         {repTags.length === 0 ? (
           <p className="mt-3 text-sm text-zinc-500">No reputation scores yet</p>
@@ -149,7 +149,7 @@ export default function MemberProfile() {
       </div>
 
       {/* Details */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+      <div className="rounded-xl sd-hull-tile p-5">
         <h3 className="text-sm font-semibold text-zinc-200">Details</h3>
         <dl className="mt-3 space-y-2 text-sm">
           <div className="flex justify-between">

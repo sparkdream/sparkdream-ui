@@ -107,7 +107,7 @@ export default function CommunityProposals({
       )}
 
       {loading ? (
-        <div className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+        <div className="animate-pulse rounded-xl sd-hull-tile p-5">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="h-3 w-8 rounded bg-zinc-800" />
@@ -123,7 +123,7 @@ export default function CommunityProposals({
           </div>
         </div>
       ) : proposals.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+        <div className="rounded-xl sd-hull-tile p-12 text-center">
           <p className="text-zinc-400">No proposals yet</p>
         </div>
       ) : (
@@ -284,7 +284,7 @@ function CommonsProposalCard({
       : null;
 
   return (
-    <article className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+    <article className="rounded-xl sd-hull-tile p-5">
       {/* Header */}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">

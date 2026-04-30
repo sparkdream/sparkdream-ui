@@ -33,7 +33,7 @@ export default function CommunityMembers({ group, members }: CommunityMembersPro
       </div>
 
       {members.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+        <div className="rounded-xl sd-hull-tile p-12 text-center">
           <p className="text-zinc-400">No members</p>
         </div>
       ) : (
@@ -41,10 +41,10 @@ export default function CommunityMembers({ group, members }: CommunityMembersPro
           {members.map((m) => (
             <div
               key={m.address}
-              className={`flex items-center justify-between rounded-xl border p-4 ${
+              className={`flex items-center justify-between rounded-xl p-4 ${
                 m.address === address
-                  ? "border-indigo-500/30 bg-indigo-900/10"
-                  : "border-zinc-800 bg-zinc-900/50"
+                  ? "border border-indigo-500/30 bg-indigo-900/10"
+                  : "sd-hull-tile"
               }`}
             >
               <div className="flex items-center gap-3">

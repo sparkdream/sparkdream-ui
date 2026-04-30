@@ -256,7 +256,7 @@ export default function InitiativeList() {
     return (
       <div className="space-y-3">
         {[...Array(4)].map((_, i) => (
-          <div key={i} className="h-16 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+          <div key={i} className="h-16 animate-pulse rounded-xl sd-hull-tile" />
         ))}
       </div>
     );
@@ -289,7 +289,7 @@ export default function InitiativeList() {
       </div>
 
       {showForm && (
-        <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+        <div className="mb-4 rounded-xl sd-hull-tile p-4">
           <h3 className="mb-3 text-sm font-semibold text-zinc-200">New Initiative</h3>
           <div className="space-y-3">
             {loadingProjects ? (
@@ -328,7 +328,7 @@ export default function InitiativeList() {
               <select
                 value={formTier}
                 onChange={(e) => setFormTier(e.target.value)}
-                className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none"
+                className="sd-select"
               >
                 {Object.entries(INITIATIVE_TIER_LABELS).map(([val, label]) => (
                   <option key={val} value={val}>{label}</option>
@@ -337,7 +337,7 @@ export default function InitiativeList() {
               <select
                 value={formCategory}
                 onChange={(e) => setFormCategory(e.target.value)}
-                className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none"
+                className="sd-select"
               >
                 {Object.entries(INITIATIVE_CATEGORY_LABELS).map(([val, label]) => (
                   <option key={val} value={val}>{label}</option>
@@ -373,7 +373,7 @@ export default function InitiativeList() {
       )}
 
       {/* Tabs */}
-      <div className="mb-4 flex gap-1 rounded-lg border border-zinc-800 bg-zinc-900/50 p-1">
+      <div className="mb-4 flex gap-1 rounded-lg sd-hull-tile p-1">
         {tabs.map((t) => (
           <button
             key={t.key}
@@ -390,7 +390,7 @@ export default function InitiativeList() {
       </div>
 
       {initiatives.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+        <div className="rounded-xl sd-hull-tile p-12 text-center">
           <p className="text-zinc-400">
             {tab === "available" ? "No available initiatives" : tab === "mine" ? "No assigned initiatives" : "No initiatives yet"}
           </p>
@@ -398,7 +398,7 @@ export default function InitiativeList() {
       ) : (
         <div className="space-y-2">
           {initiatives.map((ini) => (
-            <div key={ini.id} className="rounded-xl border border-zinc-800 bg-zinc-900/50">
+            <div key={ini.id} className="rounded-xl sd-hull-tile">
               <button
                 onClick={() => setExpanded(expanded === ini.id ? null : ini.id)}
                 className="flex w-full items-center justify-between px-4 py-3 text-left"

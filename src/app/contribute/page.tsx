@@ -55,10 +55,10 @@ function ReputationPageInner() {
         </div>
         <div className="flex gap-6">
           <div className="hidden w-56 shrink-0 md:block">
-            <div className="h-64 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+            <div className="h-64 animate-pulse rounded-xl sd-hull-tile" />
           </div>
           <div className="flex-1">
-            <div className="h-48 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+            <div className="h-48 animate-pulse rounded-xl sd-hull-tile" />
           </div>
         </div>
       </div>
@@ -72,7 +72,7 @@ function ReputationPageInner() {
           <h1>Contribute</h1>
           <p>DREAM tokens, reputation scores, and community work</p>
         </header>
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+        <div className="rounded-xl sd-hull-tile p-12 text-center">
           <p className="text-zinc-400">
             Connect your wallet to view the contribution system
           </p>
@@ -235,7 +235,7 @@ function ReputationPageInner() {
       <div className="mb-4 md:hidden">
         <button
           onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
-          className="flex w-full items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-300"
+          className="flex w-full items-center justify-between rounded-lg sd-hull-tile px-4 py-2.5 text-sm text-zinc-300"
         >
           <span>{viewLabels[view]}</span>
           <svg
@@ -250,7 +250,7 @@ function ReputationPageInner() {
         </button>
 
         {mobileSidebarOpen && (
-          <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-900/80 p-3">
+          <div className="sd-hull-tile mt-2 rounded-lg p-3">
             {sidebarContent}
           </div>
         )}
@@ -259,7 +259,7 @@ function ReputationPageInner() {
       <div className="flex gap-6">
         {/* Desktop sidebar */}
         <div className="hidden w-52 shrink-0 md:block">
-          <div className="sticky top-24 rounded-xl border border-zinc-800 bg-zinc-900/50 p-3">
+          <div className="sticky top-24 rounded-xl sd-hull-tile p-3">
             {sidebarContent}
           </div>
         </div>

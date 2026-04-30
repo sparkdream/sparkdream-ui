@@ -95,7 +95,7 @@ export default function RevealPage() {
       <div className="sd-page">
         <header className="sd-page-header">
           <h1>Reveal</h1>
-          <p>Progressive open-source: staked conviction reveals closed-source code in tranches</p>
+          <p>Progressive open-source — staked conviction reveals closed-source code in tranches</p>
         </header>
         <div className="sd-hull-tile rounded-xl p-12 text-center">
           <p className="text-zinc-400">Connect your wallet to view reveal contributions</p>
@@ -177,7 +177,7 @@ export default function RevealPage() {
   return (
     <ContentPageLayout
       title="Reveal"
-      subtitle="Progressive open-source: staked conviction reveals closed-source code in tranches"
+      subtitle="Progressive open-source — staked conviction reveals closed-source code in tranches"
       sidebar={sidebarFilters}
       toolbar={toolbar}
       railCards={

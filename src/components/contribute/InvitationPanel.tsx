@@ -165,8 +165,8 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
   if (loading) {
     return (
       <div className="space-y-3">
-        <div className="h-20 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
-        <div className="h-20 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+        <div className="h-20 animate-pulse rounded-xl sd-hull-tile" />
+        <div className="h-20 animate-pulse rounded-xl sd-hull-tile" />
       </div>
     );
   }
@@ -225,7 +225,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
         </div>
 
         {showForm && (
-          <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+          <div className="mb-4 rounded-xl sd-hull-tile p-4">
             <h3 className="mb-3 text-sm font-semibold text-zinc-200">New Invitation</h3>
             <div className="space-y-3">
               <input
@@ -267,7 +267,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
         )}
 
         {sentInvitations.length === 0 ? (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+          <div className="rounded-xl sd-hull-tile p-12 text-center">
             <p className="text-zinc-400">No invitations sent</p>
             <p className="mt-1 text-xs text-zinc-500">
               Invite new members to the reputation system by staking DREAM
@@ -276,7 +276,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
         ) : (
           <div className="space-y-2">
             {sentInvitations.map((inv) => (
-              <div key={inv.id} className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+              <div key={inv.id} className="rounded-xl sd-hull-tile px-4 py-3">
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="flex items-center gap-2">

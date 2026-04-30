@@ -190,6 +190,16 @@ export const RevealMsgTypeUrls = {
   ResolveDispute: "/sparkdream.reveal.v1.MsgResolveDispute",
 } as const;
 
+// Futarchy transaction message type URLs
+export const FutarchyMsgTypeUrls = {
+  CreateMarket: "/sparkdream.futarchy.v1.MsgCreateMarket",
+  Trade: "/sparkdream.futarchy.v1.MsgTrade",
+  Redeem: "/sparkdream.futarchy.v1.MsgRedeem",
+  WithdrawLiquidity: "/sparkdream.futarchy.v1.MsgWithdrawLiquidity",
+  CancelMarket: "/sparkdream.futarchy.v1.MsgCancelMarket",
+  UpdateOperationalParams: "/sparkdream.futarchy.v1.MsgUpdateOperationalParams",
+} as const;
+
 // Build a blog message for signing.
 export function buildBlogMsg(typeUrl: string, value: Record<string, unknown>) {
   return { typeUrl, value };

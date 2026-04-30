@@ -92,7 +92,7 @@ export default function MemberList() {
     return (
       <div className="space-y-3">
         {[...Array(5)].map((_, i) => (
-          <div key={i} className="h-16 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+          <div key={i} className="h-16 animate-pulse rounded-xl sd-hull-tile" />
         ))}
       </div>
     );
@@ -114,7 +114,7 @@ export default function MemberList() {
         <select
           value={filterLevel}
           onChange={(e) => setFilterLevel(e.target.value)}
-          className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 text-xs text-zinc-300 focus:border-zinc-600 focus:outline-none"
+          className="sd-select"
         >
           <option value="all">All Trust Levels</option>
           <option value={TrustLevel.CORE}>Core</option>
@@ -126,13 +126,13 @@ export default function MemberList() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+        <div className="rounded-xl sd-hull-tile p-12 text-center">
           <p className="text-zinc-400">No members found</p>
         </div>
       ) : (
         <div className="space-y-2">
           {filtered.map((m) => (
-            <div key={m.address} className="rounded-xl border border-zinc-800 bg-zinc-900/50">
+            <div key={m.address} className="rounded-xl sd-hull-tile">
               <button
                 onClick={() => setExpanded(expanded === m.address ? null : m.address)}
                 className="flex w-full items-center justify-between px-4 py-3 text-left"

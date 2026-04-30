@@ -112,7 +112,7 @@ export default function CreateCollectionForm({ onCreated }: CreateCollectionForm
             <select
               value={collectionType}
               onChange={(e) => setCollectionType(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-600 focus:outline-none"
+              className="sd-select w-full"
             >
               <option value={CollectionType.MIXED}>Mixed</option>
               <option value={CollectionType.NFT}>NFT</option>
@@ -125,7 +125,7 @@ export default function CreateCollectionForm({ onCreated }: CreateCollectionForm
             <select
               value={visibility}
               onChange={(e) => setVisibility(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-600 focus:outline-none"
+              className="sd-select w-full"
             >
               <option value={CollectionVisibility.PUBLIC}>Public</option>
               <option value={CollectionVisibility.PRIVATE}>Private</option>

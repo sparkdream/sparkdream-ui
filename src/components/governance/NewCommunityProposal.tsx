@@ -246,7 +246,7 @@ export default function NewCommunityProposal({
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-5 rounded-xl border border-zinc-800 bg-zinc-900/50 p-5"
+      className="space-y-5 rounded-xl sd-hull-tile p-5"
     >
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-white">New Proposal</h3>
@@ -356,7 +356,7 @@ export default function NewCommunityProposal({
           <select
             value={removeAddress}
             onChange={(e) => setRemoveAddress(e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="sd-select w-full"
           >
             <option value="">Select a member...</option>
             {members.map((m) => (
@@ -417,7 +417,7 @@ export default function NewCommunityProposal({
             <select
               value={configTargetGroup}
               onChange={(e) => setConfigTargetGroup(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="sd-select w-full"
             >
               {childGroups.map((g) => (
                 <option key={g.index} value={g.index}>{g.index}</option>
@@ -447,7 +447,7 @@ export default function NewCommunityProposal({
               <select
                 value={configPolicyType}
                 onChange={(e) => setConfigPolicyType(e.target.value)}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                className="sd-select w-full"
               >
                 <option value="">No change</option>
                 <option value="percentage">Percentage</option>

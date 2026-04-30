@@ -145,6 +145,12 @@ import type {
   ListVotesByVoterResponse,
   RevealParamsResponse,
 } from "@/types/reveal";
+import type {
+  GetMarketResponse,
+  ListMarketResponse,
+  GetMarketPriceResponse,
+  FutarchyParamsResponse,
+} from "@/types/futarchy";
 
 // In the browser, route through our Next.js proxy to avoid CORS issues.
 // On the server (SSR), call the LCD endpoint directly.
@@ -1237,6 +1243,66 @@ export async function listVerificationVotesByVoter(
 
 export async function getRevealParams(): Promise<RevealParamsResponse> {
   return get<RevealParamsResponse>("/sparkdream/reveal/v1/params");
+}
+
+// ── Futarchy module ────────────────────────────────────────────────
+
+export async function getFutarchyMarket(index: string): Promise<GetMarketResponse> {
+  return get<GetMarketResponse>(`/sparkdream/futarchy/v1/market/${index}`);
+}
+
+export async function listFutarchyMarkets(
+  pagination?: PaginationRequest
+): Promise<ListMarketResponse> {
+  return get<ListMarketResponse>(
+    "/sparkdream/futarchy/v1/market",
+    paginationParams(pagination)
+  );
+}
+
+// Quote a YES or NO trade for a given amount. Pass amountIn as the base-denom
+// integer string (e.g. "1000" for 1k uspark). Pass empty string to fetch the
+// current marginal price only.
+export async function getFutarchyMarketPrice(
+  marketId: string,
+  isYes: boolean,
+  amountIn: string = ""
+): Promise<GetMarketPriceResponse> {
+  const params = new URLSearchParams();
+  params.set("is_yes", isYes ? "true" : "false");
+  if (amountIn) params.set("amount", amountIn);
+  return get<GetMarketPriceResponse>(
+    `/sparkdream/futarchy/v1/market/${marketId}/price`,
+    params
+  );
+}
+
+export async function getFutarchyParams(): Promise<FutarchyParamsResponse> {
+  return get<FutarchyParamsResponse>("/sparkdream/futarchy/v1/params");
+}
+
+// ── Cosmos SDK x/bank ──────────────────────────────────────────────
+
+export interface BankBalance {
+  denom: string;
+  amount: string;
+}
+
+interface AllBalancesResponse {
+  balances: BankBalance[];
+  pagination: { next_key: string | null; total: string };
+}
+
+// All bank balances held by an address. Used by the futarchy page to find
+// outstanding YES/NO share denoms (f/{id}/yes, f/{id}/no).
+export async function getAllBankBalances(
+  address: string,
+  pagination?: PaginationRequest
+): Promise<AllBalancesResponse> {
+  return get<AllBalancesResponse>(
+    `/cosmos/bank/v1beta1/balances/${address}`,
+    paginationParams(pagination)
+  );
 }
 
 // Fetch all member addresses across every council and return as a Set

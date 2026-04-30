@@ -138,7 +138,7 @@ export default function ChainProposals() {
           {[1, 2].map((i) => (
             <div
               key={i}
-              className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5"
+              className="animate-pulse rounded-xl sd-hull-tile p-5"
             >
               <div className="mb-2 h-5 w-2/3 rounded bg-zinc-800" />
               <div className="mb-2 h-4 w-1/2 rounded bg-zinc-800/60" />
@@ -150,7 +150,7 @@ export default function ChainProposals() {
           ))}
         </div>
       ) : proposals.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+        <div className="rounded-xl sd-hull-tile p-12 text-center">
           <p className="text-zinc-400">No chain proposals yet</p>
         </div>
       ) : (
@@ -420,7 +420,7 @@ function GovProposalCard({
   }
 
   return (
-    <article className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+    <article className="rounded-xl sd-hull-tile p-5">
       {/* Header */}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">

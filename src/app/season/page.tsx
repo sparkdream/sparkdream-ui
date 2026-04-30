@@ -811,8 +811,8 @@ export default function SeasonPage() {
             <div style={{ height: 220, borderRadius: "var(--r-md)", background: "var(--panel-2)", opacity: 0.5 }} />
           </aside>
           <section>
-            <div style={{ height: 180, marginBottom: 16, borderRadius: "var(--r-lg)", background: "var(--panel)", border: "1px solid var(--rule)" }} />
-            <div style={{ height: 320, borderRadius: "var(--r-lg)", background: "var(--panel)", border: "1px solid var(--rule)" }} />
+            <div style={{ height: 180, marginBottom: 16, borderRadius: "var(--r-lg)", backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)", border: "1px solid var(--rule)" }} />
+            <div style={{ height: 320, borderRadius: "var(--r-lg)", backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)", border: "1px solid var(--rule)" }} />
           </section>
           <aside className="sd-rail">
             <div className="sd-rail-card" style={{ height: 140 }} />
@@ -1219,7 +1219,7 @@ function OverviewView({
             marginTop: 20,
             padding: "48px 24px",
             textAlign: "center",
-            background: "var(--panel)",
+            backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
             border: "1px dashed var(--rule-strong)",
             borderRadius: "var(--r-lg)",
             color: "var(--ink-mute)",
@@ -1233,7 +1233,7 @@ function OverviewView({
             marginTop: 20,
             padding: "48px 24px",
             textAlign: "center",
-            background: "var(--panel)",
+            backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
             border: "1px dashed var(--rule-strong)",
             borderRadius: "var(--r-lg)",
             color: "var(--ink-mute)",
@@ -1247,7 +1247,7 @@ function OverviewView({
             style={{
               marginTop: 20,
               padding: 20,
-              background: "var(--panel)",
+              backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
               border: "1px solid var(--rule)",
               borderRadius: "var(--r-lg)",
               display: "grid",
@@ -1272,7 +1272,7 @@ function OverviewView({
             style={{
               marginTop: 16,
               padding: 20,
-              background: "var(--panel)",
+              backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
               border: "1px solid var(--rule)",
               borderRadius: "var(--r-lg)",
             }}
@@ -1299,7 +1299,7 @@ function OverviewView({
             style={{
               marginTop: 16,
               padding: 20,
-              background: "var(--panel)",
+              backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
               border: "1px solid var(--rule)",
               borderRadius: "var(--r-lg)",
             }}
@@ -1351,7 +1351,7 @@ function AchievementsView({
         style={{
           padding: "48px 24px",
           textAlign: "center",
-          background: "var(--panel)",
+          backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
           border: "1px dashed var(--rule-strong)",
           borderRadius: "var(--r-lg)",
           color: "var(--ink-mute)",
@@ -1376,7 +1376,7 @@ function AchievementsView({
             key={a.achievement_id}
             style={{
               padding: 16,
-              background: "var(--panel)",
+              backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
               border: "1px solid " + (isEarned ? "var(--violet-ring)" : "var(--rule)"),
               borderRadius: "var(--r-lg)",
               display: "flex",
@@ -1453,7 +1453,7 @@ function TitlesView({
         style={{
           padding: "48px 24px",
           textAlign: "center",
-          background: "var(--panel)",
+          backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
           border: "1px dashed var(--rule-strong)",
           borderRadius: "var(--r-lg)",
           color: "var(--ink-mute)",
@@ -1473,7 +1473,7 @@ function TitlesView({
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            background: "var(--panel)",
+            backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
             border: "1px solid var(--rule)",
             borderRadius: "var(--r-sm)",
             fontSize: 13,
@@ -1512,7 +1512,7 @@ function TitlesView({
               key={t.title_id}
               style={{
                 padding: 16,
-                background: "var(--panel)",
+                backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
                 border: "1px solid " + (isActive ? "var(--violet-hi)" : isUnlocked ? "var(--violet-ring)" : "var(--rule)"),
                 borderRadius: "var(--r-lg)",
                 display: "flex",
@@ -1831,7 +1831,7 @@ function QuestsView({
         style={{
           padding: "48px 24px",
           textAlign: "center",
-          background: "var(--panel)",
+          backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
           border: "1px dashed var(--rule-strong)",
           borderRadius: "var(--r-lg)",
           color: "var(--ink-mute)",
@@ -1860,7 +1860,7 @@ function QuestsView({
             key={q.quest_id}
             style={{
               padding: 16,
-              background: "var(--panel)",
+              backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
               border:
                 "1px solid " +
                 (isCompleted
@@ -2033,7 +2033,7 @@ function IdentityView({
         style={{
           padding: "48px 24px",
           textAlign: "center",
-          background: "var(--panel)",
+          backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
           border: "1px dashed var(--rule-strong)",
           borderRadius: "var(--r-lg)",
           color: "var(--ink-mute)",
@@ -2156,7 +2156,7 @@ function FormCard({
     <div
       style={{
         padding: 20,
-        background: "var(--panel)",
+        backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
         border: "1px solid var(--rule)",
         borderRadius: "var(--r-lg)",
       }}
@@ -2250,7 +2250,7 @@ function GuildView({
         style={{
           padding: "48px 24px",
           textAlign: "center",
-          background: "var(--panel)",
+          backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
           border: "1px dashed var(--rule-strong)",
           borderRadius: "var(--r-lg)",
           color: "var(--ink-mute)",
@@ -2302,7 +2302,7 @@ function GuildView({
         style={{
           padding: "48px 24px",
           textAlign: "center",
-          background: "var(--panel)",
+          backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
           border: "1px dashed var(--rule-strong)",
           borderRadius: "var(--r-lg)",
           color: "var(--ink-mute)",
@@ -2377,7 +2377,7 @@ function GuildCreateForm({
     <div
       style={{
         padding: 20,
-        background: "var(--panel)",
+        backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
         border: "1px solid var(--rule)",
         borderRadius: "var(--r-lg)",
         display: "flex",
@@ -2448,7 +2448,7 @@ function GuildInvitesView({
         style={{
           padding: "48px 24px",
           textAlign: "center",
-          background: "var(--panel)",
+          backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
           border: "1px dashed var(--rule-strong)",
           borderRadius: "var(--r-lg)",
           color: "var(--ink-mute)",
@@ -2500,7 +2500,7 @@ function GuildBrowseView({
         style={{
           padding: "48px 24px",
           textAlign: "center",
-          background: "var(--panel)",
+          backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
           border: "1px dashed var(--rule-strong)",
           borderRadius: "var(--r-lg)",
           color: "var(--ink-mute)",
@@ -2572,7 +2572,7 @@ function GuildCard({
     <div
       style={{
         padding: 16,
-        background: "var(--panel)",
+        backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
         border: "1px solid var(--rule)",
         borderRadius: "var(--r-lg)",
         display: "flex",
@@ -2670,7 +2670,7 @@ function GuildDetailView({
       <div
         style={{
           padding: 20,
-          background: "var(--panel)",
+          backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
           border: "1px solid var(--rule)",
           borderRadius: "var(--r-lg)",
           display: "flex",
@@ -2719,7 +2719,7 @@ function GuildDetailView({
       <div
         style={{
           padding: 20,
-          background: "var(--panel)",
+          backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
           border: "1px solid var(--rule)",
           borderRadius: "var(--r-lg)",
         }}
@@ -2809,7 +2809,7 @@ function GuildDetailView({
         <div
           style={{
             padding: 20,
-            background: "var(--panel)",
+            backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
             border: "1px solid var(--rule)",
             borderRadius: "var(--r-lg)",
           }}
@@ -2878,7 +2878,7 @@ function GuildDetailView({
         <div
           style={{
             padding: 20,
-            background: "var(--panel)",
+            backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
             border: "1px solid var(--rule)",
             borderRadius: "var(--r-lg)",
             display: "flex",
@@ -3046,7 +3046,7 @@ function NominationsView({
         style={{
           padding: "48px 24px",
           textAlign: "center",
-          background: "var(--panel)",
+          backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
           border: "1px dashed var(--rule-strong)",
           borderRadius: "var(--r-lg)",
           color: "var(--ink-mute)",
@@ -3119,7 +3119,7 @@ function NominationCard({
     <div
       style={{
         padding: 16,
-        background: "var(--panel)",
+        backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
         border: "1px solid " + (nomination.rewarded ? "var(--violet-ring)" : "var(--rule)"),
         borderRadius: "var(--r-lg)",
         display: "flex",
@@ -3250,7 +3250,7 @@ function NominateForm({
         style={{
           padding: "48px 24px",
           textAlign: "center",
-          background: "var(--panel)",
+          backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
           border: "1px dashed var(--rule-strong)",
           borderRadius: "var(--r-lg)",
           color: "var(--ink-mute)",
@@ -3267,7 +3267,7 @@ function NominateForm({
     <div
       style={{
         padding: 20,
-        background: "var(--panel)",
+        backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
         border: "1px solid var(--rule)",
         borderRadius: "var(--r-lg)",
         display: "flex",
@@ -3370,7 +3370,7 @@ function RetroRewardsView({
         style={{
           padding: "48px 24px",
           textAlign: "center",
-          background: "var(--panel)",
+          backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
           border: "1px dashed var(--rule-strong)",
           borderRadius: "var(--r-lg)",
           color: "var(--ink-mute)",
@@ -3386,7 +3386,7 @@ function RetroRewardsView({
   return (
     <div
       style={{
-        background: "var(--panel)",
+        backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
         border: "1px solid var(--rule)",
         borderRadius: "var(--r-lg)",
         overflow: "hidden",

@@ -152,7 +152,7 @@ export default function ProjectList() {
     return (
       <div className="space-y-3">
         {[...Array(3)].map((_, i) => (
-          <div key={i} className="h-20 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+          <div key={i} className="h-20 animate-pulse rounded-xl sd-hull-tile" />
         ))}
       </div>
     );
@@ -180,7 +180,7 @@ export default function ProjectList() {
       </div>
 
       {showForm && (
-        <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+        <div className="mb-4 rounded-xl sd-hull-tile p-4">
           <h3 className="mb-3 text-sm font-semibold text-zinc-200">New Project Proposal</h3>
           <div className="space-y-3">
             <input
@@ -209,7 +209,7 @@ export default function ProjectList() {
               <select
                 value={formCategory}
                 onChange={(e) => setFormCategory(e.target.value)}
-                className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none"
+                className="sd-select"
               >
                 {Object.entries(PROJECT_CATEGORY_LABELS).map(([val, label]) => (
                   <option key={val} value={val}>{label}</option>
@@ -219,7 +219,7 @@ export default function ProjectList() {
             <select
               value={formCouncil}
               onChange={(e) => setFormCouncil(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none"
+              className="sd-select w-full"
             >
               {councils.length === 0 && (
                 <option value="">No councils available</option>
@@ -256,13 +256,13 @@ export default function ProjectList() {
       )}
 
       {projects.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+        <div className="rounded-xl sd-hull-tile p-12 text-center">
           <p className="text-zinc-400">No projects yet</p>
         </div>
       ) : (
         <div className="space-y-2">
           {projects.map((p) => (
-            <div key={p.id} className="rounded-xl border border-zinc-800 bg-zinc-900/50">
+            <div key={p.id} className="rounded-xl sd-hull-tile">
               <button
                 onClick={() => setExpanded(expanded === p.id ? null : p.id)}
                 className="flex w-full items-center justify-between px-4 py-3 text-left"

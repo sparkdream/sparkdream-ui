@@ -106,7 +106,7 @@ export default function ReplyForm({
           <select
             value={contentType}
             onChange={(e) => setContentType(Number(e.target.value))}
-            className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+            className="sd-select"
           >
             {Object.entries(CONTENT_TYPE_INFO).map(([val, info]) => (
               <option key={val} value={val}>

@@ -80,10 +80,10 @@ export default function GovernancePage() {
         </div>
         <div className="flex gap-6">
           <div className="hidden w-56 shrink-0 md:block">
-            <div className="h-64 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+            <div className="h-64 animate-pulse rounded-xl sd-hull-tile" />
           </div>
           <div className="flex-1">
-            <div className="h-48 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+            <div className="h-48 animate-pulse rounded-xl sd-hull-tile" />
           </div>
         </div>
       </div>
@@ -98,7 +98,7 @@ export default function GovernancePage() {
           <h1>Governance</h1>
           <p>Community council and chain governance</p>
         </header>
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+        <div className="rounded-xl sd-hull-tile p-12 text-center">
           <p className="text-zinc-400">
             Connect your wallet to participate in governance
           </p>
@@ -138,7 +138,7 @@ export default function GovernancePage() {
                     const g = groups.find((g) => g.index === e.target.value);
                     if (g) setSelectedGroup(g);
                   }}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-2.5 py-1.5 text-xs text-zinc-300 focus:border-zinc-600 focus:outline-none"
+                  className="sd-select w-full"
                 >
                   {groups.map((g) => (
                     <option key={g.index} value={g.index}>
@@ -236,7 +236,7 @@ export default function GovernancePage() {
       <div className="mb-4 md:hidden">
         <button
           onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
-          className="flex w-full items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-300"
+          className="flex w-full items-center justify-between rounded-lg sd-hull-tile px-4 py-2.5 text-sm text-zinc-300"
         >
           <span>
             {view === "community-proposals" && "Community / Proposals"}
@@ -255,7 +255,7 @@ export default function GovernancePage() {
         </button>
 
         {mobileSidebarOpen && (
-          <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-900/80 p-3">
+          <div className="sd-hull-tile mt-2 rounded-lg p-3">
             {sidebarContent}
           </div>
         )}
@@ -264,7 +264,7 @@ export default function GovernancePage() {
       <div className="flex gap-6">
         {/* Desktop sidebar */}
         <div className="hidden w-52 shrink-0 md:block">
-          <div className="sticky top-24 rounded-xl border border-zinc-800 bg-zinc-900/50 p-3">
+          <div className="sticky top-24 rounded-xl sd-hull-tile p-3">
             {sidebarContent}
           </div>
         </div>
@@ -301,7 +301,7 @@ export default function GovernancePage() {
 
           {/* Show message if no groups loaded yet for community views */}
           {view.startsWith("community-") && !selectedGroup && !error && (
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+            <div className="rounded-xl sd-hull-tile p-12 text-center">
               <p className="text-zinc-400">Loading councils...</p>
             </div>
           )}

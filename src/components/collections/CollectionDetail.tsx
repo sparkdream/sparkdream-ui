@@ -394,7 +394,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                         <select
                           value={newItemRefType}
                           onChange={(e) => setNewItemRefType(e.target.value)}
-                          className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-600 focus:outline-none"
+                          className="sd-select"
                         >
                           <option value={ReferenceType.LINK}>Link</option>
                           <option value={ReferenceType.NFT}>NFT</option>
@@ -547,7 +547,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                       <select
                         value={newCollabRole}
                         onChange={(e) => setNewCollabRole(e.target.value)}
-                        className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-600 focus:outline-none"
+                        className="sd-select"
                       >
                         <option value={CollaboratorRole.EDITOR}>Editor</option>
                         <option value={CollaboratorRole.ADMIN}>Admin</option>
