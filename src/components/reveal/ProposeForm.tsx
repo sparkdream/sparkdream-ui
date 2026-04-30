@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { RevealMsgTypeUrls } from "@/lib/tx";
 import { dreamToMicro } from "@/lib/reveal-fmt";
+import NumberInput from "@/components/NumberInput";
 
 interface TrancheInput {
   name: string;
@@ -134,8 +135,7 @@ export default function ProposeForm({
         </Field>
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Total valuation (DREAM)">
-            <input
-              type="number"
+            <NumberInput
               step="any"
               min="0"
               className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
@@ -194,8 +194,7 @@ export default function ProposeForm({
                 />
               </Field>
               <Field label="Stake threshold (DREAM)">
-                <input
-                  type="number"
+                <NumberInput
                   step="any"
                   min="0"
                   className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
@@ -240,16 +239,7 @@ export default function ProposeForm({
         </button>
       </div>
 
-      <div className="flex items-center justify-end gap-2">
-        {error && <div className="mr-auto text-sm text-red-400">{error}</div>}
-        <button
-          type="button"
-          onClick={onCancel}
-          className="sd-btn-ghost"
-          disabled={submitting}
-        >
-          Cancel
-        </button>
+      <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={submit}
@@ -258,6 +248,15 @@ export default function ProposeForm({
         >
           {submitting ? "Submitting…" : "Propose"}
         </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="sd-btn sd-btn-secondary"
+          disabled={submitting}
+        >
+          Cancel
+        </button>
+        {error && <div className="text-sm text-red-400">{error}</div>}
       </div>
     </div>
   );

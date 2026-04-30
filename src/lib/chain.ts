@@ -6,6 +6,7 @@ export interface ChainConfig {
   chainName: string;
   lcdEndpoint: string;
   rpcEndpoint: string;
+  explorerUrl: string;
   denom: string;
   displayDenom: string;
   bech32Prefix: string;
@@ -16,6 +17,7 @@ export const defaults: ChainConfig = {
   chainName: process.env.NEXT_PUBLIC_CHAIN_NAME || "Spark Dream",
   lcdEndpoint: process.env.NEXT_PUBLIC_LCD_ENDPOINT || "https://api-test.sparkdream.io",
   rpcEndpoint: process.env.NEXT_PUBLIC_RPC_ENDPOINT || "https://rpc-test.sparkdream.io",
+  explorerUrl: process.env.NEXT_PUBLIC_EXPLORER_URL || "https://explorer-testnet.sparkdream.io/sparkdream",
   denom: process.env.NEXT_PUBLIC_DENOM || "uspark",
   displayDenom: process.env.NEXT_PUBLIC_DISPLAY_DENOM || "SPARK",
   bech32Prefix: process.env.NEXT_PUBLIC_BECH32_PREFIX || "sprkdrm",

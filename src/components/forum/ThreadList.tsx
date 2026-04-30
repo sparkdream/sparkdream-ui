@@ -34,9 +34,11 @@ interface ThreadListProps {
   category?: Category | null;
   onSelectThread: (post: ForumPost) => void;
   tagFilter?: string | null;
+  /** Optional CTA shown in the empty state to open the new-spark form. */
+  onCreate?: () => void;
 }
 
-export default function ThreadList({ mode, category, onSelectThread, tagFilter }: ThreadListProps) {
+export default function ThreadList({ mode, category, onSelectThread, tagFilter, onCreate }: ThreadListProps) {
   const { address } = useWallet();
   const [threads, setThreads] = useState<ForumPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -182,6 +184,23 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter }
           <p className="text-zinc-400">
             {mode === "my-posts" ? "You have no sparks yet" : "No sparks found"}
           </p>
+          {onCreate && !tagFilter && (
+            <button
+              type="button"
+              onClick={onCreate}
+              style={{
+                display: "inline-block",
+                marginTop: 12,
+                background: "transparent",
+                border: 0,
+                color: "#fff",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+            >
+              {mode === "my-posts" ? "Light your first spark" : "Light the first spark"}
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-2">

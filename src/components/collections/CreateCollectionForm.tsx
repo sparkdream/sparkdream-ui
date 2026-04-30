@@ -9,9 +9,10 @@ import TagPicker from "@/components/contribute/TagPicker";
 
 interface CreateCollectionFormProps {
   onCreated: () => void;
+  onCancel?: () => void;
 }
 
-export default function CreateCollectionForm({ onCreated }: CreateCollectionFormProps) {
+export default function CreateCollectionForm({ onCreated, onCancel }: CreateCollectionFormProps) {
   const { address, signAndBroadcast } = useWallet();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -71,7 +72,18 @@ export default function CreateCollectionForm({ onCreated }: CreateCollectionForm
 
   return (
     <div>
-      <h2 className="mb-4 text-lg font-semibold text-white">New collection</h2>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-white">New collection</h2>
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="sd-btn sd-btn-secondary"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>

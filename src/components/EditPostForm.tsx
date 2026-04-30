@@ -163,14 +163,14 @@ export default function EditPostForm({ post }: EditPostFormProps) {
         <button
           type="submit"
           disabled={submitting || !title.trim() || !body.trim()}
-          className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+          className="sd-btn sd-btn-primary"
         >
           {submitting ? "Saving..." : "Save Changes"}
         </button>
         <button
           type="button"
           onClick={() => router.push(`/imaginarium/${post.id}`)}
-          className="rounded-lg px-4 py-2.5 text-sm text-zinc-400 transition-colors hover:text-white"
+          className="sd-btn sd-btn-secondary"
         >
           Cancel
         </button>

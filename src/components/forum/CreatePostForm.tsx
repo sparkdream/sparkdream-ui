@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { ForumMsgTypeUrls } from "@/lib/tx";
-import { listTags } from "@/lib/api";
+import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
 
 interface CreatePostFormProps {
@@ -27,20 +27,10 @@ export default function CreatePostForm({
 
   const [content, setContent] = useState("");
   const [tags, setTags] = useState<string[]>([]);
-  const [availableTags, setAvailableTags] = useState<string[]>([]);
-  const [loadingTags, setLoadingTags] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (mode !== "thread") return;
-    setLoadingTags(true);
-    listTags({ limit: "200" })
-      .then((res) => {
-        setAvailableTags((res.tag || []).map((t) => t.name));
-      })
-      .catch(() => setAvailableTags([]))
-      .finally(() => setLoadingTags(false));
-  }, [mode]);
+  const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
+  const canCreateTags = useCanCreateTags(address);
 
   const handleSubmit = async () => {
     if (!address || !content.trim()) return;
@@ -54,10 +44,13 @@ export default function CreatePostForm({
         tags,
         contentType: 1, // CONTENT_TYPE_STANDARD
       };
-      await signAndBroadcast([{
-        typeUrl: ForumMsgTypeUrls.CreatePost,
-        value,
-      }]);
+      const tagMsgs =
+        mode === "thread" ? buildCreateTagMsgs(address, tags, availableTags) : [];
+      await signAndBroadcast([
+        ...tagMsgs,
+        { typeUrl: ForumMsgTypeUrls.CreatePost, value },
+      ]);
+      if (tagMsgs.length > 0) refreshTags();
       setContent("");
       setTags([]);
       onCreated();
@@ -88,9 +81,15 @@ export default function CreatePostForm({
               options={availableTags}
               value={tags}
               onChange={setTags}
-              placeholder="Select tags..."
+              placeholder={canCreateTags ? "Select or create tags..." : "Select tags..."}
               loading={loadingTags}
+              allowCreate={canCreateTags}
             />
+            {canCreateTags && (
+              <p className="mt-1 text-xs text-zinc-600">
+                New tags burn a small DREAM fee per tag and are added to the shared registry.
+              </p>
+            )}
           </div>
         )}
         <div className="flex gap-2">

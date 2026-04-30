@@ -8,6 +8,7 @@ import { getGovModuleAddress } from "@/lib/gov";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import ParamChangeForm from "./ParamChangeForm";
+import NumberInput from "@/components/NumberInput";
 
 type ChainProposalType =
   | "general"
@@ -257,18 +258,9 @@ export default function NewChainProposal({
       onSubmit={handleSubmit}
       className="space-y-5 rounded-xl sd-hull-tile p-5"
     >
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white">
-          New Chain Proposal
-        </h3>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-xs text-zinc-500 hover:text-zinc-300"
-        >
-          Cancel
-        </button>
-      </div>
+      <h3 className="text-lg font-semibold text-white">
+        New Chain Proposal
+      </h3>
 
       {/* Proposal type selector */}
       <div>
@@ -326,8 +318,7 @@ export default function NewChainProposal({
           <label className="mb-1.5 block text-sm font-medium text-zinc-300">
             Initial Deposit ({config.displayDenom})
           </label>
-          <input
-            type="number"
+          <NumberInput
             step="any"
             min="0"
             value={deposit}
@@ -405,8 +396,7 @@ export default function NewChainProposal({
             <label className="mb-1 block text-xs font-medium text-zinc-400">
               Upgrade Height
             </label>
-            <input
-              type="number"
+            <NumberInput
               min="1"
               value={upgradeHeight}
               onChange={(e) => setUpgradeHeight(e.target.value)}
@@ -508,8 +498,7 @@ export default function NewChainProposal({
               <label className="mb-1 block text-xs font-medium text-zinc-400">
                 Voting Period (hrs)
               </label>
-              <input
-                type="number"
+              <NumberInput
                 value={councilVotingPeriod}
                 onChange={(e) => setCouncilVotingPeriod(e.target.value)}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
@@ -519,8 +508,7 @@ export default function NewChainProposal({
               <label className="mb-1 block text-xs font-medium text-zinc-400">
                 Min Exec Period (hrs)
               </label>
-              <input
-                type="number"
+              <NumberInput
                 value={councilMinExecPeriod}
                 onChange={(e) => setCouncilMinExecPeriod(e.target.value)}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
@@ -530,8 +518,7 @@ export default function NewChainProposal({
               <label className="mb-1 block text-xs font-medium text-zinc-400">
                 Min Members
               </label>
-              <input
-                type="number"
+              <NumberInput
                 min="1"
                 value={councilMinMembers}
                 onChange={(e) => setCouncilMinMembers(e.target.value)}
@@ -542,8 +529,7 @@ export default function NewChainProposal({
               <label className="mb-1 block text-xs font-medium text-zinc-400">
                 Max Members
               </label>
-              <input
-                type="number"
+              <NumberInput
                 min="1"
                 value={councilMaxMembers}
                 onChange={(e) => setCouncilMaxMembers(e.target.value)}
@@ -554,8 +540,7 @@ export default function NewChainProposal({
               <label className="mb-1 block text-xs font-medium text-zinc-400">
                 Term Duration (days)
               </label>
-              <input
-                type="number"
+              <NumberInput
                 value={councilTermDuration}
                 onChange={(e) => setCouncilTermDuration(e.target.value)}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
@@ -575,14 +560,14 @@ export default function NewChainProposal({
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+          className="sd-btn sd-btn-primary"
         >
           {submitting ? "Submitting..." : "Submit Proposal"}
         </button>
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg border border-zinc-700 px-4 py-2.5 text-sm text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-300"
+          className="sd-btn sd-btn-secondary"
         >
           Cancel
         </button>
@@ -619,12 +604,12 @@ function MemberListEditor({
               placeholder="sprkdrm1..."
               className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 font-mono text-xs text-white placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
             />
-            <input
-              type="number"
+            <NumberInput
               min="1"
               value={m.weight}
               onChange={(e) => onUpdate(i, "weight", e.target.value)}
-              className="w-16 rounded-lg border border-zinc-700 bg-zinc-800/50 px-2 py-1.5 text-center text-xs text-white focus:border-indigo-500 focus:outline-none"
+              wrapperClassName="w-16"
+              className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-2 py-1.5 text-center text-xs text-white focus:border-indigo-500 focus:outline-none"
               title="Weight"
             />
             {members.length > 1 && (

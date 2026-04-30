@@ -377,6 +377,7 @@ export default function SwarmPage() {
           mode="all"
           onSelectThread={handleSelectThread}
           tagFilter={tagFilter}
+          onCreate={connected ? () => switchView("create") : undefined}
         />
       )}
       {view === "categories" && (
@@ -408,6 +409,7 @@ export default function SwarmPage() {
           mode="top"
           onSelectThread={handleSelectThread}
           tagFilter={tagFilter}
+          onCreate={connected ? () => switchView("create") : undefined}
         />
       )}
       {view === "create" && (
@@ -422,6 +424,7 @@ export default function SwarmPage() {
           mode="my-posts"
           onSelectThread={handleSelectThread}
           tagFilter={tagFilter}
+          onCreate={connected ? () => switchView("create") : undefined}
         />
       )}
       {view === "active-bounties" && (

@@ -15,6 +15,7 @@ import {
   BONDED_ROLE_STATUS_LABELS,
 } from "@/types/rep";
 import type { BondedRole, BondedRoleConfig } from "@/types/rep";
+import NumberInput from "@/components/NumberInput";
 
 const SENTINEL_ROLE = RoleType.FORUM_SENTINEL;
 
@@ -175,31 +176,33 @@ export default function SentinelPanel() {
           )}
           {!showBondForm ? (
             <button
+              type="button"
               onClick={() => setShowBondForm(true)}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+              className="sd-btn sd-btn-primary"
             >
               Become a Sentinel
             </button>
           ) : (
             <div className="space-y-3">
-              <input
+              <NumberInput
                 value={bondAmount}
                 onChange={(e) => setBondAmount(e.target.value)}
                 placeholder="Amount (DREAM)"
-                type="number"
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
               />
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={handleBond}
                   disabled={!bondAmount.trim() || actionLoading === "bond"}
-                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                  className="sd-btn sd-btn-primary"
                 >
                   {actionLoading === "bond" ? "Bonding..." : "Bond"}
                 </button>
                 <button
+                  type="button"
                   onClick={() => setShowBondForm(false)}
-                  className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-400 transition-colors hover:text-zinc-200"
+                  className="sd-btn sd-btn-secondary"
                 >
                   Cancel
                 </button>
@@ -271,17 +274,18 @@ export default function SentinelPanel() {
                 </button>
               ) : (
                 <div className="flex w-full items-center gap-2">
-                  <input
+                  <NumberInput
                     value={bondAmount}
                     onChange={(e) => setBondAmount(e.target.value)}
                     placeholder="Amount (DREAM)"
-                    type="number"
-                    className="w-32 rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
+                    wrapperClassName="w-32"
+                    className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
                   />
                   <button
+                    type="button"
                     onClick={handleBond}
                     disabled={!bondAmount.trim() || !!actionLoading}
-                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                    className="sd-btn sd-btn-primary"
                   >
                     {actionLoading === "bond" ? "..." : "Bond"}
                   </button>

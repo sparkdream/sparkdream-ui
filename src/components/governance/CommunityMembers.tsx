@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { Group, Member } from "@/types/commons";
 import { useWallet } from "@/contexts/WalletContext";
+import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { truncateAddress } from "@/lib/utils";
 
 interface CommunityMembersProps {
@@ -12,6 +13,8 @@ interface CommunityMembersProps {
 
 export default function CommunityMembers({ group, members }: CommunityMembersProps) {
   const { address } = useWallet();
+  const isMember = useIsRepMember(address);
+  const canInvite = isMember === true;
 
   return (
     <div>
@@ -22,10 +25,10 @@ export default function CommunityMembers({ group, members }: CommunityMembersPro
             {members.length} in {group.index}
           </span>
         </h2>
-        {group.index === "Commons Council" && (
+        {group.index === "Commons Council" && canInvite && (
           <Link
             href="/contribute?view=invitations"
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-500"
+            className="sd-btn sd-btn-primary"
           >
             Invite Member
           </Link>

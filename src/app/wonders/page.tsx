@@ -270,10 +270,14 @@ export default function WondersPage() {
           filterType={filterType}
           tagFilter={tagFilter}
           onSelect={handleSelectCollection}
+          onCreate={connected ? () => switchView("create") : undefined}
         />
       )}
       {view === "create" && (
-        <CreateCollectionForm onCreated={handleCreated} />
+        <CreateCollectionForm
+          onCreated={handleCreated}
+          onCancel={() => switchView("browse")}
+        />
       )}
       {view === "browse" && (
         <CollectionList
@@ -282,6 +286,7 @@ export default function WondersPage() {
           filterType={filterType}
           tagFilter={tagFilter}
           onSelect={handleSelectCollection}
+          onCreate={connected ? () => switchView("create") : undefined}
         />
       )}
       {view === "curators" && <CuratorList />}

@@ -7,6 +7,7 @@ import { listGroups } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { truncateAddress } from "@/lib/utils";
+import NumberInput from "@/components/NumberInput";
 
 type ProposalType =
   | "general"
@@ -248,16 +249,7 @@ export default function NewCommunityProposal({
       onSubmit={handleSubmit}
       className="space-y-5 rounded-xl sd-hull-tile p-5"
     >
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white">New Proposal</h3>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-xs text-zinc-500 hover:text-zinc-300"
-        >
-          Cancel
-        </button>
-      </div>
+      <h3 className="text-lg font-semibold text-white">New Proposal</h3>
 
       {/* Proposal type selector */}
       <div>
@@ -337,8 +329,7 @@ export default function NewCommunityProposal({
             <label className="mb-1.5 block text-sm font-medium text-zinc-300">
               Voting Weight
             </label>
-            <input
-              type="number"
+            <NumberInput
               min="1"
               value={inviteWeight}
               onChange={(e) => setInviteWeight(e.target.value)}
@@ -389,8 +380,7 @@ export default function NewCommunityProposal({
             <label className="mb-1.5 block text-sm font-medium text-zinc-300">
               Amount ({config.displayDenom})
             </label>
-            <input
-              type="number"
+            <NumberInput
               step="any"
               min="0"
               value={spendAmount}
@@ -458,8 +448,7 @@ export default function NewCommunityProposal({
               <label className="mb-1 block text-xs font-medium text-zinc-400">
                 Voting Period (hours)
               </label>
-              <input
-                type="number"
+              <NumberInput
                 value={configVotingPeriod}
                 onChange={(e) => setConfigVotingPeriod(e.target.value)}
                 placeholder="e.g. 48"
@@ -470,8 +459,7 @@ export default function NewCommunityProposal({
               <label className="mb-1 block text-xs font-medium text-zinc-400">
                 Min Execution Period (hours)
               </label>
-              <input
-                type="number"
+              <NumberInput
                 value={configMinExecPeriod}
                 onChange={(e) => setConfigMinExecPeriod(e.target.value)}
                 placeholder="e.g. 0"
@@ -482,8 +470,7 @@ export default function NewCommunityProposal({
               <label className="mb-1 block text-xs font-medium text-zinc-400">
                 Min Members
               </label>
-              <input
-                type="number"
+              <NumberInput
                 min="1"
                 value={configMinMembers}
                 onChange={(e) => setConfigMinMembers(e.target.value)}
@@ -494,8 +481,7 @@ export default function NewCommunityProposal({
               <label className="mb-1 block text-xs font-medium text-zinc-400">
                 Max Members
               </label>
-              <input
-                type="number"
+              <NumberInput
                 min="1"
                 value={configMaxMembers}
                 onChange={(e) => setConfigMaxMembers(e.target.value)}
@@ -506,8 +492,7 @@ export default function NewCommunityProposal({
               <label className="mb-1 block text-xs font-medium text-zinc-400">
                 Term Duration (days)
               </label>
-              <input
-                type="number"
+              <NumberInput
                 value={configTermDuration}
                 onChange={(e) => setConfigTermDuration(e.target.value)}
                 placeholder="e.g. 365"
@@ -600,14 +585,14 @@ export default function NewCommunityProposal({
         <button
           type="submit"
           disabled={submitting || (type === "update-config" && childGroups.length === 0)}
-          className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+          className="sd-btn sd-btn-primary"
         >
           {submitting ? "Submitting..." : "Submit Proposal"}
         </button>
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg border border-zinc-700 px-4 py-2.5 text-sm text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-300"
+          className="sd-btn sd-btn-secondary"
         >
           Cancel
         </button>

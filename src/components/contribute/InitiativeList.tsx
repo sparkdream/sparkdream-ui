@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useWallet } from "@/contexts/WalletContext";
-import { listRepInitiatives, availableInitiatives, initiativesByAssignee, listRepProjects, collectTags } from "@/lib/api";
+import { listRepInitiatives, availableInitiatives, initiativesByAssignee, listRepProjects } from "@/lib/api";
+import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { truncateAddress } from "@/lib/utils";
@@ -71,8 +72,8 @@ export default function InitiativeList() {
   const [formTitle, setFormTitle] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [formTags, setFormTags] = useState<string[]>([]);
-  const [availableTags, setAvailableTags] = useState<string[]>([]);
-  const [loadingTags, setLoadingTags] = useState(false);
+  const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
+  const canCreateTags = useCanCreateTags(address);
   const [formTier, setFormTier] = useState<string>(InitiativeTier.STANDARD);
   const [formCategory, setFormCategory] = useState<string>(InitiativeCategory.FEATURE);
   const [formBudget, setFormBudget] = useState("");
@@ -163,21 +164,6 @@ export default function InitiativeList() {
     return () => { cancelled = true; };
   }, [showForm, projects.length]);
 
-  // Load tags when create form opens
-  useEffect(() => {
-    if (!showForm) return;
-    let cancelled = false;
-    setLoadingTags(true);
-    collectTags().then((tags) => {
-      if (!cancelled) setAvailableTags(tags);
-    }).catch(() => {
-      if (!cancelled) setAvailableTags([]);
-    }).finally(() => {
-      if (!cancelled) setLoadingTags(false);
-    });
-    return () => { cancelled = true; };
-  }, [showForm]);
-
   useEffect(() => {
     fetchInitiatives(tab);
   }, [tab, fetchInitiatives]);
@@ -187,20 +173,25 @@ export default function InitiativeList() {
     try {
       setSubmitting(true);
       const budgetAmount = formBudget ? (BigInt(Math.floor(parseFloat(formBudget) * 1e6))).toString() : "0";
-      await signAndBroadcast([{
-        typeUrl: RepMsgTypeUrls.CreateInitiative,
-        value: {
-          creator: address,
-          project_id: parseInt(formProjectId),
-          title: formTitle.trim(),
-          description: formDesc.trim(),
-          tags: formTags,
-          tier: formTier,
-          category: formCategory,
-          template_id: "",
-          budget: budgetAmount,
+      const tagMsgs = buildCreateTagMsgs(address, formTags, availableTags);
+      await signAndBroadcast([
+        ...tagMsgs,
+        {
+          typeUrl: RepMsgTypeUrls.CreateInitiative,
+          value: {
+            creator: address,
+            project_id: parseInt(formProjectId),
+            title: formTitle.trim(),
+            description: formDesc.trim(),
+            tags: formTags,
+            tier: formTier,
+            category: formCategory,
+            template_id: "",
+            budget: budgetAmount,
+          },
         },
-      }]);
+      ]);
+      if (tagMsgs.length > 0) refreshTags();
       setShowForm(false);
       setFormTitle("");
       setFormDesc("");
@@ -280,12 +271,15 @@ export default function InitiativeList() {
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-indigo-400" />
           )}
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-500"
-        >
-          {showForm ? "Cancel" : "Create Initiative"}
-        </button>
+        {!showForm && (
+          <button
+            type="button"
+            onClick={() => setShowForm(true)}
+            className="sd-btn sd-btn-primary"
+          >
+            Create Initiative
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -349,9 +343,9 @@ export default function InitiativeList() {
                 options={availableTags}
                 value={formTags}
                 onChange={setFormTags}
-                placeholder="Select or create tags..."
+                placeholder={canCreateTags ? "Select or create tags..." : "Select tags..."}
                 loading={loadingTags}
-                allowCreate
+                allowCreate={canCreateTags}
               />
               <input
                 type="text"
@@ -361,13 +355,23 @@ export default function InitiativeList() {
                 className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
               />
             </div>
-            <button
-              onClick={handleCreate}
-              disabled={submitting || !formTitle.trim() || !formProjectId}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
-            >
-              {submitting ? "Creating..." : "Create Initiative"}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleCreate}
+                disabled={submitting || !formTitle.trim() || !formProjectId}
+                className="sd-btn sd-btn-primary"
+              >
+                {submitting ? "Creating..." : "Create Initiative"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                className="sd-btn sd-btn-secondary"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -462,9 +466,10 @@ export default function InitiativeList() {
                   <div className="mt-3 flex gap-2 border-t border-zinc-800 pt-3">
                     {ini.status === InitiativeStatus.OPEN && (
                       <button
+                        type="button"
                         onClick={() => handleAssign(ini.id)}
                         disabled={actionLoading === `assign-${ini.id}`}
-                        className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                        className="sd-btn sd-btn-primary"
                       >
                         {actionLoading === `assign-${ini.id}` ? "Assigning..." : "Assign to Me"}
                       </button>

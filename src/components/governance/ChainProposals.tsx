@@ -21,6 +21,7 @@ import {
   describeProposalMessages,
 } from "@/lib/utils";
 import NewChainProposal from "./NewChainProposal";
+import NumberInput from "@/components/NumberInput";
 
 export default function ChainProposals() {
   const { address, connected, signAndBroadcast } = useWallet();
@@ -99,12 +100,13 @@ export default function ChainProposals() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Chain Proposals</h2>
-        {connected && (
+        {connected && !showNewProposal && (
           <button
-            onClick={() => setShowNewProposal(!showNewProposal)}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+            type="button"
+            onClick={() => setShowNewProposal(true)}
+            className="sd-btn sd-btn-primary"
           >
-            {showNewProposal ? "Cancel" : "New Proposal"}
+            New Proposal
           </button>
         )}
       </div>
@@ -561,12 +563,12 @@ function GovProposalCard({
           )}
           {isDeposit && (
             <div className="flex items-center gap-2">
-              <input
-                type="number"
+              <NumberInput
                 placeholder={`Amount (${displayDenom})`}
                 value={depositAmount}
                 onChange={(e) => setDepositAmount(e.target.value)}
-                className="w-36 rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-1 text-xs text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none"
+                wrapperClassName="w-36"
+                className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-1 text-xs text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none"
               />
               <button
                 onClick={() => {

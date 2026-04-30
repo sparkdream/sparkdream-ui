@@ -173,7 +173,7 @@ export default function CouncilActions(props: ContributionProps | DisputeProps) 
           <button
             type="button"
             onClick={() => setOpen("approve")}
-            className="sd-btn sd-btn-primary text-xs"
+            className="sd-btn sd-btn-primary"
           >
             Approve (Council proposal)
           </button>
@@ -368,7 +368,7 @@ function FormFooter({
         type="button"
         onClick={onSubmit}
         disabled={submitting}
-        className="sd-btn sd-btn-primary text-xs"
+        className="sd-btn sd-btn-primary"
       >
         {submitting ? "Submitting…" : submitLabel}
       </button>

@@ -26,6 +26,13 @@
   --violet-soft:   rgba(99, 102, 241, 0.14);
   --violet-ring:   rgba(99, 102, 241, 0.35);
 
+  /* Primary button — saturated indigo with a slight purple lean, picked to
+     sit in the same hue family as --violet-hi (used for highlighted sidebar
+     items, active pills, and link text) so CTAs feel cohesive with those. */
+  --btn-primary:       #6c66f3;
+  --btn-primary-hi:    #8a86fb;
+  --btn-primary-ring:  rgba(108, 102, 243, 0.4);
+
   --amber:         #f59e0b;
   --amber-soft:    rgba(245, 158, 11, 0.12);
 
@@ -124,10 +131,9 @@ body {
 
 option { background: #18181b; color: #e4e4e7; }
 
-/* Hide native number-input spinner buttons site-wide. The default WebKit/Gecko
-   chrome doesn't honor the dark palette and looks like an unfinished mockup
-   inside our textured panels. Users can still type values or nudge with the
-   arrow keys; that's the same trade-off Stripe / Linear / Notion make. */
+/* Hide native number-input spinner buttons site-wide and replace them with
+   the custom <NumberInput /> wrapper so the chevrons match the dark palette.
+   The native chrome can't be reliably restyled across WebKit/Gecko. */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;
@@ -137,6 +143,61 @@ input[type="number"]::-webkit-outer-spin-button {
 input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
+}
+
+/* Custom number-input wrapper: positions a vertical pair of chevron buttons
+   on the right edge of the input. The wrapper defaults to inline-block /
+   width:100% so it tracks the host input. For fixed-width inputs (w-32,
+   w-24, etc.) put the width class on `wrapperClassName` so the wrapper
+   tracks the input's actual width and the spinner sits flush to its edge. */
+.sd-number-input {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+.sd-number-input > input {
+  width: 100%;
+  padding-right: 28px;
+}
+.sd-number-input__spin {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  right: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  pointer-events: auto;
+}
+.sd-number-input__spin button {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--ink-mute);
+  border-radius: 3px;
+  transition: color .12s, background .12s;
+  min-height: 0;
+}
+.sd-number-input__spin button:hover {
+  color: var(--ink);
+  background: var(--rule);
+}
+.sd-number-input__spin button:active {
+  color: var(--violet-hi);
+  background: var(--rule-strong);
+}
+.sd-number-input__spin button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.sd-number-input__spin button:disabled:hover {
+  background: transparent;
+  color: var(--ink-mute);
 }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -568,11 +629,11 @@ body > * { position: relative; z-index: 1; }
 }
 .sd-btn:active { transform: translateY(1px); }
 .sd-btn-primary {
-  background: var(--violet);
+  background: var(--btn-primary);
   color: white;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.12) inset, 0 4px 14px -6px var(--violet-ring);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.12) inset, 0 4px 14px -6px var(--btn-primary-ring);
 }
-.sd-btn-primary:hover { background: var(--violet-hi); }
+.sd-btn-primary:hover { background: var(--btn-primary-hi); }
 .sd-btn-secondary {
   background: var(--panel-2);
   border-color: var(--rule-strong);
@@ -2202,7 +2263,7 @@ body > * { position: relative; z-index: 1; }
 .sd-fut-form-foot {
   padding: 14px 22px 18px;
   border-top: 1px solid var(--rule);
-  display: flex; gap: 10px; justify-content: flex-end;
+  display: flex; gap: 10px;
   flex-wrap: wrap;
 }
 .sd-fut-form-foot .err {

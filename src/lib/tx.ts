@@ -71,6 +71,7 @@ export const RepMsgTypeUrls = {
   CreateChallenge: "/sparkdream.rep.v1.MsgCreateChallenge",
   RespondToChallenge: "/sparkdream.rep.v1.MsgRespondToChallenge",
   SubmitJurorVote: "/sparkdream.rep.v1.MsgSubmitJurorVote",
+  CreateTag: "/sparkdream.rep.v1.MsgCreateTag",
   CreateTagBudget: "/sparkdream.rep.v1.MsgCreateTagBudget",
   AwardFromTagBudget: "/sparkdream.rep.v1.MsgAwardFromTagBudget",
   TopUpTagBudget: "/sparkdream.rep.v1.MsgTopUpTagBudget",

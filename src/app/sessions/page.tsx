@@ -7,6 +7,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { SessionMsgTypeUrls } from "@/lib/tx";
 import { truncateAddress, formatTime } from "@/lib/utils";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
+import NumberInput from "@/components/NumberInput";
 
 type Tab = "granted" | "received";
 
@@ -203,13 +204,16 @@ export default function SessionsPage() {
         <span className="crumb">System</span>
         <h1>Session Keys</h1>
         <p>Delegate message signing to another address</p>
-        <button
-          onClick={() => setShowCreate(!showCreate)}
-          className="w-fit rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
-          style={{ marginLeft: "auto" }}
-        >
-          {showCreate ? "Cancel" : "New Session"}
-        </button>
+        {!showCreate && (
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="sd-btn sd-btn-primary w-fit"
+            style={{ marginLeft: "auto" }}
+          >
+            New Session
+          </button>
+        )}
       </header>
 
       {/* Create session form */}
@@ -282,9 +286,8 @@ export default function SessionsPage() {
               <label htmlFor="spendAmount" className="mb-1.5 block text-sm font-medium text-zinc-300">
                 Spend Limit ({DISPLAY_DENOM})
               </label>
-              <input
+              <NumberInput
                 id="spendAmount"
-                type="number"
                 min="0"
                 value={spendAmount}
                 onChange={(e) => setSpendAmount(e.target.value)}
@@ -296,9 +299,8 @@ export default function SessionsPage() {
               <label htmlFor="expirationDays" className="mb-1.5 block text-sm font-medium text-zinc-300">
                 Expires in (days)
               </label>
-              <input
+              <NumberInput
                 id="expirationDays"
-                type="number"
                 min="1"
                 max="365"
                 value={expirationDays}
@@ -310,9 +312,8 @@ export default function SessionsPage() {
               <label htmlFor="maxExecCount" className="mb-1.5 block text-sm font-medium text-zinc-300">
                 Max Executions
               </label>
-              <input
+              <NumberInput
                 id="maxExecCount"
-                type="number"
                 min="0"
                 value={maxExecCount}
                 onChange={(e) => setMaxExecCount(e.target.value)}
@@ -328,13 +329,22 @@ export default function SessionsPage() {
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={creating || !grantee.trim() || selectedMsgTypes.length === 0}
-            className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
-          >
-            {creating ? "Creating..." : "Create Session"}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={creating || !grantee.trim() || selectedMsgTypes.length === 0}
+              className="sd-btn sd-btn-primary"
+            >
+              {creating ? "Creating..." : "Create Session"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCreate(false)}
+              className="sd-btn sd-btn-secondary"
+            >
+              Cancel
+            </button>
+          </div>
         </form>
       )}
 

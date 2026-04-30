@@ -121,12 +121,15 @@ export default function DisputeList() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Disputes</h2>
-        <button
-          onClick={() => setShowFile(!showFile)}
-          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
-        >
-          {showFile ? "Cancel" : "File Dispute"}
-        </button>
+        {!showFile && (
+          <button
+            type="button"
+            onClick={() => setShowFile(true)}
+            className="sd-btn sd-btn-primary"
+          >
+            File Dispute
+          </button>
+        )}
       </div>
 
       {error && (
@@ -169,17 +172,24 @@ export default function DisputeList() {
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
               />
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-zinc-500">
-                Requires {disputeStake} DREAM stake
-              </span>
+            <div className="flex flex-wrap items-center gap-3">
               <button
                 type="submit"
                 disabled={submitting || !disputeName.trim()}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                className="sd-btn sd-btn-primary"
               >
                 {submitting ? "Filing..." : "File Dispute"}
               </button>
+              <button
+                type="button"
+                onClick={() => setShowFile(false)}
+                className="sd-btn sd-btn-secondary"
+              >
+                Cancel
+              </button>
+              <span className="text-xs text-zinc-500">
+                Requires {disputeStake} DREAM stake
+              </span>
             </div>
           </div>
         </form>

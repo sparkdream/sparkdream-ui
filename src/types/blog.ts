@@ -22,6 +22,7 @@ export interface Post {
   edited_at: string;
   initiative_id: string;
   conviction_sustained: boolean;
+  tags?: string[];
 }
 
 export interface Reply {

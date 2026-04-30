@@ -131,9 +131,17 @@ export default function MyPostsPage() {
         <button
           type="button"
           onClick={() => setShowCreate(true)}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+          className="sd-btn sd-btn-dream"
         >
-          <span aria-hidden="true">✦</span> New dream
+          <img
+            src="/vision.svg"
+            alt=""
+            aria-hidden="true"
+            width={15}
+            height={15}
+            className="telescope"
+          />
+          New dream
         </button>
       </div>
 

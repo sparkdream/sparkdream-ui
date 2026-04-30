@@ -8,6 +8,7 @@ import { getGovModuleAddress } from "@/lib/gov";
 import { dreamToMicro } from "@/lib/reveal-fmt";
 import type { Market } from "@/types/futarchy";
 import Modal from "./Modal";
+import NumberInput from "@/components/NumberInput";
 
 /**
  * Opens a governance proposal that, if it passes, will execute
@@ -172,9 +173,8 @@ export default function CancelMarketProposalModal({
 
       <div className="sd-field">
         <label htmlFor="cm-deposit">Initial deposit ({config.displayDenom}) <span style={{ color: "var(--ink-mute)", textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>(optional)</span></label>
-        <input
+        <NumberInput
           id="cm-deposit"
-          type="number"
           step="any"
           min="0"
           value={deposit}

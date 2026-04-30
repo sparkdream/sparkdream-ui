@@ -65,20 +65,6 @@ const MODULES: Record<string, ModuleDef> = {
       { key: "minCommissionRate", apiKey: "min_commission_rate", label: "Min Commission Rate", kind: "string", hint: "e.g. 0.05 = 5%" },
     ],
   },
-  mint: {
-    label: "Mint",
-    paramPath: "/cosmos/mint/v1beta1/params",
-    responseKey: "params",
-    typeUrl: "/cosmos.mint.v1beta1.MsgUpdateParams",
-    fields: [
-      { key: "mintDenom", apiKey: "mint_denom", label: "Mint Denom", kind: "string" },
-      { key: "inflationRateChange", apiKey: "inflation_rate_change", label: "Inflation Rate Change", kind: "string" },
-      { key: "inflationMax", apiKey: "inflation_max", label: "Inflation Max", kind: "string" },
-      { key: "inflationMin", apiKey: "inflation_min", label: "Inflation Min", kind: "string" },
-      { key: "goalBonded", apiKey: "goal_bonded", label: "Goal Bonded", kind: "string", hint: "Target bonding ratio (e.g. 0.67)" },
-      { key: "blocksPerYear", apiKey: "blocks_per_year", label: "Blocks Per Year", kind: "bigint" },
-    ],
-  },
   distribution: {
     label: "Distribution",
     paramPath: "/cosmos/distribution/v1beta1/params",
@@ -448,26 +434,6 @@ async function encodeParamUpdate(
               historicalEntries: parseInt(editedValues.historicalEntries) || Number(cur.historical_entries || 10000),
               bondDenom: editedValues.bondDenom || String(cur.bond_denom || ""),
               minCommissionRate: editedValues.minCommissionRate || String(cur.min_commission_rate || "0"),
-            },
-          })
-        ).finish(),
-      };
-    }
-    case "mint": {
-      const { MsgUpdateParams } = await import("cosmjs-types/cosmos/mint/v1beta1/tx");
-      const cur = currentParams;
-      return {
-        typeUrl: moduleDef.typeUrl,
-        value: MsgUpdateParams.encode(
-          MsgUpdateParams.fromPartial({
-            authority: govModuleAddress,
-            params: {
-              mintDenom: editedValues.mintDenom || String(cur.mint_denom || ""),
-              inflationRateChange: editedValues.inflationRateChange || String(cur.inflation_rate_change || ""),
-              inflationMax: editedValues.inflationMax || String(cur.inflation_max || ""),
-              inflationMin: editedValues.inflationMin || String(cur.inflation_min || ""),
-              goalBonded: editedValues.goalBonded || String(cur.goal_bonded || ""),
-              blocksPerYear: BigInt(editedValues.blocksPerYear || cur.blocks_per_year as string || "0"),
             },
           })
         ).finish(),

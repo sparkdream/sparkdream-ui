@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useWallet } from "@/contexts/WalletContext";
-import { listRepProjects, listGroups, collectTags } from "@/lib/api";
+import { listRepProjects, listGroups } from "@/lib/api";
+import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
 import type { Group } from "@/types/commons";
 import { RepMsgTypeUrls } from "@/lib/tx";
@@ -46,8 +47,8 @@ export default function ProjectList() {
   const [formName, setFormName] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [formTags, setFormTags] = useState<string[]>([]);
-  const [availableTags, setAvailableTags] = useState<string[]>([]);
-  const [loadingTags, setLoadingTags] = useState(false);
+  const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
+  const canCreateTags = useCanCreateTags(address);
   const [formCategory, setFormCategory] = useState<string>(ProjectCategory.INFRASTRUCTURE);
   const [formCouncil, setFormCouncil] = useState("");
   const [formBudget, setFormBudget] = useState("");
@@ -98,42 +99,32 @@ export default function ProjectList() {
     fetchProjects();
   }, [fetchProjects]);
 
-  // Load tags when create form opens
-  useEffect(() => {
-    if (!showForm) return;
-    let cancelled = false;
-    setLoadingTags(true);
-    collectTags().then((tags) => {
-      if (!cancelled) setAvailableTags(tags);
-    }).catch(() => {
-      if (!cancelled) setAvailableTags([]);
-    }).finally(() => {
-      if (!cancelled) setLoadingTags(false);
-    });
-    return () => { cancelled = true; };
-  }, [showForm]);
-
   const handlePropose = async () => {
     if (!address || !formName.trim()) return;
     try {
       setSubmitting(true);
       const budgetAmount = formBudget ? (BigInt(Math.floor(parseFloat(formBudget) * 1e6))).toString() : "0";
       const sparkAmount = formSpark ? (BigInt(Math.floor(parseFloat(formSpark) * 1e6))).toString() : "0";
-      await signAndBroadcast([{
-        typeUrl: RepMsgTypeUrls.ProposeProject,
-        value: {
-          creator: address,
-          name: formName.trim(),
-          description: formDesc.trim(),
-          tags: formTags,
-          category: formCategory,
-          council: formCouncil.trim(),
-          requested_budget: budgetAmount,
-          requested_spark: sparkAmount,
-          deliverables: [],
-          milestones: [],
+      const tagMsgs = buildCreateTagMsgs(address, formTags, availableTags);
+      await signAndBroadcast([
+        ...tagMsgs,
+        {
+          typeUrl: RepMsgTypeUrls.ProposeProject,
+          value: {
+            creator: address,
+            name: formName.trim(),
+            description: formDesc.trim(),
+            tags: formTags,
+            category: formCategory,
+            council: formCouncil.trim(),
+            requested_budget: budgetAmount,
+            requested_spark: sparkAmount,
+            deliverables: [],
+            milestones: [],
+          },
         },
-      }]);
+      ]);
+      if (tagMsgs.length > 0) refreshTags();
       setShowForm(false);
       setFormName("");
       setFormDesc("");
@@ -171,12 +162,15 @@ export default function ProjectList() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Projects</h2>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-500"
-        >
-          {showForm ? "Cancel" : "Propose Project"}
-        </button>
+        {!showForm && (
+          <button
+            type="button"
+            onClick={() => setShowForm(true)}
+            className="sd-btn sd-btn-primary"
+          >
+            Propose Project
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -202,9 +196,9 @@ export default function ProjectList() {
                 options={availableTags}
                 value={formTags}
                 onChange={setFormTags}
-                placeholder="Select or create tags..."
+                placeholder={canCreateTags ? "Select or create tags..." : "Select tags..."}
                 loading={loadingTags}
-                allowCreate
+                allowCreate={canCreateTags}
               />
               <select
                 value={formCategory}
@@ -244,13 +238,23 @@ export default function ProjectList() {
                 className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
               />
             </div>
-            <button
-              onClick={handlePropose}
-              disabled={submitting || !formName.trim()}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
-            >
-              {submitting ? "Submitting..." : "Submit Proposal"}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handlePropose}
+                disabled={submitting || !formName.trim()}
+                className="sd-btn sd-btn-primary"
+              >
+                {submitting ? "Submitting..." : "Submit Proposal"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                className="sd-btn sd-btn-secondary"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -47,9 +47,11 @@ interface CollectionListProps {
   onSelect: (collection: Collection) => void;
   filterType?: string;
   tagFilter?: string | null;
+  /** Optional CTA shown in the empty state to open the new-collection form. */
+  onCreate?: () => void;
 }
 
-export default function CollectionList({ mode, onSelect, filterType = "all", tagFilter }: CollectionListProps) {
+export default function CollectionList({ mode, onSelect, filterType = "all", tagFilter, onCreate }: CollectionListProps) {
   const { address } = useWallet();
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,6 +139,23 @@ export default function CollectionList({ mode, onSelect, filterType = "all", tag
           <p className="text-zinc-400">
             {mode === "my" ? "You have no collections yet" : "No public collections found"}
           </p>
+          {onCreate && !tagFilter && (
+            <button
+              type="button"
+              onClick={onCreate}
+              style={{
+                display: "inline-block",
+                marginTop: 12,
+                background: "transparent",
+                border: 0,
+                color: "#fff",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+            >
+              {mode === "my" ? "Curate your first collection" : "Curate the first collection"}
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-2">

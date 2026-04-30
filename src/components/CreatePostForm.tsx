@@ -1,14 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import { MsgTypeUrls } from "@/lib/tx";
+import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
+import { getRepParams } from "@/lib/api";
 import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
+import NumberInput from "@/components/NumberInput";
+import TagPicker from "@/components/contribute/TagPicker";
 
 interface CreatePostFormProps {
   onCreated?: () => void;
   onCancel?: () => void;
+}
+
+function formatMicroDream(amount: string): string {
+  try {
+    const n = BigInt(amount);
+    const whole = n / BigInt(1_000_000);
+    const frac = n % BigInt(1_000_000);
+    if (frac === BigInt(0)) return whole.toLocaleString();
+    return `${whole.toLocaleString()}.${frac.toString().padStart(6, "0").replace(/0+$/, "")}`;
+  } catch {
+    return amount;
+  }
 }
 
 export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormProps = {}) {
@@ -22,6 +38,19 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tags, setTags] = useState<string[]>([]);
+  const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
+  const canCreateTags = useCanCreateTags(address);
+  const [maxBond, setMaxBond] = useState<string | null>(null);
+
+  useEffect(() => {
+    getRepParams()
+      .then((res) => {
+        const raw = (res.params as Record<string, unknown>)?.max_author_bond_per_content;
+        if (typeof raw === "string" && raw) setMaxBond(raw);
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,14 +67,18 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
         contentType,
         minReplyTrustLevel,
         initiativeId: 0,
+        tags,
       };
       if (authorBond && parseInt(authorBond) > 0) {
         value.authorBond = authorBond;
       }
 
+      const tagMsgs = buildCreateTagMsgs(address!, tags, availableTags);
       await signAndBroadcast([
+        ...tagMsgs,
         { typeUrl: MsgTypeUrls.CreatePost, value },
       ]);
+      if (tagMsgs.length > 0) refreshTags();
       if (onCreated) onCreated();
       else router.push("/imaginarium");
     } catch (err) {
@@ -115,6 +148,23 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
         </p>
       </div>
 
+      <div>
+        <label className="mb-1.5 block text-sm font-medium text-zinc-300">Tags</label>
+        <TagPicker
+          options={availableTags}
+          value={tags}
+          onChange={setTags}
+          placeholder={canCreateTags ? "Select or create tags..." : "Select tags..."}
+          loading={loadingTags}
+          allowCreate={canCreateTags}
+        />
+        {canCreateTags && (
+          <p className="mt-1 text-xs text-zinc-600">
+            New tags burn a small DREAM fee per tag and are added to the shared registry.
+          </p>
+        )}
+      </div>
+
       <button
         type="button"
         onClick={() => setShowAdvanced(!showAdvanced)}
@@ -151,9 +201,8 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
             <label htmlFor="authorBond" className="mb-1.5 block text-sm font-medium text-zinc-300">
               Author Bond (DREAM)
             </label>
-            <input
+            <NumberInput
               id="authorBond"
-              type="number"
               min="0"
               value={authorBond}
               onChange={(e) => setAuthorBond(e.target.value)}
@@ -161,7 +210,8 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
               className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
             <p className="mt-1 text-xs text-zinc-600">
-              Optional DREAM amount to lock as an author bond
+              Optional DREAM amount to lock as an author bond. No minimum
+              {maxBond && `; up to ${formatMicroDream(maxBond)} DREAM`}.
             </p>
           </div>
         </div>

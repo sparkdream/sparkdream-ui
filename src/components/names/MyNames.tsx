@@ -133,12 +133,13 @@ export default function MyNames() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">My Names</h2>
-        {names.length < maxNames && (
+        {names.length < maxNames && !showRegister && (
           <button
-            onClick={() => setShowRegister(!showRegister)}
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+            type="button"
+            onClick={() => setShowRegister(true)}
+            className="sd-btn sd-btn-primary"
           >
-            {showRegister ? "Cancel" : "Register Name"}
+            Register Name
           </button>
         )}
       </div>
@@ -190,17 +191,24 @@ export default function MyNames() {
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
               />
             </div>
-            <div className="flex items-center justify-between">
-              {regFee && (
-                <span className="text-xs text-zinc-500">Registration fee: {regFee}</span>
-              )}
+            <div className="flex flex-wrap items-center gap-3">
               <button
                 type="submit"
                 disabled={submitting || !newName.trim()}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                className="sd-btn sd-btn-primary"
               >
                 {submitting ? "Registering..." : "Register"}
               </button>
+              <button
+                type="button"
+                onClick={() => setShowRegister(false)}
+                className="sd-btn sd-btn-secondary"
+              >
+                Cancel
+              </button>
+              {regFee && (
+                <span className="text-xs text-zinc-500">Registration fee: {regFee}</span>
+              )}
             </div>
           </div>
         </form>
@@ -274,9 +282,10 @@ export default function MyNames() {
                     className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
                   />
                   <button
+                    type="button"
                     onClick={() => handleUpdate(nr.name)}
                     disabled={submitting}
-                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                    className="sd-btn sd-btn-primary"
                   >
                     {submitting ? "..." : "Save"}
                   </button>

@@ -12,6 +12,7 @@ import {
 } from "@/lib/api";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { truncateAddress } from "@/lib/utils";
+import { useIsRepMember } from "@/hooks/useIsRepMember";
 import type { RepStake } from "@/types/rep";
 import { STAKE_TARGET_LABELS, StakeTargetType } from "@/types/rep";
 import SearchableSelect from "@/components/contribute/SearchableSelect";
@@ -55,6 +56,8 @@ const ID_FREEFORM_TYPES = new Set<string>([
 
 export default function StakingPanel() {
   const { address, signAndBroadcast } = useWallet();
+  const isMember = useIsRepMember(address);
+  const canStake = isMember === true;
   const [stakes, setStakes] = useState<RepStake[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -111,6 +114,11 @@ export default function StakingPanel() {
   useEffect(() => {
     fetchStakes();
   }, [fetchStakes]);
+
+  // Auto-close the form once we learn the user isn't a member.
+  useEffect(() => {
+    if (isMember === false) setShowForm(false);
+  }, [isMember]);
 
   // Fetch valid target options when target type changes or form opens
   useEffect(() => {
@@ -288,15 +296,24 @@ export default function StakingPanel() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Staking</h2>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-500"
-        >
-          {showForm ? "Cancel" : "New Stake"}
-        </button>
+        {canStake && !showForm && (
+          <button
+            type="button"
+            onClick={() => setShowForm(true)}
+            className="sd-btn sd-btn-primary"
+          >
+            New Stake
+          </button>
+        )}
       </div>
 
-      {showForm && (
+      {isMember === false && (
+        <p className="mb-3 text-xs text-zinc-500">
+          Only existing members can stake. Accept an invitation to join the system first.
+        </p>
+      )}
+
+      {showForm && canStake && (
         <div className="mb-4 rounded-xl sd-hull-tile p-4">
           <h3 className="mb-3 text-sm font-semibold text-zinc-200">Stake DREAM</h3>
           <div className="space-y-3">
@@ -383,13 +400,23 @@ export default function StakingPanel() {
             {formAmount && (parseFloat(formAmount) <= 0 || isNaN(parseFloat(formAmount))) && (
               <p className="text-xs text-red-400">Enter a valid amount greater than 0</p>
             )}
-            <button
-              onClick={handleStake}
-              disabled={submitting || !formAmount || parseFloat(formAmount) <= 0 || isNaN(parseFloat(formAmount))}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
-            >
-              {submitting ? "Staking..." : "Stake"}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleStake}
+                disabled={submitting || !formAmount || parseFloat(formAmount) <= 0 || isNaN(parseFloat(formAmount))}
+                className="sd-btn sd-btn-primary"
+              >
+                {submitting ? "Staking..." : "Stake"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                className="sd-btn sd-btn-secondary"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

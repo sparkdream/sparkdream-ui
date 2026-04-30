@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import type { Post } from "@/types/blog";
 import { PostStatus } from "@/types/blog";
-import { listPosts, getAllMemberAddresses, membersByTrustLevel } from "@/lib/api";
+import { listPosts, getAllMemberAddresses, membersByTrustLevel, listTags } from "@/lib/api";
 import { TrustLevel } from "@/types/rep";
 import PostRow from "@/components/PostRow";
 import CreatePostForm from "@/components/CreatePostForm";
@@ -54,6 +54,35 @@ export default function ImaginariumPage() {
 
   const [feedOpen, setFeedOpen] = useLocalStorageBoolean("imaginarium-feed-open", true);
   const [trustOpen, setTrustOpen] = useLocalStorageBoolean("imaginarium-trust-open", true);
+  const [tagsOpen, setTagsOpen] = useLocalStorageBoolean("imaginarium-tags-open", true);
+
+  const [tagList, setTagList] = useState<string[]>([]);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [tagsExpanded, setTagsExpanded] = useState(false);
+
+  useEffect(() => {
+    listTags({ limit: "50" })
+      .then((res) => {
+        const ranked = [...(res.tag || [])].sort((a, b) => {
+          const ua = parseInt(a.usage_count || "0", 10);
+          const ub = parseInt(b.usage_count || "0", 10);
+          return ub - ua;
+        });
+        setTagList(ranked.map((t) => t.name));
+      })
+      .catch(() => setTagList([]));
+  }, []);
+
+  const TOP_TAGS = 5;
+  const visibleTags = useMemo(() => {
+    if (tagsExpanded) return tagList;
+    const top = tagList.slice(0, TOP_TAGS);
+    if (tagFilter && !top.includes(tagFilter) && tagList.includes(tagFilter)) {
+      return [...top, tagFilter];
+    }
+    return top;
+  }, [tagList, tagsExpanded, tagFilter]);
+  const hiddenTagCount = Math.max(0, tagList.length - TOP_TAGS);
 
   useSearchShortcut(searchRef);
 
@@ -157,13 +186,16 @@ export default function ImaginariumPage() {
     if (trustFilter && trustAddresses) {
       result = result.filter((p) => trustAddresses.has(p.creator));
     }
+    if (tagFilter) {
+      result = result.filter((p) => (p.tags || []).includes(tagFilter));
+    }
     if (sort === "oldest") {
       result = [...result].sort(
         (a, b) => parseInt(a.created_at, 10) - parseInt(b.created_at, 10)
       );
     }
     return result;
-  }, [posts, filter, sort, memberAddresses, address, trustFilter, trustAddresses]);
+  }, [posts, filter, sort, memberAddresses, address, trustFilter, trustAddresses, tagFilter]);
 
   const featured = useMemo(
     () => filteredAndSorted.find((p) => !!p.pinned_by) || null,
@@ -242,6 +274,40 @@ export default function ImaginariumPage() {
         </div>
       </SidebarSection>
 
+      {tagList.length > 0 && (
+        <SidebarSection
+          label="Tags"
+          open={tagsOpen}
+          onToggle={() => setTagsOpen(!tagsOpen)}
+        >
+          <div className="sd-side-pills">
+            {visibleTags.map((t) => {
+              const isActive = tagFilter === t;
+              const dim = tagFilter !== null && !isActive;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  className="sd-pill tag"
+                  style={{ opacity: dim ? 0.4 : 1, outline: isActive ? "1px solid currentColor" : "none" }}
+                  onClick={() => setTagFilter(isActive ? null : t)}
+                >
+                  #{t}
+                </button>
+              );
+            })}
+            {hiddenTagCount > 0 && (
+              <button
+                type="button"
+                className="sd-pill tag-neutral"
+                onClick={() => setTagsExpanded((v) => !v)}
+              >
+                {tagsExpanded ? "Show less" : `+${hiddenTagCount} more`}
+              </button>
+            )}
+          </div>
+        </SidebarSection>
+      )}
     </>
   );
 
@@ -594,7 +660,7 @@ function EmptyState({
             marginTop: 12,
             background: "transparent",
             border: 0,
-            color: "var(--violet-hi)",
+            color: "#fff",
             cursor: "pointer",
             fontSize: 13,
           }}
@@ -610,12 +676,12 @@ function EmptyState({
             marginTop: 12,
             background: "transparent",
             border: 0,
-            color: "var(--violet-hi)",
+            color: "#fff",
             cursor: "pointer",
             fontSize: 13,
           }}
         >
-          Publish the first dream
+          {filter === "my-posts" ? "Publish your first dream" : "Publish the first dream"}
         </button>
       ) : null}
     </div>

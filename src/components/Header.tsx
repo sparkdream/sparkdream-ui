@@ -1,14 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
+import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { truncateAddress } from "@/lib/utils";
 import SessionModeSwitcher from "@/components/SessionModeSwitcher";
 
-type NavLeaf = { href: string; label: string; desc?: string; icon: React.ReactNode };
+type NavLeaf = {
+  href: string;
+  label: string;
+  desc?: string;
+  icon: React.ReactNode;
+  external?: boolean;
+};
 type NavGroup = { id: string; label: string; items: NavLeaf[] };
 
 const PRIMARY_LINKS: { href: string; label: string }[] = [
@@ -237,15 +244,31 @@ function Dropdown({
         </button>
       )}
       <div className={`sd-nav-menu${align === "right" ? " right" : ""}`}>
-        {group.items.map((it) => (
-          <Link key={it.href} href={it.href} onClick={() => setOpen(false)}>
-            {it.icon}
-            <div>
-              <span className="label">{it.label}</span>
-              {it.desc && <span className="desc">{it.desc}</span>}
-            </div>
-          </Link>
-        ))}
+        {group.items.map((it) =>
+          it.external ? (
+            <a
+              key={it.href}
+              href={it.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setOpen(false)}
+            >
+              {it.icon}
+              <div>
+                <span className="label">{it.label}</span>
+                {it.desc && <span className="desc">{it.desc}</span>}
+              </div>
+            </a>
+          ) : (
+            <Link key={it.href} href={it.href} onClick={() => setOpen(false)}>
+              {it.icon}
+              <div>
+                <span className="label">{it.label}</span>
+                {it.desc && <span className="desc">{it.desc}</span>}
+              </div>
+            </Link>
+          )
+        )}
       </div>
     </div>
   );
@@ -262,9 +285,33 @@ export default function Header() {
     disconnect,
     sessionActive,
   } = useWallet();
+  const { config } = useChainConfig();
   const { name } = useDisplayName(address);
 
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const systemGroup: NavGroup = useMemo(
+    () => ({
+      ...SYSTEM_GROUP,
+      items: [
+        ...SYSTEM_GROUP.items,
+        {
+          href: config.explorerUrl,
+          label: "Block explorer",
+          desc: "Browse blocks, txs, and accounts",
+          external: true,
+          icon: (
+            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M14 3h7v7" />
+              <path d="M10 14L21 3" />
+              <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+            </svg>
+          ),
+        },
+      ],
+    }),
+    [config.explorerUrl]
+  );
 
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(href + "/");
@@ -337,7 +384,7 @@ export default function Header() {
             </>
           )}
           <div className="sd-topnav-icons">
-            <Dropdown group={SYSTEM_GROUP} trigger="icon" align="right" activeHref={pathname} />
+            <Dropdown group={systemGroup} trigger="icon" align="right" activeHref={pathname} />
             <button
               type="button"
               className="sd-icon-btn"
@@ -398,6 +445,7 @@ export default function Header() {
           address={address}
           signerAddress={signerAddress}
           sessionActive={sessionActive}
+          systemGroup={systemGroup}
         />
       )}
     </header>
@@ -415,6 +463,7 @@ function MobileMenu({
   address,
   signerAddress,
   sessionActive,
+  systemGroup,
 }: {
   pathname: string;
   onClose: () => void;
@@ -426,24 +475,41 @@ function MobileMenu({
   address: string | null;
   signerAddress: string | null;
   sessionActive: boolean;
+  systemGroup: NavGroup;
 }) {
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(href + "/");
 
-  const renderLeaf = (l: NavLeaf) => (
-    <Link
-      key={l.href}
-      href={l.href}
-      className={`sd-mobile-link${isActive(l.href) ? " active" : ""}`}
-      onClick={onClose}
-    >
-      {l.icon}
-      <div>
-        <span className="label">{l.label}</span>
-        {l.desc && <span className="desc">{l.desc}</span>}
-      </div>
-    </Link>
-  );
+  const renderLeaf = (l: NavLeaf) =>
+    l.external ? (
+      <a
+        key={l.href}
+        href={l.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="sd-mobile-link"
+        onClick={onClose}
+      >
+        {l.icon}
+        <div>
+          <span className="label">{l.label}</span>
+          {l.desc && <span className="desc">{l.desc}</span>}
+        </div>
+      </a>
+    ) : (
+      <Link
+        key={l.href}
+        href={l.href}
+        className={`sd-mobile-link${isActive(l.href) ? " active" : ""}`}
+        onClick={onClose}
+      >
+        {l.icon}
+        <div>
+          <span className="label">{l.label}</span>
+          {l.desc && <span className="desc">{l.desc}</span>}
+        </div>
+      </Link>
+    );
 
   return (
     <div className="sd-mobile-menu" role="dialog" aria-modal="true">
@@ -493,8 +559,8 @@ function MobileMenu({
           </div>
 
           <div className="sd-mobile-section">
-            <div className="sd-mobile-heading">{SYSTEM_GROUP.label}</div>
-            {SYSTEM_GROUP.items.map(renderLeaf)}
+            <div className="sd-mobile-heading">{systemGroup.label}</div>
+            {systemGroup.items.map(renderLeaf)}
           </div>
         </div>
 

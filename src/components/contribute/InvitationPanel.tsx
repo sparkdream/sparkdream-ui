@@ -6,6 +6,7 @@ import { invitationsByInviter, listRepInvitations, collectTags } from "@/lib/api
 import TagPicker from "@/components/contribute/TagPicker";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { truncateAddress, formatTime } from "@/lib/utils";
+import { useIsRepMember } from "@/hooks/useIsRepMember";
 import type { Invitation } from "@/types/rep";
 import { INVITATION_STATUS_LABELS, InvitationStatus } from "@/types/rep";
 
@@ -24,6 +25,8 @@ interface InvitationPanelProps {
 
 export default function InvitationPanel({ defaultShowForm = false }: InvitationPanelProps) {
   const { address, signAndBroadcast } = useWallet();
+  const isMember = useIsRepMember(address);
+  const canInvite = isMember === true;
   const [sentInvitations, setSentInvitations] = useState<Invitation[]>([]);
   const [pendingForMe, setPendingForMe] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,6 +36,12 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
   const [showForm, setShowForm] = useState(defaultShowForm);
   const [submitting, setSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // Auto-close the invite form once we learn the user isn't a member,
+  // even if it was opened by `defaultShowForm`.
+  useEffect(() => {
+    if (isMember === false) setShowForm(false);
+  }, [isMember]);
 
   // Invite form
   const [formInvitee, setFormInvitee] = useState("");
@@ -216,15 +225,24 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
       <div>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-white">Send Invitations</h2>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-500"
-          >
-            {showForm ? "Cancel" : "Invite Member"}
-          </button>
+          {canInvite && !showForm && (
+            <button
+              type="button"
+              onClick={() => setShowForm(true)}
+              className="sd-btn sd-btn-primary"
+            >
+              Invite Member
+            </button>
+          )}
         </div>
 
-        {showForm && (
+        {isMember === false && (
+          <p className="mb-3 text-xs text-zinc-500">
+            Only existing members can send invitations. Accept a pending invitation above to join.
+          </p>
+        )}
+
+        {showForm && canInvite && (
           <div className="mb-4 rounded-xl sd-hull-tile p-4">
             <h3 className="mb-3 text-sm font-semibold text-zinc-200">New Invitation</h3>
             <div className="space-y-3">
@@ -255,13 +273,23 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
                   loading={loadingTags}
                 />
               </div>
-              <button
-                onClick={handleInvite}
-                disabled={submitting || !formInvitee.trim() || !formStake || parseFloat(formStake) <= 0 || isNaN(parseFloat(formStake))}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
-              >
-                {submitting ? "Sending..." : "Send Invitation"}
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleInvite}
+                  disabled={submitting || !formInvitee.trim() || !formStake || parseFloat(formStake) <= 0 || isNaN(parseFloat(formStake))}
+                  className="sd-btn sd-btn-primary"
+                >
+                  {submitting ? "Sending..." : "Send Invitation"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  className="sd-btn sd-btn-secondary"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         )}

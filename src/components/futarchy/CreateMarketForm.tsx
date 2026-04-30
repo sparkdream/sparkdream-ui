@@ -6,6 +6,7 @@ import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { FutarchyMsgTypeUrls } from "@/lib/tx";
 import { dreamToMicro, formatDream } from "@/lib/reveal-fmt";
 import type { FutarchyParams } from "@/types/futarchy";
+import NumberInput from "@/components/NumberInput";
 
 const APPROX_BLOCK_TIME_S = 6;
 
@@ -142,9 +143,8 @@ export default function CreateMarketForm({
 
         <div className="sd-field">
           <label htmlFor="cm-liquidity">Initial liquidity ({config.displayDenom})</label>
-          <input
+          <NumberInput
             id="cm-liquidity"
-            type="number"
             step="any"
             min="0"
             value={liquidity}
@@ -164,9 +164,8 @@ export default function CreateMarketForm({
 
         <div className="sd-field">
           <label htmlFor="cm-duration">Duration (days)</label>
-          <input
+          <NumberInput
             id="cm-duration"
-            type="number"
             step="1"
             min="1"
             value={durationDays}
@@ -186,9 +185,6 @@ export default function CreateMarketForm({
 
       <div className="sd-fut-form-foot">
         {error && <div className="err">{error}</div>}
-        <button type="button" className="sd-btn sd-btn-secondary" onClick={onCancel} disabled={submitting}>
-          Cancel
-        </button>
         <button
           type="button"
           className="sd-btn sd-btn-primary"
@@ -196,6 +192,9 @@ export default function CreateMarketForm({
           disabled={submitting || !address}
         >
           {submitting ? "Submitting…" : "Create market"}
+        </button>
+        <button type="button" className="sd-btn sd-btn-secondary" onClick={onCancel} disabled={submitting}>
+          Cancel
         </button>
       </div>
     </div>

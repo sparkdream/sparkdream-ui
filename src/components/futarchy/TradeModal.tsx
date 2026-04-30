@@ -8,6 +8,7 @@ import { dreamToMicro, formatDream } from "@/lib/reveal-fmt";
 import { getFutarchyMarketPrice } from "@/lib/api";
 import type { Market, FutarchyParams } from "@/types/futarchy";
 import Modal from "./Modal";
+import NumberInput from "@/components/NumberInput";
 
 export default function TradeModal({
   market,
@@ -171,9 +172,8 @@ export default function TradeModal({
 
       <div className="sd-field">
         <label htmlFor="trade-amt">Amount in ({config.displayDenom})</label>
-        <input
+        <NumberInput
           id="trade-amt"
-          type="number"
           step="any"
           min="0"
           value={amount}

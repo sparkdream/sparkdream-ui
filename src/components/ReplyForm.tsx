@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { MsgTypeUrls } from "@/lib/tx";
 import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
+import NumberInput from "@/components/NumberInput";
 
 interface ReplyFormProps {
   postId: string;
@@ -115,8 +116,7 @@ export default function ReplyForm({
             ))}
           </select>
           {!isEditing && (
-            <input
-              type="number"
+            <NumberInput
               min="0"
               value={authorBond}
               onChange={(e) => setAuthorBond(e.target.value)}
@@ -144,7 +144,7 @@ export default function ReplyForm({
             <button
               type="button"
               onClick={onCancel}
-              className="rounded-lg px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:text-white"
+              className="sd-btn sd-btn-secondary"
             >
               Cancel
             </button>
@@ -159,7 +159,7 @@ export default function ReplyForm({
                   ? "sd-btn-gold px-4 py-1.5"
                   : variant === "collection"
                     ? "sd-btn-crystal px-4 py-1.5"
-                    : "rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                    : "sd-btn sd-btn-primary"
             }
           >
             {submitting ? (isEditing ? "Saving..." : "Posting...") : (isEditing ? "Save" : "Reply")}

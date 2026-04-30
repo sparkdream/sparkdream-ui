@@ -23,6 +23,7 @@ import type {
   RevealStake,
   RevealTranche,
 } from "@/types/reveal";
+import NumberInput from "@/components/NumberInput";
 
 interface TrancheTally {
   yes_weight: string;
@@ -574,7 +575,7 @@ function TrancheActions({
           <button
             type="button"
             onClick={() => setOpen(open === "stake" ? null : "stake")}
-            className="sd-btn sd-btn-primary text-xs"
+            className="sd-btn sd-btn-primary"
           >
             Stake DREAM
           </button>
@@ -583,7 +584,7 @@ function TrancheActions({
           <button
             type="button"
             onClick={() => setOpen(open === "reveal" ? null : "reveal")}
-            className="sd-btn sd-btn-primary text-xs"
+            className="sd-btn sd-btn-primary"
           >
             Reveal code
           </button>
@@ -592,7 +593,7 @@ function TrancheActions({
           <button
             type="button"
             onClick={() => setOpen(open === "verify" ? null : "verify")}
-            className="sd-btn sd-btn-primary text-xs"
+            className="sd-btn sd-btn-primary"
           >
             Verify
           </button>
@@ -602,8 +603,7 @@ function TrancheActions({
       {open === "stake" && (
         <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
           <label className="block text-xs text-zinc-400">Amount (DREAM)</label>
-          <input
-            type="number"
+          <NumberInput
             step="any"
             min="0"
             className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-900/60 px-2 py-1.5 text-sm text-zinc-100"
@@ -665,11 +665,11 @@ function TrancheActions({
             Code delivers what was promised
           </label>
           <FormField label="Quality rating (1–5)">
-            <input
-              type="number"
+            <NumberInput
               min={1}
               max={5}
-              className="w-24 rounded-md border border-zinc-700 bg-zinc-900/60 px-2 py-1.5 text-sm text-zinc-100"
+              wrapperClassName="w-24"
+              className="rounded-md border border-zinc-700 bg-zinc-900/60 px-2 py-1.5 text-sm text-zinc-100"
               value={qualityRating}
               onChange={(e) => setQualityRating(Math.max(1, Math.min(5, parseInt(e.target.value) || 1)))}
             />
@@ -733,7 +733,7 @@ function FormFooter({
       <button
         type="button"
         onClick={onSubmit}
-        className="sd-btn sd-btn-primary text-xs"
+        className="sd-btn sd-btn-primary"
         disabled={submitting}
       >
         {submitting ? "Submitting…" : submitLabel}
@@ -810,7 +810,7 @@ function CancelButton({
         <button
           type="button"
           onClick={handleCancel}
-          className="sd-btn sd-btn-primary text-xs"
+          className="sd-btn sd-btn-primary"
           disabled={submitting}
         >
           {submitting ? "Cancelling…" : "Confirm cancel"}

@@ -82,12 +82,13 @@ export default function CommunityProposals({
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Proposals</h2>
-        {isMember && (
+        {isMember && !showNewProposal && (
           <button
-            onClick={() => setShowNewProposal(!showNewProposal)}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+            type="button"
+            onClick={() => setShowNewProposal(true)}
+            className="sd-btn sd-btn-primary"
           >
-            {showNewProposal ? "Cancel" : "New Proposal"}
+            New Proposal
           </button>
         )}
       </div>
