@@ -134,6 +134,17 @@ import type {
   BondedRoleConfigResponse,
   RoleTypeValue,
 } from "@/types/rep";
+import type {
+  GetContributionResponse,
+  ListContributionsResponse,
+  GetTrancheResponse,
+  GetTrancheTallyResponse,
+  ListTrancheStakesResponse,
+  GetStakeDetailResponse,
+  ListStakesByStakerResponse,
+  ListVotesByVoterResponse,
+  RevealParamsResponse,
+} from "@/types/reveal";
 
 // In the browser, route through our Next.js proxy to avoid CORS issues.
 // On the server (SSR), call the LCD endpoint directly.
@@ -1125,6 +1136,107 @@ export async function listRetroRewardHistory(
     `/sparkdream/season/v1/retro_reward_history/${season}`,
     paginationParams(pagination)
   );
+}
+
+// ── Reveal module ──────────────────────────────────────────────────
+
+export async function getContribution(
+  contributionId: string
+): Promise<GetContributionResponse> {
+  return get<GetContributionResponse>(
+    `/sparkdream/reveal/v1/contribution/${contributionId}`
+  );
+}
+
+export async function listContributions(
+  pagination?: PaginationRequest
+): Promise<ListContributionsResponse> {
+  return get<ListContributionsResponse>(
+    "/sparkdream/reveal/v1/contributions",
+    paginationParams(pagination)
+  );
+}
+
+export async function listContributionsByContributor(
+  contributor: string,
+  pagination?: PaginationRequest
+): Promise<ListContributionsResponse> {
+  return get<ListContributionsResponse>(
+    `/sparkdream/reveal/v1/contributions_by_contributor/${contributor}`,
+    paginationParams(pagination)
+  );
+}
+
+// status is the numeric ContributionStatus value (0..3)
+export async function listContributionsByStatus(
+  status: string,
+  pagination?: PaginationRequest
+): Promise<ListContributionsResponse> {
+  return get<ListContributionsResponse>(
+    `/sparkdream/reveal/v1/contributions_by_status/${status}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getRevealTranche(
+  contributionId: string,
+  trancheId: string | number
+): Promise<GetTrancheResponse> {
+  return get<GetTrancheResponse>(
+    `/sparkdream/reveal/v1/tranche/${contributionId}/${trancheId}`
+  );
+}
+
+export async function getTrancheTally(
+  contributionId: string,
+  trancheId: string | number
+): Promise<GetTrancheTallyResponse> {
+  return get<GetTrancheTallyResponse>(
+    `/sparkdream/reveal/v1/tranche_tally/${contributionId}/${trancheId}`
+  );
+}
+
+export async function listTrancheStakes(
+  contributionId: string,
+  trancheId: string | number,
+  pagination?: PaginationRequest
+): Promise<ListTrancheStakesResponse> {
+  return get<ListTrancheStakesResponse>(
+    `/sparkdream/reveal/v1/tranche_stakes/${contributionId}/${trancheId}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getRevealStake(
+  stakeId: string
+): Promise<GetStakeDetailResponse> {
+  return get<GetStakeDetailResponse>(
+    `/sparkdream/reveal/v1/stake_detail/${stakeId}`
+  );
+}
+
+export async function listStakesByStaker(
+  staker: string,
+  pagination?: PaginationRequest
+): Promise<ListStakesByStakerResponse> {
+  return get<ListStakesByStakerResponse>(
+    `/sparkdream/reveal/v1/stakes_by_staker/${staker}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function listVerificationVotesByVoter(
+  voter: string,
+  pagination?: PaginationRequest
+): Promise<ListVotesByVoterResponse> {
+  return get<ListVotesByVoterResponse>(
+    `/sparkdream/reveal/v1/votes_by_voter/${voter}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getRevealParams(): Promise<RevealParamsResponse> {
+  return get<RevealParamsResponse>("/sparkdream/reveal/v1/params");
 }
 
 // Fetch all member addresses across every council and return as a Set

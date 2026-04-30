@@ -177,6 +177,19 @@ export const SeasonMsgTypeUrls = {
   UnstakeNomination: "/sparkdream.season.v1.MsgUnstakeNomination",
 } as const;
 
+// Reveal transaction message type URLs
+export const RevealMsgTypeUrls = {
+  Propose: "/sparkdream.reveal.v1.MsgPropose",
+  Approve: "/sparkdream.reveal.v1.MsgApprove",
+  Reject: "/sparkdream.reveal.v1.MsgReject",
+  Stake: "/sparkdream.reveal.v1.MsgStake",
+  Withdraw: "/sparkdream.reveal.v1.MsgWithdraw",
+  Reveal: "/sparkdream.reveal.v1.MsgReveal",
+  Verify: "/sparkdream.reveal.v1.MsgVerify",
+  Cancel: "/sparkdream.reveal.v1.MsgCancel",
+  ResolveDispute: "/sparkdream.reveal.v1.MsgResolveDispute",
+} as const;
+
 // Build a blog message for signing.
 export function buildBlogMsg(typeUrl: string, value: Record<string, unknown>) {
   return { typeUrl, value };
