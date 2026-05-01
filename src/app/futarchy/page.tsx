@@ -12,6 +12,7 @@ import {
   ContentPageLayout,
   SidebarSection,
 } from "@/components/layout/ContentPageLayout";
+import { RoleCard } from "@/components/layout/RoleCard";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
@@ -96,12 +97,16 @@ export default function FutarchyPage() {
     listFutarchyMarkets({ limit: "100", reverse: true })
       .then((res) => {
         if (cancelled) return;
-        setMarkets(res.market || []);
+        // Fall back to DEMO_MARKETS when the chain has no markets yet so the
+        // page still communicates the feature surface. Real data takes
+        // precedence the moment any market exists.
+        const real = res.market || [];
+        setMarkets(real.length > 0 ? real : DEMO_MARKETS);
         setMarketsError(null);
       })
       .catch((err) => {
         if (cancelled) return;
-        setMarkets([]);
+        setMarkets(DEMO_MARKETS);
         setMarketsError(err instanceof Error ? err.message : "Failed to load markets");
       })
       .finally(() => !cancelled && setMarketsLoading(false));
@@ -119,7 +124,10 @@ export default function FutarchyPage() {
   useEffect(() => {
     getLatestBlockHeight()
       .then((h) => setCurrentBlock(BigInt(h)))
-      .catch(() => setCurrentBlock(null));
+      // When the chain is unreachable we use a synthetic "now" block so the
+      // demo markets show meaningful "ends in Nd Nh" countdowns rather than
+      // bare block numbers.
+      .catch(() => setCurrentBlock(DEMO_NOW_BLOCK));
   }, []);
 
   // Pull share balances (f/{id}/yes, f/{id}/no) for the connected wallet so
@@ -360,12 +368,7 @@ export default function FutarchyPage() {
       title="Futarchy"
       subtitle="Decision markets — LMSR-priced YES/NO outcomes; resolution drives commons policy"
       sidebar={sidebar}
-      railCards={
-        <>
-          <KpisCard counts={counts} tvlSpark={kpis.tvl} />
-          <LMSRCardCompact />
-        </>
-      }
+      railCards={<RolesStrip params={params} />}
     >
       <PageHead
         onToggleCreate={() => setCreateOpen((v) => !v)}
@@ -535,14 +538,6 @@ export default function FutarchyPage() {
           <span className="meta">LMSR · gas-metered</span>
         </div>
         <LMSRCard params={params} />
-      </section>
-
-      <section className="sd-fut-section">
-        <div className="sd-fut-section-head">
-          <h3>Participate</h3>
-          <span className="meta">Markets are open to any ESTABLISHED+ member</span>
-        </div>
-        <RolesStrip params={params} />
       </section>
 
       {tradeTarget && (
@@ -895,13 +890,13 @@ function MarketsTable({
   return (
     <div className="sd-markets-table">
       <div className="row head">
-        <div>Symbol</div>
-        <div>Question</div>
-        <div>YES · NO</div>
-        <div style={{ textAlign: "right" }}>Liquidity</div>
-        <div style={{ textAlign: "right" }}>Ends</div>
-        <div>Status</div>
-        <div />
+        <div className="h-symbol">Symbol</div>
+        <div className="h-question">Question</div>
+        <div className="h-prob">YES · NO</div>
+        <div className="h-liq" style={{ textAlign: "right" }}>Liquidity</div>
+        <div className="h-ends" style={{ textAlign: "right" }}>Ends</div>
+        <div className="h-status">Status</div>
+        <div className="h-action" />
       </div>
       {markets.map((m) => {
         const legs = sharesByMarket.get(m.index) || { yes: "0", no: "0" };
@@ -976,7 +971,7 @@ function MarketRow({
         <b>{ends.label}</b>
         <span className="sub">block {market.end_block}</span>
       </div>
-      <div>
+      <div className="status">
         <span className={`status-pill ${statusPillClass(market.status)}`}>
           {MARKET_STATUS_LABELS[market.status] || market.status}
         </span>
@@ -1226,26 +1221,35 @@ function CreatorResidualsSection({
 
 function LMSRCard({ params }: { params: FutarchyParams | null }) {
   const { config } = useChainConfig();
+  // Concrete params + a one-line summary stay visible; the full prose +
+  // formula + footnote is hidden behind "More" since most users don't need
+  // to re-read the explainer every visit.
+  const [open, setOpen] = useState(false);
   return (
     <div className="sd-lmsr-card">
       <h4>Logarithmic Market Scoring Rule</h4>
-      <p>
+      <p className={open ? "" : "clamp-2"}>
         Every market is an automated market maker — no order book, no
         counterparty matching, just two pools (yes, no) and a cost function
         that determines the price of any incremental trade.
       </p>
-      <div className="formula">
-        <span className="var">C</span>(q<sub>Y</sub>, q<sub>N</sub>) = <span className="var">b</span> · ln(<i>e</i><sup>q<sub>Y</sub>/<span className="var">b</span></sup> + <i>e</i><sup>q<sub>N</sub>/<span className="var">b</span></sup>)
-        <br />
-        <span className="var">p</span><sub>yes</sub> = <i>e</i><sup>q<sub>Y</sub>/<span className="var">b</span></sup> / (<i>e</i><sup>q<sub>Y</sub>/<span className="var">b</span></sup> + <i>e</i><sup>q<sub>N</sub>/<span className="var">b</span></sup>)
-      </div>
-      <p>
-        <span className="var" style={{ color: "var(--violet-hi)" }}>b</span> is the
-        liquidity parameter — derived from the creator&apos;s seed liquidity as{" "}
-        <b style={{ color: "var(--ink)" }}>b = subsidy / ln(2)</b> so the maximum
-        loss the creator subsidises equals their initial deposit. Bigger{" "}
-        <b>b</b> ⇒ flatter price, more liquidity, larger creator subsidy.
-      </p>
+
+      {open && (
+        <>
+          <div className="formula">
+            <span className="var">C</span>(q<sub>Y</sub>, q<sub>N</sub>) = <span className="var">b</span> · ln(<i>e</i><sup>q<sub>Y</sub>/<span className="var">b</span></sup> + <i>e</i><sup>q<sub>N</sub>/<span className="var">b</span></sup>)
+            <br />
+            <span className="var">p</span><sub>yes</sub> = <i>e</i><sup>q<sub>Y</sub>/<span className="var">b</span></sup> / (<i>e</i><sup>q<sub>Y</sub>/<span className="var">b</span></sup> + <i>e</i><sup>q<sub>N</sub>/<span className="var">b</span></sup>)
+          </div>
+          <p>
+            <span className="var" style={{ color: "var(--violet-hi)" }}>b</span> is the
+            liquidity parameter — derived from the creator&apos;s seed liquidity as{" "}
+            <b style={{ color: "var(--ink)" }}>b = subsidy / ln(2)</b> so the maximum
+            loss the creator subsidises equals their initial deposit. Bigger{" "}
+            <b>b</b> ⇒ flatter price, more liquidity, larger creator subsidy.
+          </p>
+        </>
+      )}
 
       {params && (
         <div className="params-grid">
@@ -1279,66 +1283,25 @@ function LMSRCard({ params }: { params: FutarchyParams | null }) {
         </div>
       )}
 
-      <p className="footnote">
-        <b style={{ color: "var(--ink)" }}>Resolution is deterministic.</b>{" "}
-        No oracle. At <span className="sd-mono">end_block</span>, the EndBlocker
-        compares pools: more YES bought ⇒ resolves YES; more NO ⇒ resolves NO;
-        tied or empty ⇒ invalid. Outstanding shares from cancelled or invalid
-        markets redeem at a snapshotted LMSR-implied price so no funds are
-        trapped.
-      </p>
-    </div>
-  );
-}
+      {open && (
+        <p className="footnote">
+          <b style={{ color: "var(--ink)" }}>Resolution is deterministic.</b>{" "}
+          No oracle. At <span className="sd-mono">end_block</span>, the EndBlocker
+          compares pools: more YES bought ⇒ resolves YES; more NO ⇒ resolves NO;
+          tied or empty ⇒ invalid. Outstanding shares from cancelled or invalid
+          markets redeem at a snapshotted LMSR-implied price so no funds are
+          trapped.
+        </p>
+      )}
 
-function LMSRCardCompact() {
-  return (
-    <div className="sd-rail-card">
-      <h5>Pricing model</h5>
-      <div style={{ fontSize: 12, color: "var(--ink-soft)", lineHeight: 1.55 }}>
-        Markets price via LMSR with{" "}
-        <b style={{ color: "var(--ink)" }}>b = subsidy / ln(2)</b>. The creator&apos;s
-        deposit caps their maximum subsidy loss; resolution is deterministic
-        from final pool sizes.
-      </div>
-    </div>
-  );
-}
-
-function KpisCard({
-  counts,
-  tvlSpark,
-}: {
-  counts: { active: number; resolvedYes: number; resolvedNo: number };
-  tvlSpark: string;
-}) {
-  const { config } = useChainConfig();
-  return (
-    <div className="sd-rail-card">
-      <h5>
-        Module snapshot
-        <span className="live"><span className="d" />live</span>
-      </h5>
-      <div className="sd-trend-row">
-        <span className="num">01</span>
-        <span className="title">Active markets</span>
-        <span className="c">{counts.active}</span>
-      </div>
-      <div className="sd-trend-row">
-        <span className="num">02</span>
-        <span className="title">Resolved YES</span>
-        <span className="c">{counts.resolvedYes}</span>
-      </div>
-      <div className="sd-trend-row">
-        <span className="num">03</span>
-        <span className="title">Resolved NO</span>
-        <span className="c">{counts.resolvedNo}</span>
-      </div>
-      <div className="sd-trend-row">
-        <span className="num">04</span>
-        <span className="title">TVL ({config.displayDenom})</span>
-        <span className="c">{formatDream(tvlSpark)}</span>
-      </div>
+      <button
+        type="button"
+        className="role-toggle"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+      >
+        {open ? "Less ▴" : "More ▾"}
+      </button>
     </div>
   );
 }
@@ -1359,46 +1322,54 @@ function RolesStrip({ params }: { params: FutarchyParams | null }) {
     : "—";
   return (
     <div className="sd-fut-roles">
-      <div className="sd-fut-role">
-        <span className="lab">Member ESTABLISHED+</span>
-        <h4>Open a market</h4>
-        <p>
-          Stake the chain denom as initial liquidity. Your stake sets <b style={{ color: "var(--ink)" }}>b</b>{" "}
-          and bounds your maximum subsidy loss; the residual returns to you on
-          resolution via WithdrawLiquidity.
-        </p>
-        <div className="req">
-          <span className="r">min <b>{minLiquidity}</b></span>
-          <span className="r">duration ≤ <b>{maxDuration}</b></span>
-        </div>
-      </div>
-      <div className="sd-fut-role">
-        <span className="lab">Any Member</span>
-        <h4>Trade a market</h4>
-        <p>
-          Buy YES or NO shares against any active market. Resolution pays
-          winning shares 1:1 in the market denom. Tied / cancelled markets
-          settle at the snapshot price recorded by the keeper.
-        </p>
-        <div className="req">
-          <span className="r">min <b>{minTick}</b>/trade</span>
-          <span className="r">fee <b>{tradingFee}</b></span>
-        </div>
-      </div>
-      <div className="sd-fut-role">
-        <span className="lab">Operations Committee</span>
-        <h4>Tune the module</h4>
-        <p>
-          The Commons Operations Committee can update the operational subset —{" "}
-          <b style={{ color: "var(--ink)" }}>trading_fee_bps</b>, max_duration,
-          max_redemption_delay — without full governance. Pricing-critical
-          params still require <span className="sd-mono">MsgUpdateParams</span>.
-        </p>
-        <div className="req">
-          <span className="r">commons authority</span>
-          <span className="r">two-tier auth</span>
-        </div>
-      </div>
+      <RoleCard
+        label="Member ESTABLISHED+"
+        title="Open a market"
+        body={
+          <>
+            Stake the chain denom as initial liquidity. Your stake sets{" "}
+            <b style={{ color: "var(--ink)" }}>b</b> and bounds your maximum
+            subsidy loss; the residual returns to you on resolution via
+            WithdrawLiquidity.
+          </>
+        }
+        reqs={[
+          <>min <b>{minLiquidity}</b></>,
+          <>duration ≤ <b>{maxDuration}</b></>,
+        ]}
+      />
+      <RoleCard
+        label="Any Member"
+        title="Trade a market"
+        body={
+          <>
+            Buy YES or NO shares against any active market. Resolution pays
+            winning shares 1:1 in the market denom. Tied / cancelled markets
+            settle at the snapshot price recorded by the keeper.
+          </>
+        }
+        reqs={[
+          <>min <b>{minTick}</b>/trade</>,
+          <>fee <b>{tradingFee}</b></>,
+        ]}
+      />
+      <RoleCard
+        label="Operations Committee"
+        title="Tune the module"
+        body={
+          <>
+            The Commons Operations Committee can update the operational subset
+            — <b style={{ color: "var(--ink)" }}>trading_fee_bps</b>,
+            max_duration, max_redemption_delay — without full governance.
+            Pricing-critical params still require{" "}
+            <span className="sd-mono">MsgUpdateParams</span>.
+          </>
+        }
+        reqs={[
+          <>commons authority</>,
+          <>two-tier auth</>,
+        ]}
+      />
     </div>
   );
 }
@@ -1698,4 +1669,122 @@ function parseShareDenom(denom: string): { marketId: string; outcome: "yes" | "n
   if (outcome !== "yes" && outcome !== "no") return null;
   if (!/^\d+$/.test(marketId)) return null;
   return { marketId, outcome };
+}
+
+// ───────────────────────── Demo data ─────────────────────────
+
+// Synthetic "current block" used to render meaningful countdowns ("ends in
+// 2d 14h") on demo markets when the chain RPC is unreachable.
+const DEMO_NOW_BLOCK = BigInt(1_302_000);
+
+// Pool sizes here are picked to make lmsrYesProb produce the labelled YES%
+// at b_value = 1000:  prob = 1 / (1 + e^((qNo - qYes)/b))
+// 68% → qY-qN ≈ 754 ; 41% → qY-qN ≈ -364 ; 82% → qY-qN ≈ 1516 ; 23% → qY-qN ≈ -1207
+const DEMO_MARKETS: Market[] = [
+  makeMarket({
+    index: "1248",
+    symbol: "CONF-Commons-1248k",
+    question: "Should the Commons Council retain the public's confidence at block 1,248,000?",
+    creator: "sprkdrm1commonscouncil00000000000000000000",
+    poolYes: "1500", poolNo: "746", b: "1000",
+    initialLiquidity: "1000000000", liquidityWithdrawn: "0",
+    endBlock: "1324800", // ~2d 14h after DEMO_NOW
+    status: MarketStatus.ACTIVE,
+  }),
+  makeMarket({
+    index: "1305",
+    symbol: "REVEAL-R4-SHIP",
+    question: "Will Reveal round 4 ship a passing tranche before block 1,375,200?",
+    creator: "sprkdrm1nightingale00000000000000000000000",
+    poolYes: "500", poolNo: "864", b: "1000",
+    initialLiquidity: "500000000", liquidityWithdrawn: "0",
+    endBlock: "1375200", // ~5d 02h
+    status: MarketStatus.ACTIVE,
+  }),
+  makeMarket({
+    index: "1289",
+    symbol: "FED-NIGHT-PASS",
+    question: "Will the council approve federation peer nightingale-1 by block 1,500,000?",
+    creator: "sprkdrm1ymoderator0000000000000000000000000",
+    poolYes: "2000", poolNo: "484", b: "1000",
+    initialLiquidity: "250000000", liquidityWithdrawn: "0",
+    endBlock: "1500000", // ~13d 18h
+    status: MarketStatus.ACTIVE,
+  }),
+  makeMarket({
+    index: "1276",
+    symbol: "SEASON-5-LAUNCH",
+    question: "Will Season 5 commitments exceed 50,000 SPARK before block 1,434,000?",
+    creator: "sprkdrm1seasonjudge000000000000000000000000",
+    poolYes: "500", poolNo: "1707", b: "1000",
+    initialLiquidity: "800000000", liquidityWithdrawn: "0",
+    endBlock: "1434000", // ~9d 04h
+    status: MarketStatus.ACTIVE,
+  }),
+  makeMarket({
+    index: "1180",
+    symbol: "CONF-Ops-1180k",
+    question: "Should the Operations Committee retain its mandate at block 1,180,000?",
+    creator: "sprkdrm1commonscouncil00000000000000000000",
+    poolYes: "4100", poolNo: "0", b: "1000",
+    initialLiquidity: "1000000000", liquidityWithdrawn: "0",
+    endBlock: "1180000",
+    status: MarketStatus.RESOLVED_YES,
+  }),
+  makeMarket({
+    index: "1219",
+    symbol: "SLASH-POLICY-V2",
+    question: "Will the proposed slashing-policy v2 hard-fork pass governance?",
+    creator: "sprkdrm1policydraft0000000000000000000000",
+    poolYes: "200", poolNo: "1400", b: "1000",
+    initialLiquidity: "320000000", liquidityWithdrawn: "0",
+    endBlock: "1272400",
+    status: MarketStatus.RESOLVED_NO,
+    settlementPriceYes: "0.120000000000000000",
+  }),
+  makeMarket({
+    index: "1156",
+    symbol: "BRIDGE-MASTODON",
+    question: "Will mastodon.social bridge submit ≥ 100 verified posts in epoch 14?",
+    creator: "sprkdrm1bridgeops00000000000000000000000",
+    poolYes: "92", poolNo: "92", b: "1000",
+    initialLiquidity: "200000000", liquidityWithdrawn: "0",
+    endBlock: "1228500",
+    status: MarketStatus.RESOLVED_INVALID,
+    settlementPriceYes: "0.500000000000000000",
+  }),
+];
+
+function makeMarket(p: {
+  index: string;
+  symbol: string;
+  question: string;
+  creator: string;
+  poolYes: string;
+  poolNo: string;
+  b: string;
+  initialLiquidity: string;
+  liquidityWithdrawn: string;
+  endBlock: string;
+  status: string;
+  settlementPriceYes?: string;
+}): Market {
+  return {
+    index: p.index,
+    creator: p.creator,
+    symbol: p.symbol,
+    question: p.question,
+    denom: "uspark",
+    min_tick: "1000",
+    end_block: p.endBlock,
+    redemption_blocks: "0",
+    resolution_height: p.status === MarketStatus.ACTIVE ? "0" : p.endBlock,
+    status: p.status,
+    b_value: p.b,
+    pool_yes: p.poolYes,
+    pool_no: p.poolNo,
+    initial_liquidity: p.initialLiquidity,
+    liquidity_withdrawn: p.liquidityWithdrawn,
+    settlement_price_yes: p.settlementPriceYes ?? "",
+  };
 }

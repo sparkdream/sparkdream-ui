@@ -151,6 +151,13 @@ import type {
   GetMarketPriceResponse,
   FutarchyParamsResponse,
 } from "@/types/futarchy";
+import type {
+  ListPeersResponse,
+  ListBridgeOperatorsResponse,
+  ListFederatedContentResponse,
+  ListIdentityLinksResponse,
+  ListOutboundAttestationsResponse,
+} from "@/types/federation";
 
 // In the browser, route through our Next.js proxy to avoid CORS issues.
 // On the server (SSR), call the LCD endpoint directly.
@@ -1301,6 +1308,53 @@ export async function getAllBankBalances(
 ): Promise<AllBalancesResponse> {
   return get<AllBalancesResponse>(
     `/cosmos/bank/v1beta1/balances/${address}`,
+    paginationParams(pagination)
+  );
+}
+
+// ── Federation ─────────────────────────────────────────────────────
+
+export async function listFederationPeers(
+  pagination?: PaginationRequest
+): Promise<ListPeersResponse> {
+  return get<ListPeersResponse>(
+    "/sparkdream/federation/v1/list_peers",
+    paginationParams(pagination)
+  );
+}
+
+export async function listFederationBridgeOperators(
+  pagination?: PaginationRequest
+): Promise<ListBridgeOperatorsResponse> {
+  return get<ListBridgeOperatorsResponse>(
+    "/sparkdream/federation/v1/list_bridge_operators",
+    paginationParams(pagination)
+  );
+}
+
+export async function listFederatedContent(
+  pagination?: PaginationRequest
+): Promise<ListFederatedContentResponse> {
+  return get<ListFederatedContentResponse>(
+    "/sparkdream/federation/v1/list_federated_content",
+    paginationParams(pagination)
+  );
+}
+
+export async function listFederationIdentityLinks(
+  pagination?: PaginationRequest
+): Promise<ListIdentityLinksResponse> {
+  return get<ListIdentityLinksResponse>(
+    "/sparkdream/federation/v1/list_identity_links",
+    paginationParams(pagination)
+  );
+}
+
+export async function listFederationOutboundAttestations(
+  pagination?: PaginationRequest
+): Promise<ListOutboundAttestationsResponse> {
+  return get<ListOutboundAttestationsResponse>(
+    "/sparkdream/federation/v1/list_outbound_attestations",
     paginationParams(pagination)
   );
 }

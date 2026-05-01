@@ -18,6 +18,8 @@ export function ContentPageLayout({
   railCards,
   children,
 }: {
+  /** Page title banner. Pass `null` to suppress the entire `sd-page-header`
+      block — useful when the page renders its own breadcrumb instead. */
   title: ReactNode;
   subtitle?: ReactNode;
   sidebar: ReactNode;
@@ -27,10 +29,12 @@ export function ContentPageLayout({
 }) {
   return (
     <div className="sd-page">
-      <header className="sd-page-header">
-        <h1>{title}</h1>
-        {subtitle && <p>{subtitle}</p>}
-      </header>
+      {title !== null && (
+        <header className="sd-page-header">
+          <h1>{title}</h1>
+          {subtitle && <p>{subtitle}</p>}
+        </header>
+      )}
       <div className="sd-page-grid with-rail">
         <aside className="sd-side">{sidebar}</aside>
         <section>
