@@ -20,6 +20,13 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Spark Dream",
   description: "Spark Dream blockchain interface",
+  alternates: {
+    types: {
+      "application/rss+xml": [
+        { url: "/feed.xml", title: "Spark Dream — onchain updates" },
+      ],
+    },
+  },
 };
 
 export default function RootLayout({

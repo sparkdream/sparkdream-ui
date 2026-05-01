@@ -385,8 +385,8 @@ export default function Header() {
           )}
           <div className="sd-topnav-icons">
             <Dropdown group={systemGroup} trigger="icon" align="right" activeHref={pathname} />
-            <button
-              type="button"
+            <Link
+              href="/rss"
               className="sd-icon-btn"
               aria-label="RSS feed"
               title="RSS feed"
@@ -396,7 +396,7 @@ export default function Header() {
                 <path d="M4 4a16 16 0 0 1 16 16" />
                 <circle cx="5" cy="19" r="1" fill="currentColor" />
               </svg>
-            </button>
+            </Link>
           </div>
           {connected ? (
             <button
