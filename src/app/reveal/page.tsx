@@ -261,10 +261,10 @@ function SidebarItem({
 function ParamList({ params }: { params: RevealParams }) {
   const rows = useMemo(
     () => [
-      ["Stake deadline", `${params.stake_deadline_epochs} epochs`],
-      ["Reveal deadline", `${params.reveal_deadline_epochs} epochs`],
-      ["Verification window", `${params.verification_period_epochs} epochs`],
-      ["Dispute window", `${params.dispute_resolution_epochs} epochs`],
+      ["Stake deadline", `${params.stake_deadline_epochs} blocks`],
+      ["Reveal deadline", `${params.reveal_deadline_epochs} blocks`],
+      ["Verification window", `${params.verification_period_epochs} blocks`],
+      ["Dispute window", `${params.dispute_resolution_epochs} blocks`],
       ["Verification threshold", formatDecPercent(params.verification_threshold)],
       ["Min votes", String(params.min_verification_votes)],
       ["Max tranches", String(params.max_tranches)],
@@ -273,7 +273,7 @@ function ParamList({ params }: { params: RevealParams }) {
       ["Bond rate", formatDecPercent(params.bond_rate)],
       ["Min stake", `${formatDream(params.min_stake_amount)} DREAM`],
       ["Holdback rate", formatDecPercent(params.payout_holdback_rate)],
-      ["Cooldown", `${params.proposal_cooldown_epochs} epochs`],
+      ["Cooldown", `${params.proposal_cooldown_epochs} blocks`],
     ],
     [params]
   );

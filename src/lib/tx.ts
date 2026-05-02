@@ -118,6 +118,7 @@ export const NameMsgTypeUrls = {
   RegisterName: "/sparkdream.name.v1.MsgRegisterName",
   SetPrimary: "/sparkdream.name.v1.MsgSetPrimary",
   UpdateName: "/sparkdream.name.v1.MsgUpdateName",
+  SetDisplayName: "/sparkdream.name.v1.MsgSetDisplayName",
   FileDispute: "/sparkdream.name.v1.MsgFileDispute",
   ContestDispute: "/sparkdream.name.v1.MsgContestDispute",
   ResolveDispute: "/sparkdream.name.v1.MsgResolveDispute",

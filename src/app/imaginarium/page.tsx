@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import type { Post } from "@/types/blog";
 import { PostStatus } from "@/types/blog";
-import { listPosts, getAllMemberAddresses, membersByTrustLevel, listTags } from "@/lib/api";
+import { listPosts, getAllMemberAddresses, membersByTrustLevel, listTags, getLatestBlockHeight } from "@/lib/api";
 import { TrustLevel } from "@/types/rep";
 import PostRow from "@/components/PostRow";
 import CreatePostForm from "@/components/CreatePostForm";
@@ -59,6 +59,16 @@ export default function ImaginariumPage() {
   const [tagList, setTagList] = useState<string[]>([]);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [tagsExpanded, setTagsExpanded] = useState(false);
+
+  const [endOfFeedHeight, setEndOfFeedHeight] = useState<string | null>(null);
+  useEffect(() => {
+    if (nextKey || posts.length === 0) return;
+    let cancelled = false;
+    getLatestBlockHeight()
+      .then((h) => { if (!cancelled) setEndOfFeedHeight(h); })
+      .catch(() => { if (!cancelled) setEndOfFeedHeight(null); });
+    return () => { cancelled = true; };
+  }, [nextKey, posts.length]);
 
   useEffect(() => {
     listTags({ limit: "50" })
@@ -189,13 +199,23 @@ export default function ImaginariumPage() {
     if (tagFilter) {
       result = result.filter((p) => (p.tags || []).includes(tagFilter));
     }
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      result = result.filter((p) => {
+        if (p.title?.toLowerCase().includes(q)) return true;
+        if (p.body?.toLowerCase().includes(q)) return true;
+        if (p.creator?.toLowerCase().includes(q)) return true;
+        if ((p.tags || []).some((t) => t.toLowerCase().includes(q))) return true;
+        return false;
+      });
+    }
     if (sort === "oldest") {
       result = [...result].sort(
         (a, b) => parseInt(a.created_at, 10) - parseInt(b.created_at, 10)
       );
     }
     return result;
-  }, [posts, filter, sort, memberAddresses, address, trustFilter, trustAddresses, tagFilter]);
+  }, [posts, filter, sort, memberAddresses, address, trustFilter, trustAddresses, tagFilter, searchQuery]);
 
   const featured = useMemo(
     () => filteredAndSorted.find((p) => !!p.pinned_by) || null,
@@ -423,7 +443,7 @@ export default function ImaginariumPage() {
               {loading && posts.length > 0 && <PostRowSkeleton />}
               {!nextKey && posts.length > 0 && (
                 <div className="sd-load-more">
-                  End of feed · block {posts[posts.length - 1]?.created_at || "—"}
+                  End of feed{endOfFeedHeight ? ` · block ${Number(endOfFeedHeight).toLocaleString("en-US")}` : ""}
                 </div>
               )}
             </>

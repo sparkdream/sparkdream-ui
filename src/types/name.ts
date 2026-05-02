@@ -11,6 +11,7 @@ export interface OwnerInfo {
   address: string;
   primary_name: string;
   last_active_time: string;
+  display_name: string;
 }
 
 export interface Dispute {
@@ -58,6 +59,10 @@ export interface ReverseResolveResponse {
 export interface ListNamesResponse {
   names: NameRecord[];
   pagination: Pagination;
+}
+
+export interface GetOwnerInfoResponse {
+  owner_info: OwnerInfo;
 }
 
 export interface GetDisputeResponse {

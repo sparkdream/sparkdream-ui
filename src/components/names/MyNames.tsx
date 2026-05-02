@@ -2,14 +2,18 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useWallet } from "@/contexts/WalletContext";
-import { listNamesByOwner, reverseResolveName, getNameParams } from "@/lib/api";
+import { listNamesByOwner, reverseResolveName, getNameParams, getOwnerInfo } from "@/lib/api";
 import { NameMsgTypeUrls } from "@/lib/tx";
 import type { NameRecord, NameParams } from "@/types/name";
+
+const DISPLAY_NAME_MAX_CODEPOINTS = 32;
+const codepointLength = (s: string) => Array.from(s).length;
 
 export default function MyNames() {
   const { address, signAndBroadcast } = useWallet();
   const [names, setNames] = useState<NameRecord[]>([]);
   const [primaryName, setPrimaryName] = useState<string>("");
+  const [displayName, setDisplayName] = useState<string>("");
   const [params, setParams] = useState<NameParams | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,18 +29,25 @@ export default function MyNames() {
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editData, setEditData] = useState("");
 
+  // Display name form
+  const [editingDisplayName, setEditingDisplayName] = useState(false);
+  const [displayNameDraft, setDisplayNameDraft] = useState("");
+  const [savingDisplayName, setSavingDisplayName] = useState(false);
+
   const fetchNames = useCallback(async () => {
     if (!address) return;
     try {
       setLoading(true);
       setError(null);
-      const [namesRes, reverseRes, paramsRes] = await Promise.all([
+      const [namesRes, reverseRes, ownerRes, paramsRes] = await Promise.all([
         listNamesByOwner(address),
         reverseResolveName(address).catch(() => ({ name: "" })),
+        getOwnerInfo(address).catch(() => null),
         getNameParams(),
       ]);
       setNames(namesRes.names || []);
       setPrimaryName(reverseRes.name || "");
+      setDisplayName(ownerRes?.owner_info?.display_name || "");
       setParams(paramsRes.params);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to load names";
@@ -75,6 +86,53 @@ export default function MyNames() {
       setSubmitError(err instanceof Error ? err.message : "Registration failed");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleSaveDisplayName(e: React.FormEvent) {
+    e.preventDefault();
+    if (!address) return;
+    const next = displayNameDraft.trim();
+    if (next === displayName) {
+      setEditingDisplayName(false);
+      return;
+    }
+    if (codepointLength(next) > DISPLAY_NAME_MAX_CODEPOINTS) return;
+    setSavingDisplayName(true);
+    setSubmitError(null);
+    try {
+      await signAndBroadcast([
+        {
+          typeUrl: NameMsgTypeUrls.SetDisplayName,
+          value: { authority: address, displayName: next },
+        },
+      ]);
+      setEditingDisplayName(false);
+      fetchNames();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to save display name");
+    } finally {
+      setSavingDisplayName(false);
+    }
+  }
+
+  async function handleClearDisplayName() {
+    if (!address || !displayName) return;
+    setSavingDisplayName(true);
+    setSubmitError(null);
+    try {
+      await signAndBroadcast([
+        {
+          typeUrl: NameMsgTypeUrls.SetDisplayName,
+          value: { authority: address, displayName: "" },
+        },
+      ]);
+      setEditingDisplayName(false);
+      fetchNames();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to clear display name");
+    } finally {
+      setSavingDisplayName(false);
     }
   }
 
@@ -158,6 +216,87 @@ export default function MyNames() {
           {submitError}
         </div>
       )}
+
+      {/* Display name card */}
+      <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-medium text-zinc-200">Display name</h3>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              Free-form, not unique. Shown alongside your primary name. Up to {DISPLAY_NAME_MAX_CODEPOINTS} characters.
+            </p>
+            {!editingDisplayName && (
+              <p className="mt-2 break-all text-sm text-white">
+                {displayName || <span className="text-zinc-600">— not set —</span>}
+              </p>
+            )}
+          </div>
+          {!editingDisplayName && (
+            <button
+              type="button"
+              onClick={() => {
+                setDisplayNameDraft(displayName);
+                setEditingDisplayName(true);
+              }}
+              className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-white"
+            >
+              {displayName ? "Edit" : "Set"}
+            </button>
+          )}
+        </div>
+
+        {editingDisplayName && (
+          <form onSubmit={handleSaveDisplayName} className="mt-3 space-y-2 border-t border-zinc-800 pt-3">
+            <input
+              type="text"
+              value={displayNameDraft}
+              onChange={(e) => setDisplayNameDraft(e.target.value)}
+              placeholder="Your display name"
+              maxLength={DISPLAY_NAME_MAX_CODEPOINTS * 4}
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+              autoFocus
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="submit"
+                disabled={
+                  savingDisplayName ||
+                  codepointLength(displayNameDraft.trim()) > DISPLAY_NAME_MAX_CODEPOINTS
+                }
+                className="sd-btn sd-btn-primary"
+              >
+                {savingDisplayName ? "Saving..." : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingDisplayName(false)}
+                className="sd-btn sd-btn-secondary"
+              >
+                Cancel
+              </button>
+              {displayName && (
+                <button
+                  type="button"
+                  onClick={handleClearDisplayName}
+                  disabled={savingDisplayName}
+                  className="ml-auto rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-red-500/50 hover:text-red-400"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <p
+              className={`text-xs ${
+                codepointLength(displayNameDraft.trim()) > DISPLAY_NAME_MAX_CODEPOINTS
+                  ? "text-red-400"
+                  : "text-zinc-500"
+              }`}
+            >
+              {codepointLength(displayNameDraft.trim())} / {DISPLAY_NAME_MAX_CODEPOINTS} characters
+            </p>
+          </form>
+        )}
+      </div>
 
       {/* Registration form */}
       {showRegister && (

@@ -82,6 +82,7 @@ import type {
   ReverseResolveResponse,
   ListNamesResponse,
   GetDisputeResponse,
+  GetOwnerInfoResponse,
   ListDisputeResponse,
 } from "@/types/name";
 import type {
@@ -747,6 +748,10 @@ export async function resolveName(name: string): Promise<ResolveResponse> {
 
 export async function reverseResolveName(address: string): Promise<ReverseResolveResponse> {
   return get<ReverseResolveResponse>(`/sparkdream/name/v1/reverse_resolve/${address}`);
+}
+
+export async function getOwnerInfo(address: string): Promise<GetOwnerInfoResponse> {
+  return get<GetOwnerInfoResponse>(`/sparkdream/name/v1/owner_info/${address}`);
 }
 
 export async function listNamesByOwner(
