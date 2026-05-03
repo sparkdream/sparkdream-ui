@@ -628,6 +628,17 @@ body > * { position: relative; z-index: 1; }
   text-decoration: none;
 }
 .sd-btn:active { transform: translateY(1px); }
+.sd-btn:disabled,
+.sd-btn:disabled:hover {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
+  transform: none;
+}
+.sd-btn:disabled .flame,
+.sd-btn:disabled .telescope {
+  animation: none;
+}
 .sd-btn-primary {
   background: var(--btn-primary);
   color: white;
@@ -2040,10 +2051,6 @@ body > * { position: relative; z-index: 1; }
 }
 .sd-fut-page-head .actions {
   display: flex; gap: 10px; align-items: center;
-}
-.sd-fut-page-head .actions .sd-btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
 }
 
 /* ---------- Featured market hero ---------- */

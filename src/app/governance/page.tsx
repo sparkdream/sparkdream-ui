@@ -11,7 +11,7 @@ import ChainProposals from "@/components/governance/ChainProposals";
 type View = "community-proposals" | "community-members" | "chain-proposals";
 
 export default function GovernancePage() {
-  const { connected, ready } = useWallet();
+  const { ready } = useWallet();
 
   // Sidebar state
   const [view, setView] = useState<View>("community-proposals");
@@ -85,23 +85,6 @@ export default function GovernancePage() {
           <div className="flex-1">
             <div className="h-48 animate-pulse rounded-xl sd-hull-tile" />
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!connected) {
-    return (
-      <div className="sd-page">
-        <header className="sd-page-header">
-          <span className="crumb">Govern</span>
-          <h1>Governance</h1>
-          <p>Community council and chain governance</p>
-        </header>
-        <div className="rounded-xl sd-hull-tile p-12 text-center">
-          <p className="text-zinc-400">
-            Connect your wallet to participate in governance
-          </p>
         </div>
       </div>
     );

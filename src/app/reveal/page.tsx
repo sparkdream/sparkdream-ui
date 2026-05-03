@@ -9,6 +9,7 @@ import {
   ContentToolbar,
   SidebarSection,
 } from "@/components/layout/ContentPageLayout";
+import ConnectPrompt from "@/components/layout/ConnectPrompt";
 import ContributionList from "@/components/reveal/ContributionList";
 import ContributionDetail from "@/components/reveal/ContributionDetail";
 import ProposeForm from "@/components/reveal/ProposeForm";
@@ -90,20 +91,6 @@ export default function RevealPage() {
     );
   }
 
-  if (!connected) {
-    return (
-      <div className="sd-page">
-        <header className="sd-page-header">
-          <h1>Reveal</h1>
-          <p>Progressive open-source — staked conviction reveals closed-source code in tranches</p>
-        </header>
-        <div className="sd-hull-tile rounded-xl p-12 text-center">
-          <p className="text-zinc-400">Connect your wallet to view reveal contributions</p>
-        </div>
-      </div>
-    );
-  }
-
   const sidebarFilters = (
     <>
       <SidebarSection
@@ -170,7 +157,12 @@ export default function RevealPage() {
       searchRef={searchRef}
       sort={sort}
       onSortChange={setSort}
-      primaryAction={{ label: "Propose", onClick: () => switchView("propose") }}
+      primaryAction={{
+        label: "Propose",
+        onClick: () => switchView("propose"),
+        disabled: !connected,
+        title: connected ? "MsgProposeContribution" : "Connect a wallet to propose a contribution",
+      }}
     />
   ) : null;
 
@@ -220,16 +212,24 @@ export default function RevealPage() {
           onSelect={handleSelect}
         />
       )}
-      {view === "mine" && address && (
-        <ContributionList
-          key={`mine-${listKey}`}
-          mode="by-contributor"
-          contributor={address}
-          onSelect={handleSelect}
-        />
+      {view === "mine" && (
+        connected && address ? (
+          <ContributionList
+            key={`mine-${listKey}`}
+            mode="by-contributor"
+            contributor={address}
+            onSelect={handleSelect}
+          />
+        ) : (
+          <ConnectPrompt message="Connect your wallet to see contributions you've proposed." />
+        )
       )}
       {view === "propose" && (
-        <ProposeForm onProposed={handleProposed} onCancel={() => switchView("all")} />
+        connected ? (
+          <ProposeForm onProposed={handleProposed} onCancel={() => switchView("all")} />
+        ) : (
+          <ConnectPrompt message="Connect your wallet to propose a contribution." />
+        )
       )}
       {view === "detail" && selectedId && (
         <ContributionDetail contributionId={selectedId} onBack={handleBackFromDetail} />

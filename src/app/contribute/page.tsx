@@ -9,6 +9,7 @@ import ProjectList from "@/components/contribute/ProjectList";
 import InitiativeList from "@/components/contribute/InitiativeList";
 import StakingPanel from "@/components/contribute/StakingPanel";
 import InvitationPanel from "@/components/contribute/InvitationPanel";
+import ConnectPrompt from "@/components/layout/ConnectPrompt";
 
 type View = "profile" | "staking" | "invitations" | "members" | "projects" | "initiatives";
 
@@ -32,9 +33,10 @@ export default function ReputationPage() {
 function ReputationPageInner() {
   const { connected, ready } = useWallet();
   const searchParams = useSearchParams();
-  const initialView = VALID_VIEWS.includes(searchParams.get("view") as View)
+  const urlView = VALID_VIEWS.includes(searchParams.get("view") as View)
     ? (searchParams.get("view") as View)
-    : "profile";
+    : null;
+  const initialView: View = urlView ?? (connected ? "profile" : "members");
 
   const [view, setView] = useState<View>(initialView);
   const [accountOpen, setAccountOpen] = useState(true);
@@ -60,22 +62,6 @@ function ReputationPageInner() {
           <div className="flex-1">
             <div className="h-48 animate-pulse rounded-xl sd-hull-tile" />
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!connected) {
-    return (
-      <div className="sd-page">
-        <header className="sd-page-header">
-          <h1>Contribute</h1>
-          <p>DREAM tokens, reputation scores, and community work</p>
-        </header>
-        <div className="rounded-xl sd-hull-tile p-12 text-center">
-          <p className="text-zinc-400">
-            Connect your wallet to view the contribution system
-          </p>
         </div>
       </div>
     );
@@ -266,9 +252,15 @@ function ReputationPageInner() {
 
         {/* Content */}
         <div className="min-w-0 flex-1">
-          {view === "profile" && <MemberProfile />}
-          {view === "staking" && <StakingPanel />}
-          {view === "invitations" && <InvitationPanel defaultShowForm={initialView === "invitations"} />}
+          {view === "profile" && (
+            connected ? <MemberProfile /> : <ConnectPrompt message="Connect your wallet to view your member profile." />
+          )}
+          {view === "staking" && (
+            connected ? <StakingPanel /> : <ConnectPrompt message="Connect your wallet to manage your staking." />
+          )}
+          {view === "invitations" && (
+            connected ? <InvitationPanel defaultShowForm={initialView === "invitations"} /> : <ConnectPrompt message="Connect your wallet to manage invitations." />
+          )}
           {view === "members" && <MemberList />}
           {view === "projects" && <ProjectList />}
           {view === "initiatives" && <InitiativeList />}

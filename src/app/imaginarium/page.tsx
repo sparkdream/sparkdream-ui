@@ -331,9 +331,13 @@ export default function ImaginariumPage() {
     </>
   );
 
-  const primaryAction = connected
-    ? { label: "New dream", variant: "dream" as const, onClick: () => setShowCreate(true) }
-    : null;
+  const primaryAction = {
+    label: "New dream",
+    variant: "dream" as const,
+    onClick: () => setShowCreate(true),
+    disabled: !connected,
+    title: connected ? "MsgCreatePost" : "Connect a wallet to create a dream",
+  };
 
   const handleSelectPost = (p: Post) => setSelectedPostId(p.id);
   const handleBackFromDetail = () => setSelectedPostId(null);

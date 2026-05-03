@@ -13,6 +13,7 @@ import {
   ContentToolbar,
   SidebarSection,
 } from "@/components/layout/ContentPageLayout";
+import ConnectPrompt from "@/components/layout/ConnectPrompt";
 import { truncateAddress } from "@/lib/utils";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
@@ -96,22 +97,6 @@ export default function WondersPage() {
     );
   }
 
-  if (!connected) {
-    return (
-      <div className="sd-page">
-        <header className="sd-page-header">
-          <h1>Wonders</h1>
-          <p>Curated collections — NFTs, links, and onchain references</p>
-        </header>
-        <div className="sd-hull-tile rounded-xl p-12 text-center">
-          <p className="text-zinc-400">
-            Connect your wallet to browse and curate Wonders
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   const sidebarFilters = (
     <>
       <SidebarSection
@@ -186,9 +171,13 @@ export default function WondersPage() {
     </>
   );
 
-  const primaryAction = connected
-    ? { label: "New collection", variant: "collection" as const, onClick: () => switchView("create") }
-    : null;
+  const primaryAction = {
+    label: "New collection",
+    variant: "collection" as const,
+    onClick: () => switchView("create"),
+    disabled: !connected,
+    title: connected ? "MsgCreateCollection" : "Connect a wallet to create a collection",
+  };
 
   const showToolbar = view !== "detail" && view !== "create";
 
@@ -202,14 +191,12 @@ export default function WondersPage() {
           >
             Public collections
           </button>
-          {connected && (
-            <button
-              className={view === "my-collections" ? "on" : ""}
-              onClick={() => switchView("my-collections")}
-            >
-              My collections
-            </button>
-          )}
+          <button
+            className={view === "my-collections" ? "on" : ""}
+            onClick={() => switchView("my-collections")}
+          >
+            My collections
+          </button>
           <button
             className={view === "curators" ? "on" : ""}
             onClick={() => switchView("curators")}
@@ -264,14 +251,18 @@ export default function WondersPage() {
       }
     >
       {view === "my-collections" && (
-        <CollectionList
-          key={`my-${listKey}`}
-          mode="my"
-          filterType={filterType}
-          tagFilter={tagFilter}
-          onSelect={handleSelectCollection}
-          onCreate={connected ? () => switchView("create") : undefined}
-        />
+        connected ? (
+          <CollectionList
+            key={`my-${listKey}`}
+            mode="my"
+            filterType={filterType}
+            tagFilter={tagFilter}
+            onSelect={handleSelectCollection}
+            onCreate={() => switchView("create")}
+          />
+        ) : (
+          <ConnectPrompt message="Connect your wallet to see your collections." />
+        )
       )}
       {view === "create" && (
         <CreateCollectionForm

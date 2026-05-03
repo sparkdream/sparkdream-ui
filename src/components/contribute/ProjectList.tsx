@@ -166,6 +166,8 @@ export default function ProjectList() {
           <button
             type="button"
             onClick={() => setShowForm(true)}
+            disabled={!address}
+            title={address ? "MsgProposeProject" : "Connect a wallet to propose a project"}
             className="sd-btn sd-btn-primary"
           >
             Propose Project

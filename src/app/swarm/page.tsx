@@ -15,6 +15,7 @@ import {
   ContentToolbar,
   SidebarSection,
 } from "@/components/layout/ContentPageLayout";
+import ConnectPrompt from "@/components/layout/ConnectPrompt";
 import { truncateAddress } from "@/lib/utils";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
@@ -148,22 +149,6 @@ export default function SwarmPage() {
     );
   }
 
-  if (!connected) {
-    return (
-      <div className="sd-page">
-        <header className="sd-page-header">
-          <h1>Swarm</h1>
-          <p>Community discussions, bounties, and moderation</p>
-        </header>
-        <div className="sd-hull-tile rounded-xl p-12 text-center">
-          <p className="text-zinc-400">
-            Connect your wallet to join the Swarm
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   const sidebarFilters = (
     <>
       <SidebarSection
@@ -201,19 +186,17 @@ export default function SwarmPage() {
           </svg>
           Top sparks
         </button>
-        {connected && (
-          <button
-            type="button"
-            className={`sd-side-item spark-item${view === "my-posts" ? " active" : ""}`}
-            onClick={() => switchView("my-posts")}
-          >
-            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <circle cx="12" cy="8" r="4" />
-              <path d="M4 21a8 8 0 0 1 16 0" />
-            </svg>
-            My sparks
-          </button>
-        )}
+        <button
+          type="button"
+          className={`sd-side-item spark-item${view === "my-posts" ? " active" : ""}`}
+          onClick={() => switchView("my-posts")}
+        >
+          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 21a8 8 0 0 1 16 0" />
+          </svg>
+          My sparks
+        </button>
       </SidebarSection>
 
       <SidebarSection
@@ -311,9 +294,13 @@ export default function SwarmPage() {
     </>
   );
 
-  const primaryAction = connected
-    ? { label: "New spark", variant: "spark" as const, onClick: () => switchView("create") }
-    : null;
+  const primaryAction = {
+    label: "New spark",
+    variant: "spark" as const,
+    onClick: () => switchView("create"),
+    disabled: !connected,
+    title: connected ? "MsgCreatePost" : "Connect a wallet to create a spark",
+  };
 
   const showToolbar =
     view !== "thread-detail" && view !== "create" && view !== "sentinel";
@@ -334,14 +321,12 @@ export default function SwarmPage() {
           >
             Top sparks
           </button>
-          {connected && (
-            <button
-              className={view === "my-posts" ? "on" : ""}
-              onClick={() => switchView("my-posts")}
-            >
-              My sparks
-            </button>
-          )}
+          <button
+            className={view === "my-posts" ? "on" : ""}
+            onClick={() => switchView("my-posts")}
+          >
+            My sparks
+          </button>
         </>
       }
       searchPlaceholder="Search sparks, tags, or addresses…"
@@ -419,21 +404,35 @@ export default function SwarmPage() {
         />
       )}
       {view === "my-posts" && (
-        <ThreadList
-          key={`my-${listKey}`}
-          mode="my-posts"
-          onSelectThread={handleSelectThread}
-          tagFilter={tagFilter}
-          onCreate={connected ? () => switchView("create") : undefined}
-        />
+        connected ? (
+          <ThreadList
+            key={`my-${listKey}`}
+            mode="my-posts"
+            onSelectThread={handleSelectThread}
+            tagFilter={tagFilter}
+            onCreate={() => switchView("create")}
+          />
+        ) : (
+          <ConnectPrompt message="Connect your wallet to see your sparks." />
+        )
       )}
       {view === "active-bounties" && (
         <BountyList mode="active" onSelectThread={handleSelectThreadById} />
       )}
       {view === "my-bounties" && (
-        <BountyList mode="my" onSelectThread={handleSelectThreadById} />
+        connected ? (
+          <BountyList mode="my" onSelectThread={handleSelectThreadById} />
+        ) : (
+          <ConnectPrompt message="Connect your wallet to see your bounties." />
+        )
       )}
-      {view === "sentinel" && <SentinelPanel />}
+      {view === "sentinel" && (
+        connected ? (
+          <SentinelPanel />
+        ) : (
+          <ConnectPrompt message="Connect your wallet to access Sentinel moderation." />
+        )
+      )}
       {view === "thread-detail" && selectedThreadId && (
         <ThreadDetail
           threadId={selectedThreadId}

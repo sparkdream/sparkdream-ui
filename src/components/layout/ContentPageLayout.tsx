@@ -60,6 +60,8 @@ export interface PrimaryAction {
       swaps to a crystal (cyan/teal) gradient with a tome glyph — use only for
       Wonders collection-creation actions. */
   variant?: "default" | "spark" | "dream" | "collection";
+  disabled?: boolean;
+  title?: string;
 }
 
 /**
@@ -119,6 +121,8 @@ export function ContentToolbar({
           <button
             type="button"
             onClick={primaryAction.onClick}
+            disabled={primaryAction.disabled}
+            title={primaryAction.title}
             className={`sd-btn ${
               primaryAction.variant === "spark"
                 ? "sd-btn-spark"

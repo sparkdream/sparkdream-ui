@@ -100,10 +100,12 @@ export default function ChainProposals() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Chain Proposals</h2>
-        {connected && !showNewProposal && (
+        {!showNewProposal && (
           <button
             type="button"
             onClick={() => setShowNewProposal(true)}
+            disabled={!connected}
+            title={connected ? "MsgSubmitProposal" : "Connect a wallet to submit a chain proposal"}
             className="sd-btn sd-btn-primary"
           >
             New Proposal

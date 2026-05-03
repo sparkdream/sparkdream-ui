@@ -275,6 +275,8 @@ export default function InitiativeList() {
           <button
             type="button"
             onClick={() => setShowForm(true)}
+            disabled={!address}
+            title={address ? "MsgCreateInitiative" : "Connect a wallet to create an initiative"}
             className="sd-btn sd-btn-primary"
           >
             Create Initiative
