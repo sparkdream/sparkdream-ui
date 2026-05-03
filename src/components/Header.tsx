@@ -335,6 +335,7 @@ export default function Header() {
   }, [mobileOpen]);
 
   return (
+    <>
     <header className="sd-topnav">
       <div className="sd-topnav-inner">
         <button
@@ -432,23 +433,24 @@ export default function Header() {
           )}
         </div>
       </div>
-
-      {mobileOpen && (
-        <MobileMenu
-          pathname={pathname}
-          onClose={() => setMobileOpen(false)}
-          connected={connected}
-          connecting={connecting}
-          connect={connect}
-          disconnect={disconnect}
-          name={name}
-          address={address}
-          signerAddress={signerAddress}
-          sessionActive={sessionActive}
-          systemGroup={systemGroup}
-        />
-      )}
     </header>
+
+    {mobileOpen && (
+      <MobileMenu
+        pathname={pathname}
+        onClose={() => setMobileOpen(false)}
+        connected={connected}
+        connecting={connecting}
+        connect={connect}
+        disconnect={disconnect}
+        name={name}
+        address={address}
+        signerAddress={signerAddress}
+        sessionActive={sessionActive}
+        systemGroup={systemGroup}
+      />
+    )}
+    </>
   );
 }
 
