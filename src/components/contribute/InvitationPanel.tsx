@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useWallet } from "@/contexts/WalletContext";
-import { invitationsByInviter, listRepInvitations, collectTags } from "@/lib/api";
+import { invitationsByInviter, listRepInvitations } from "@/lib/api";
+import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { truncateAddress, formatTime } from "@/lib/utils";
@@ -47,8 +48,8 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
   const [formInvitee, setFormInvitee] = useState("");
   const [formStake, setFormStake] = useState("");
   const [formTags, setFormTags] = useState<string[]>([]);
-  const [availableTags, setAvailableTags] = useState<string[]>([]);
-  const [loadingTags, setLoadingTags] = useState(false);
+  const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
+  const canCreateTags = useCanCreateTags(address);
 
   const fetchInvitations = useCallback(async () => {
     if (!address) return;
@@ -115,34 +116,25 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
     fetchInvitations();
   }, [fetchInvitations]);
 
-  useEffect(() => {
-    if (!showForm) return;
-    let cancelled = false;
-    setLoadingTags(true);
-    collectTags().then((tags) => {
-      if (!cancelled) setAvailableTags(tags);
-    }).catch(() => {
-      if (!cancelled) setAvailableTags([]);
-    }).finally(() => {
-      if (!cancelled) setLoadingTags(false);
-    });
-    return () => { cancelled = true; };
-  }, [showForm]);
-
   const handleInvite = async () => {
     if (!address || !formInvitee.trim() || !formStake || parseFloat(formStake) <= 0 || isNaN(parseFloat(formStake))) return;
     try {
       setSubmitting(true);
       const stakeAmount = (BigInt(Math.floor(parseFloat(formStake) * 1e6))).toString();
-      await signAndBroadcast([{
-        typeUrl: RepMsgTypeUrls.InviteMember,
-        value: {
-          inviter: address,
-          inviteeAddress: formInvitee.trim(),
-          stakedDream: stakeAmount,
-          vouchedTags: formTags,
+      const tagMsgs = canCreateTags ? buildCreateTagMsgs(address, formTags, availableTags) : [];
+      await signAndBroadcast([
+        ...tagMsgs,
+        {
+          typeUrl: RepMsgTypeUrls.InviteMember,
+          value: {
+            inviter: address,
+            inviteeAddress: formInvitee.trim(),
+            stakedDream: stakeAmount,
+            vouchedTags: formTags,
+          },
         },
-      }]);
+      ]);
+      if (tagMsgs.length > 0) refreshTags();
       setShowForm(false);
       setFormInvitee("");
       setFormStake("");
@@ -269,10 +261,16 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
                   options={availableTags}
                   value={formTags}
                   onChange={setFormTags}
-                  placeholder="Select vouched tags..."
+                  placeholder={canCreateTags ? "Select or create vouched tags..." : "Select vouched tags..."}
                   loading={loadingTags}
+                  allowCreate={canCreateTags}
                 />
               </div>
+              <p className="text-xs text-zinc-600">
+                {canCreateTags
+                  ? "New tags burn a small DREAM fee per tag and are added to the shared registry."
+                  : "Tag creation requires Established trust — pick from existing tags only."}
+              </p>
               <div className="flex items-center gap-3">
                 <button
                   type="button"
