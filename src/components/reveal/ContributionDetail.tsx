@@ -400,7 +400,7 @@ function StakeRow({
         typeUrl: RevealMsgTypeUrls.Withdraw,
         value: {
           staker: address,
-          stake_id: BigInt(stake.id),
+          stakeId: BigInt(stake.id),
         },
       }]);
       onChanged();
@@ -486,8 +486,8 @@ function TrancheActions({
         typeUrl: RevealMsgTypeUrls.Stake,
         value: {
           staker: address,
-          contribution_id: BigInt(contributionId),
-          tranche_id: tranche.id,
+          contributionId: BigInt(contributionId),
+          trancheId: tranche.id,
           amount: micro,
         },
       }]);
@@ -513,11 +513,11 @@ function TrancheActions({
         typeUrl: RevealMsgTypeUrls.Reveal,
         value: {
           contributor: address,
-          contribution_id: BigInt(contributionId),
-          tranche_id: tranche.id,
-          code_uri: codeUri.trim(),
-          docs_uri: docsUri.trim(),
-          commit_hash: commitHash.trim(),
+          contributionId: BigInt(contributionId),
+          trancheId: tranche.id,
+          codeUri: codeUri.trim(),
+          docsUri: docsUri.trim(),
+          commitHash: commitHash.trim(),
         },
       }]);
       reset();
@@ -538,10 +538,10 @@ function TrancheActions({
         typeUrl: RevealMsgTypeUrls.Verify,
         value: {
           voter: address,
-          contribution_id: BigInt(contributionId),
-          tranche_id: tranche.id,
-          value_confirmed: valueConfirmed,
-          quality_rating: qualityRating,
+          contributionId: BigInt(contributionId),
+          trancheId: tranche.id,
+          valueConfirmed: valueConfirmed,
+          qualityRating: qualityRating,
           comments,
         },
       }]);
@@ -763,7 +763,7 @@ function CancelButton({
         typeUrl: RevealMsgTypeUrls.Cancel,
         value: {
           authority: address,
-          contribution_id: BigInt(contributionId),
+          contributionId: BigInt(contributionId),
           reason: reason || "Cancelled by contributor",
         },
       }]);

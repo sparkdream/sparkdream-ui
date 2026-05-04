@@ -180,13 +180,13 @@ export default function InitiativeList() {
           typeUrl: RepMsgTypeUrls.CreateInitiative,
           value: {
             creator: address,
-            project_id: parseInt(formProjectId),
+            projectId: parseInt(formProjectId),
             title: formTitle.trim(),
             description: formDesc.trim(),
             tags: formTags,
             tier: formTier,
             category: formCategory,
-            template_id: "",
+            templateId: "",
             budget: budgetAmount,
           },
         },
@@ -211,7 +211,7 @@ export default function InitiativeList() {
       setActionLoading(`assign-${initiativeId}`);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.AssignInitiative,
-        value: { creator: address, initiative_id: parseInt(initiativeId), assignee: address },
+        value: { creator: address, initiativeId: parseInt(initiativeId), assignee: address },
       }]);
       await fetchInitiatives(tab);
     } catch (err) {
@@ -227,7 +227,7 @@ export default function InitiativeList() {
       setActionLoading(`abandon-${initiativeId}`);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.AbandonInitiative,
-        value: { creator: address, initiative_id: parseInt(initiativeId), reason: "" },
+        value: { creator: address, initiativeId: parseInt(initiativeId), reason: "" },
       }]);
       await fetchInitiatives(tab);
     } catch (err) {

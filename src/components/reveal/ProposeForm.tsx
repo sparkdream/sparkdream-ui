@@ -81,8 +81,8 @@ export default function ProposeForm({
           .split(",")
           .map((c) => c.trim())
           .filter(Boolean),
-        stake_threshold: micro,
-        preview_uri: t.preview_uri.trim(),
+        stakeThreshold: micro,
+        previewUri: t.preview_uri.trim(),
       });
     }
 
@@ -96,12 +96,12 @@ export default function ProposeForm({
         typeUrl: RevealMsgTypeUrls.Propose,
         value: {
           contributor: address,
-          project_name: projectName.trim(),
+          projectName: projectName.trim(),
           description: description.trim(),
-          total_valuation: totalMicro,
+          totalValuation: totalMicro,
           tranches: trancheDefs,
-          initial_license: initialLicense.trim(),
-          final_license: finalLicense.trim(),
+          initialLicense: initialLicense.trim(),
+          finalLicense: finalLicense.trim(),
         },
       }]);
       onProposed();

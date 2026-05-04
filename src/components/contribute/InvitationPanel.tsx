@@ -138,9 +138,9 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
         typeUrl: RepMsgTypeUrls.InviteMember,
         value: {
           inviter: address,
-          invitee_address: formInvitee.trim(),
-          staked_dream: stakeAmount,
-          vouched_tags: formTags,
+          inviteeAddress: formInvitee.trim(),
+          stakedDream: stakeAmount,
+          vouchedTags: formTags,
         },
       }]);
       setShowForm(false);
@@ -161,7 +161,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
       setActionLoading(`accept-${invitationId}`);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.AcceptInvitation,
-        value: { invitee: address, invitation_id: parseInt(invitationId) },
+        value: { invitee: address, invitationId: parseInt(invitationId) },
       }]);
       await fetchInvitations();
     } catch (err) {

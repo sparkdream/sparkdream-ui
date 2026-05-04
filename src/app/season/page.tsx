@@ -318,7 +318,7 @@ export default function SeasonPage() {
       await signAndBroadcast([
         {
           typeUrl: SeasonMsgTypeUrls.SetDisplayTitle,
-          value: { creator: address, title_id: titleId },
+          value: { creator: address, titleId: titleId },
         },
       ]);
       setToast(`Display title set`);
@@ -339,7 +339,7 @@ export default function SeasonPage() {
       await signAndBroadcast([
         {
           typeUrl: SeasonMsgTypeUrls.SetDisplayTitle,
-          value: { creator: address, title_id: "" },
+          value: { creator: address, titleId: "" },
         },
       ]);
       setToast("Display title cleared");
@@ -362,7 +362,7 @@ export default function SeasonPage() {
       setTxPending(`${typeUrl}:${questId}`);
       setToast(null);
       await signAndBroadcast([
-        { typeUrl, value: { creator: address, quest_id: questId } },
+        { typeUrl, value: { creator: address, questId: questId } },
       ]);
       setToast(successMsg);
       await Promise.all([reloadProfile(), reloadQuestProgress()]);
@@ -989,10 +989,10 @@ export default function SeasonPage() {
               address={address}
               connected={connected}
               txPending={txPending}
-              onCreate={(name, description, invite_only) =>
+              onCreate={(name, description, inviteOnly) =>
                 handleGuildTx(
                   SeasonMsgTypeUrls.CreateGuild,
-                  { creator: address!, name, description, invite_only },
+                  { creator: address!, name, description, inviteOnly },
                   "__create_guild__",
                   "Guild created"
                 )
@@ -1000,7 +1000,7 @@ export default function SeasonPage() {
               onJoin={(guildId) =>
                 handleGuildTx(
                   SeasonMsgTypeUrls.JoinGuild,
-                  { creator: address!, guild_id: guildId },
+                  { creator: address!, guildId: guildId },
                   `__join__:${guildId}`,
                   "Joined guild"
                 )
@@ -1008,7 +1008,7 @@ export default function SeasonPage() {
               onAccept={(guildId) =>
                 handleGuildTx(
                   SeasonMsgTypeUrls.AcceptGuildInvite,
-                  { creator: address!, guild_id: guildId },
+                  { creator: address!, guildId: guildId },
                   `__accept__:${guildId}`,
                   "Invite accepted"
                 )
@@ -1024,7 +1024,7 @@ export default function SeasonPage() {
               onInvite={(guildId, invitee) =>
                 handleGuildTx(
                   SeasonMsgTypeUrls.InviteToGuild,
-                  { creator: address!, guild_id: guildId, invitee },
+                  { creator: address!, guildId: guildId, invitee },
                   `__invite__:${invitee}`,
                   "Invite sent"
                 )
@@ -1032,7 +1032,7 @@ export default function SeasonPage() {
               onRevoke={(guildId, invitee) =>
                 handleGuildTx(
                   SeasonMsgTypeUrls.RevokeGuildInvite,
-                  { creator: address!, guild_id: guildId, invitee },
+                  { creator: address!, guildId: guildId, invitee },
                   `__revoke__:${invitee}`,
                   "Invite revoked"
                 )
@@ -1040,7 +1040,7 @@ export default function SeasonPage() {
               onKick={(guildId, member, reason) =>
                 handleGuildTx(
                   SeasonMsgTypeUrls.KickFromGuild,
-                  { creator: address!, guild_id: guildId, member, reason },
+                  { creator: address!, guildId: guildId, member, reason },
                   `__kick__:${member}`,
                   "Member kicked"
                 )
@@ -1048,7 +1048,7 @@ export default function SeasonPage() {
               onPromote={(guildId, member) =>
                 handleGuildTx(
                   SeasonMsgTypeUrls.PromoteToOfficer,
-                  { creator: address!, guild_id: guildId, member },
+                  { creator: address!, guildId: guildId, member },
                   `__promote__:${member}`,
                   "Promoted to officer"
                 )
@@ -1056,7 +1056,7 @@ export default function SeasonPage() {
               onDemote={(guildId, officer) =>
                 handleGuildTx(
                   SeasonMsgTypeUrls.DemoteOfficer,
-                  { creator: address!, guild_id: guildId, officer },
+                  { creator: address!, guildId: guildId, officer },
                   `__demote__:${officer}`,
                   "Demoted officer"
                 )
@@ -1064,7 +1064,7 @@ export default function SeasonPage() {
               onTransferFounder={(guildId, newFounder) =>
                 handleGuildTx(
                   SeasonMsgTypeUrls.TransferGuildFounder,
-                  { creator: address!, guild_id: guildId, new_founder: newFounder },
+                  { creator: address!, guildId: guildId, newFounder: newFounder },
                   "__transfer__",
                   "Founder transferred"
                 )
@@ -1072,7 +1072,7 @@ export default function SeasonPage() {
               onDissolve={(guildId) =>
                 handleGuildTx(
                   SeasonMsgTypeUrls.DissolveGuild,
-                  { creator: address!, guild_id: guildId },
+                  { creator: address!, guildId: guildId },
                   "__dissolve__",
                   "Guild dissolved"
                 )
@@ -1080,7 +1080,7 @@ export default function SeasonPage() {
               onSetInviteOnly={(guildId, inviteOnly) =>
                 handleGuildTx(
                   SeasonMsgTypeUrls.SetGuildInviteOnly,
-                  { creator: address!, guild_id: guildId, invite_only: inviteOnly },
+                  { creator: address!, guildId: guildId, inviteOnly: inviteOnly },
                   "__invite_only__",
                   "Visibility updated"
                 )
@@ -1088,7 +1088,7 @@ export default function SeasonPage() {
               onUpdateDescription={(guildId, description) =>
                 handleGuildTx(
                   SeasonMsgTypeUrls.UpdateGuildDescription,
-                  { creator: address!, guild_id: guildId, description },
+                  { creator: address!, guildId: guildId, description },
                   "__update_desc__",
                   "Description updated"
                 )
@@ -1107,10 +1107,10 @@ export default function SeasonPage() {
               address={address}
               connected={connected}
               txPending={txPending}
-              onNominate={(content_ref, rationale) =>
+              onNominate={(contentRef, rationale) =>
                 handleNominationTx(
                   SeasonMsgTypeUrls.Nominate,
-                  { creator: address!, content_ref, rationale },
+                  { creator: address!, contentRef, rationale },
                   "__nominate__",
                   "Nomination submitted"
                 )
@@ -1118,7 +1118,7 @@ export default function SeasonPage() {
               onStake={(id, amount) =>
                 handleNominationTx(
                   SeasonMsgTypeUrls.StakeNomination,
-                  { creator: address!, nomination_id: id, amount },
+                  { creator: address!, nominationId: id, amount },
                   `__stake__:${id}`,
                   "Stake added"
                 )
@@ -1126,7 +1126,7 @@ export default function SeasonPage() {
               onUnstake={(id) =>
                 handleNominationTx(
                   SeasonMsgTypeUrls.UnstakeNomination,
-                  { creator: address!, nomination_id: id },
+                  { creator: address!, nominationId: id },
                   `__unstake__:${id}`,
                   "Stake withdrawn"
                 )
@@ -2230,7 +2230,7 @@ function GuildView({
   address: string | null;
   connected: boolean;
   txPending: string | null;
-  onCreate: (name: string, description: string, invite_only: boolean) => void;
+  onCreate: (name: string, description: string, inviteOnly: boolean) => void;
   onJoin: (guildId: string) => void;
   onAccept: (guildId: string) => void;
   onLeave: () => void;
@@ -2365,7 +2365,7 @@ function GuildCreateForm({
   existingNames,
 }: {
   txPending: boolean;
-  onCreate: (name: string, description: string, invite_only: boolean) => void;
+  onCreate: (name: string, description: string, inviteOnly: boolean) => void;
   existingNames: Set<string>;
 }) {
   const [name, setName] = useState("");

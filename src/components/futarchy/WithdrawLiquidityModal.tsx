@@ -55,7 +55,7 @@ export default function WithdrawLiquidityModal({
           typeUrl: FutarchyMsgTypeUrls.WithdrawLiquidity,
           value: {
             creator: address,
-            market_id: market.index,
+            marketId: market.index,
           },
         },
       ]);

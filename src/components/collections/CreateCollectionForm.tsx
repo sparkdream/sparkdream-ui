@@ -49,12 +49,11 @@ export default function CreateCollectionForm({ onCreated, onCancel }: CreateColl
           creator: address,
           name: name.trim(),
           description: description.trim(),
-          cover_uri: coverUri.trim(),
+          coverUri: coverUri.trim(),
           type: collectionType,
           visibility,
           tags,
           encrypted: false,
-          community_feedback_enabled: true,
         },
       }]);
 

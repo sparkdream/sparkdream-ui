@@ -98,14 +98,14 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     try {
       const value: Record<string, unknown> = {
         creator: address,
-        collection_id: collectionId,
+        collectionId: collectionId,
         title: newItemTitle.trim(),
         description: newItemDesc.trim(),
-        image_uri: newItemImageUri.trim(),
-        reference_type: newItemRefType,
+        imageUri: newItemImageUri.trim(),
+        referenceType: newItemRefType,
       };
       if (newItemRefType === ReferenceType.LINK && newItemLinkUri.trim()) {
-        value.link_reference = { uri: newItemLinkUri.trim(), content_hash: "", content_type: "" };
+        value.link = { uri: newItemLinkUri.trim(), contentHash: "", contentType: "" };
       }
       await signAndBroadcast([{ typeUrl: CollectMsgTypeUrls.AddItem, value }]);
       setNewItemTitle("");
@@ -127,7 +127,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     try {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.RemoveItem,
-        value: { creator: address, collection_id: collectionId, item_id: itemId },
+        value: { creator: address, id: itemId },
       }]);
       await fetchData();
     } catch (err) {
@@ -145,8 +145,8 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         typeUrl: CollectMsgTypeUrls.AddCollaborator,
         value: {
           creator: address,
-          collection_id: collectionId,
-          collaborator_address: newCollabAddress.trim(),
+          collectionId: collectionId,
+          address: newCollabAddress.trim(),
           role: newCollabRole,
         },
       }]);
@@ -166,7 +166,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     try {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.RemoveCollaborator,
-        value: { creator: address, collection_id: collectionId, collaborator_address: collabAddress },
+        value: { creator: address, collectionId: collectionId, address: collabAddress },
       }]);
       await fetchData();
     } catch (err) {
@@ -182,7 +182,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     try {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.UpvoteContent,
-        value: { creator: address, target_id: collectionId, target_type: "FLAG_TARGET_COLLECTION" },
+        value: { creator: address, targetId: collectionId, targetType: 1 },
       }]);
       await fetchData();
     } catch (err) {

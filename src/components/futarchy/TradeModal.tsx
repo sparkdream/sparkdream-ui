@@ -101,9 +101,9 @@ export default function TradeModal({
           typeUrl: FutarchyMsgTypeUrls.Trade,
           value: {
             creator: address,
-            market_id: market.index,
-            is_yes: outcome === "yes",
-            amount_in: amountMicro,
+            marketId: market.index,
+            isYes: outcome === "yes",
+            amountIn: amountMicro,
           },
         },
       ]);

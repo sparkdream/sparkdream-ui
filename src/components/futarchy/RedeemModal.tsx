@@ -74,7 +74,7 @@ export default function RedeemModal({
           typeUrl: FutarchyMsgTypeUrls.Redeem,
           value: {
             creator: address,
-            market_id: market.index,
+            marketId: market.index,
           },
         },
       ]);

@@ -85,8 +85,8 @@ export default function CreateMarketForm({
             creator: address,
             symbol: symbol.trim(),
             question: question.trim(),
-            initial_liquidity: liquidityMicro,
-            end_block: endBlock.toString(),
+            initialLiquidity: liquidityMicro,
+            endBlock: endBlock.toString(),
           },
         },
       ]);

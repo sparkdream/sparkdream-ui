@@ -204,9 +204,9 @@ export default function StakingPanel() {
         typeUrl: RepMsgTypeUrls.Stake,
         value: {
           staker: address,
-          target_type: formTargetType,
-          target_id: formTargetId ? parseInt(formTargetId) : 0,
-          target_identifier: formTargetIdentifier,
+          targetType: formTargetType,
+          targetId: formTargetId ? parseInt(formTargetId) : 0,
+          targetIdentifier: formTargetIdentifier,
           amount,
         },
       }]);
@@ -228,7 +228,7 @@ export default function StakingPanel() {
       setActionLoading(`claim-${stakeId}`);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.ClaimStakingRewards,
-        value: { staker: address, stake_id: parseInt(stakeId) },
+        value: { staker: address, stakeId: parseInt(stakeId) },
       }]);
       await fetchStakes();
     } catch (err) {
@@ -244,7 +244,7 @@ export default function StakingPanel() {
       setActionLoading(`compound-${stakeId}`);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.CompoundStakingRewards,
-        value: { staker: address, stake_id: parseInt(stakeId) },
+        value: { staker: address, stakeId: parseInt(stakeId) },
       }]);
       await fetchStakes();
     } catch (err) {
@@ -260,7 +260,7 @@ export default function StakingPanel() {
       setActionLoading(`unstake-${stakeId}`);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.Unstake,
-        value: { staker: address, stake_id: parseInt(stakeId), amount },
+        value: { staker: address, stakeId: parseInt(stakeId), amount },
       }]);
       await fetchStakes();
     } catch (err) {
