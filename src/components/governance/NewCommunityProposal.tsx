@@ -9,7 +9,7 @@ import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { truncateAddress } from "@/lib/utils";
 import NumberInput from "@/components/NumberInput";
 
-type ProposalType =
+export type ProposalType =
   | "general"
   | "invite"
   | "remove"
@@ -31,6 +31,7 @@ interface NewCommunityProposalProps {
   members: Member[];
   onClose: () => void;
   onSuccess: () => void;
+  initialType?: ProposalType;
 }
 
 export default function NewCommunityProposal({
@@ -38,10 +39,11 @@ export default function NewCommunityProposal({
   members,
   onClose,
   onSuccess,
+  initialType,
 }: NewCommunityProposalProps) {
   const { address, signAndBroadcast } = useWallet();
   const { config } = useChainConfig();
-  const [type, setType] = useState<ProposalType>("general");
+  const [type, setType] = useState<ProposalType>(initialType ?? "general");
   const [metadata, setMetadata] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +87,7 @@ export default function NewCommunityProposal({
   // Create category fields
   const [categoryTitle, setCategoryTitle] = useState("");
   const [categoryDescription, setCategoryDescription] = useState("");
-  const [categoryMembersOnly, setCategoryMembersOnly] = useState(false);
+  const [categoryMembersOnly, setCategoryMembersOnly] = useState(true);
   const [categoryAdminOnly, setCategoryAdminOnly] = useState(false);
 
   // Fetch child groups for update-config targeting.

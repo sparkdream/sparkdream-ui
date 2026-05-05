@@ -1,17 +1,49 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import type { Group, Proposal, Member } from "@/types/commons";
 import { listGroups, getCouncilMembers, listProposals } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import CommunityProposals from "@/components/governance/CommunityProposals";
 import CommunityMembers from "@/components/governance/CommunityMembers";
 import ChainProposals from "@/components/governance/ChainProposals";
+import type { ProposalType } from "@/components/governance/NewCommunityProposal";
 
 type View = "community-proposals" | "community-members" | "chain-proposals";
 
+const VALID_ACTIONS: ProposalType[] = [
+  "general",
+  "invite",
+  "remove",
+  "treasury-spend",
+  "update-config",
+  "create-category",
+];
+
 export default function GovernancePage() {
+  return (
+    <Suspense fallback={
+      <div className="sd-page">
+        <div className="mb-8">
+          <div className="h-7 w-36 animate-pulse rounded bg-zinc-800" />
+          <div className="mt-2 h-4 w-56 animate-pulse rounded bg-zinc-800/60" />
+        </div>
+      </div>
+    }>
+      <GovernancePageInner />
+    </Suspense>
+  );
+}
+
+function GovernancePageInner() {
   const { ready } = useWallet();
+  const searchParams = useSearchParams();
+  const queryGroup = searchParams.get("group");
+  const queryAction = searchParams.get("action");
+  const initialAction: ProposalType | undefined = VALID_ACTIONS.includes(queryAction as ProposalType)
+    ? (queryAction as ProposalType)
+    : undefined;
 
   // Sidebar state
   const [view, setView] = useState<View>("community-proposals");
@@ -27,17 +59,30 @@ export default function GovernancePage() {
   const [communityLoading, setCommunityLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Forward initialAction to CommunityProposals only until it's been consumed
+  // (i.e., the proposals view has rendered with a selected group). After that,
+  // navigating away and back won't keep reopening the form.
+  const [actionConsumed, setActionConsumed] = useState(false);
+  const effectiveAction = actionConsumed ? undefined : initialAction;
+  useEffect(() => {
+    if (initialAction && selectedGroup && view === "community-proposals") {
+      setActionConsumed(true);
+    }
+  }, [initialAction, selectedGroup, view]);
+
   const fetchGroups = useCallback(async () => {
     try {
       const res = await listGroups();
-      setGroups(res.group || []);
-      if (res.group?.length > 0 && !selectedGroup) {
-        setSelectedGroup(res.group[0]);
+      const groupList = res.group || [];
+      setGroups(groupList);
+      if (groupList.length > 0 && !selectedGroup) {
+        const match = queryGroup ? groupList.find((g) => g.index === queryGroup) : null;
+        setSelectedGroup(match || groupList[0]);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load groups");
     }
-  }, [selectedGroup]);
+  }, [selectedGroup, queryGroup]);
 
   const fetchGroupData = useCallback(async () => {
     if (!selectedGroup) return;
@@ -273,6 +318,7 @@ export default function GovernancePage() {
               proposals={proposals}
               loading={communityLoading}
               onRefresh={fetchGroupData}
+              initialAction={effectiveAction}
             />
           )}
 

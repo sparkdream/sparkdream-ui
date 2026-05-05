@@ -20,6 +20,7 @@ import { truncateAddress } from "@/lib/utils";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
+import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
 import { PostStatus } from "@/types/forum";
 import type { ForumPost } from "@/types/forum";
 import type { Category } from "@/types/commons";
@@ -44,7 +45,8 @@ const TRUST_LEVELS: { key: string; label: string; cls: string }[] = [
 ];
 
 export default function SwarmPage() {
-  const { connected, ready, sessionActive, activeSession } = useWallet();
+  const { connected, ready, sessionActive, activeSession, address } = useWallet();
+  const { isOpsCommitteeMember } = useCommonsCouncil(address);
 
   const [view, setView] = useState<View>("all-threads");
   const [discussionsOpen, setDiscussionsOpen] = useLocalStorageBoolean("swarm-discussions-open", true);
@@ -366,7 +368,25 @@ export default function SwarmPage() {
         />
       )}
       {view === "categories" && (
-        <CategoryList onSelectCategory={handleSelectCategory} />
+        <div>
+          {isOpsCommitteeMember && (
+            <div className="mb-4 flex items-center justify-between rounded-xl border border-indigo-500/30 bg-indigo-600/10 px-4 py-3">
+              <div className="text-sm">
+                <div className="font-medium text-indigo-300">Commons Operations Committee</div>
+                <div className="text-xs text-zinc-400">
+                  Propose a new Swarm category. Submitting opens a vote in the COC group.
+                </div>
+              </div>
+              <Link
+                href="/governance?group=Commons%20Operations%20Committee&action=create-category"
+                className="sd-btn sd-btn-primary"
+              >
+                New category
+              </Link>
+            </div>
+          )}
+          <CategoryList onSelectCategory={handleSelectCategory} />
+        </div>
       )}
       {view === "category-threads" && selectedCategory && (
         <div>

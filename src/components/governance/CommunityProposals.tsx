@@ -13,7 +13,7 @@ import {
   describeProposalMessages,
 } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
-import NewCommunityProposal from "./NewCommunityProposal";
+import NewCommunityProposal, { type ProposalType } from "./NewCommunityProposal";
 
 interface CommunityProposalsProps {
   group: Group;
@@ -21,6 +21,8 @@ interface CommunityProposalsProps {
   proposals: Proposal[];
   loading: boolean;
   onRefresh: () => void;
+  /** When set, auto-opens the new-proposal form pre-selected to this type. */
+  initialAction?: ProposalType;
 }
 
 export default function CommunityProposals({
@@ -29,10 +31,11 @@ export default function CommunityProposals({
   proposals,
   loading,
   onRefresh,
+  initialAction,
 }: CommunityProposalsProps) {
   const { address, signAndBroadcast } = useWallet();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [showNewProposal, setShowNewProposal] = useState(false);
+  const [showNewProposal, setShowNewProposal] = useState(!!initialAction);
 
   const isMember = members.some((m) => m.address === address);
 
@@ -98,6 +101,7 @@ export default function CommunityProposals({
           <NewCommunityProposal
             group={group}
             members={members}
+            initialType={initialAction}
             onClose={() => setShowNewProposal(false)}
             onSuccess={() => {
               setShowNewProposal(false);
