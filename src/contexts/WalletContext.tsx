@@ -163,6 +163,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const { AminoConverter: futarchyAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/futarchy/v1/tx.amino");
       const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino });
 
+      // Telescope's auto-generated amino converters don't recursively decode
+      // `repeated google.protobuf.Any` fields, so MsgSubmitProposal /
+      // MsgSubmitAnonymousProposal / MsgExecSession need the registry + the
+      // assembled AminoTypes wired into sparkdreamjs's hand-written override
+      // before any amino signing can happen (otherwise Ledger users hit
+      // "JSON Dictionaries are not sorted" / "signature verification failed").
+      const { configureNestedAminoConverter } = await import("@sparkdreamnft/sparkdreamjs/nested-amino");
+      // Cast: cosmjs's `lookupType` returns `GeneratedType` (union of TsProto +
+      // Pbjs); the override only ever encounters TsProto types here.
+      configureNestedAminoConverter({ registry: registry as unknown as Parameters<typeof configureNestedAminoConverter>[0]["registry"], aminoTypes });
+
       const key = await window.keplr.getKey(config.chainId);
       const offlineSigner = key.isNanoLedger
         ? window.keplr.getOfflineSignerOnlyAmino(config.chainId)
