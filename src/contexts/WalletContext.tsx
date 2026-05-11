@@ -211,32 +211,35 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // Pbjs); the override only ever encounters TsProto types here.
       configureNestedAminoConverter({ registry: registry as unknown as Parameters<typeof configureNestedAminoConverter>[0]["registry"], aminoTypes });
 
+      // Keplr's default `signAmino`/`signDirect` quietly overrides the fee in
+      // our sign doc with its own gas-price calculation, which falls under
+      // both the chain's `min-gas-prices` floor (after we stopped underpaying)
+      // and the 5 SPARK ProposalFee, bouncing every signed tx. Set Keplr's
+      // global signing flags so every signAmino/signDirect call from this
+      // session honors what we put in the sign doc. This is the
+      // canonical Keplr pattern — wrapping the offline signer instead would
+      // skip its internal cosmjs-vs-keplr shape conversion and break sig
+      // verification on plain txs (regressed once before).
+      if (window.keplr.defaultOptions) {
+        window.keplr.defaultOptions.sign = {
+          ...(window.keplr.defaultOptions.sign ?? {}),
+          preferNoSetFee: true,
+          preferNoSetMemo: true,
+        };
+      } else {
+        window.keplr.defaultOptions = {
+          sign: { preferNoSetFee: true, preferNoSetMemo: true },
+        };
+      }
+
       const key = await window.keplr.getKey(config.chainId);
-      const baseSigner = key.isNanoLedger
+      const offlineSigner = key.isNanoLedger
         ? window.keplr.getOfflineSignerOnlyAmino(config.chainId)
         : window.keplr.getOfflineSigner(config.chainId);
 
-      // Keplr's default `signAmino`/`signDirect` quietly overrides the fee in
-      // our sign doc with its own gas-price calculation (~0.0075 SPARK at the
-      // current registered gas price), which falls under the chain's 5 SPARK
-      // ProposalFee minimum and bounces every non-signaling proposal. Force
-      // Keplr to honor what we put in the sign doc via `preferNoSetFee`.
-      // Also keep our memo as-passed (`preferNoSetMemo`).
-      const signOptions = { preferNoSetFee: true, preferNoSetMemo: true };
-      const keplr = window.keplr;
-      const offlineSigner = {
-        getAccounts: () => baseSigner.getAccounts(),
-        signAmino: (signerAddr: string, signDoc: unknown) =>
-          keplr.signAmino(config.chainId, signerAddr, signDoc as never, signOptions),
-        ...(!key.isNanoLedger && {
-          signDirect: (signerAddr: string, signDoc: unknown) =>
-            keplr.signDirect(config.chainId, signerAddr, signDoc as never, signOptions),
-        }),
-      };
-
       const client = await SigningStargateClient.connectWithSigner(
         config.rpcEndpoint,
-        offlineSigner as never,
+        offlineSigner,
         { registry, aminoTypes }
       );
 

@@ -18,7 +18,17 @@ interface KeplrSignOptions {
   disableBalanceCheck?: boolean;
 }
 
+interface KeplrInteractionOptions {
+  sign?: KeplrSignOptions;
+}
+
 interface Keplr {
+  /**
+   * Session-wide signing defaults. Setting `defaultOptions.sign.preferNoSetFee`
+   * to true prevents Keplr from silently overriding the fee in our sign doc
+   * with its own gas-price calculation.
+   */
+  defaultOptions?: KeplrInteractionOptions;
   experimentalSuggestChain(chainInfo: unknown): Promise<void>;
   enable(chainId: string): Promise<void>;
   getKey(chainId: string): Promise<KeplrKey>;
