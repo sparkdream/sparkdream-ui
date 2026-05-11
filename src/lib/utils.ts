@@ -91,6 +91,8 @@ const MSG_TYPE_LABELS: Record<string, string> = {
   "/sparkdream.commons.v1.MsgRegisterGroup": "Register Council",
   "/sparkdream.commons.v1.MsgSubmitProposal": "Proposal",
   "/sparkdream.commons.v1.MsgUpdateParams": "Commons Param Change",
+  "/sparkdream.commons.v1.MsgCreateCategory": "Create Swarm Category",
+  "/sparkdream.commons.v1.MsgDeleteCategory": "Delete Swarm Category",
   "/sparkdream.blog.v1.MsgUpdateParams": "Imaginarium Param Change",
   "/sparkdream.session.v1.MsgUpdateParams": "Session Param Change",
   "/cosmos.gov.v1.MsgUpdateParams": "Gov Param Change",

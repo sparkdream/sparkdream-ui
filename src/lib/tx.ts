@@ -23,6 +23,7 @@ export const CommonsMsgTypeUrls = {
   RegisterGroup: "/sparkdream.commons.v1.MsgRegisterGroup",
   UpdateGroupConfig: "/sparkdream.commons.v1.MsgUpdateGroupConfig",
   CreateCategory: "/sparkdream.commons.v1.MsgCreateCategory",
+  DeleteCategory: "/sparkdream.commons.v1.MsgDeleteCategory",
 } as const;
 
 // Session transaction message type URLs

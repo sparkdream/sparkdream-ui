@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { Group, Member } from "@/types/commons";
+import type { Category, Group, Member } from "@/types/commons";
 import { CommonsMsgTypeUrls } from "@/lib/tx";
-import { listGroups } from "@/lib/api";
+import { listCategories, listGroups } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { truncateAddress } from "@/lib/utils";
@@ -15,7 +15,8 @@ export type ProposalType =
   | "remove"
   | "treasury-spend"
   | "update-config"
-  | "create-category";
+  | "create-category"
+  | "delete-category";
 
 const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string }[] = [
   { value: "general", label: "General Vote", description: "Signaling vote with no executable action" },
@@ -24,6 +25,7 @@ const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string 
   { value: "remove", label: "Remove Member", description: "Propose removing a council member" },
   { value: "update-config", label: "Update Config", description: "Propose changing a child committee's settings" },
   { value: "create-category", label: "Create Swarm Category", description: "Propose creating a new Swarm category" },
+  { value: "delete-category", label: "Delete Swarm Category", description: "Propose removing an empty Swarm category" },
 ];
 
 interface NewCommunityProposalProps {
@@ -89,6 +91,25 @@ export default function NewCommunityProposal({
   const [categoryDescription, setCategoryDescription] = useState("");
   const [categoryMembersOnly, setCategoryMembersOnly] = useState(true);
   const [categoryAdminOnly, setCategoryAdminOnly] = useState(false);
+
+  // Delete category fields
+  const [existingCategories, setExistingCategories] = useState<Category[]>([]);
+  const [deleteCategoryId, setDeleteCategoryId] = useState("");
+
+  // Lazily load existing categories when the delete-category form is shown.
+  useEffect(() => {
+    if (type !== "delete-category" || existingCategories.length > 0) return;
+    let cancelled = false;
+    listCategories()
+      .then((res) => {
+        if (cancelled) return;
+        const cats = res.category || [];
+        setExistingCategories(cats);
+        if (cats.length > 0) setDeleteCategoryId((prev) => prev || cats[0].category_id);
+      })
+      .catch(() => { /* leave list empty; submit will surface the error */ });
+    return () => { cancelled = true; };
+  }, [type, existingCategories.length]);
 
   // Fetch child groups for update-config targeting.
   // A child is linked via parent_policy_address OR is the electoral committee.
@@ -212,9 +233,25 @@ export default function NewCommunityProposal({
             })
           ).finish(),
         });
+      } else if (type === "delete-category") {
+        if (!deleteCategoryId) throw new Error("Pick a category to delete");
+        const { MsgDeleteCategory } = await import(
+          "@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx"
+        );
+        innerMessages.push({
+          typeUrl: CommonsMsgTypeUrls.DeleteCategory,
+          value: MsgDeleteCategory.encode(
+            MsgDeleteCategory.fromPartial({
+              creator: group.policy_address,
+              categoryId: BigInt(deleteCategoryId),
+            })
+          ).finish(),
+        });
       }
       // "general" has no inner messages — signaling vote only
 
+      const deletedCategoryTitle =
+        existingCategories.find((c) => c.category_id === deleteCategoryId)?.title ?? "";
       const proposalMetadata =
         metadata.trim() ||
         defaultMetadata(type, {
@@ -224,6 +261,8 @@ export default function NewCommunityProposal({
           spendAmount,
           displayDenom: config.displayDenom,
           categoryTitle,
+          deletedCategoryTitle,
+          deletedCategoryId: deleteCategoryId,
         });
 
       await signAndBroadcast([
@@ -554,6 +593,37 @@ export default function NewCommunityProposal({
         </div>
       )}
 
+      {type === "delete-category" && (
+        <div className="space-y-3">
+          {existingCategories.length === 0 ? (
+            <div className="rounded-lg border border-zinc-700 bg-zinc-800/30 px-3 py-3 text-sm text-zinc-500">
+              No categories exist yet.
+            </div>
+          ) : (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-300">
+                Category to delete
+              </label>
+              <select
+                value={deleteCategoryId}
+                onChange={(e) => setDeleteCategoryId(e.target.value)}
+                className="sd-select w-full"
+              >
+                {existingCategories.map((c) => (
+                  <option key={c.category_id} value={c.category_id}>
+                    #{c.category_id} — {c.title}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-zinc-500">
+                The chain refuses to delete a category that still has forum posts. Move or
+                archive any remaining threads first.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Metadata / description — hide when update-config has no children */}
       {!(type === "update-config" && childGroups.length === 0) && <div>
         <label className="mb-1.5 block text-sm font-medium text-zinc-300">
@@ -586,7 +656,11 @@ export default function NewCommunityProposal({
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          disabled={submitting || (type === "update-config" && childGroups.length === 0)}
+          disabled={
+            submitting ||
+            (type === "update-config" && childGroups.length === 0) ||
+            (type === "delete-category" && existingCategories.length === 0)
+          }
           className="sd-btn sd-btn-primary"
         >
           {submitting ? "Submitting..." : "Submit Proposal"}
@@ -612,6 +686,8 @@ function defaultMetadata(
     spendAmount: string;
     displayDenom: string;
     categoryTitle?: string;
+    deletedCategoryTitle?: string;
+    deletedCategoryId?: string;
   }
 ): string {
   switch (type) {
@@ -627,6 +703,8 @@ function defaultMetadata(
       return "Update council configuration";
     case "create-category":
       return `Create Swarm category "${ctx.categoryTitle || ""}"`;
+    case "delete-category":
+      return `Delete Swarm category "${ctx.deletedCategoryTitle || ""}" (#${ctx.deletedCategoryId || "?"})`;
     default:
       return "";
   }

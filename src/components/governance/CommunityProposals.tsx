@@ -35,12 +35,16 @@ export default function CommunityProposals({
 }: CommunityProposalsProps) {
   const { address, signAndBroadcast } = useWallet();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  /** Bumped after a successful vote/execute so child cards drop their cached tally and re-fetch. */
+  const [refreshKey, setRefreshKey] = useState(0);
   const [showNewProposal, setShowNewProposal] = useState(!!initialAction);
 
   const isMember = members.some((m) => m.address === address);
 
   const handleVote = async (proposalId: string, option: number) => {
     setActionLoading(`vote-${proposalId}`);
+    setActionError(null);
     try {
       await signAndBroadcast([
         {
@@ -53,9 +57,12 @@ export default function CommunityProposals({
           },
         },
       ]);
+      setRefreshKey((k) => k + 1);
       onRefresh();
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       console.error("Vote failed:", err);
+      setActionError(`Vote on proposal #${proposalId} failed: ${msg}`);
     } finally {
       setActionLoading(null);
     }
@@ -63,6 +70,7 @@ export default function CommunityProposals({
 
   const handleExecute = async (proposalId: string) => {
     setActionLoading(`exec-${proposalId}`);
+    setActionError(null);
     try {
       await signAndBroadcast([
         {
@@ -73,9 +81,12 @@ export default function CommunityProposals({
           },
         },
       ]);
+      setRefreshKey((k) => k + 1);
       onRefresh();
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       console.error("Execute failed:", err);
+      setActionError(`Execute of proposal #${proposalId} failed: ${msg}`);
     } finally {
       setActionLoading(null);
     }
@@ -133,9 +144,24 @@ export default function CommunityProposals({
         </div>
       ) : (
         <div className="space-y-4">
+          {actionError && (
+            <div className="flex items-start justify-between gap-3 rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
+              <span className="break-all">{actionError}</span>
+              <button
+                type="button"
+                onClick={() => setActionError(null)}
+                className="shrink-0 text-xs text-red-300 hover:text-red-100"
+                aria-label="Dismiss error"
+              >
+                ✕
+              </button>
+            </div>
+          )}
           {proposals.map((proposal) => (
+            // Remount on refreshKey bump so cached `detail` (votes + tally)
+            // is dropped after a successful vote/execute.
             <CommonsProposalCard
-              key={proposal.id}
+              key={`${proposal.id}-${refreshKey}`}
               proposal={proposal}
               isMember={isMember}
               actionLoading={actionLoading}

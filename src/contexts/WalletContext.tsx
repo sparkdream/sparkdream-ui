@@ -240,20 +240,37 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         { registry, aminoTypes }
       );
 
+      // Derive the minimum fee from the chain's registered gas price
+      // (average step). This matches what validators accept as `min-gas-prices`
+      // — using a hard-coded 5000 underpaid 0.025 × 300000 = 7500 and the chain
+      // rejected with "insufficient fee" once we stopped letting Keplr silently
+      // bump the fee for us. Fallback to 0.025 if chainInfo somehow omits it.
+      const gas = 300000;
+      const gasPrice = chainInfo.feeCurrencies?.[0]?.gasPriceStep?.average ?? 0.025;
+      const minFeeAmount = Math.ceil(gasPrice * gas);
       let fee = {
-        amount: [{ denom: config.denom, amount: "5000" }],
-        gas: "300000",
+        amount: [{ denom: config.denom, amount: String(minFeeAmount) }],
+        gas: String(gas),
       };
 
       // x/commons enforces a min tx fee on MsgSubmitProposal containing
       // non-exempt inner messages (5 SPARK by default). Query the live
       // param so future changes don't strand the UI on a stale constant.
+      // Per-denom we take the max of (gas-price floor, proposal-fee minimum)
+      // so we always clear both ante checks.
       if (txRequiresProposalFee(msgs)) {
         try {
           const { params } = await getCommonsParams();
           const required = parseCoinsString(params.proposal_fee);
           if (required.length > 0) {
-            fee = { amount: required, gas: "300000" };
+            fee = {
+              amount: required.map((c) =>
+                c.denom === config.denom && BigInt(c.amount) < BigInt(minFeeAmount)
+                  ? { denom: c.denom, amount: String(minFeeAmount) }
+                  : c
+              ),
+              gas: String(gas),
+            };
           }
         } catch (err) {
           throw new Error(
