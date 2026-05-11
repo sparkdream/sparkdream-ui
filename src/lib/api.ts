@@ -21,6 +21,7 @@ import type {
   GetProposalResponse,
   ListProposalsResponse,
   ListCategoryResponse,
+  CommonsParamsResponse,
 } from "@/types/commons";
 import type {
   ListGovProposalsResponse,
@@ -324,6 +325,11 @@ export async function getProposal(
   return get<GetProposalResponse>(
     `/sparkdream/commons/v1/proposal/${proposalId}`
   );
+}
+
+// x/commons module params (currently just the proposal_fee)
+export async function getCommonsParams(): Promise<CommonsParamsResponse> {
+  return get<CommonsParamsResponse>("/sparkdream/commons/v1/params");
 }
 
 // List proposals with optional council filter

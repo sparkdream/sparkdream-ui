@@ -3,8 +3,8 @@
 import React, { createContext, useContext, useRef, useState, useCallback, useEffect } from "react";
 import { useChainConfig } from "./ChainConfigContext";
 import type { Session } from "@/types/session";
-import { getSessionsByGrantee } from "@/lib/api";
-import { SessionMsgTypeUrls } from "@/lib/tx";
+import { getCommonsParams, getSessionsByGrantee } from "@/lib/api";
+import { CommonsMsgTypeUrls, SessionMsgTypeUrls } from "@/lib/tx";
 
 interface WalletState {
   /** Returns the granter address when session mode is active, otherwise the connected wallet address. */
@@ -56,6 +56,43 @@ const SESSION_MGMT_TYPES: Set<string> = new Set([
   SessionMsgTypeUrls.RevokeSession,
   SessionMsgTypeUrls.ExecSession,
 ]);
+
+// Inner-message typeUrls that x/commons exempts from the ProposalFee
+// ante-handler check (see x/commons/ante/group_policy.go). Mirroring the
+// chain's list here means signaling votes (empty messages) and emergency
+// actions still use the default tx fee instead of paying 5 SPARK.
+const PROPOSAL_FEE_EXEMPT_INNER_TYPES: Set<string> = new Set([
+  "/sparkdream.commons.v1.MsgEmergencyCancelGovProposal",
+  "/sparkdream.commons.v1.MsgVetoGroupProposals",
+]);
+
+/**
+ * True if `msgs` contains a MsgSubmitProposal that requires the proposal fee.
+ * Mirrors x/commons/ante/group_policy.go: signaling proposals (no inner
+ * messages) pay the fee; otherwise any non-exempt inner message triggers it.
+ */
+function txRequiresProposalFee(msgs: readonly { typeUrl: string; value: unknown }[]): boolean {
+  return msgs.some((m) => {
+    if (m.typeUrl !== CommonsMsgTypeUrls.SubmitProposal) return false;
+    const v = m.value as { messages?: readonly { typeUrl: string }[] };
+    const inners = v.messages ?? [];
+    if (inners.length === 0) return true;
+    return inners.some((inner) => !PROPOSAL_FEE_EXEMPT_INNER_TYPES.has(inner.typeUrl));
+  });
+}
+
+/**
+ * Parse a `sdk.Coins`-formatted string like "5000000uspark" or
+ * "100uspark,200uother" into discrete `{denom, amount}` entries.
+ */
+function parseCoinsString(s: string): Array<{ denom: string; amount: string }> {
+  if (!s.trim()) return [];
+  return s.split(",").map((chunk) => {
+    const m = chunk.trim().match(/^(\d+)([a-zA-Z][a-zA-Z0-9/]*)$/);
+    if (!m) throw new Error(`invalid coin string: ${chunk}`);
+    return { amount: m[1], denom: m[2] };
+  });
+}
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const { config, chainInfo } = useChainConfig();
@@ -185,10 +222,27 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         { registry, aminoTypes }
       );
 
-      const fee = {
+      let fee = {
         amount: [{ denom: config.denom, amount: "5000" }],
         gas: "300000",
       };
+
+      // x/commons enforces a min tx fee on MsgSubmitProposal containing
+      // non-exempt inner messages (5 SPARK by default). Query the live
+      // param so future changes don't strand the UI on a stale constant.
+      if (txRequiresProposalFee(msgs)) {
+        try {
+          const { params } = await getCommonsParams();
+          const required = parseCoinsString(params.proposal_fee);
+          if (required.length > 0) {
+            fee = { amount: required, gas: "300000" };
+          }
+        } catch (err) {
+          throw new Error(
+            `Failed to look up commons proposal fee: ${err instanceof Error ? err.message : err}`
+          );
+        }
+      }
 
       // Wrap messages in MsgExecSession when session mode is active,
       // unless the messages are session management operations themselves.

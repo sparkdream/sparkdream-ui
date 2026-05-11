@@ -132,3 +132,17 @@ export interface ListCategoryResponse {
     total: string;
   };
 }
+
+/** x/commons module parameters (LCD shape). */
+export interface CommonsParams {
+  /**
+   * Minimum tx fee required to submit a MsgSubmitProposal containing a
+   * non-exempt inner message. Encoded as a `sdk.Coins`-formatted string
+   * (e.g. `"5000000uspark"`). Empty string disables the fee.
+   */
+  proposal_fee: string;
+}
+
+export interface CommonsParamsResponse {
+  params: CommonsParams;
+}
