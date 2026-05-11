@@ -212,13 +212,31 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       configureNestedAminoConverter({ registry: registry as unknown as Parameters<typeof configureNestedAminoConverter>[0]["registry"], aminoTypes });
 
       const key = await window.keplr.getKey(config.chainId);
-      const offlineSigner = key.isNanoLedger
+      const baseSigner = key.isNanoLedger
         ? window.keplr.getOfflineSignerOnlyAmino(config.chainId)
         : window.keplr.getOfflineSigner(config.chainId);
 
+      // Keplr's default `signAmino`/`signDirect` quietly overrides the fee in
+      // our sign doc with its own gas-price calculation (~0.0075 SPARK at the
+      // current registered gas price), which falls under the chain's 5 SPARK
+      // ProposalFee minimum and bounces every non-signaling proposal. Force
+      // Keplr to honor what we put in the sign doc via `preferNoSetFee`.
+      // Also keep our memo as-passed (`preferNoSetMemo`).
+      const signOptions = { preferNoSetFee: true, preferNoSetMemo: true };
+      const keplr = window.keplr;
+      const offlineSigner = {
+        getAccounts: () => baseSigner.getAccounts(),
+        signAmino: (signerAddr: string, signDoc: unknown) =>
+          keplr.signAmino(config.chainId, signerAddr, signDoc as never, signOptions),
+        ...(!key.isNanoLedger && {
+          signDirect: (signerAddr: string, signDoc: unknown) =>
+            keplr.signDirect(config.chainId, signerAddr, signDoc as never, signOptions),
+        }),
+      };
+
       const client = await SigningStargateClient.connectWithSigner(
         config.rpcEndpoint,
-        offlineSigner,
+        offlineSigner as never,
         { registry, aminoTypes }
       );
 

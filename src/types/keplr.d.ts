@@ -9,12 +9,23 @@ interface KeplrKey {
   isNanoLedger: boolean;
 }
 
+interface KeplrSignOptions {
+  /** If true, Keplr does NOT override the fee in the sign doc with its own gas-price calculation. */
+  preferNoSetFee?: boolean;
+  /** If true, Keplr does NOT override the memo in the sign doc. */
+  preferNoSetMemo?: boolean;
+  /** Render the sign doc in ledger-friendly amino form even on direct-mode sign. */
+  disableBalanceCheck?: boolean;
+}
+
 interface Keplr {
   experimentalSuggestChain(chainInfo: unknown): Promise<void>;
   enable(chainId: string): Promise<void>;
   getKey(chainId: string): Promise<KeplrKey>;
   getOfflineSigner(chainId: string): any;
   getOfflineSignerOnlyAmino(chainId: string): any;
+  signAmino(chainId: string, signer: string, signDoc: any, signOptions?: KeplrSignOptions): Promise<any>;
+  signDirect(chainId: string, signer: string, signDoc: any, signOptions?: KeplrSignOptions): Promise<any>;
 }
 
 interface Window {
