@@ -1,8 +1,13 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import type { Session } from "@/types/session";
-import { getSessionsByGranter, getSessionsByGrantee, getAllowedMsgTypes } from "@/lib/api";
+import type { Session, SessionParams } from "@/types/session";
+import {
+  getSessionsByGranter,
+  getSessionsByGrantee,
+  getAllowedMsgTypes,
+  getSessionParams,
+} from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { SessionMsgTypeUrls } from "@/lib/tx";
 import { truncateAddress, formatTime } from "@/lib/utils";
@@ -10,6 +15,26 @@ import { useChainConfig } from "@/contexts/ChainConfigContext";
 import NumberInput from "@/components/NumberInput";
 
 type Tab = "granted" | "received";
+
+// Parse a google.protobuf.Duration LCD response — usually "604800s",
+// occasionally { seconds, nanos } (mirrors ParamChangeForm's helper).
+function parseDurationSeconds(raw: unknown): number {
+  if (typeof raw === "string") {
+    const m = raw.match(/^(\d+(?:\.\d+)?)s$/);
+    if (m) return parseFloat(m[1]);
+    return parseFloat(raw) || 0;
+  }
+  if (typeof raw === "object" && raw !== null) {
+    return Number((raw as { seconds?: string | number }).seconds || 0);
+  }
+  return Number(raw) || 0;
+}
+
+// Fallbacks if the params query hasn't returned yet — match current
+// x/session defaults (7 day max, 100 SPARK max, 10k exec max).
+const FALLBACK_MAX_DAYS = 7;
+const FALLBACK_MAX_SPEND = 100;
+const FALLBACK_MAX_EXEC = 10_000;
 
 export default function SessionsPage() {
   const { signerAddress, connected, ready, signAndBroadcast, activeSession, activateSession, deactivateSession } = useWallet();
@@ -19,6 +44,7 @@ export default function SessionsPage() {
   const [grantedSessions, setGrantedSessions] = useState<Session[]>([]);
   const [receivedSessions, setReceivedSessions] = useState<Session[]>([]);
   const [allowedTypes, setAllowedTypes] = useState<string[]>([]);
+  const [sessionParams, setSessionParams] = useState<SessionParams | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -28,23 +54,36 @@ export default function SessionsPage() {
   const [grantee, setGrantee] = useState("");
   const [selectedMsgTypes, setSelectedMsgTypes] = useState<string[]>([]);
   const [spendAmount, setSpendAmount] = useState("");
-  const [expirationDays, setExpirationDays] = useState("30");
-  const [maxExecCount, setMaxExecCount] = useState("0");
+  const [expirationDays, setExpirationDays] = useState("");
+  const [maxExecCount, setMaxExecCount] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Derived caps from on-chain params (fallback to current defaults).
+  const maxExpirationDays = sessionParams
+    ? Math.max(1, Math.floor(parseDurationSeconds(sessionParams.max_expiration) / 86400))
+    : FALLBACK_MAX_DAYS;
+  const maxSpendDisplay = sessionParams
+    ? parseInt(sessionParams.max_spend_limit.amount || "0", 10) / 1_000_000
+    : FALLBACK_MAX_SPEND;
+  const maxExecCountCap = sessionParams
+    ? parseInt(sessionParams.max_exec_count || "0", 10) || FALLBACK_MAX_EXEC
+    : FALLBACK_MAX_EXEC;
 
   const fetchSessions = useCallback(async () => {
     if (!signerAddress) return;
     try {
       setLoading(true);
-      const [granted, received, msgTypes] = await Promise.all([
+      const [granted, received, msgTypes, params] = await Promise.all([
         getSessionsByGranter(signerAddress),
         getSessionsByGrantee(signerAddress),
         getAllowedMsgTypes(),
+        getSessionParams(),
       ]);
       setGrantedSessions(granted.sessions || []);
       setReceivedSessions(received.sessions || []);
       setAllowedTypes(msgTypes.allowed_msg_types || []);
+      setSessionParams(params.params || null);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load sessions");
@@ -88,6 +127,21 @@ export default function SessionsPage() {
     e.preventDefault();
     if (!connected || !grantee.trim() || selectedMsgTypes.length === 0) return;
 
+    // The chain rejects a non-positive SpendLimit (ErrSpendLimitRequired) —
+    // catch it here rather than in the broadcast error.
+    const spendNum = parseFloat(spendAmount);
+    if (!spendAmount || !isFinite(spendNum) || spendNum <= 0) {
+      setCreateError(`Spend limit must be greater than 0 ${DISPLAY_DENOM}`);
+      return;
+    }
+
+    // Same for max_exec_count — chain now rejects 0 (ErrMaxExecCountRequired).
+    const execNum = parseInt(maxExecCount, 10);
+    if (!maxExecCount || !Number.isFinite(execNum) || execNum <= 0) {
+      setCreateError("Max executions must be greater than 0");
+      return;
+    }
+
     setCreating(true);
     setCreateError(null);
 
@@ -104,10 +158,10 @@ export default function SessionsPage() {
             allowedMsgTypes: selectedMsgTypes,
             spendLimit: {
               denom: DENOM,
-              amount: spendAmount ? (parseInt(spendAmount) * 1_000_000).toString() : "0",
+              amount: Math.round(spendNum * 1_000_000).toString(),
             },
             expiration,
-            maxExecCount: BigInt(maxExecCount || "0"),
+            maxExecCount: BigInt(execNum),
           },
         },
       ]);
@@ -115,9 +169,9 @@ export default function SessionsPage() {
       // Reset form and refresh
       setGrantee("");
       setSelectedMsgTypes([]);
-      setSpendAmount("");
-      setExpirationDays("30");
-      setMaxExecCount("0");
+      setSpendAmount(String(maxSpendDisplay));
+      setExpirationDays(String(maxExpirationDays));
+      setMaxExecCount(String(maxExecCountCap));
       setShowCreate(false);
       await fetchSessions();
     } catch (err) {
@@ -207,7 +261,14 @@ export default function SessionsPage() {
         {!showCreate && (
           <button
             type="button"
-            onClick={() => setShowCreate(true)}
+            onClick={() => {
+              // Pre-fill defaults from the live x/session params so the user
+              // sees the maximum allowed values up front.
+              setExpirationDays(String(maxExpirationDays));
+              setSpendAmount(String(maxSpendDisplay));
+              setMaxExecCount(String(maxExecCountCap));
+              setShowCreate(true);
+            }}
             className="sd-btn sd-btn-primary w-fit"
             style={{ marginLeft: "auto" }}
           >
@@ -288,12 +349,16 @@ export default function SessionsPage() {
               </label>
               <NumberInput
                 id="spendAmount"
-                min="0"
+                min="1"
+                max={String(maxSpendDisplay)}
                 value={spendAmount}
                 onChange={(e) => setSpendAmount(e.target.value)}
-                placeholder="0 (no limit)"
+                placeholder={`Max ${maxSpendDisplay} ${DISPLAY_DENOM}`}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm"
               />
+              <p className="mt-1 text-xs text-zinc-600">
+                Max {maxSpendDisplay} {DISPLAY_DENOM} per session
+              </p>
             </div>
             <div>
               <label htmlFor="expirationDays" className="mb-1.5 block text-sm font-medium text-zinc-300">
@@ -302,11 +367,14 @@ export default function SessionsPage() {
               <NumberInput
                 id="expirationDays"
                 min="1"
-                max="365"
+                max={String(maxExpirationDays)}
                 value={expirationDays}
                 onChange={(e) => setExpirationDays(e.target.value)}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm"
               />
+              <p className="mt-1 text-xs text-zinc-600">
+                Max {maxExpirationDays} day{maxExpirationDays === 1 ? "" : "s"}
+              </p>
             </div>
             <div>
               <label htmlFor="maxExecCount" className="mb-1.5 block text-sm font-medium text-zinc-300">
@@ -314,12 +382,16 @@ export default function SessionsPage() {
               </label>
               <NumberInput
                 id="maxExecCount"
-                min="0"
+                min="1"
+                max={String(maxExecCountCap)}
                 value={maxExecCount}
                 onChange={(e) => setMaxExecCount(e.target.value)}
-                placeholder="0 (unlimited)"
+                placeholder={`Max ${maxExecCountCap.toLocaleString()}`}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm"
               />
+              <p className="mt-1 text-xs text-zinc-600">
+                Max {maxExecCountCap.toLocaleString()} per session
+              </p>
             </div>
           </div>
 

@@ -21,6 +21,7 @@ export interface SessionParams {
   max_msg_types_per_session: string;
   max_expiration: string;
   max_spend_limit: { denom: string; amount: string };
+  max_exec_count: string;
 }
 
 // API response types
