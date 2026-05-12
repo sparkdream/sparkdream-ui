@@ -6,32 +6,74 @@ import { useChainConfig } from "@/contexts/ChainConfigContext";
 
 // ── Module definitions ──────────────────────────────────────────────
 
-type FieldKind = "string" | "number" | "bigint" | "boolean" | "duration" | "coins" | "coin" | "dec-bytes";
+type FieldKind =
+  | "string"
+  | "number"
+  | "bigint"
+  | "boolean"
+  | "duration"
+  | "coins"
+  | "coin"
+  | "dec-bytes"
+  // sdk.math.Int and math.LegacyDec are wire-strings; we keep them as the
+  // "string" kind on the input side but tag the field so the encoder leaves
+  // them untouched (no micro-denom conversion etc.). All three render the
+  // same plain text input.
+  | "int"
+  | "dec";
 
 interface FieldDef {
-  /** Proto camelCase field name */
+  /** Unique editedValues key. For nested fields use the dot path, e.g.
+   * "apprenticeTier.maxBudget" — uniqueness, not codec round-trip, is the
+   * only invariant (`apiKey` is what actually reads/writes the LCD JSON). */
   key: string;
-  /** LCD snake_case field name */
+  /** LCD snake_case path into the params object. Dots descend into nested
+   * messages (e.g. `apprentice_tier.max_budget` reaches into the rep
+   * module's TierConfig). Single-level keys like `proposal_fee` are flat. */
   apiKey: string;
   label: string;
   kind: FieldKind;
-  /** For duration: display unit */
+  /** For duration: display unit name */
   unit?: string;
   /** For duration: divisor to get display unit from seconds */
   unitDivisor?: number;
   hint?: string;
+  /** Optional section heading; consecutive fields sharing a group render
+   * under one heading, in source order. Used by rep (90+ fields) to keep
+   * the form scannable. */
+  group?: string;
 }
+
+/**
+ * Loader returns the protobuf `MsgUpdateParams` and `Params` codecs for a
+ * sparkdream module. Used by the generic encoder to round-trip
+ * `MsgUpdateParams { authority, params: Params.fromAmino(editedAminoJson) }`.
+ */
+type GenericLoader = () => Promise<{
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  MsgUpdateParams: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  Params: { fromAmino: (obj: any) => any };
+}>;
 
 interface ModuleDef {
   label: string;
   paramPath: string;
-  /** Response JSON key that contains the params object */
+  /** Response JSON key that contains the params object (usually "params") */
   responseKey: string;
   typeUrl: string;
   fields: FieldDef[];
+  /**
+   * Generic-encoder loader. When set, the form encodes via
+   * `Params.fromAmino(currentAminoJson + edits)`; otherwise it falls back to
+   * the explicit per-module switch in `encodeParamUpdate` below (used for
+   * Cosmos-SDK modules whose cosmjs-types Params don't have fromAmino).
+   */
+  generic?: GenericLoader;
 }
 
 const MODULES: Record<string, ModuleDef> = {
+  // ── Cosmos SDK ────────────────────────────────────────────────────
   gov: {
     label: "Governance",
     paramPath: "/cosmos/gov/v1/params/voting",
@@ -88,13 +130,34 @@ const MODULES: Record<string, ModuleDef> = {
       { key: "slashFractionDowntime", apiKey: "slash_fraction_downtime", label: "Slash Fraction (Downtime)", kind: "dec-bytes", hint: "e.g. 0.0001 = 0.01%" },
     ],
   },
+  mint: {
+    label: "Mint",
+    paramPath: "/cosmos/mint/v1beta1/params",
+    responseKey: "params",
+    typeUrl: "/cosmos.mint.v1beta1.MsgUpdateParams",
+    fields: [
+      { key: "mintDenom", apiKey: "mint_denom", label: "Mint Denom", kind: "string" },
+      { key: "inflationRateChange", apiKey: "inflation_rate_change", label: "Inflation Rate Change", kind: "string", hint: "Max yearly change in inflation (e.g. 0.13)" },
+      { key: "inflationMax", apiKey: "inflation_max", label: "Inflation Max", kind: "string", hint: "Upper bound on yearly inflation (e.g. 0.20)" },
+      { key: "inflationMin", apiKey: "inflation_min", label: "Inflation Min", kind: "string", hint: "Lower bound on yearly inflation (e.g. 0.07)" },
+      { key: "goalBonded", apiKey: "goal_bonded", label: "Goal Bonded", kind: "string", hint: "Target bonded ratio (e.g. 0.67)" },
+      { key: "blocksPerYear", apiKey: "blocks_per_year", label: "Blocks Per Year", kind: "bigint" },
+    ],
+  },
+
+  // ── Sparkdream (generic encoder via Params.fromAmino) ─────────────
   commons: {
     label: "Commons",
     paramPath: "/sparkdream/commons/v1/params",
     responseKey: "params",
     typeUrl: "/sparkdream.commons.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/params");
+      return { MsgUpdateParams, Params };
+    },
     fields: [
-      { key: "proposalFee", apiKey: "proposal_fee", label: "Proposal Fee", kind: "string", hint: "Cost to register a group (in base denom e.g. 1000uspark)" },
+      { key: "proposalFee", apiKey: "proposal_fee", label: "Proposal Fee", kind: "string", hint: "sdk.Coins string e.g. 5000000uspark" },
     ],
   },
   blog: {
@@ -102,6 +165,11 @@ const MODULES: Record<string, ModuleDef> = {
     paramPath: "/sparkdream/blog/v1/params",
     responseKey: "params",
     typeUrl: "/sparkdream.blog.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/params");
+      return { MsgUpdateParams, Params };
+    },
     fields: [
       { key: "maxTitleLength", apiKey: "max_title_length", label: "Max Title Length", kind: "bigint" },
       { key: "maxBodyLength", apiKey: "max_body_length", label: "Max Body Length", kind: "bigint" },
@@ -114,6 +182,16 @@ const MODULES: Record<string, ModuleDef> = {
       { key: "reactionFee", apiKey: "reaction_fee", label: "Reaction Fee", kind: "coin" },
       { key: "costPerByteExempt", apiKey: "cost_per_byte_exempt", label: "Cost Per Byte Exempt", kind: "boolean" },
       { key: "reactionFeeExempt", apiKey: "reaction_fee_exempt", label: "Reaction Fee Exempt", kind: "boolean" },
+      { key: "maxCostPerByte", apiKey: "max_cost_per_byte", label: "Max Cost Per Byte", kind: "coin" },
+      { key: "maxReactionFee", apiKey: "max_reaction_fee", label: "Max Reaction Fee", kind: "coin" },
+      { key: "ephemeralContentTtl", apiKey: "ephemeral_content_ttl", label: "Ephemeral Content TTL (blocks)", kind: "bigint" },
+      { key: "minEphemeralContentTtl", apiKey: "min_ephemeral_content_ttl", label: "Min Ephemeral Content TTL (blocks)", kind: "bigint" },
+      { key: "pinMinTrustLevel", apiKey: "pin_min_trust_level", label: "Pin Min Trust Level", kind: "number" },
+      { key: "maxPinsPerDay", apiKey: "max_pins_per_day", label: "Max Pins Per Day", kind: "number" },
+      { key: "convictionRenewalThreshold", apiKey: "conviction_renewal_threshold", label: "Conviction Renewal Threshold", kind: "dec" },
+      { key: "convictionRenewalPeriod", apiKey: "conviction_renewal_period", label: "Conviction Renewal Period (blocks)", kind: "bigint" },
+      { key: "maxTagsPerPost", apiKey: "max_tags_per_post", label: "Max Tags Per Post", kind: "number" },
+      { key: "maxTagLength", apiKey: "max_tag_length", label: "Max Tag Length", kind: "number" },
     ],
   },
   session: {
@@ -121,11 +199,470 @@ const MODULES: Record<string, ModuleDef> = {
     paramPath: "/sparkdream/session/v1/params",
     responseKey: "params",
     typeUrl: "/sparkdream.session.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/params");
+      return { MsgUpdateParams, Params };
+    },
     fields: [
       { key: "maxSessionsPerGranter", apiKey: "max_sessions_per_granter", label: "Max Sessions Per Granter", kind: "bigint" },
       { key: "maxMsgTypesPerSession", apiKey: "max_msg_types_per_session", label: "Max Msg Types Per Session", kind: "bigint" },
       { key: "maxExpiration", apiKey: "max_expiration", label: "Max Expiration", kind: "duration", unit: "days", unitDivisor: 86400 },
       { key: "maxSpendLimit", apiKey: "max_spend_limit", label: "Max Spend Limit", kind: "coin" },
+      { key: "maxExecCount", apiKey: "max_exec_count", label: "Max Exec Count", kind: "bigint" },
+    ],
+  },
+  forum: {
+    label: "Forum",
+    paramPath: "/sparkdream/forum/v1/params",
+    responseKey: "params",
+    typeUrl: "/sparkdream.forum.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/forum/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/forum/v1/params");
+      return { MsgUpdateParams, Params };
+    },
+    fields: [
+      { key: "forumPaused", apiKey: "forum_paused", label: "Forum Paused", kind: "boolean" },
+      { key: "moderationPaused", apiKey: "moderation_paused", label: "Moderation Paused", kind: "boolean" },
+      { key: "appealsPaused", apiKey: "appeals_paused", label: "Appeals Paused", kind: "boolean" },
+      { key: "bountiesEnabled", apiKey: "bounties_enabled", label: "Bounties Enabled", kind: "boolean" },
+      { key: "reactionsEnabled", apiKey: "reactions_enabled", label: "Reactions Enabled", kind: "boolean" },
+      { key: "editingEnabled", apiKey: "editing_enabled", label: "Editing Enabled", kind: "boolean" },
+      { key: "spamTax", apiKey: "spam_tax", label: "Spam Tax", kind: "coin" },
+      { key: "reactionSpamTax", apiKey: "reaction_spam_tax", label: "Reaction Spam Tax", kind: "coin" },
+      { key: "flagSpamTax", apiKey: "flag_spam_tax", label: "Flag Spam Tax", kind: "coin" },
+      { key: "downvoteDeposit", apiKey: "downvote_deposit", label: "Downvote Deposit", kind: "coin" },
+      { key: "appealFee", apiKey: "appeal_fee", label: "Appeal Fee", kind: "coin" },
+      { key: "lockAppealFee", apiKey: "lock_appeal_fee", label: "Lock Appeal Fee", kind: "coin" },
+      { key: "moveAppealFee", apiKey: "move_appeal_fee", label: "Move Appeal Fee", kind: "coin" },
+      { key: "editFee", apiKey: "edit_fee", label: "Edit Fee", kind: "coin" },
+      { key: "costPerByte", apiKey: "cost_per_byte", label: "Cost Per Byte", kind: "coin" },
+      { key: "costPerByteExempt", apiKey: "cost_per_byte_exempt", label: "Cost Per Byte Exempt", kind: "boolean" },
+      { key: "bountyCancellationFeePercent", apiKey: "bounty_cancellation_fee_percent", label: "Bounty Cancellation Fee (%)", kind: "bigint" },
+      { key: "maxContentSize", apiKey: "max_content_size", label: "Max Content Size (bytes)", kind: "bigint" },
+      { key: "dailyPostLimit", apiKey: "daily_post_limit", label: "Daily Post Limit", kind: "bigint" },
+      { key: "maxReplyDepth", apiKey: "max_reply_depth", label: "Max Reply Depth", kind: "number" },
+      { key: "maxFollowsPerDay", apiKey: "max_follows_per_day", label: "Max Follows Per Day", kind: "bigint" },
+      { key: "editGracePeriod", apiKey: "edit_grace_period", label: "Edit Grace Period (blocks)", kind: "bigint" },
+      { key: "editMaxWindow", apiKey: "edit_max_window", label: "Edit Max Window (blocks)", kind: "bigint" },
+      { key: "ephemeralTtl", apiKey: "ephemeral_ttl", label: "Ephemeral TTL (blocks)", kind: "bigint" },
+      { key: "archiveThreshold", apiKey: "archive_threshold", label: "Archive Threshold (blocks)", kind: "bigint" },
+      { key: "archiveCooldown", apiKey: "archive_cooldown", label: "Archive Cooldown (blocks)", kind: "bigint" },
+      { key: "unarchiveCooldown", apiKey: "unarchive_cooldown", label: "Unarchive Cooldown (blocks)", kind: "bigint" },
+      { key: "hideAppealCooldown", apiKey: "hide_appeal_cooldown", label: "Hide Appeal Cooldown (blocks)", kind: "bigint" },
+      { key: "lockAppealCooldown", apiKey: "lock_appeal_cooldown", label: "Lock Appeal Cooldown (blocks)", kind: "bigint" },
+      { key: "moveAppealCooldown", apiKey: "move_appeal_cooldown", label: "Move Appeal Cooldown (blocks)", kind: "bigint" },
+      { key: "minSentinelBond", apiKey: "min_sentinel_bond", label: "Min Sentinel Bond", kind: "int" },
+      { key: "minSentinelRepTier", apiKey: "min_sentinel_rep_tier", label: "Min Sentinel Rep Tier", kind: "bigint" },
+      { key: "minSentinelTrustLevel", apiKey: "min_sentinel_trust_level", label: "Min Sentinel Trust Level", kind: "string" },
+      { key: "minSentinelAgeBlocks", apiKey: "min_sentinel_age_blocks", label: "Min Sentinel Age (blocks)", kind: "bigint" },
+      { key: "sentinelDemotionCooldown", apiKey: "sentinel_demotion_cooldown", label: "Sentinel Demotion Cooldown (blocks)", kind: "bigint" },
+      { key: "sentinelDemotionThreshold", apiKey: "sentinel_demotion_threshold", label: "Sentinel Demotion Threshold", kind: "dec" },
+      { key: "sentinelUnhideWindow", apiKey: "sentinel_unhide_window", label: "Sentinel Unhide Window (blocks)", kind: "bigint" },
+      { key: "convictionRenewalThreshold", apiKey: "conviction_renewal_threshold", label: "Conviction Renewal Threshold", kind: "dec" },
+      { key: "convictionRenewalPeriod", apiKey: "conviction_renewal_period", label: "Conviction Renewal Period (blocks)", kind: "bigint" },
+    ],
+  },
+  futarchy: {
+    label: "Futarchy",
+    paramPath: "/sparkdream/futarchy/v1/params",
+    responseKey: "params",
+    typeUrl: "/sparkdream.futarchy.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/futarchy/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/futarchy/v1/params");
+      return { MsgUpdateParams, Params };
+    },
+    fields: [
+      { key: "minLiquidity", apiKey: "min_liquidity", label: "Min Liquidity", kind: "int", hint: "Min base-denom liquidity to create a market" },
+      { key: "maxDuration", apiKey: "max_duration", label: "Max Duration (blocks)", kind: "bigint" },
+      { key: "defaultMinTick", apiKey: "default_min_tick", label: "Default Min Tick", kind: "int" },
+      { key: "maxRedemptionDelay", apiKey: "max_redemption_delay", label: "Max Redemption Delay (blocks)", kind: "bigint" },
+      { key: "tradingFeeBps", apiKey: "trading_fee_bps", label: "Trading Fee (bps)", kind: "bigint", hint: "30 = 0.3%" },
+      { key: "maxLmsrExponent", apiKey: "max_lmsr_exponent", label: "Max LMSR Exponent", kind: "string" },
+    ],
+  },
+  name: {
+    label: "Name",
+    paramPath: "/sparkdream/name/v1/params",
+    responseKey: "params",
+    typeUrl: "/sparkdream.name.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/name/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/name/v1/params");
+      return { MsgUpdateParams, Params };
+    },
+    fields: [
+      { key: "minNameLength", apiKey: "min_name_length", label: "Min Name Length", kind: "bigint" },
+      { key: "maxNameLength", apiKey: "max_name_length", label: "Max Name Length", kind: "bigint" },
+      { key: "maxNamesPerAddress", apiKey: "max_names_per_address", label: "Max Names Per Address", kind: "bigint" },
+      { key: "expirationDuration", apiKey: "expiration_duration", label: "Expiration Duration", kind: "duration", unit: "days", unitDivisor: 86400 },
+      { key: "registrationFee", apiKey: "registration_fee", label: "Registration Fee", kind: "coin" },
+      { key: "disputeStakeDream", apiKey: "dispute_stake_dream", label: "Dispute Stake (DREAM)", kind: "int" },
+      { key: "contestStakeDream", apiKey: "contest_stake_dream", label: "Contest Stake (DREAM)", kind: "int" },
+      { key: "disputeTimeoutBlocks", apiKey: "dispute_timeout_blocks", label: "Dispute Timeout (blocks)", kind: "bigint" },
+    ],
+  },
+  reveal: {
+    label: "Reveal",
+    paramPath: "/sparkdream/reveal/v1/params",
+    responseKey: "params",
+    typeUrl: "/sparkdream.reveal.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/reveal/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/reveal/v1/params");
+      return { MsgUpdateParams, Params };
+    },
+    fields: [
+      { key: "stakeDeadlineEpochs", apiKey: "stake_deadline_epochs", label: "Stake Deadline (epochs)", kind: "bigint" },
+      { key: "revealDeadlineEpochs", apiKey: "reveal_deadline_epochs", label: "Reveal Deadline (epochs)", kind: "bigint" },
+      { key: "verificationPeriodEpochs", apiKey: "verification_period_epochs", label: "Verification Period (epochs)", kind: "bigint" },
+      { key: "disputeResolutionEpochs", apiKey: "dispute_resolution_epochs", label: "Dispute Resolution (epochs)", kind: "bigint" },
+      { key: "verificationThreshold", apiKey: "verification_threshold", label: "Verification Threshold", kind: "dec", hint: "e.g. 0.66" },
+      { key: "minVerificationVotes", apiKey: "min_verification_votes", label: "Min Verification Votes", kind: "number" },
+      { key: "maxTranches", apiKey: "max_tranches", label: "Max Tranches", kind: "number" },
+      { key: "maxTrancheValuation", apiKey: "max_tranche_valuation", label: "Max Tranche Valuation", kind: "int" },
+      { key: "bondRate", apiKey: "bond_rate", label: "Bond Rate", kind: "dec", hint: "Fraction of total_valuation slashed on failure" },
+      { key: "minProposerTrustLevel", apiKey: "min_proposer_trust_level", label: "Min Proposer Trust Level", kind: "number", hint: "2 = ESTABLISHED" },
+      { key: "maxTotalValuation", apiKey: "max_total_valuation", label: "Max Total Valuation", kind: "int" },
+      { key: "minStakeAmount", apiKey: "min_stake_amount", label: "Min Stake Amount", kind: "int" },
+      { key: "payoutHoldbackRate", apiKey: "payout_holdback_rate", label: "Payout Holdback Rate", kind: "dec" },
+      { key: "proposalCooldownEpochs", apiKey: "proposal_cooldown_epochs", label: "Proposal Cooldown (epochs)", kind: "bigint" },
+    ],
+  },
+  federation: {
+    label: "Federation",
+    paramPath: "/sparkdream/federation/v1/params",
+    responseKey: "params",
+    typeUrl: "/sparkdream.federation.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/params");
+      return { MsgUpdateParams, Params };
+    },
+    // Federation has ~44 params; expose the most-tuned ones. The generic
+    // encoder still round-trips the rest from the LCD response, so unedited
+    // fields keep their current values.
+    fields: [
+      { key: "minBridgeStake", apiKey: "min_bridge_stake", label: "Min Bridge Stake", kind: "coin" },
+      { key: "maxBridgesPerPeer", apiKey: "max_bridges_per_peer", label: "Max Bridges Per Peer", kind: "bigint" },
+      { key: "bridgeRevocationCooldown", apiKey: "bridge_revocation_cooldown", label: "Bridge Revocation Cooldown", kind: "duration", unit: "hours", unitDivisor: 3600 },
+      { key: "bridgeUnbondingPeriod", apiKey: "bridge_unbonding_period", label: "Bridge Unbonding Period", kind: "duration", unit: "days", unitDivisor: 86400 },
+      { key: "maxInboundPerBlock", apiKey: "max_inbound_per_block", label: "Max Inbound Per Block", kind: "bigint" },
+      { key: "maxOutboundPerBlock", apiKey: "max_outbound_per_block", label: "Max Outbound Per Block", kind: "bigint" },
+      { key: "maxContentBodySize", apiKey: "max_content_body_size", label: "Max Content Body Size", kind: "bigint" },
+      { key: "maxContentUriSize", apiKey: "max_content_uri_size", label: "Max Content URI Size", kind: "bigint" },
+      { key: "contentTtl", apiKey: "content_ttl", label: "Content TTL", kind: "duration", unit: "days", unitDivisor: 86400 },
+      { key: "globalMaxTrustCredit", apiKey: "global_max_trust_credit", label: "Global Max Trust Credit", kind: "number" },
+      { key: "trustDiscountRate", apiKey: "trust_discount_rate", label: "Trust Discount Rate", kind: "dec" },
+      { key: "minVerifierTrustLevel", apiKey: "min_verifier_trust_level", label: "Min Verifier Trust Level", kind: "number" },
+      { key: "minVerifierBond", apiKey: "min_verifier_bond", label: "Min Verifier Bond", kind: "int" },
+      { key: "verifierRecoveryThreshold", apiKey: "verifier_recovery_threshold", label: "Verifier Recovery Threshold", kind: "dec" },
+      { key: "verifierSlashAmount", apiKey: "verifier_slash_amount", label: "Verifier Slash Amount", kind: "int" },
+      { key: "verificationWindow", apiKey: "verification_window", label: "Verification Window", kind: "duration", unit: "hours", unitDivisor: 3600 },
+      { key: "challengeWindow", apiKey: "challenge_window", label: "Challenge Window", kind: "duration", unit: "hours", unitDivisor: 3600 },
+      { key: "challengeFee", apiKey: "challenge_fee", label: "Challenge Fee", kind: "coin" },
+      { key: "minEpochVerifications", apiKey: "min_epoch_verifications", label: "Min Epoch Verifications", kind: "number" },
+      { key: "minVerifierAccuracy", apiKey: "min_verifier_accuracy", label: "Min Verifier Accuracy", kind: "dec" },
+      { key: "verifierDreamReward", apiKey: "verifier_dream_reward", label: "Verifier DREAM Reward", kind: "int" },
+      { key: "arbiterQuorum", apiKey: "arbiter_quorum", label: "Arbiter Quorum", kind: "number" },
+      { key: "ibcPort", apiKey: "ibc_port", label: "IBC Port", kind: "string" },
+      { key: "ibcChannelVersion", apiKey: "ibc_channel_version", label: "IBC Channel Version", kind: "string" },
+    ],
+  },
+  collect: {
+    label: "Collect",
+    paramPath: "/sparkdream/collect/v1/params",
+    responseKey: "params",
+    typeUrl: "/sparkdream.collect.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/params");
+      return { MsgUpdateParams, Params };
+    },
+    fields: [
+      { key: "maxCollectionsBase", apiKey: "max_collections_base", label: "Max Collections (base)", kind: "number" },
+      { key: "maxCollectionsPerTrustLevel", apiKey: "max_collections_per_trust_level", label: "Max Collections / Trust Level", kind: "number" },
+      { key: "maxItemsPerCollection", apiKey: "max_items_per_collection", label: "Max Items / Collection", kind: "number" },
+      { key: "maxTagsPerCollection", apiKey: "max_tags_per_collection", label: "Max Tags / Collection", kind: "number" },
+      { key: "maxCollaboratorsPerCollection", apiKey: "max_collaborators_per_collection", label: "Max Collaborators / Collection", kind: "number" },
+      { key: "maxBatchSize", apiKey: "max_batch_size", label: "Max Batch Size", kind: "number" },
+      { key: "baseCollectionDeposit", apiKey: "base_collection_deposit", label: "Base Collection Deposit", kind: "int" },
+      { key: "perItemDeposit", apiKey: "per_item_deposit", label: "Per-Item Deposit", kind: "int" },
+      { key: "perItemSpamTax", apiKey: "per_item_spam_tax", label: "Per-Item Spam Tax", kind: "int" },
+      { key: "sponsorFee", apiKey: "sponsor_fee", label: "Sponsor Fee", kind: "int" },
+      { key: "minSponsorTrustLevel", apiKey: "min_sponsor_trust_level", label: "Min Sponsor Trust Level", kind: "string" },
+      { key: "minCuratorBond", apiKey: "min_curator_bond", label: "Min Curator Bond", kind: "int" },
+      { key: "minCuratorTrustLevel", apiKey: "min_curator_trust_level", label: "Min Curator Trust Level", kind: "string" },
+      { key: "curatorSlashFraction", apiKey: "curator_slash_fraction", label: "Curator Slash Fraction", kind: "dec" },
+      { key: "challengeWindowBlocks", apiKey: "challenge_window_blocks", label: "Challenge Window (blocks)", kind: "bigint" },
+      { key: "challengeDeposit", apiKey: "challenge_deposit", label: "Challenge Deposit", kind: "int" },
+      { key: "challengeRewardFraction", apiKey: "challenge_reward_fraction", label: "Challenge Reward Fraction", kind: "dec" },
+      { key: "downvoteCost", apiKey: "downvote_cost", label: "Downvote Cost", kind: "int" },
+      { key: "maxUpvotesPerDay", apiKey: "max_upvotes_per_day", label: "Max Upvotes / Day", kind: "number" },
+      { key: "maxDownvotesPerDay", apiKey: "max_downvotes_per_day", label: "Max Downvotes / Day", kind: "number" },
+      { key: "flagReviewThreshold", apiKey: "flag_review_threshold", label: "Flag Review Threshold", kind: "number" },
+      { key: "appealFee", apiKey: "appeal_fee", label: "Appeal Fee", kind: "int" },
+      { key: "endorsementCreationFee", apiKey: "endorsement_creation_fee", label: "Endorsement Creation Fee", kind: "int" },
+      { key: "endorsementDreamStake", apiKey: "endorsement_dream_stake", label: "Endorsement DREAM Stake", kind: "int" },
+    ],
+  },
+  season: {
+    label: "Season",
+    paramPath: "/sparkdream/season/v1/params",
+    responseKey: "params",
+    typeUrl: "/sparkdream.season.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/season/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/season/v1/params");
+      return { MsgUpdateParams, Params };
+    },
+    fields: [
+      { key: "epochBlocks", apiKey: "epoch_blocks", label: "Epoch (blocks)", kind: "bigint" },
+      { key: "seasonDurationEpochs", apiKey: "season_duration_epochs", label: "Season Duration (epochs)", kind: "bigint" },
+      { key: "seasonTransitionEpochs", apiKey: "season_transition_epochs", label: "Season Transition (epochs)", kind: "bigint" },
+      { key: "xpVoteCast", apiKey: "xp_vote_cast", label: "XP: Vote Cast", kind: "bigint" },
+      { key: "xpProposalCreated", apiKey: "xp_proposal_created", label: "XP: Proposal Created", kind: "bigint" },
+      { key: "xpForumReplyReceived", apiKey: "xp_forum_reply_received", label: "XP: Forum Reply Received", kind: "bigint" },
+      { key: "xpForumMarkedHelpful", apiKey: "xp_forum_marked_helpful", label: "XP: Forum Marked Helpful", kind: "bigint" },
+      { key: "xpInviteeFirstInitiative", apiKey: "xp_invitee_first_initiative", label: "XP: Invitee First Initiative", kind: "bigint" },
+      { key: "xpInviteeEstablished", apiKey: "xp_invitee_established", label: "XP: Invitee ESTABLISHED", kind: "bigint" },
+      { key: "maxVoteXpPerEpoch", apiKey: "max_vote_xp_per_epoch", label: "Max Vote XP / Epoch", kind: "number" },
+      { key: "maxForumXpPerEpoch", apiKey: "max_forum_xp_per_epoch", label: "Max Forum XP / Epoch", kind: "bigint" },
+      { key: "maxXpPerEpoch", apiKey: "max_xp_per_epoch", label: "Max Total XP / Epoch", kind: "bigint" },
+      { key: "baselineReputation", apiKey: "baseline_reputation", label: "Baseline Reputation", kind: "dec" },
+      { key: "minGuildMembers", apiKey: "min_guild_members", label: "Min Guild Members", kind: "number" },
+      { key: "maxGuildMembers", apiKey: "max_guild_members", label: "Max Guild Members", kind: "number" },
+      { key: "maxGuildOfficers", apiKey: "max_guild_officers", label: "Max Guild Officers", kind: "number" },
+      { key: "guildCreationCost", apiKey: "guild_creation_cost", label: "Guild Creation Cost", kind: "int" },
+      { key: "guildHopCooldownEpochs", apiKey: "guild_hop_cooldown_epochs", label: "Guild Hop Cooldown (epochs)", kind: "bigint" },
+      { key: "maxGuildsPerSeason", apiKey: "max_guilds_per_season", label: "Max Guilds / Season", kind: "number" },
+      { key: "displayNameMinLength", apiKey: "display_name_min_length", label: "Display Name Min Length", kind: "number" },
+      { key: "displayNameMaxLength", apiKey: "display_name_max_length", label: "Display Name Max Length", kind: "number" },
+      { key: "displayNameChangeCooldownEpochs", apiKey: "display_name_change_cooldown_epochs", label: "Display Name Change Cooldown (epochs)", kind: "bigint" },
+      { key: "usernameMinLength", apiKey: "username_min_length", label: "Username Min Length", kind: "number" },
+      { key: "usernameMaxLength", apiKey: "username_max_length", label: "Username Max Length", kind: "number" },
+      { key: "usernameChangeCooldownEpochs", apiKey: "username_change_cooldown_epochs", label: "Username Change Cooldown (epochs)", kind: "bigint" },
+      { key: "usernameCostDream", apiKey: "username_cost_dream", label: "Username Cost (DREAM)", kind: "int" },
+      { key: "displayNameReportStakeDream", apiKey: "display_name_report_stake_dream", label: "Display Name Report Stake (DREAM)", kind: "int" },
+      { key: "maxActiveQuestsPerMember", apiKey: "max_active_quests_per_member", label: "Max Active Quests / Member", kind: "number" },
+      { key: "maxQuestObjectives", apiKey: "max_quest_objectives", label: "Max Quest Objectives", kind: "number" },
+      { key: "maxQuestXpReward", apiKey: "max_quest_xp_reward", label: "Max Quest XP Reward", kind: "bigint" },
+    ],
+  },
+  shield: {
+    label: "Shield",
+    paramPath: "/sparkdream/shield/v1/params",
+    responseKey: "params",
+    typeUrl: "/sparkdream.shield.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/shield/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/shield/v1/params");
+      return { MsgUpdateParams, Params };
+    },
+    fields: [
+      { key: "enabled", apiKey: "enabled", label: "Enabled", kind: "boolean" },
+      { key: "maxFundingPerDay", apiKey: "max_funding_per_day", label: "Max Funding / Day", kind: "int" },
+      { key: "minGasReserve", apiKey: "min_gas_reserve", label: "Min Gas Reserve", kind: "int" },
+      { key: "maxGasPerExec", apiKey: "max_gas_per_exec", label: "Max Gas Per Exec", kind: "bigint" },
+      { key: "maxExecsPerIdentityPerEpoch", apiKey: "max_execs_per_identity_per_epoch", label: "Max Execs / Identity / Epoch", kind: "bigint" },
+      { key: "encryptedBatchEnabled", apiKey: "encrypted_batch_enabled", label: "Encrypted Batch Enabled", kind: "boolean" },
+      { key: "shieldEpochInterval", apiKey: "shield_epoch_interval", label: "Shield Epoch Interval (blocks)", kind: "bigint" },
+      { key: "minBatchSize", apiKey: "min_batch_size", label: "Min Batch Size", kind: "number" },
+      { key: "maxPendingEpochs", apiKey: "max_pending_epochs", label: "Max Pending Epochs", kind: "number" },
+      { key: "maxPendingQueueSize", apiKey: "max_pending_queue_size", label: "Max Pending Queue Size", kind: "number" },
+      { key: "maxEncryptedPayloadSize", apiKey: "max_encrypted_payload_size", label: "Max Encrypted Payload Size", kind: "number" },
+      { key: "maxOpsPerBatch", apiKey: "max_ops_per_batch", label: "Max Ops Per Batch", kind: "number" },
+      { key: "tleMissWindow", apiKey: "tle_miss_window", label: "TLE Miss Window", kind: "bigint" },
+      { key: "tleMissTolerance", apiKey: "tle_miss_tolerance", label: "TLE Miss Tolerance", kind: "bigint" },
+      { key: "tleJailDuration", apiKey: "tle_jail_duration", label: "TLE Jail Duration (blocks)", kind: "bigint" },
+      { key: "minTleValidators", apiKey: "min_tle_validators", label: "Min TLE Validators", kind: "number" },
+      { key: "dkgWindowBlocks", apiKey: "dkg_window_blocks", label: "DKG Window (blocks)", kind: "bigint" },
+      { key: "maxValidatorSetDrift", apiKey: "max_validator_set_drift", label: "Max Validator Set Drift", kind: "number" },
+    ],
+  },
+  rep: {
+    label: "Rep",
+    paramPath: "/sparkdream/rep/v1/params",
+    responseKey: "params",
+    typeUrl: "/sparkdream.rep.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/params");
+      return { MsgUpdateParams, Params };
+    },
+    // ~90 params total. The generic path round-trips unedited fields from
+    // the LCD response unchanged (including the 4 TierConfig sub-messages
+    // and the TrustLevelConfig), so any subset of fields here is safe. We
+    // expose the full tunable surface and group by the comment sections
+    // from x/rep/types/params.proto so the form stays scannable.
+    //
+    // DREAM amounts (math.Int) and reputation/share/rate values
+    // (math.LegacyDec) are wire-strings — `kind: "int"` / `kind: "dec"` —
+    // so the encoder passes them through without any micro-denom math.
+    // DREAM in x/rep is whole-token, not micro-DREAM.
+    fields: [
+      // Time
+      { group: "Time", key: "epochBlocks", apiKey: "epoch_blocks", label: "Epoch (blocks)", kind: "bigint" },
+      { group: "Time", key: "seasonDurationEpochs", apiKey: "season_duration_epochs", label: "Season Duration (epochs)", kind: "bigint" },
+
+      // DREAM economics
+      { group: "DREAM Economics", key: "unstakedDecayRate", apiKey: "unstaked_decay_rate", label: "Unstaked Decay Rate (per epoch)", kind: "dec", hint: "0.002 ≈ 0.2% per epoch (~73% annualized)" },
+      { group: "DREAM Economics", key: "transferTaxRate", apiKey: "transfer_tax_rate", label: "Transfer Tax Rate", kind: "dec" },
+      { group: "DREAM Economics", key: "maxTipAmount", apiKey: "max_tip_amount", label: "Max Tip Amount (DREAM)", kind: "int" },
+      { group: "DREAM Economics", key: "maxTipsPerEpoch", apiKey: "max_tips_per_epoch", label: "Max Tips Per Epoch", kind: "number" },
+      { group: "DREAM Economics", key: "maxGiftAmount", apiKey: "max_gift_amount", label: "Max Gift Amount (DREAM)", kind: "int" },
+      { group: "DREAM Economics", key: "giftOnlyToInvitees", apiKey: "gift_only_to_invitees", label: "Gift Only To Invitees", kind: "boolean" },
+
+      // Initiative rewards
+      { group: "Initiative Rewards", key: "completerShare", apiKey: "completer_share", label: "Completer Share", kind: "dec" },
+      { group: "Initiative Rewards", key: "treasuryShare", apiKey: "treasury_share", label: "Treasury Share", kind: "dec" },
+      { group: "Initiative Rewards", key: "minReputationMultiplier", apiKey: "min_reputation_multiplier", label: "Min Reputation Multiplier", kind: "dec" },
+
+      // Initiative tiers — TierConfig nested messages reached via dot-path.
+      { group: "Apprentice Tier", key: "apprenticeTier.maxBudget", apiKey: "apprentice_tier.max_budget", label: "Max Budget (DREAM)", kind: "int" },
+      { group: "Apprentice Tier", key: "apprenticeTier.minReputation", apiKey: "apprentice_tier.min_reputation", label: "Min Reputation", kind: "dec" },
+      { group: "Apprentice Tier", key: "apprenticeTier.reputationCap", apiKey: "apprentice_tier.reputation_cap", label: "Reputation Cap", kind: "dec" },
+      { group: "Apprentice Tier", key: "apprenticeTier.rewardMultiplier", apiKey: "apprentice_tier.reward_multiplier", label: "Reward Multiplier", kind: "dec" },
+
+      { group: "Standard Tier", key: "standardTier.maxBudget", apiKey: "standard_tier.max_budget", label: "Max Budget (DREAM)", kind: "int" },
+      { group: "Standard Tier", key: "standardTier.minReputation", apiKey: "standard_tier.min_reputation", label: "Min Reputation", kind: "dec" },
+      { group: "Standard Tier", key: "standardTier.reputationCap", apiKey: "standard_tier.reputation_cap", label: "Reputation Cap", kind: "dec" },
+      { group: "Standard Tier", key: "standardTier.rewardMultiplier", apiKey: "standard_tier.reward_multiplier", label: "Reward Multiplier", kind: "dec" },
+
+      { group: "Expert Tier", key: "expertTier.maxBudget", apiKey: "expert_tier.max_budget", label: "Max Budget (DREAM)", kind: "int" },
+      { group: "Expert Tier", key: "expertTier.minReputation", apiKey: "expert_tier.min_reputation", label: "Min Reputation", kind: "dec" },
+      { group: "Expert Tier", key: "expertTier.reputationCap", apiKey: "expert_tier.reputation_cap", label: "Reputation Cap", kind: "dec" },
+      { group: "Expert Tier", key: "expertTier.rewardMultiplier", apiKey: "expert_tier.reward_multiplier", label: "Reward Multiplier", kind: "dec" },
+
+      { group: "Epic Tier", key: "epicTier.maxBudget", apiKey: "epic_tier.max_budget", label: "Max Budget (DREAM)", kind: "int" },
+      { group: "Epic Tier", key: "epicTier.minReputation", apiKey: "epic_tier.min_reputation", label: "Min Reputation", kind: "dec" },
+      { group: "Epic Tier", key: "epicTier.reputationCap", apiKey: "epic_tier.reputation_cap", label: "Reputation Cap", kind: "dec" },
+      { group: "Epic Tier", key: "epicTier.rewardMultiplier", apiKey: "epic_tier.reward_multiplier", label: "Reward Multiplier", kind: "dec" },
+
+      // Conviction
+      { group: "Conviction", key: "convictionHalfLifeEpochs", apiKey: "conviction_half_life_epochs", label: "Conviction Half-Life (epochs)", kind: "bigint" },
+      { group: "Conviction", key: "externalConvictionRatio", apiKey: "external_conviction_ratio", label: "External Conviction Ratio", kind: "dec" },
+      { group: "Conviction", key: "convictionPerDream", apiKey: "conviction_per_dream", label: "Conviction Per DREAM", kind: "dec" },
+
+      // Review periods
+      { group: "Review Periods", key: "defaultReviewPeriodEpochs", apiKey: "default_review_period_epochs", label: "Default Review Period (epochs)", kind: "bigint" },
+      { group: "Review Periods", key: "defaultChallengePeriodEpochs", apiKey: "default_challenge_period_epochs", label: "Default Challenge Period (epochs)", kind: "bigint" },
+
+      // Invitations
+      { group: "Invitations", key: "minInvitationStake", apiKey: "min_invitation_stake", label: "Min Invitation Stake (DREAM)", kind: "int" },
+      { group: "Invitations", key: "invitationAccountabilityEpochs", apiKey: "invitation_accountability_epochs", label: "Invitation Accountability (epochs)", kind: "bigint" },
+      { group: "Invitations", key: "referralRewardRate", apiKey: "referral_reward_rate", label: "Referral Reward Rate", kind: "dec" },
+      { group: "Invitations", key: "invitationCostMultiplier", apiKey: "invitation_cost_multiplier", label: "Invitation Cost Multiplier", kind: "dec" },
+      { group: "Invitations", key: "invitationStakeBurnRate", apiKey: "invitation_stake_burn_rate", label: "Invitation Stake Burn Rate", kind: "dec", hint: "Fraction burned on acceptance (e.g. 0.10)" },
+
+      // Trust levels — TrustLevelConfig nested messages reached via dot-path.
+      { group: "Trust Levels", key: "trustLevelConfig.provisionalMinRep", apiKey: "trust_level_config.provisional_min_rep", label: "PROVISIONAL Min Rep", kind: "dec" },
+      { group: "Trust Levels", key: "trustLevelConfig.provisionalMinInterims", apiKey: "trust_level_config.provisional_min_interims", label: "PROVISIONAL Min Interims", kind: "number" },
+      { group: "Trust Levels", key: "trustLevelConfig.establishedMinRep", apiKey: "trust_level_config.established_min_rep", label: "ESTABLISHED Min Rep", kind: "dec" },
+      { group: "Trust Levels", key: "trustLevelConfig.establishedMinInterims", apiKey: "trust_level_config.established_min_interims", label: "ESTABLISHED Min Interims", kind: "number" },
+      { group: "Trust Levels", key: "trustLevelConfig.trustedMinRep", apiKey: "trust_level_config.trusted_min_rep", label: "TRUSTED Min Rep", kind: "dec" },
+      { group: "Trust Levels", key: "trustLevelConfig.trustedMinSeasons", apiKey: "trust_level_config.trusted_min_seasons", label: "TRUSTED Min Seasons", kind: "number" },
+      { group: "Trust Levels", key: "trustLevelConfig.coreMinRep", apiKey: "trust_level_config.core_min_rep", label: "CORE Min Rep", kind: "dec" },
+      { group: "Trust Levels", key: "trustLevelConfig.coreMinSeasons", apiKey: "trust_level_config.core_min_seasons", label: "CORE Min Seasons", kind: "number" },
+      { group: "Trust Levels", key: "trustLevelConfig.newInvitationCredits", apiKey: "trust_level_config.new_invitation_credits", label: "NEW Invitation Credits", kind: "number", hint: "0 — NEW cannot invite" },
+      { group: "Trust Levels", key: "trustLevelConfig.provisionalInvitationCredits", apiKey: "trust_level_config.provisional_invitation_credits", label: "PROVISIONAL Invitation Credits", kind: "number" },
+      { group: "Trust Levels", key: "trustLevelConfig.establishedInvitationCredits", apiKey: "trust_level_config.established_invitation_credits", label: "ESTABLISHED Invitation Credits", kind: "number" },
+      { group: "Trust Levels", key: "trustLevelConfig.trustedInvitationCredits", apiKey: "trust_level_config.trusted_invitation_credits", label: "TRUSTED Invitation Credits", kind: "number" },
+      { group: "Trust Levels", key: "trustLevelConfig.coreInvitationCredits", apiKey: "trust_level_config.core_invitation_credits", label: "CORE Invitation Credits", kind: "number" },
+
+      // Challenges
+      { group: "Challenges", key: "minChallengeStake", apiKey: "min_challenge_stake", label: "Min Challenge Stake (DREAM)", kind: "int" },
+      { group: "Challenges", key: "challengerRewardRate", apiKey: "challenger_reward_rate", label: "Challenger Reward Rate", kind: "dec" },
+      { group: "Challenges", key: "jurySize", apiKey: "jury_size", label: "Jury Size", kind: "number" },
+      { group: "Challenges", key: "jurySuperMajority", apiKey: "jury_super_majority", label: "Jury Super Majority", kind: "dec" },
+      { group: "Challenges", key: "minJurorReputation", apiKey: "min_juror_reputation", label: "Min Juror Reputation", kind: "dec" },
+      { group: "Challenges", key: "challengeResponseDeadlineEpochs", apiKey: "challenge_response_deadline_epochs", label: "Challenge Response Deadline (epochs)", kind: "bigint" },
+
+      // Interim compensation
+      { group: "Interim Compensation", key: "simpleComplexityBudget", apiKey: "simple_complexity_budget", label: "Simple Complexity Budget (DREAM)", kind: "int" },
+      { group: "Interim Compensation", key: "standardComplexityBudget", apiKey: "standard_complexity_budget", label: "Standard Complexity Budget (DREAM)", kind: "int" },
+      { group: "Interim Compensation", key: "complexComplexityBudget", apiKey: "complex_complexity_budget", label: "Complex Complexity Budget (DREAM)", kind: "int" },
+      { group: "Interim Compensation", key: "expertComplexityBudget", apiKey: "expert_complexity_budget", label: "Expert Complexity Budget (DREAM)", kind: "int" },
+      { group: "Interim Compensation", key: "soloExpertBonusRate", apiKey: "solo_expert_bonus_rate", label: "Solo Expert Bonus Rate", kind: "dec" },
+      { group: "Interim Compensation", key: "interimDeadlineEpochs", apiKey: "interim_deadline_epochs", label: "Interim Deadline (epochs)", kind: "bigint" },
+
+      // Rate limits
+      { group: "Rate Limits", key: "maxActiveChallengesPerCommittee", apiKey: "max_active_challenges_per_committee", label: "Max Active Challenges / Committee", kind: "number" },
+      { group: "Rate Limits", key: "maxNewChallengesPerEpoch", apiKey: "max_new_challenges_per_epoch", label: "Max New Challenges / Epoch", kind: "number" },
+      { group: "Rate Limits", key: "challengeQueueMaxSize", apiKey: "challenge_queue_max_size", label: "Challenge Queue Max Size", kind: "number" },
+      { group: "Rate Limits", key: "maxActiveInitiativesPerMember", apiKey: "max_active_initiatives_per_member", label: "Max Active Initiatives / Member", kind: "number", hint: "0 = unbounded" },
+      { group: "Rate Limits", key: "maxActiveInterimsPerMember", apiKey: "max_active_interims_per_member", label: "Max Active Interims / Member", kind: "number", hint: "0 = unbounded" },
+      { group: "Rate Limits", key: "maxDreamMintPerEpoch", apiKey: "max_dream_mint_per_epoch", label: "Max DREAM Mint / Epoch", kind: "int", hint: "0 = unbounded" },
+      { group: "Rate Limits", key: "maxReputationGainPerEpoch", apiKey: "max_reputation_gain_per_epoch", label: "Max Reputation Gain / Epoch", kind: "dec" },
+
+      // Slashing
+      { group: "Slashing", key: "minorSlashPenalty", apiKey: "minor_slash_penalty", label: "Minor Slash Penalty", kind: "dec" },
+      { group: "Slashing", key: "moderateSlashPenalty", apiKey: "moderate_slash_penalty", label: "Moderate Slash Penalty", kind: "dec" },
+      { group: "Slashing", key: "severeSlashPenalty", apiKey: "severe_slash_penalty", label: "Severe Slash Penalty", kind: "dec" },
+      { group: "Slashing", key: "zeroingSlashPenalty", apiKey: "zeroing_slash_penalty", label: "Zeroing Slash Penalty", kind: "dec" },
+
+      // Extended staking
+      { group: "Extended Staking", key: "projectCompletionBonusRate", apiKey: "project_completion_bonus_rate", label: "Project Completion Bonus Rate", kind: "dec" },
+      { group: "Extended Staking", key: "memberStakeRevenueShare", apiKey: "member_stake_revenue_share", label: "Member Stake Revenue Share", kind: "dec" },
+      { group: "Extended Staking", key: "tagStakeRevenueShare", apiKey: "tag_stake_revenue_share", label: "Tag Stake Revenue Share", kind: "dec" },
+      { group: "Extended Staking", key: "minStakeDurationSeconds", apiKey: "min_stake_duration_seconds", label: "Min Stake Duration (seconds)", kind: "bigint" },
+      { group: "Extended Staking", key: "allowSelfMemberStake", apiKey: "allow_self_member_stake", label: "Allow Self Member Stake", kind: "boolean" },
+      { group: "Extended Staking", key: "maxInitiativeStakePerMember", apiKey: "max_initiative_stake_per_member", label: "Max Initiative Stake / Member (DREAM)", kind: "int", hint: "Anti-whale cap on single-initiative stake" },
+
+      // Gifts
+      { group: "Gifts", key: "giftCooldownBlocks", apiKey: "gift_cooldown_blocks", label: "Gift Cooldown (blocks)", kind: "bigint" },
+      { group: "Gifts", key: "maxGiftsPerSenderEpoch", apiKey: "max_gifts_per_sender_epoch", label: "Max Gifts / Sender / Epoch (DREAM)", kind: "int" },
+
+      // Content conviction staking
+      { group: "Content Conviction", key: "contentConvictionHalfLifeEpochs", apiKey: "content_conviction_half_life_epochs", label: "Content Conviction Half-Life (epochs)", kind: "bigint" },
+      { group: "Content Conviction", key: "maxContentStakePerMember", apiKey: "max_content_stake_per_member", label: "Max Content Stake / Member (DREAM)", kind: "int" },
+      { group: "Content Conviction", key: "maxAuthorBondPerContent", apiKey: "max_author_bond_per_content", label: "Max Author Bond / Content (DREAM)", kind: "int" },
+      { group: "Content Conviction", key: "authorBondSlashOnModeration", apiKey: "author_bond_slash_on_moderation", label: "Slash Author Bond on Moderation", kind: "boolean" },
+      { group: "Content Conviction", key: "contentChallengeRewardShare", apiKey: "content_challenge_reward_share", label: "Content Challenge Reward Share", kind: "dec" },
+      { group: "Content Conviction", key: "convictionPropagationRatio", apiKey: "conviction_propagation_ratio", label: "Conviction Propagation Ratio", kind: "dec" },
+      { group: "Content Conviction", key: "maxConvictionSharePerMember", apiKey: "max_conviction_share_per_member", label: "Max Conviction Share / Member", kind: "dec" },
+
+      // Tag anti-gaming
+      { group: "Tags", key: "maxTagsPerInitiative", apiKey: "max_tags_per_initiative", label: "Max Tags / Initiative", kind: "number" },
+      { group: "Tags", key: "tagCreationFee", apiKey: "tag_creation_fee", label: "Tag Creation Fee (micro-DREAM)", kind: "int" },
+
+      // Reputation decay
+      { group: "Reputation Decay", key: "reputationDecayRate", apiKey: "reputation_decay_rate", label: "Reputation Decay Rate (per epoch)", kind: "dec" },
+
+      // Seasonal staking
+      { group: "Seasonal Staking", key: "maxStakingRewardsPerSeason", apiKey: "max_staking_rewards_per_season", label: "Max Staking Rewards / Season (DREAM)", kind: "int" },
+      { group: "Seasonal Staking", key: "stakedDecayRate", apiKey: "staked_decay_rate", label: "Staked Decay Rate (per epoch)", kind: "dec" },
+      { group: "Seasonal Staking", key: "newMemberDecayGraceEpochs", apiKey: "new_member_decay_grace_epochs", label: "New-Member Decay Grace (epochs)", kind: "bigint" },
+
+      // Treasury
+      { group: "Treasury", key: "maxTreasuryBalance", apiKey: "max_treasury_balance", label: "Max Treasury Balance (DREAM)", kind: "int" },
+      { group: "Treasury", key: "treasuryFundsInterims", apiKey: "treasury_funds_interims", label: "Treasury Funds Interims", kind: "boolean" },
+      { group: "Treasury", key: "treasuryFundsRetroPgf", apiKey: "treasury_funds_retro_pgf", label: "Treasury Funds Retro PGF", kind: "boolean" },
+
+      // Project caps
+      { group: "Project Caps", key: "maxInitiativeRewardsPerSeason", apiKey: "max_initiative_rewards_per_season", label: "Max Initiative Rewards / Season (DREAM)", kind: "int" },
+      { group: "Project Caps", key: "largeProjectBudgetThreshold", apiKey: "large_project_budget_threshold", label: "Large Project Budget Threshold (DREAM)", kind: "int", hint: "Above this, council proposal approval is required" },
+      { group: "Project Caps", key: "maxProjectRequestedBudget", apiKey: "max_project_requested_budget", label: "Max Project Requested Budget (DREAM)", kind: "int" },
+      { group: "Project Caps", key: "maxProjectRequestedSpark", apiKey: "max_project_requested_spark", label: "Max Project Requested SPARK (uspark)", kind: "int" },
+      { group: "Project Caps", key: "proposedProjectExpiryBlocks", apiKey: "proposed_project_expiry_blocks", label: "Proposed Project Expiry (blocks)", kind: "bigint" },
+
+      // Permissionless creation
+      { group: "Permissionless", key: "projectCreationFee", apiKey: "project_creation_fee", label: "Project Creation Fee (DREAM)", kind: "int" },
+      { group: "Permissionless", key: "initiativeCreationFeeApprentice", apiKey: "initiative_creation_fee_apprentice", label: "Initiative Creation Fee — Apprentice (DREAM)", kind: "int" },
+      { group: "Permissionless", key: "initiativeCreationFeeStandard", apiKey: "initiative_creation_fee_standard", label: "Initiative Creation Fee — Standard (DREAM)", kind: "int" },
+      { group: "Permissionless", key: "permissionlessMinTrustLevel", apiKey: "permissionless_min_trust_level", label: "Permissionless Min Trust Level", kind: "number", hint: "2 = ESTABLISHED" },
+      { group: "Permissionless", key: "permissionlessMaxTier", apiKey: "permissionless_max_tier", label: "Permissionless Max Tier", kind: "number", hint: "1 = STANDARD" },
+
+      // Sentinel rewards
+      { group: "Sentinel Rewards", key: "maxSentinelRewardPool", apiKey: "max_sentinel_reward_pool", label: "Max Sentinel Reward Pool (uspark)", kind: "int" },
+      { group: "Sentinel Rewards", key: "sentinelRewardPoolOverflowBurnRatio", apiKey: "sentinel_reward_pool_overflow_burn_ratio", label: "Sentinel Pool Overflow Burn Ratio", kind: "dec" },
+      { group: "Sentinel Rewards", key: "sentinelRewardEpochBlocks", apiKey: "sentinel_reward_epoch_blocks", label: "Sentinel Reward Epoch (blocks)", kind: "bigint" },
+      { group: "Sentinel Rewards", key: "minSentinelAccuracy", apiKey: "min_sentinel_accuracy", label: "Min Sentinel Accuracy", kind: "dec" },
+      { group: "Sentinel Rewards", key: "minAppealsForAccuracy", apiKey: "min_appeals_for_accuracy", label: "Min Appeals For Accuracy", kind: "bigint" },
+      { group: "Sentinel Rewards", key: "minEpochActivityForReward", apiKey: "min_epoch_activity_for_reward", label: "Min Epoch Activity For Reward", kind: "bigint" },
+      { group: "Sentinel Rewards", key: "minAppealRate", apiKey: "min_appeal_rate", label: "Min Appeal Rate", kind: "dec" },
     ],
   },
 };
@@ -163,10 +700,12 @@ export default function ParamChangeForm({ onMessage }: ParamChangeFormProps) {
         const params = res[moduleDef.responseKey] as Record<string, unknown>;
         setCurrentParams(params || {});
 
-        // Pre-fill edited values from current params
+        // Pre-fill edited values from current params, descending into
+        // nested messages when `apiKey` is a dot-path (e.g. rep's
+        // `apprentice_tier.max_budget` reaches into TierConfig).
         const initial: Record<string, string> = {};
         for (const field of moduleDef.fields) {
-          initial[field.key] = displayValue(field, params?.[field.apiKey]);
+          initial[field.key] = displayValue(field, getByPath(params, field.apiKey));
         }
         setEditedValues(initial);
       })
@@ -241,20 +780,35 @@ export default function ParamChangeForm({ onMessage }: ParamChangeFormProps) {
         <div className="space-y-2.5">
           <p className="text-xs text-zinc-500">
             Current values are pre-filled. Edit the values you want to change.
+            Fields not shown here are carried forward from the chain&apos;s
+            current params.
           </p>
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-            {moduleDef.fields.map((field) => (
-              <ParamField
-                key={field.key}
-                field={field}
-                value={editedValues[field.key] || ""}
-                displayDenom={config.displayDenom}
-                onChange={(val) =>
-                  setEditedValues((prev) => ({ ...prev, [field.key]: val }))
-                }
-              />
-            ))}
-          </div>
+          {/* Render fields in their source order. When a `group` heading
+              changes between consecutive fields we close the current grid
+              and open a new section — keeps modules like rep (~90 fields)
+              scannable. Fields without a group render under no heading. */}
+          {groupFields(moduleDef.fields).map((section, idx) => (
+            <div key={section.group ?? `_ungrouped_${idx}`} className="space-y-1.5">
+              {section.group && (
+                <h5 className="mt-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  {section.group}
+                </h5>
+              )}
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                {section.fields.map((field) => (
+                  <ParamField
+                    key={field.key}
+                    field={field}
+                    value={editedValues[field.key] || ""}
+                    displayDenom={config.displayDenom}
+                    onChange={(val) =>
+                      setEditedValues((prev) => ({ ...prev, [field.key]: val }))
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -385,9 +939,27 @@ async function encodeParamUpdate(
   currentParams: Record<string, unknown>,
   editedValues: Record<string, string>
 ): Promise<{ typeUrl: string; value: Uint8Array }> {
-  // Build the params object from edited values, falling back to current values
   const govModuleAddress = await fetchGovModuleAddress();
 
+  // Sparkdream modules — every Params has a Telescope-generated fromAmino
+  // that accepts the same snake_case JSON the LCD returns. We overlay user
+  // edits onto the LCD object (so unedited fields round-trip untouched, even
+  // ones we don't render in the form) and let fromAmino do the proto packing.
+  if (moduleDef.generic) {
+    const { MsgUpdateParams, Params } = await moduleDef.generic();
+    const editedAmino = buildEditedAmino(moduleDef.fields, currentParams, editedValues);
+    const params = Params.fromAmino(normalizeDurationsForAmino(editedAmino));
+    return {
+      typeUrl: moduleDef.typeUrl,
+      value: MsgUpdateParams.encode(
+        MsgUpdateParams.fromPartial({ authority: govModuleAddress, params })
+      ).finish(),
+    };
+  }
+
+  // Cosmos-SDK modules — cosmjs-types' Params codecs don't ship fromAmino, so
+  // we still build the proto params object by hand from the camelCase edits +
+  // carry-forward snake_case LCD response fields.
   switch (moduleKey) {
     case "gov": {
       const { MsgUpdateParams } = await import("cosmjs-types/cosmos/gov/v1/tx");
@@ -407,6 +979,7 @@ async function encodeParamUpdate(
               minInitialDepositRatio: editedValues.minInitialDepositRatio || String(cur.min_initial_deposit_ratio || "0"),
               expeditedThreshold: editedValues.expeditedThreshold || String(cur.expedited_threshold || ""),
               expeditedVotingPeriod: toDuration(editedValues.expeditedVotingPeriod, 3600, cur.expedited_voting_period),
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               expeditedMinDeposit: (cur.expedited_min_deposit as any[]) || [],
               proposalCancelRatio: String(cur.proposal_cancel_ratio || "0.5"),
               proposalCancelDest: String(cur.proposal_cancel_dest || ""),
@@ -476,8 +1049,8 @@ async function encodeParamUpdate(
         ).finish(),
       };
     }
-    case "commons": {
-      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx");
+    case "mint": {
+      const { MsgUpdateParams } = await import("cosmjs-types/cosmos/mint/v1beta1/tx");
       const cur = currentParams;
       return {
         typeUrl: moduleDef.typeUrl,
@@ -485,62 +1058,12 @@ async function encodeParamUpdate(
           MsgUpdateParams.fromPartial({
             authority: govModuleAddress,
             params: {
-              proposalFee: editedValues.proposalFee || String(cur.proposal_fee || ""),
-            },
-          })
-        ).finish(),
-      };
-    }
-    case "blog": {
-      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx");
-      const cur = currentParams;
-      return {
-        typeUrl: moduleDef.typeUrl,
-        value: MsgUpdateParams.encode(
-          MsgUpdateParams.fromPartial({
-            authority: govModuleAddress,
-            params: {
-              maxTitleLength: BigInt(editedValues.maxTitleLength || cur.max_title_length as string || "0"),
-              maxBodyLength: BigInt(editedValues.maxBodyLength || cur.max_body_length as string || "0"),
-              maxReplyLength: BigInt(editedValues.maxReplyLength || cur.max_reply_length as string || "0"),
-              maxReplyDepth: parseInt(editedValues.maxReplyDepth) || Number(cur.max_reply_depth || 0),
-              maxPostsPerDay: parseInt(editedValues.maxPostsPerDay) || Number(cur.max_posts_per_day || 0),
-              maxRepliesPerDay: parseInt(editedValues.maxRepliesPerDay) || Number(cur.max_replies_per_day || 0),
-              maxReactionsPerDay: parseInt(editedValues.maxReactionsPerDay) || Number(cur.max_reactions_per_day || 0),
-              costPerByte: toCoin(editedValues.costPerByte, cur.cost_per_byte),
-              reactionFee: toCoin(editedValues.reactionFee, cur.reaction_fee),
-              costPerByteExempt: editedValues.costPerByteExempt === "true",
-              reactionFeeExempt: editedValues.reactionFeeExempt === "true",
-              // Carry forward fields not shown in the form
-              ephemeralContentTtl: BigInt(cur.ephemeral_content_ttl as string || "0"),
-              pinMinTrustLevel: Number(cur.pin_min_trust_level || 0),
-              maxPinsPerDay: Number(cur.max_pins_per_day || 0),
-              minEphemeralContentTtl: BigInt(cur.min_ephemeral_content_ttl as string || "0"),
-              maxCostPerByte: (cur.max_cost_per_byte as any) || undefined,
-              maxReactionFee: (cur.max_reaction_fee as any) || undefined,
-              convictionRenewalThreshold: String(cur.conviction_renewal_threshold || ""),
-              convictionRenewalPeriod: BigInt(cur.conviction_renewal_period as string || "0"),
-            },
-          })
-        ).finish(),
-      };
-    }
-    case "session": {
-      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx");
-      const cur = currentParams;
-      return {
-        typeUrl: moduleDef.typeUrl,
-        value: MsgUpdateParams.encode(
-          MsgUpdateParams.fromPartial({
-            authority: govModuleAddress,
-            params: {
-              maxSessionsPerGranter: BigInt(editedValues.maxSessionsPerGranter || cur.max_sessions_per_granter as string || "0"),
-              maxMsgTypesPerSession: BigInt(editedValues.maxMsgTypesPerSession || cur.max_msg_types_per_session as string || "0"),
-              maxExpiration: toDuration(editedValues.maxExpiration, 86400, cur.max_expiration),
-              maxSpendLimit: toCoin(editedValues.maxSpendLimit, cur.max_spend_limit),
-              // Carry forward array fields
-              maxAllowedMsgTypes: (cur.max_allowed_msg_types as string[]) || [],
-              allowedMsgTypes: (cur.allowed_msg_types as string[]) || [],
+              mintDenom: editedValues.mintDenom || String(cur.mint_denom || ""),
+              inflationRateChange: editedValues.inflationRateChange || String(cur.inflation_rate_change || "0"),
+              inflationMax: editedValues.inflationMax || String(cur.inflation_max || "0"),
+              inflationMin: editedValues.inflationMin || String(cur.inflation_min || "0"),
+              goalBonded: editedValues.goalBonded || String(cur.goal_bonded || "0"),
+              blocksPerYear: BigInt(editedValues.blocksPerYear || cur.blocks_per_year as string || "0"),
             },
           })
         ).finish(),
@@ -581,22 +1104,148 @@ function toCoins(
   return (currentRaw as { denom: string; amount: string }[]) || [];
 }
 
-function toCoin(
-  editedValue: string | undefined,
-  currentRaw: unknown
-): { denom: string; amount: string } | undefined {
-  if (editedValue !== undefined && editedValue !== "") {
-    const cur = currentRaw as { denom: string; amount: string } | undefined;
-    const denom = cur?.denom || "uspark";
-    const micro = (parseFloat(editedValue) * 1_000_000).toFixed(0);
-    return { denom, amount: micro };
-  }
-  return (currentRaw as { denom: string; amount: string }) || undefined;
-}
-
 function toDecBytes(value: string): Uint8Array {
   // Cosmos SDK stores sdk.Dec as UTF-8 encoded string bytes
   return new TextEncoder().encode(value);
+}
+
+/**
+ * Overlay user edits onto the current LCD amino JSON. Unedited fields stay as
+ * the LCD returned them so they round-trip cleanly through Params.fromAmino —
+ * including fields the form doesn't render at all (long-tail params we'd
+ * otherwise have to enumerate in every FieldDef array). When `apiKey` is a
+ * dot-path, the edit descends into nested messages (rep's TierConfigs /
+ * TrustLevelConfig) without disturbing sibling fields.
+ */
+function buildEditedAmino(
+  fields: FieldDef[],
+  currentParams: Record<string, unknown>,
+  editedValues: Record<string, string>
+): Record<string, unknown> {
+  let out: Record<string, unknown> = { ...currentParams };
+  for (const field of fields) {
+    const v = editedValues[field.key];
+    if (v === undefined || v === "") continue;
+    const converted = convertEditToAmino(field, v, getByPath(currentParams, field.apiKey));
+    out = setByPath(out, field.apiKey, converted);
+  }
+  return out;
+}
+
+/** Read a (possibly dot-pathed) value out of a nested object. Returns
+ * undefined when any segment is missing — matches the existing
+ * `params?.[apiKey]` lookup behavior for flat keys. */
+function getByPath(obj: unknown, path: string): unknown {
+  const parts = path.split(".");
+  let cur: unknown = obj;
+  for (const p of parts) {
+    if (cur == null || typeof cur !== "object") return undefined;
+    cur = (cur as Record<string, unknown>)[p];
+  }
+  return cur;
+}
+
+/** Immutably set a nested field, copying every object along the way so the
+ * original LCD response isn't mutated and React can detect the state change. */
+function setByPath(
+  obj: Record<string, unknown>,
+  path: string,
+  value: unknown
+): Record<string, unknown> {
+  const parts = path.split(".");
+  if (parts.length === 1) {
+    return { ...obj, [parts[0]]: value };
+  }
+  const [head, ...rest] = parts;
+  const child = (obj[head] as Record<string, unknown>) ?? {};
+  return { ...obj, [head]: setByPath(child, rest.join("."), value) };
+}
+
+/** Bucket fields into ordered sections by their `group`. Consecutive fields
+ * with the same group share one bucket; ungrouped fields fall into a single
+ * leading bucket with `group: undefined`. */
+function groupFields(
+  fields: FieldDef[]
+): { group: string | undefined; fields: FieldDef[] }[] {
+  const out: { group: string | undefined; fields: FieldDef[] }[] = [];
+  for (const f of fields) {
+    const last = out[out.length - 1];
+    if (last && last.group === f.group) {
+      last.fields.push(f);
+    } else {
+      out.push({ group: f.group, fields: [f] });
+    }
+  }
+  return out;
+}
+
+function convertEditToAmino(
+  field: FieldDef,
+  edited: string,
+  currentRaw: unknown
+): unknown {
+  switch (field.kind) {
+    case "boolean":
+      return edited === "true";
+    case "number":
+      return parseInt(edited, 10);
+    case "bigint":
+      // Amino JSON encodes int64/uint64 as strings; keep as-is.
+      return edited;
+    case "duration": {
+      // Emit "Xs" form — normalizeDurationsForAmino below converts to the
+      // nanosecond string Duration.fromAmino expects.
+      const secs = Math.round(parseFloat(edited) * (field.unitDivisor || 1));
+      return `${secs}s`;
+    }
+    case "coin": {
+      const cur = currentRaw as { denom?: string } | undefined;
+      const denom = cur?.denom || "uspark";
+      const micro = (parseFloat(edited) * 1_000_000).toFixed(0);
+      return { denom, amount: micro };
+    }
+    case "coins": {
+      const cur = currentRaw as { denom?: string }[] | undefined;
+      const denom = cur?.[0]?.denom || "uspark";
+      const micro = (parseFloat(edited) * 1_000_000).toFixed(0);
+      return [{ denom, amount: micro }];
+    }
+    case "string":
+    case "int":
+    case "dec":
+    case "dec-bytes":
+    default:
+      return edited;
+  }
+}
+
+/**
+ * Recursively rewrite protobuf Duration strings (`"172800s"`) into the
+ * nanosecond strings Telescope's `Duration.fromAmino` expects (it does
+ * `BigInt(object) / 1e9` per the codec, so `"172800s"` would just throw).
+ * Only touches strings matching the `^\d+(?:\.\d+)?s$` shape — leaves
+ * everything else (including e.g. token denoms or descriptive strings) alone.
+ */
+function normalizeDurationsForAmino(obj: unknown): unknown {
+  if (typeof obj === "string") {
+    const m = obj.match(/^(\d+(?:\.\d+)?)s$/);
+    if (m) {
+      const num = parseFloat(m[1]);
+      return String(BigInt(Math.round(num * 1_000_000_000)));
+    }
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(normalizeDurationsForAmino);
+  }
+  if (obj && typeof obj === "object") {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(obj as Record<string, unknown>)) {
+      out[k] = normalizeDurationsForAmino((obj as Record<string, unknown>)[k]);
+    }
+    return out;
+  }
+  return obj;
 }
 
 let _govModuleAddr = "";
