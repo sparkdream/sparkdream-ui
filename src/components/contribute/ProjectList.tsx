@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useWallet } from "@/contexts/WalletContext";
-import { listRepProjects, listGroups } from "@/lib/api";
+import { listRepProjects, listGroups, getRepParams } from "@/lib/api";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
 import type { Group } from "@/types/commons";
@@ -13,7 +13,26 @@ import {
   PROJECT_CATEGORY_LABELS,
   ProjectStatus,
   ProjectCategory,
+  TRUST_LEVEL_LABELS,
+  TrustLevel,
 } from "@/types/rep";
+
+// Chain defaults (x/rep params) — used as fallbacks if the params query
+// hasn't completed when the form renders.
+const FALLBACK_CREATION_FEE_UDREAM = "5000000"; // 5 DREAM
+const FALLBACK_MIN_TRUST_LEVEL = 2; // ESTABLISHED
+const FALLBACK_LARGE_PROJECT_THRESHOLD_UDREAM = "10000000000"; // 10,000 DREAM (Epic tier max)
+
+// trust_level values are enum strings ("TRUST_LEVEL_ESTABLISHED" etc.) at
+// the UI layer but the chain param is a uint32. Map the index → label so the
+// info copy reads naturally ("ESTABLISHED" not "2").
+const TRUST_LEVEL_BY_INDEX = [
+  TrustLevel.NEW,
+  TrustLevel.PROVISIONAL,
+  TrustLevel.ESTABLISHED,
+  TrustLevel.TRUSTED,
+  TrustLevel.CORE,
+] as const;
 
 function statusColor(status: string): string {
   switch (status) {
@@ -44,6 +63,7 @@ export default function ProjectList() {
   const [submitting, setSubmitting] = useState(false);
 
   // Form state
+  const [formMode, setFormMode] = useState<"self-publish" | "request-funding">("self-publish");
   const [formName, setFormName] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [formTags, setFormTags] = useState<string[]>([]);
@@ -53,6 +73,52 @@ export default function ProjectList() {
   const [formCouncil, setFormCouncil] = useState("");
   const [formBudget, setFormBudget] = useState("");
   const [formSpark, setFormSpark] = useState("");
+
+  // Live x/rep params for the permissionless path summary (fee + trust gate)
+  // and the budget-backed tier threshold above which a council proposal is
+  // required (vs. a single committee member).
+  const [creationFeeUdream, setCreationFeeUdream] = useState<string>(FALLBACK_CREATION_FEE_UDREAM);
+  const [minTrustLevelIdx, setMinTrustLevelIdx] = useState<number>(FALLBACK_MIN_TRUST_LEVEL);
+  const [largeProjectThresholdUdream, setLargeProjectThresholdUdream] = useState<string>(
+    FALLBACK_LARGE_PROJECT_THRESHOLD_UDREAM,
+  );
+
+  useEffect(() => {
+    getRepParams()
+      .then((res) => {
+        const p = (res.params as Record<string, unknown>) || {};
+        const fee = p.project_creation_fee;
+        if (typeof fee === "string" && fee) setCreationFeeUdream(fee);
+        const lvl = p.permissionless_min_trust_level;
+        if (typeof lvl === "number") setMinTrustLevelIdx(lvl);
+        else if (typeof lvl === "string" && /^\d+$/.test(lvl)) setMinTrustLevelIdx(parseInt(lvl, 10));
+        const threshold = p.large_project_budget_threshold;
+        if (typeof threshold === "string" && threshold) setLargeProjectThresholdUdream(threshold);
+      })
+      .catch(() => {
+        // Fall back to defaults — chain may be older than this UI.
+      });
+  }, []);
+
+  // Display helpers for the path-summary panels.
+  const creationFeeDream = (() => {
+    try {
+      const n = BigInt(creationFeeUdream);
+      return (n / BigInt(1_000_000)).toLocaleString();
+    } catch {
+      return "5";
+    }
+  })();
+  const minTrustLabel =
+    TRUST_LEVEL_LABELS[TRUST_LEVEL_BY_INDEX[minTrustLevelIdx] ?? TrustLevel.ESTABLISHED] ?? "Established";
+  const largeProjectThresholdDream = (() => {
+    try {
+      const n = BigInt(largeProjectThresholdUdream);
+      return (n / BigInt(1_000_000)).toLocaleString();
+    } catch {
+      return "10,000";
+    }
+  })();
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -101,10 +167,28 @@ export default function ProjectList() {
 
   const handlePropose = async () => {
     if (!address || !formName.trim()) return;
+
+    // Permissionless: zero budgets and no council needed (the council field is
+    // metadata-only for permissionless projects since they never go through
+    // committee approval).
+    let budgetAmount = "0";
+    let sparkAmount = "0";
+    let council = "";
+
+    if (formMode === "request-funding") {
+      budgetAmount = formBudget ? BigInt(Math.floor(parseFloat(formBudget) * 1e6)).toString() : "0";
+      sparkAmount = formSpark ? BigInt(Math.floor(parseFloat(formSpark) * 1e6)).toString() : "0";
+      // Guard: an all-zero request-funding submit would silently take the
+      // permissionless path on-chain. Surface that to the user instead.
+      if (budgetAmount === "0" && sparkAmount === "0") {
+        console.error("Request-funding mode requires a non-zero DREAM or SPARK amount");
+        return;
+      }
+      council = formCouncil.trim();
+    }
+
     try {
       setSubmitting(true);
-      const budgetAmount = formBudget ? (BigInt(Math.floor(parseFloat(formBudget) * 1e6))).toString() : "0";
-      const sparkAmount = formSpark ? (BigInt(Math.floor(parseFloat(formSpark) * 1e6))).toString() : "0";
       const tagMsgs = buildCreateTagMsgs(address, formTags, availableTags);
       await signAndBroadcast([
         ...tagMsgs,
@@ -116,7 +200,7 @@ export default function ProjectList() {
             description: formDesc.trim(),
             tags: formTags,
             category: formCategory,
-            council: formCouncil.trim(),
+            council,
             requestedBudget: budgetAmount,
             requestedSpark: sparkAmount,
             deliverables: [],
@@ -131,6 +215,7 @@ export default function ProjectList() {
       setFormTags([]);
       setFormBudget("");
       setFormSpark("");
+      setFormMode("self-publish");
       await fetchProjects();
     } catch (err) {
       console.error("Propose project failed:", err);
@@ -178,6 +263,60 @@ export default function ProjectList() {
       {showForm && (
         <div className="mb-4 rounded-xl sd-hull-tile p-4">
           <h3 className="mb-3 text-sm font-semibold text-zinc-200">New Project Proposal</h3>
+
+          {/* Mode toggle: permissionless self-publish vs. budget-backed request.
+              The chain branches on whether requested_budget + requested_spark
+              are both zero (msg_server_propose_project.go) — surfacing that as
+              an explicit choice avoids the trap of silently switching paths. */}
+          <div className="mb-3 inline-flex rounded-lg border border-zinc-700 bg-zinc-900/50 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setFormMode("self-publish")}
+              className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
+                formMode === "self-publish"
+                  ? "bg-zinc-700 text-white"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              Self-publish
+            </button>
+            <button
+              type="button"
+              onClick={() => setFormMode("request-funding")}
+              className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
+                formMode === "request-funding"
+                  ? "bg-zinc-700 text-white"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              Request funding
+            </button>
+          </div>
+
+          {formMode === "self-publish" ? (
+            <div className="mb-3 rounded-lg border border-emerald-900/50 bg-emerald-900/10 px-3 py-2 text-xs text-emerald-300/90">
+              Burns <span className="font-medium text-emerald-200">{creationFeeDream} DREAM</span>{" "}
+              and the project activates immediately — no committee or council
+              approval needed. Requires{" "}
+              <span className="font-medium text-emerald-200">{minTrustLabel}</span>{" "}trust level or
+              higher. You&apos;ll then be able to add initiatives (capped at 500 DREAM each on the
+              permissionless path) that the community can stake to complete.
+            </div>
+          ) : (
+            <div className="mb-3 rounded-lg border border-amber-900/50 bg-amber-900/10 px-3 py-2 text-xs text-amber-300/90">
+              Sent to the council you pick below for approval. If approved,
+              completing initiatives under this project mints DREAM (and SPARK)
+              up to your requested cap — they&apos;re the spending authority.
+              Up to{" "}
+              <span className="font-medium text-amber-200">
+                {largeProjectThresholdDream} DREAM
+              </span>{" "}
+              can be approved by an individual operations-committee member of
+              the picked council; larger budgets require a passed council or
+              committee proposal.
+            </div>
+          )}
+
           <div className="space-y-3">
             <input
               type="text"
@@ -212,42 +351,56 @@ export default function ProjectList() {
                 ))}
               </select>
             </div>
-            <select
-              value={formCouncil}
-              onChange={(e) => setFormCouncil(e.target.value)}
-              className="sd-select w-full"
-            >
-              {councils.length === 0 && (
-                <option value="">No councils available</option>
-              )}
-              {councils.map((g) => (
-                <option key={g.index} value={g.index}>{g.index}</option>
-              ))}
-            </select>
-            <div className="grid grid-cols-2 gap-3">
-              <input
-                type="text"
-                placeholder="Requested budget (DREAM)"
-                value={formBudget}
-                onChange={(e) => setFormBudget(e.target.value)}
-                className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
-              />
-              <input
-                type="text"
-                placeholder="Requested SPARK"
-                value={formSpark}
-                onChange={(e) => setFormSpark(e.target.value)}
-                className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
-              />
-            </div>
+
+            {formMode === "request-funding" && (
+              <>
+                <select
+                  value={formCouncil}
+                  onChange={(e) => setFormCouncil(e.target.value)}
+                  className="sd-select w-full"
+                >
+                  {councils.length === 0 && (
+                    <option value="">No councils available</option>
+                  )}
+                  {councils.map((g) => (
+                    <option key={g.index} value={g.index}>{g.index}</option>
+                  ))}
+                </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    placeholder="Requested budget (DREAM)"
+                    value={formBudget}
+                    onChange={(e) => setFormBudget(e.target.value)}
+                    className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Requested SPARK"
+                    value={formSpark}
+                    onChange={(e) => setFormSpark(e.target.value)}
+                    className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </>
+            )}
+
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={handlePropose}
-                disabled={submitting || !formName.trim()}
+                disabled={
+                  submitting ||
+                  !formName.trim() ||
+                  (formMode === "request-funding" && !formBudget && !formSpark)
+                }
                 className="sd-btn sd-btn-primary"
               >
-                {submitting ? "Submitting..." : "Submit Proposal"}
+                {submitting
+                  ? "Submitting..."
+                  : formMode === "self-publish"
+                  ? `Self-publish (burn ${creationFeeDream} DREAM)`
+                  : "Submit for approval"}
               </button>
               <button
                 type="button"
