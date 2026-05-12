@@ -23,6 +23,8 @@ interface CommunityProposalsProps {
   onRefresh: () => void;
   /** When set, auto-opens the new-proposal form pre-selected to this type. */
   initialAction?: ProposalType;
+  /** Forwarded to NewCommunityProposal — pre-fills the unhide-post form. */
+  initialPostId?: string;
 }
 
 export default function CommunityProposals({
@@ -32,6 +34,7 @@ export default function CommunityProposals({
   loading,
   onRefresh,
   initialAction,
+  initialPostId,
 }: CommunityProposalsProps) {
   const { address, signAndBroadcast } = useWallet();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -113,6 +116,7 @@ export default function CommunityProposals({
             group={group}
             members={members}
             initialType={initialAction}
+            initialPostId={initialPostId}
             onClose={() => setShowNewProposal(false)}
             onSuccess={() => {
               setShowNewProposal(false);

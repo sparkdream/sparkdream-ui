@@ -1,14 +1,19 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import {
   getBondedRole,
   getBondedRoleConfig,
+  getForumParams,
   getSentinelActivity,
+  listHideRecords,
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
-import { RepMsgTypeUrls } from "@/lib/tx";
-import type { SentinelActivity } from "@/types/forum";
+import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
+import { ForumMsgTypeUrls, RepMsgTypeUrls } from "@/lib/tx";
+import { truncateAddress } from "@/lib/utils";
+import type { HideRecord, SentinelActivity } from "@/types/forum";
 import {
   RoleType,
   BondedRoleStatus,
@@ -37,6 +42,7 @@ function accuracyRate(activity: SentinelActivity | null): string {
 
 export default function SentinelPanel() {
   const { address, signAndBroadcast } = useWallet();
+  const { isOpsCommitteeMember } = useCommonsCouncil(address);
 
   const [bond, setBond] = useState<BondedRole | null>(null);
   const [config, setConfig] = useState<BondedRoleConfig | null>(null);
@@ -48,6 +54,15 @@ export default function SentinelPanel() {
   const [showBondForm, setShowBondForm] = useState(false);
   const [bondAmount, setBondAmount] = useState("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // All currently-hidden posts (one HideRecord each) + sentinel self-correct
+  // window (in seconds, from forum params). Listed via the global hide_record
+  // endpoint; we filter client-side for the two views below. Fine for current
+  // forum size — if hide volume grows the chain should add secondary indexes
+  // (`HideRecordsBySentinel`, `HideRecordsByExpiry`).
+  const [allHides, setAllHides] = useState<HideRecord[]>([]);
+  const [unhideWindow, setUnhideWindow] = useState<number | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!address) return;
@@ -61,6 +76,7 @@ export default function SentinelPanel() {
       ]);
       setConfig(configRes?.bonded_role_config ?? null);
 
+      // Sentinel-only bits: bond + activity.
       if (bondRes) {
         setIsSentinel(true);
         setBond(bondRes.bonded_role);
@@ -71,6 +87,28 @@ export default function SentinelPanel() {
         setBond(null);
         setActivity(null);
       }
+
+      // Hide records + sentinel-unhide-window are fetched for everyone — both
+      // the sentinel's "My recent hides" view and the COC "Override queue"
+      // view derive from this data, and a connected user can be a COC member
+      // without being a sentinel.
+      const [hidesRes, paramsRes] = await Promise.all([
+        listHideRecords({ limit: "200" }).catch(() => null),
+        getForumParams().catch(() => null),
+      ]);
+      const hides = [...(hidesRes?.hide_record ?? [])];
+      // Most-recent first so actionable rows surface at the top.
+      hides.sort((a, b) => Number(BigInt(b.hidden_at) - BigInt(a.hidden_at)));
+      setAllHides(hides);
+      const winRaw = paramsRes?.params?.sentinel_unhide_window;
+      let win: number | null = null;
+      if (typeof winRaw === "string") {
+        const n = parseInt(winRaw, 10);
+        if (Number.isFinite(n) && n > 0) win = n;
+      } else if (typeof winRaw === "number" && Number.isFinite(winRaw) && winRaw > 0) {
+        win = winRaw;
+      }
+      setUnhideWindow(win);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to load sentinel data";
       if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
@@ -105,6 +143,27 @@ export default function SentinelPanel() {
       await fetchData();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Bond failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleUnhide = async (postId: string) => {
+    if (!address) return;
+    setActionLoading(`unhide-${postId}`);
+    setActionError(null);
+    try {
+      await signAndBroadcast([{
+        typeUrl: ForumMsgTypeUrls.UnhidePost,
+        value: {
+          creator: address,
+          postId: BigInt(postId),
+        },
+      }]);
+      await fetchData();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setActionError(`Unhide of post #${postId} failed: ${msg}`);
     } finally {
       setActionLoading(null);
     }
@@ -156,13 +215,25 @@ export default function SentinelPanel() {
   const availableBond = bond
     ? (BigInt(currentBond) - BigInt(totalCommitted)).toString()
     : "0";
+
+  // Split allHides into the two views: mine (sentinel self-correct) and
+  // past-window (COC override queue). Empty hidden_at or unknown window
+  // are treated as "past window" so the COC always has a path to act.
+  const nowSec = Math.floor(Date.now() / 1000);
+  const myHides = allHides.filter((r) => r.sentinel === address);
+  const pastWindowHides = allHides.filter((r) => {
+    if (unhideWindow === null) return true;
+    const hiddenAt = Number(r.hidden_at);
+    if (!Number.isFinite(hiddenAt) || hiddenAt <= 0) return true;
+    return nowSec - hiddenAt > unhideWindow;
+  });
   const bondStatus = bond?.bond_status ?? "";
 
   return (
-    <div>
-      <h2 className="mb-4 text-lg font-semibold text-white">Sentinel Status</h2>
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold text-white">Sentinel Status</h2>
 
-      {!isSentinel ? (
+      {!isSentinel && (
         <div className="sd-hull-tile rounded-xl p-6">
           <p className="mb-2 text-sm text-zinc-400">
             You are not a sentinel. Bond DREAM tokens to become a sentinel and help moderate the forum.
@@ -210,8 +281,10 @@ export default function SentinelPanel() {
             </div>
           )}
         </div>
-      ) : (
-        <div className="space-y-4">
+      )}
+
+      {isSentinel && (
+        <>
           {/* Bond overview */}
           <div className="sd-hull-tile rounded-xl p-5">
             <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
@@ -351,8 +424,159 @@ export default function SentinelPanel() {
               </div>
             </div>
           )}
+
+          {/* Hides by this sentinel — self-correct via MsgUnhidePost while still
+              inside params.sentinel_unhide_window. Past the window the chain
+              rejects with ErrUnhideWindowExpired; we surface that as a tooltip
+              and disable the button so it's obvious why it's no longer
+              clickable rather than silently failing on submit. */}
+          <div className="sd-hull-tile rounded-xl p-5">
+            <div className="mb-3 flex items-baseline justify-between">
+              <h3 className="text-sm font-semibold text-zinc-300">My recent hides</h3>
+              {unhideWindow !== null && (
+                <span className="text-xs text-zinc-500">
+                  Self-correct window: {formatDuration(unhideWindow)}
+                </span>
+              )}
+            </div>
+            {actionError && (
+              <div className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-400">
+                <span className="break-all">{actionError}</span>
+                <button
+                  type="button"
+                  onClick={() => setActionError(null)}
+                  className="shrink-0 text-red-300 hover:text-red-100"
+                  aria-label="Dismiss error"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            {myHides.length === 0 ? (
+              <p className="text-xs text-zinc-500">No active hides on file.</p>
+            ) : (
+              <ul className="space-y-2">
+                {myHides.map((r) => {
+                  const hiddenAt = Number(r.hidden_at);
+                  const now = Math.floor(Date.now() / 1000);
+                  const elapsed = now - hiddenAt;
+                  const inWindow = unhideWindow !== null && elapsed <= unhideWindow;
+                  const remaining = unhideWindow !== null ? unhideWindow - elapsed : 0;
+                  return (
+                    <li
+                      key={r.post_id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="font-mono text-zinc-300">#{r.post_id}</span>
+                          {r.reason_code && (
+                            <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                              {r.reason_code}
+                            </span>
+                          )}
+                        </div>
+                        {r.reason_text && (
+                          <p className="mt-0.5 truncate text-xs text-zinc-500">{r.reason_text}</p>
+                        )}
+                        <p className="mt-0.5 text-[10px] text-zinc-600">
+                          Hidden {formatDuration(elapsed)} ago
+                          {inWindow
+                            ? ` · ${formatDuration(remaining)} remaining to self-correct`
+                            : " · self-correct window expired"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleUnhide(r.post_id)}
+                        disabled={!inWindow || actionLoading === `unhide-${r.post_id}`}
+                        title={
+                          inWindow
+                            ? "Reverse this hide and release the committed bond"
+                            : "Past the self-correct window; only a Commons Ops Committee proposal can unhide now"
+                        }
+                        className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:border-zinc-600 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {actionLoading === `unhide-${r.post_id}` ? "Unhiding…" : "Unhide"}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* COC override queue: hides past the sentinel self-correct window
+          (only the COC / governance can now unhide them). Visible to Commons
+          Operations Committee members regardless of whether they're sentinels;
+          each "Propose unhide" link deep-links into /governance with the
+          create-proposal form pre-opened and the post_id pre-filled. */}
+      {isOpsCommitteeMember && (
+        <div className="sd-hull-tile rounded-xl p-5">
+          <div className="mb-3 flex items-baseline justify-between">
+            <h3 className="text-sm font-semibold text-zinc-300">Council override queue</h3>
+            <span className="text-xs text-zinc-500">
+              Hides past the self-correct window
+            </span>
+          </div>
+          {pastWindowHides.length === 0 ? (
+            <p className="text-xs text-zinc-500">No hides past the self-correct window.</p>
+          ) : (
+            <ul className="space-y-2">
+              {pastWindowHides.map((r) => {
+                const hiddenAt = Number(r.hidden_at);
+                const elapsed = nowSec - hiddenAt;
+                return (
+                  <li
+                    key={r.post_id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="font-mono text-zinc-300">#{r.post_id}</span>
+                        {r.reason_code && (
+                          <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                            {r.reason_code}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-zinc-500">
+                          by {truncateAddress(r.sentinel)}
+                        </span>
+                      </div>
+                      {r.reason_text && (
+                        <p className="mt-0.5 truncate text-xs text-zinc-500">{r.reason_text}</p>
+                      )}
+                      <p className="mt-0.5 text-[10px] text-zinc-600">
+                        Hidden {formatDuration(elapsed)} ago
+                      </p>
+                    </div>
+                    <Link
+                      href={`/governance?group=${encodeURIComponent("Commons Operations Committee")}&action=unhide-post&post_id=${r.post_id}`}
+                      className="shrink-0 rounded-lg border border-indigo-500/30 bg-indigo-600/10 px-3 py-1.5 text-xs text-indigo-300 transition-colors hover:border-indigo-400 hover:text-indigo-200"
+                      title="Open a Commons Operations Committee proposal to unhide this post"
+                    >
+                      Propose unhide
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       )}
     </div>
   );
+}
+
+// Approximate a seconds-duration as a compact human-readable string.
+// Used for hide-record timestamps and the sentinel unhide window.
+function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "—";
+  const s = Math.floor(seconds);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
 }

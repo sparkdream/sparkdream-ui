@@ -140,6 +140,7 @@ export const ForumMsgTypeUrls = {
   IncreaseBounty: "/sparkdream.forum.v1.MsgIncreaseBounty",
   CancelBounty: "/sparkdream.forum.v1.MsgCancelBounty",
   HidePost: "/sparkdream.forum.v1.MsgHidePost",
+  UnhidePost: "/sparkdream.forum.v1.MsgUnhidePost",
   AppealPost: "/sparkdream.forum.v1.MsgAppealPost",
   LockThread: "/sparkdream.forum.v1.MsgLockThread",
   UnlockThread: "/sparkdream.forum.v1.MsgUnlockThread",

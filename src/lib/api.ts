@@ -129,6 +129,7 @@ import type {
   TopPostsResponse,
   GetSentinelActivityResponse,
   MemberStandingResponse,
+  ListHideRecordsResponse,
 } from "@/types/forum";
 import type {
   BondedRoleResponse,
@@ -789,6 +790,16 @@ export async function listDisputes(
 
 export async function getForumParams(): Promise<ForumParamsResponse> {
   return get<ForumParamsResponse>("/sparkdream/forum/v1/params");
+}
+
+// List all HideRecord rows (one per currently-hidden post). Client filters by
+// sentinel address to surface the caller's own hides for self-correction
+// within params.sentinel_unhide_window.
+export async function listHideRecords(pagination?: PaginationRequest): Promise<ListHideRecordsResponse> {
+  return get<ListHideRecordsResponse>(
+    "/sparkdream/forum/v1/hide_record",
+    paginationParams(pagination)
+  );
 }
 
 export async function getForumStatus(): Promise<ForumStatusResponse> {

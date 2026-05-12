@@ -107,6 +107,14 @@ export interface HideRecord {
   reason_text: string;
 }
 
+export interface ListHideRecordsResponse {
+  hide_record: HideRecord[];
+  pagination?: {
+    next_key: string | null;
+    total: string;
+  };
+}
+
 export interface ThreadLockRecord {
   root_id: string;
   sentinel: string;

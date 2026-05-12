@@ -19,6 +19,8 @@ const VALID_ACTIONS: ProposalType[] = [
   "treasury-spend",
   "update-config",
   "create-category",
+  "delete-category",
+  "unhide-post",
 ];
 
 export default function GovernancePage() {
@@ -44,6 +46,8 @@ function GovernancePageInner() {
   const initialAction: ProposalType | undefined = VALID_ACTIONS.includes(queryAction as ProposalType)
     ? (queryAction as ProposalType)
     : undefined;
+  // Pre-fill post_id when reached via the SentinelPanel COC-override deep-link.
+  const initialPostId = searchParams.get("post_id") ?? undefined;
 
   // Sidebar state
   const [view, setView] = useState<View>("community-proposals");
@@ -319,6 +323,7 @@ function GovernancePageInner() {
               loading={communityLoading}
               onRefresh={fetchGroupData}
               initialAction={effectiveAction}
+              initialPostId={effectiveAction === "unhide-post" ? initialPostId : undefined}
             />
           )}
 

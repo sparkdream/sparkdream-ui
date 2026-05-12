@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { Category, Group, Member } from "@/types/commons";
-import { CommonsMsgTypeUrls } from "@/lib/tx";
+import { CommonsMsgTypeUrls, ForumMsgTypeUrls } from "@/lib/tx";
 import { listCategories, listGroups } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
@@ -16,7 +16,8 @@ export type ProposalType =
   | "treasury-spend"
   | "update-config"
   | "create-category"
-  | "delete-category";
+  | "delete-category"
+  | "unhide-post";
 
 const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string }[] = [
   { value: "general", label: "General Vote", description: "Signaling vote with no executable action" },
@@ -26,6 +27,7 @@ const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string 
   { value: "update-config", label: "Update Config", description: "Propose changing a child committee's settings" },
   { value: "create-category", label: "Create Swarm Category", description: "Propose creating a new Swarm category" },
   { value: "delete-category", label: "Delete Swarm Category", description: "Propose removing an empty Swarm category" },
+  { value: "unhide-post", label: "Unhide Swarm Post", description: "Council override of a sentinel hide past the self-correct window" },
 ];
 
 interface NewCommunityProposalProps {
@@ -34,6 +36,8 @@ interface NewCommunityProposalProps {
   onClose: () => void;
   onSuccess: () => void;
   initialType?: ProposalType;
+  /** Pre-fill the unhide-post form when the proposal type defaults to "unhide-post". */
+  initialPostId?: string;
 }
 
 export default function NewCommunityProposal({
@@ -42,6 +46,7 @@ export default function NewCommunityProposal({
   onClose,
   onSuccess,
   initialType,
+  initialPostId,
 }: NewCommunityProposalProps) {
   const { address, signAndBroadcast } = useWallet();
   const { config } = useChainConfig();
@@ -95,6 +100,11 @@ export default function NewCommunityProposal({
   // Delete category fields
   const [existingCategories, setExistingCategories] = useState<Category[]>([]);
   const [deleteCategoryId, setDeleteCategoryId] = useState("");
+
+  // Unhide post fields. Pre-filled from `initialPostId` when the parent
+  // governance page is reached via the SentinelPanel deep-link
+  // (`/governance?...&action=unhide-post&post_id=N`).
+  const [unhidePostId, setUnhidePostId] = useState(initialPostId ?? "");
 
   // Lazily load existing categories when the delete-category form is shown.
   useEffect(() => {
@@ -247,6 +257,22 @@ export default function NewCommunityProposal({
             })
           ).finish(),
         });
+      } else if (type === "unhide-post") {
+        const trimmed = unhidePostId.trim();
+        if (!trimmed) throw new Error("Post ID is required");
+        if (!/^\d+$/.test(trimmed)) throw new Error("Post ID must be a positive integer");
+        const { MsgUnhidePost } = await import(
+          "@sparkdreamnft/sparkdreamjs/sparkdream/forum/v1/tx"
+        );
+        innerMessages.push({
+          typeUrl: ForumMsgTypeUrls.UnhidePost,
+          value: MsgUnhidePost.encode(
+            MsgUnhidePost.fromPartial({
+              creator: group.policy_address,
+              postId: BigInt(trimmed),
+            })
+          ).finish(),
+        });
       }
       // "general" has no inner messages — signaling vote only
 
@@ -263,6 +289,7 @@ export default function NewCommunityProposal({
           categoryTitle,
           deletedCategoryTitle,
           deletedCategoryId: deleteCategoryId,
+          unhidePostId: unhidePostId.trim(),
         });
 
       await signAndBroadcast([
@@ -624,6 +651,30 @@ export default function NewCommunityProposal({
         </div>
       )}
 
+      {type === "unhide-post" && (
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-300">
+              Post ID to unhide
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={unhidePostId}
+              onChange={(e) => setUnhidePostId(e.target.value)}
+              placeholder="e.g. 42"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 font-mono text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+            <p className="mt-1 text-xs text-zinc-500">
+              Council override of a sentinel hide. Use this for hides past the
+              sentinel self-correct window. The chain refuses if the post&apos;s
+              category was deleted while it was hidden.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Metadata / description — hide when update-config has no children */}
       {!(type === "update-config" && childGroups.length === 0) && <div>
         <label className="mb-1.5 block text-sm font-medium text-zinc-300">
@@ -659,7 +710,8 @@ export default function NewCommunityProposal({
           disabled={
             submitting ||
             (type === "update-config" && childGroups.length === 0) ||
-            (type === "delete-category" && existingCategories.length === 0)
+            (type === "delete-category" && existingCategories.length === 0) ||
+            (type === "unhide-post" && !unhidePostId.trim())
           }
           className="sd-btn sd-btn-primary"
         >
@@ -688,6 +740,7 @@ function defaultMetadata(
     categoryTitle?: string;
     deletedCategoryTitle?: string;
     deletedCategoryId?: string;
+    unhidePostId?: string;
   }
 ): string {
   switch (type) {
@@ -705,6 +758,8 @@ function defaultMetadata(
       return `Create Swarm category "${ctx.categoryTitle || ""}"`;
     case "delete-category":
       return `Delete Swarm category "${ctx.deletedCategoryTitle || ""}" (#${ctx.deletedCategoryId || "?"})`;
+    case "unhide-post":
+      return `Council override: unhide Swarm post #${ctx.unhidePostId || "?"}`;
     default:
       return "";
   }
