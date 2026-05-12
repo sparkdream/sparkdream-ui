@@ -198,7 +198,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const { AminoConverter: seasonAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/season/v1/tx.amino");
       const { AminoConverter: revealAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/reveal/v1/tx.amino");
       const { AminoConverter: futarchyAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/futarchy/v1/tx.amino");
-      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino });
 
       // Telescope's auto-generated amino converters don't recursively decode
       // `repeated google.protobuf.Any` fields, so MsgSubmitProposal /
@@ -206,7 +205,65 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // assembled AminoTypes wired into sparkdreamjs's hand-written override
       // before any amino signing can happen (otherwise Ledger users hit
       // "JSON Dictionaries are not sorted" / "signature verification failed").
-      const { configureNestedAminoConverter } = await import("@sparkdreamnft/sparkdreamjs/nested-amino");
+      // The same helpers also back our hand-rolled /cosmos.gov.v1.MsgSubmitProposal
+      // converter below, so import them eagerly here.
+      const { configureNestedAminoConverter, anyToAmino, aminoToAny } = await import("@sparkdreamnft/sparkdreamjs/nested-amino");
+
+      // CosmJS's createGovAminoConverters() only registers v1beta1
+      // (https://github.com/cosmos/cosmjs/issues/1442), so amino-signing a
+      // chain proposal otherwise fails with
+      // `Type URL '/cosmos.gov.v1.MsgSubmitProposal' does not exist in the
+      // Amino message type register`. Sign bytes must match
+      // cosmossdk.io/x/tx/signing/aminojson on the chain: snake_case keys,
+      // fields at their zero value omitted (matching aminojson's omitempty),
+      // and the inner `messages` Anys recursively amino-converted via the
+      // same nested-amino helpers the commons MsgSubmitProposal converter
+      // already uses.
+      const govV1AminoConverters = {
+        "/cosmos.gov.v1.MsgSubmitProposal": {
+          aminoType: "cosmos-sdk/v1/MsgSubmitProposal",
+          toAmino: (msg: {
+            messages?: { typeUrl: string; value: Uint8Array }[];
+            initialDeposit?: { denom: string; amount: string }[];
+            proposer?: string;
+            metadata?: string;
+            title?: string;
+            summary?: string;
+            expedited?: boolean;
+          }) => ({
+            messages:
+              (msg.messages?.length ?? 0) > 0
+                ? msg.messages!.map((m) => anyToAmino(m))
+                : undefined,
+            initial_deposit:
+              (msg.initialDeposit?.length ?? 0) > 0 ? msg.initialDeposit : undefined,
+            proposer: msg.proposer ? msg.proposer : undefined,
+            metadata: msg.metadata ? msg.metadata : undefined,
+            title: msg.title ? msg.title : undefined,
+            summary: msg.summary ? msg.summary : undefined,
+            expedited: msg.expedited ? msg.expedited : undefined,
+          }),
+          fromAmino: (obj: {
+            messages?: { type: string; value: unknown }[];
+            initial_deposit?: { denom: string; amount: string }[];
+            proposer?: string;
+            metadata?: string;
+            title?: string;
+            summary?: string;
+            expedited?: boolean;
+          }) => ({
+            messages: (obj.messages ?? []).map((m) => aminoToAny(m)),
+            initialDeposit: Array.from(obj.initial_deposit ?? []),
+            proposer: obj.proposer ?? "",
+            metadata: obj.metadata ?? "",
+            title: obj.title ?? "",
+            summary: obj.summary ?? "",
+            expedited: obj.expedited ?? false,
+          }),
+        },
+      };
+
+      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...govV1AminoConverters });
       // Cast: cosmjs's `lookupType` returns `GeneratedType` (union of TsProto +
       // Pbjs); the override only ever encounters TsProto types here.
       configureNestedAminoConverter({ registry: registry as unknown as Parameters<typeof configureNestedAminoConverter>[0]["registry"], aminoTypes });
