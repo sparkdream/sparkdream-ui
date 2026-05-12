@@ -7,6 +7,7 @@ import { listCategories, listGroups } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { truncateAddress } from "@/lib/utils";
+import { canSpendTreasury } from "@/lib/commons";
 import NumberInput from "@/components/NumberInput";
 
 export type ProposalType =
@@ -50,7 +51,16 @@ export default function NewCommunityProposal({
 }: NewCommunityProposalProps) {
   const { address, signAndBroadcast } = useWallet();
   const { config } = useChainConfig();
-  const [type, setType] = useState<ProposalType>(initialType ?? "general");
+  const canSpend = canSpendTreasury(group);
+  // Reject a deep-linked initialType="treasury-spend" for non-spending groups
+  // — otherwise the picker would hide the option but the spend form would
+  // still render for the seeded `type`.
+  const safeInitialType: ProposalType | undefined =
+    initialType === "treasury-spend" && !canSpend ? "general" : initialType;
+  const [type, setType] = useState<ProposalType>(safeInitialType ?? "general");
+  const visibleProposalTypes = canSpend
+    ? PROPOSAL_TYPES
+    : PROPOSAL_TYPES.filter((pt) => pt.value !== "treasury-spend");
   const [metadata, setMetadata] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -325,7 +335,7 @@ export default function NewCommunityProposal({
           Proposal Type
         </label>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {PROPOSAL_TYPES.map((pt) => (
+          {visibleProposalTypes.map((pt) => (
             <button
               key={pt.value}
               type="button"

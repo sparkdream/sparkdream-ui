@@ -13,7 +13,9 @@ import {
   describeProposalMessages,
 } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
+import { canSpendTreasury } from "@/lib/commons";
 import NewCommunityProposal, { type ProposalType } from "./NewCommunityProposal";
+import { CouncilTreasuryBanner } from "./CouncilTreasury";
 
 interface CommunityProposalsProps {
   group: Group;
@@ -97,6 +99,8 @@ export default function CommunityProposals({
 
   return (
     <div>
+      {canSpendTreasury(group) && <CouncilTreasuryBanner group={group} />}
+
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Proposals</h2>
         {isMember && !showNewProposal && (
