@@ -107,6 +107,15 @@ export interface GetCouncilMembersResponse {
   members: Member[];
 }
 
+export interface PolicyPermissions {
+  policy_address: string;
+  allowed_messages: string[];
+}
+
+export interface GetPolicyPermissionsResponse {
+  policy_permissions: PolicyPermissions;
+}
+
 export interface GetProposalResponse {
   proposal: Proposal;
   votes: Vote[];

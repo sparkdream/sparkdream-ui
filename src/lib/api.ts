@@ -18,6 +18,7 @@ import type {
 import type {
   ListGroupsResponse,
   GetCouncilMembersResponse,
+  GetPolicyPermissionsResponse,
   GetProposalResponse,
   ListProposalsResponse,
   ListCategoryResponse,
@@ -316,6 +317,18 @@ export async function getCouncilMembers(
 ): Promise<GetCouncilMembersResponse> {
   return get<GetCouncilMembersResponse>(
     `/sparkdream/commons/v1/council_members/${councilName}`
+  );
+}
+
+// Get the `allowed_messages` permission list for a group's policy address —
+// the chain only accepts a proposal whose inner message types are all in this
+// list. Used to hide proposal-type buttons the current council/committee
+// can't actually submit.
+export async function getPolicyPermissions(
+  policyAddress: string
+): Promise<GetPolicyPermissionsResponse> {
+  return get<GetPolicyPermissionsResponse>(
+    `/sparkdream/commons/v1/policy_permissions/${policyAddress}`
   );
 }
 

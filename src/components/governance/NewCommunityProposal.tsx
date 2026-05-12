@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import type { Category, Group, Member } from "@/types/commons";
 import { CommonsMsgTypeUrls, ForumMsgTypeUrls } from "@/lib/tx";
-import { listCategories, listGroups } from "@/lib/api";
+import { getCouncilMembers, getPolicyPermissions, listCategories, listGroups } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { truncateAddress } from "@/lib/utils";
@@ -30,6 +30,22 @@ const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string 
   { value: "delete-category", label: "Delete Swarm Category", description: "Propose removing an empty Swarm category" },
   { value: "unhide-post", label: "Unhide Swarm Post", description: "Council override of a sentinel hide past the self-correct window" },
 ];
+
+// Inner message types each proposal kind would broadcast — used to filter the
+// picker against the group's PolicyPermissions.allowed_messages. The chain
+// rejects a proposal whose inner messages aren't all in that list with
+// `msg %s not allowed for policy %s` (see x/commons/keeper/msg_server_proposals.go).
+// `general` carries no executable message so it's always available.
+const REQUIRED_MESSAGES: Record<ProposalType, string[]> = {
+  "general": [],
+  "treasury-spend": [CommonsMsgTypeUrls.SpendFromCommons],
+  "invite": [CommonsMsgTypeUrls.UpdateGroupMembers],
+  "remove": [CommonsMsgTypeUrls.UpdateGroupMembers],
+  "update-config": [CommonsMsgTypeUrls.UpdateGroupConfig],
+  "create-category": [CommonsMsgTypeUrls.CreateCategory],
+  "delete-category": [CommonsMsgTypeUrls.DeleteCategory],
+  "unhide-post": [ForumMsgTypeUrls.UnhidePost],
+};
 
 interface NewCommunityProposalProps {
   group: Group;
@@ -58,25 +74,49 @@ export default function NewCommunityProposal({
   const safeInitialType: ProposalType | undefined =
     initialType === "treasury-spend" && !canSpend ? "general" : initialType;
   const [type, setType] = useState<ProposalType>(safeInitialType ?? "general");
-  const visibleProposalTypes = canSpend
-    ? PROPOSAL_TYPES
-    : PROPOSAL_TYPES.filter((pt) => pt.value !== "treasury-spend");
+  // The group's chain-side AllowedMessages — `null` while loading so the
+  // picker doesn't briefly hide options before settling.
+  const [allowedMessages, setAllowedMessages] = useState<string[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getPolicyPermissions(group.policy_address)
+      .then((res) => {
+        if (!cancelled) setAllowedMessages(res.policy_permissions?.allowed_messages ?? []);
+      })
+      .catch(() => {
+        // Treat a missing/erroring permissions record as no executables
+        // allowed — the chain would reject anyway.
+        if (!cancelled) setAllowedMessages([]);
+      });
+    return () => { cancelled = true; };
+  }, [group.policy_address]);
   const [metadata, setMetadata] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Target group for member changes — own group or parent
-  // Only governance committees can manage their parent council's membership.
-  // A real parent group has a 32-byte policy address (~66 chars bech32);
-  // module authority accounts are 20 bytes (~46 chars) and don't count.
-  const isGovernanceCommittee = group.index.toLowerCase().includes("governance");
-  const hasParent = isGovernanceCommittee
-    && !!group.parent_policy_address
-    && group.parent_policy_address !== group.policy_address
-    && group.parent_policy_address.length > 50;
-  const [memberTarget, setMemberTarget] = useState<"self" | "parent">(hasParent ? "parent" : "self");
-  const targetPolicyAddress = memberTarget === "parent" && hasParent
-    ? group.parent_policy_address
+  // Target group for member changes — own group, or the group this committee
+  // is the electoral authority for. The chain (msg_server_update_group_members)
+  // accepts the signer when it equals the target's parent OR its
+  // `electoral_policy_address`; `parent_policy_address` would be the right
+  // pointer for Tech/Eco governance committees (which sit directly under their
+  // councils) but is wrong for the Commons Governance Committee, whose parent
+  // is the Supervisory Board — Commons Council is reached purely via electoral
+  // delegation (`Commons Council.electoral_policy_address = commonsGovPolicy`
+  // in the chain's genesis bootstrap). Resolving by electoral relationship
+  // works uniformly for all three governance committees.
+  const [electoralFor, setElectoralFor] = useState<Group | null>(null);
+  const [memberTarget, setMemberTarget] = useState<"self" | "managed">("self");
+  // Auto-flip to "managed" once we learn this group is an electoral authority,
+  // but only the first time — don't fight a user who clicked back to "self".
+  const [defaultedToManaged, setDefaultedToManaged] = useState(false);
+  useEffect(() => {
+    if (electoralFor && !defaultedToManaged) {
+      setMemberTarget("managed");
+      setDefaultedToManaged(true);
+    }
+  }, [electoralFor, defaultedToManaged]);
+  const targetPolicyAddress = memberTarget === "managed" && electoralFor
+    ? electoralFor.policy_address
     : group.policy_address;
 
   // Invite fields
@@ -85,6 +125,31 @@ export default function NewCommunityProposal({
 
   // Remove fields
   const [removeAddress, setRemoveAddress] = useState("");
+  // Members of the managed (electoral) target group, lazily loaded so the
+  // "Member to Remove" picker lists *that* council's members instead of the
+  // submitting committee's (the chain stores members per group in a separate
+  // `(councilName, address)` collection). Falls back to the prop `members`
+  // when the picker is in "self" mode.
+  const [targetMembers, setTargetMembers] = useState<Member[]>([]);
+  useEffect(() => {
+    if (memberTarget !== "managed" || !electoralFor) return;
+    let cancelled = false;
+    getCouncilMembers(electoralFor.index)
+      .then((res) => {
+        if (!cancelled) setTargetMembers(res.members || []);
+      })
+      .catch(() => {
+        if (!cancelled) setTargetMembers([]);
+      });
+    return () => { cancelled = true; };
+  }, [memberTarget, electoralFor]);
+  // Reset the selection when the user flips the target so we never submit
+  // a stale address that belongs to the other group.
+  useEffect(() => {
+    setRemoveAddress("");
+  }, [memberTarget]);
+  const displayedMembers =
+    memberTarget === "managed" && electoralFor ? targetMembers : members;
 
   // Treasury spend fields
   const [spendRecipient, setSpendRecipient] = useState("");
@@ -131,30 +196,63 @@ export default function NewCommunityProposal({
     return () => { cancelled = true; };
   }, [type, existingCategories.length]);
 
-  // Fetch child groups for update-config targeting.
-  // A child is linked via parent_policy_address OR is the electoral committee.
+  // Fetch sibling groups once and derive two relationships from the result:
+  //  - childGroups: groups this one oversees (parent_policy_address points
+  //    here, or it's our designated electoral committee) — drives the
+  //    update-config picker.
+  //  - electoralFor: the group THIS one is the electoral authority for
+  //    (i.e. some group's `electoral_policy_address` equals our policy
+  //    address) — drives the invite/remove "managed" target toggle.
   useEffect(() => {
     let cancelled = false;
-    async function loadChildren() {
+    async function loadGroups() {
       try {
         const res = await listGroups();
-        const children = (res.group || []).filter(
+        const groups = res.group || [];
+        const children = groups.filter(
           (g) =>
             g.policy_address !== group.policy_address &&
             (g.parent_policy_address === group.policy_address ||
              g.policy_address === group.electoral_policy_address)
         );
+        const managed = groups.find(
+          (g) => g.electoral_policy_address === group.policy_address
+        ) ?? null;
         if (!cancelled) {
           setChildGroups(children);
           if (children.length > 0) setConfigTargetGroup((prev) => prev || children[0].index);
+          setElectoralFor(managed);
         }
       } catch {
         // ignore
       }
     }
-    loadChildren();
+    loadGroups();
     return () => { cancelled = true; };
-  }, [group.policy_address]);
+  }, [group.policy_address, group.electoral_policy_address]);
+
+  // Hide proposal types whose inner message the group's policy isn't
+  // authorized for (Technical groups have no MsgCreateCategory, governance
+  // committees have no MsgSpendFromCommons, etc.). While permissions are
+  // still loading we show every option to avoid a flash. update-config is
+  // additionally hidden when there's nothing to configure.
+  const visibleProposalTypes = PROPOSAL_TYPES.filter((pt) => {
+    if (pt.value === "treasury-spend" && !canSpend) return false;
+    if (pt.value === "update-config" && childGroups.length === 0) return false;
+    if (allowedMessages === null) return true;
+    const required = REQUIRED_MESSAGES[pt.value];
+    return required.every((m) => allowedMessages.includes(m));
+  });
+  // If the currently-picked type got filtered out (e.g. a deep link landed on
+  // unhide-post for a group that can't unhide), drop back to the always-on
+  // general signaling vote rather than letting the form render a non-submittable
+  // body.
+  useEffect(() => {
+    if (allowedMessages === null) return;
+    if (!visibleProposalTypes.find((pt) => pt.value === type)) {
+      setType("general");
+    }
+  }, [allowedMessages, visibleProposalTypes, type]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -354,7 +452,7 @@ export default function NewCommunityProposal({
       </div>
 
       {/* Target group selector for member changes */}
-      {hasParent && (type === "invite" || type === "remove") && (
+      {electoralFor && (type === "invite" || type === "remove") && (
         <div>
           <label className="mb-1.5 block text-sm font-medium text-zinc-300">
             Target Group
@@ -362,15 +460,15 @@ export default function NewCommunityProposal({
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => setMemberTarget("parent")}
+              onClick={() => setMemberTarget("managed")}
               className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                memberTarget === "parent"
+                memberTarget === "managed"
                   ? "border-indigo-500/50 bg-indigo-600/15 text-indigo-400"
                   : "border-zinc-700 bg-zinc-800/30 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300"
               }`}
             >
-              <div className="font-medium">Parent Council</div>
-              <div className="mt-0.5 text-xs text-zinc-500">Manage parent group members</div>
+              <div className="font-medium">{electoralFor.index}</div>
+              <div className="mt-0.5 text-xs text-zinc-500">Manage members of the council this committee oversees</div>
             </button>
             <button
               type="button"
@@ -428,7 +526,7 @@ export default function NewCommunityProposal({
             className="sd-select w-full"
           >
             <option value="">Select a member...</option>
-            {members.map((m) => (
+            {displayedMembers.map((m) => (
               <option key={m.address} value={m.address}>
                 {m.metadata && m.metadata !== "N/A"
                   ? `${m.metadata} (${truncateAddress(m.address)})`
