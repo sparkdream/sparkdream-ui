@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import type { Group } from "@/types/commons";
 import { GovMsgTypeUrls, UpgradeMsgTypeUrls, CommonsMsgTypeUrls } from "@/lib/tx";
-import { listGroups } from "@/lib/api";
+import { listGroups, getCurrentUpgradePlan, type UpgradePlan } from "@/lib/api";
 import { getGovModuleAddress } from "@/lib/gov";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
@@ -15,6 +15,7 @@ type ChainProposalType =
   | "parameter-change"
   | "council-election"
   | "software-upgrade"
+  | "cancel-upgrade"
   | "register-council";
 
 const CHAIN_PROPOSAL_TYPES: {
@@ -26,6 +27,7 @@ const CHAIN_PROPOSAL_TYPES: {
   { value: "parameter-change", label: "Parameter Change", description: "Update a module's parameters" },
   { value: "council-election", label: "Council Election", description: "Renew a council term with new membership" },
   { value: "software-upgrade", label: "Software Upgrade", description: "Schedule a chain binary upgrade" },
+  { value: "cancel-upgrade", label: "Cancel Upgrade", description: "Abort a pending software upgrade" },
   { value: "register-council", label: "Register Council", description: "Create a new council/committee" },
 ];
 
@@ -65,6 +67,13 @@ export default function NewChainProposal({
   const [upgradeHeight, setUpgradeHeight] = useState("");
   const [upgradeInfo, setUpgradeInfo] = useState("");
 
+  // Cancel-upgrade: surface whichever plan is currently scheduled so users
+  // know what they're cancelling (and so we can grey out submit when
+  // there's nothing pending).
+  const [pendingPlan, setPendingPlan] = useState<UpgradePlan | null>(null);
+  const [pendingPlanLoading, setPendingPlanLoading] = useState(false);
+  const [pendingPlanError, setPendingPlanError] = useState<string | null>(null);
+
   // Register council fields
   const [councilName, setCouncilName] = useState("");
   const [councilDescription, setCouncilDescription] = useState("");
@@ -85,6 +94,28 @@ export default function NewChainProposal({
         .then((res) => setGroups(res.group || []))
         .catch(() => {});
     }
+  }, [type]);
+
+  // Pull the pending upgrade plan when the user picks "Cancel Upgrade".
+  // We don't cache across switches — the user may have been sitting on the
+  // form long enough that a new upgrade got scheduled (or executed).
+  useEffect(() => {
+    if (type !== "cancel-upgrade") return;
+    let cancelled = false;
+    setPendingPlanLoading(true);
+    setPendingPlanError(null);
+    getCurrentUpgradePlan()
+      .then((plan) => {
+        if (!cancelled) setPendingPlan(plan);
+      })
+      .catch((err) => {
+        if (!cancelled)
+          setPendingPlanError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (!cancelled) setPendingPlanLoading(false);
+      });
+    return () => { cancelled = true; };
   }, [type]);
 
   const addMemberRow = (
@@ -173,6 +204,25 @@ export default function NewChainProposal({
                 info: upgradeInfo.trim(),
               },
             })
+          ).finish(),
+        });
+      } else if (type === "cancel-upgrade") {
+        // Refuse to submit a guaranteed-no-op proposal. We only block when the
+        // LCD definitively answered "no plan"; transport errors still let the
+        // user through so a flaky endpoint doesn't strand emergency cancels.
+        if (pendingPlan === null && !pendingPlanLoading && !pendingPlanError) {
+          throw new Error(
+            "No software upgrade is currently scheduled — nothing to cancel."
+          );
+        }
+        const { MsgCancelUpgrade } = await import(
+          "cosmjs-types/cosmos/upgrade/v1beta1/tx"
+        );
+        const govModuleAddress = await getGovModuleAddress();
+        govMessages.push({
+          typeUrl: UpgradeMsgTypeUrls.CancelUpgrade,
+          value: MsgCancelUpgrade.encode(
+            MsgCancelUpgrade.fromPartial({ authority: govModuleAddress })
           ).finish(),
         });
       } else if (type === "register-council") {
@@ -429,6 +479,44 @@ export default function NewChainProposal({
               className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
             />
           </div>
+        </div>
+      )}
+
+      {/* Cancel upgrade — no inputs; x/upgrade clears whichever plan is
+          currently pending when this proposal passes. We pull the live plan
+          so the user knows what they're cancelling, and gate submit when
+          nothing's scheduled (the chain would still accept the proposal,
+          but it'd be a guaranteed no-op). */}
+      {type === "cancel-upgrade" && (
+        <div className="space-y-2 rounded-lg border border-zinc-700/50 bg-zinc-800/20 p-4 text-xs text-zinc-400">
+          <h4 className="text-sm font-medium text-zinc-300">Cancel Upgrade</h4>
+          {pendingPlanLoading && <p>Looking up the pending upgrade…</p>}
+          {pendingPlanError && (
+            <p className="text-amber-400">
+              Couldn&apos;t fetch the pending plan: {pendingPlanError}. You can
+              still submit, but verify off-chain that an upgrade is actually
+              scheduled.
+            </p>
+          )}
+          {!pendingPlanLoading && !pendingPlanError && pendingPlan && (
+            <div className="space-y-1 text-zinc-300">
+              <p>The chain currently has this upgrade scheduled:</p>
+              <ul className="list-disc space-y-0.5 pl-5 font-mono text-[11px]">
+                <li>name: {pendingPlan.name || "(empty)"}</li>
+                <li>height: {pendingPlan.height}</li>
+                {pendingPlan.info && <li>info: {pendingPlan.info}</li>}
+              </ul>
+              <p className="text-zinc-400">
+                Passing this proposal clears that plan before it executes.
+              </p>
+            </div>
+          )}
+          {!pendingPlanLoading && !pendingPlanError && !pendingPlan && (
+            <p className="text-amber-400">
+              No software upgrade is currently scheduled — there&apos;s nothing
+              to cancel.
+            </p>
+          )}
         </div>
       )}
 

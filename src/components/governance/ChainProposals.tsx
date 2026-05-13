@@ -267,6 +267,10 @@ function decodeGovMessages(
       return "Software upgrade";
     }
 
+    if (t.includes("MsgCancelUpgrade")) {
+      return "Cancel pending software upgrade";
+    }
+
     if (t.includes("MsgRenewGroup")) {
       const name = m.group_name as string;
       const members = m.new_members as string[];

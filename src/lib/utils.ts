@@ -101,6 +101,7 @@ const MSG_TYPE_LABELS: Record<string, string> = {
   "/cosmos.distribution.v1beta1.MsgUpdateParams": "Distribution Param Change",
   "/cosmos.slashing.v1beta1.MsgUpdateParams": "Slashing Param Change",
   "/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade": "Software Upgrade",
+  "/cosmos.upgrade.v1beta1.MsgCancelUpgrade": "Cancel Software Upgrade",
   "/cosmos.bank.v1beta1.MsgSend": "Bank Send",
   "/sparkdream.rep.v1.MsgUpdateParams": "Rep Param Change",
   "/sparkdream.rep.v1.MsgInviteMember": "Invite Member",

@@ -430,6 +430,32 @@ export async function getLatestBlockHeight(): Promise<string> {
   return res.block.header.height;
 }
 
+// ── Cosmos SDK x/upgrade ───────────────────────────────────────────
+
+// Plan as returned by the upgrade LCD — snake_case, deprecated fields
+// (`time`, `upgraded_client_state`) are always present but the chain
+// won't ship a plan that populates them, so we ignore them here.
+export interface UpgradePlan {
+  name: string;
+  height: string;
+  info: string;
+}
+
+interface CurrentUpgradePlanResponse {
+  // `null` when no upgrade is currently scheduled.
+  plan: UpgradePlan | null;
+}
+
+// Fetch the currently scheduled software upgrade, if any.
+// Returns `null` when nothing is pending — callers can use this to
+// disable cancel-upgrade flows when there's nothing to cancel.
+export async function getCurrentUpgradePlan(): Promise<UpgradePlan | null> {
+  const res = await get<CurrentUpgradePlanResponse>(
+    "/cosmos/upgrade/v1beta1/current_plan"
+  );
+  return res.plan;
+}
+
 // ── Cosmos SDK x/gov ────────────────────────────────────────────────
 
 // List gov proposals with optional status filter

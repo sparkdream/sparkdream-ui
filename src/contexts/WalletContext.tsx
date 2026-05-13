@@ -172,11 +172,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const { load: loadFutarchy } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/futarchy/v1/tx.registry");
       // Gov v1 + upgrade types (not in defaultRegistryTypes which only has v1beta1)
       const { MsgSubmitProposal: GovV1MsgSubmitProposal } = await import("cosmjs-types/cosmos/gov/v1/tx");
-      const { MsgSoftwareUpgrade } = await import("cosmjs-types/cosmos/upgrade/v1beta1/tx");
+      const { MsgSoftwareUpgrade, MsgCancelUpgrade } = await import("cosmjs-types/cosmos/upgrade/v1beta1/tx");
 
       const registry = new Registry(defaultRegistryTypes);
       registry.register("/cosmos.gov.v1.MsgSubmitProposal", GovV1MsgSubmitProposal as any);
       registry.register("/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade", MsgSoftwareUpgrade as any);
+      registry.register("/cosmos.upgrade.v1beta1.MsgCancelUpgrade", MsgCancelUpgrade as any);
       loadBlog(registry);
       loadSession(registry);
       loadCommons(registry);
@@ -263,7 +264,62 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         },
       };
 
-      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...govV1AminoConverters });
+      // cosmjs ships no upgrade-module amino converters at all (only
+      // SoftwareUpgradeProposal v1beta1 legacy content type, not the Msg-based
+      // v1 flow), so amino-signing a MsgSoftwareUpgrade — directly or wrapped
+      // in MsgSubmitProposal — otherwise fails with
+      // `Type URL '/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade' does not exist
+      // in the Amino message type register`. The amino name comes from the
+      // chain's proto (`option (amino.name) = "cosmos-sdk/MsgSoftwareUpgrade"`).
+      // Plan.time / Plan.upgraded_client_state are deprecated and the SDK
+      // rejects upgrades that set them, so we omit them entirely; the
+      // remaining fields follow aminojson's omitempty (height 0 / empty
+      // string drop out) to match the chain's reconstructed sign bytes.
+      const upgradeV1beta1AminoConverters = {
+        "/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade": {
+          aminoType: "cosmos-sdk/MsgSoftwareUpgrade",
+          toAmino: (msg: {
+            authority?: string;
+            plan?: { name?: string; height?: bigint | string; info?: string };
+          }) => ({
+            authority: msg.authority ? msg.authority : undefined,
+            plan: msg.plan
+              ? {
+                  name: msg.plan.name ? msg.plan.name : undefined,
+                  height:
+                    msg.plan.height !== undefined && msg.plan.height.toString() !== "0"
+                      ? msg.plan.height.toString()
+                      : undefined,
+                  info: msg.plan.info ? msg.plan.info : undefined,
+                }
+              : undefined,
+          }),
+          fromAmino: (obj: {
+            authority?: string;
+            plan?: { name?: string; height?: string; info?: string };
+          }) => ({
+            authority: obj.authority ?? "",
+            plan: {
+              name: obj.plan?.name ?? "",
+              time: undefined,
+              height: BigInt(obj.plan?.height ?? "0"),
+              info: obj.plan?.info ?? "",
+              upgradedClientState: undefined,
+            },
+          }),
+        },
+        "/cosmos.upgrade.v1beta1.MsgCancelUpgrade": {
+          aminoType: "cosmos-sdk/MsgCancelUpgrade",
+          toAmino: (msg: { authority?: string }) => ({
+            authority: msg.authority ? msg.authority : undefined,
+          }),
+          fromAmino: (obj: { authority?: string }) => ({
+            authority: obj.authority ?? "",
+          }),
+        },
+      };
+
+      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
       // Cast: cosmjs's `lookupType` returns `GeneratedType` (union of TsProto +
       // Pbjs); the override only ever encounters TsProto types here.
       configureNestedAminoConverter({ registry: registry as unknown as Parameters<typeof configureNestedAminoConverter>[0]["registry"], aminoTypes });

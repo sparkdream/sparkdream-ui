@@ -10,6 +10,7 @@ export const GovMsgTypeUrls = {
 // Cosmos SDK x/upgrade message type URLs (used inside gov proposals)
 export const UpgradeMsgTypeUrls = {
   SoftwareUpgrade: "/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade",
+  CancelUpgrade: "/cosmos.upgrade.v1beta1.MsgCancelUpgrade",
 } as const;
 
 // Commons transaction message type URLs
