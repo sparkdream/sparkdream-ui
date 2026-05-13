@@ -71,10 +71,10 @@ export interface CollectionItem {
   description: string;
   image_uri: string;
   reference_type: string;
-  nft_reference: NftReference | null;
-  link_reference: LinkReference | null;
-  on_chain_reference: OnChainReference | null;
-  custom_reference: CustomReference | null;
+  nft: NftReference | null;
+  link: LinkReference | null;
+  on_chain: OnChainReference | null;
+  custom: CustomReference | null;
   attributes: KeyValuePair[];
   encrypted_data: string;
   position: number;

@@ -38,6 +38,14 @@ function formatDeposit(amount: string): string {
   return (n / BigInt(1000000)).toLocaleString();
 }
 
+function linkHostname(uri: string): string | null {
+  try {
+    return new URL(uri).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
 export default function CollectionDetail({ collectionId, onBack }: CollectionDetailProps) {
   const { address, signAndBroadcast } = useWallet();
 
@@ -464,6 +472,11 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
+                        {item.reference_type === ReferenceType.LINK && item.link?.uri && linkHostname(item.link.uri) && (
+                          <span className="hidden sm:inline rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-indigo-400">
+                            {linkHostname(item.link.uri)}
+                          </span>
+                        )}
                         <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
                           {REFERENCE_TYPE_LABELS[item.reference_type] || item.reference_type}
                         </span>
@@ -493,10 +506,20 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                             <dt className="text-xs text-zinc-500">Position</dt>
                             <dd className="text-zinc-300">{item.position}</dd>
                           </div>
-                          {item.link_reference?.uri && (
+                          {item.link?.uri && (
                             <div className="col-span-2">
                               <dt className="text-xs text-zinc-500">Link</dt>
-                              <dd className="truncate text-xs text-indigo-400">{item.link_reference.uri}</dd>
+                              <dd className="truncate text-xs">
+                                <a
+                                  href={item.link.uri}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-indigo-400 hover:text-indigo-300 hover:underline"
+                                >
+                                  {item.link.uri}
+                                </a>
+                              </dd>
                             </div>
                           )}
                         </dl>
