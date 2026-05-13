@@ -224,6 +224,19 @@ export default function NewChainProposal({
         ? (parseFloat(deposit) * 1_000_000).toFixed(0)
         : "0";
 
+      // SDK gov v1 dropped TextProposal: a proposal with no inner messages
+      // must carry non-empty metadata or msg_server rejects it with
+      // "either metadata or Msgs length must be non-nil". When the chain
+      // can JSON-parse the metadata, it also enforces that the embedded
+      // title/summary match the proposal's, so emit a blob that satisfies
+      // both checks for the signaling-only "general" case.
+      const proposalTitle = title.trim();
+      const proposalSummary = summary.trim() || proposalTitle;
+      const metadata =
+        govMessages.length === 0
+          ? JSON.stringify({ title: proposalTitle, summary: proposalSummary })
+          : "";
+
       await signAndBroadcast([
         {
           typeUrl: GovMsgTypeUrls.SubmitProposal,
@@ -234,9 +247,9 @@ export default function NewChainProposal({
                 ? [{ denom: config.denom, amount: microDeposit }]
                 : [],
             proposer: address,
-            metadata: "",
-            title: title.trim(),
-            summary: summary.trim() || title.trim(),
+            metadata,
+            title: proposalTitle,
+            summary: proposalSummary,
             expedited: false,
           },
         },

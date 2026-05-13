@@ -203,6 +203,12 @@ export default function NewCommunityProposal({
   //  - electoralFor: the group THIS one is the electoral authority for
   //    (i.e. some group's `electoral_policy_address` equals our policy
   //    address) — drives the invite/remove "managed" target toggle.
+  //    The `g.policy_address !== group.policy_address` filter skips the
+  //    self-electoral loop wired into the genesis bootstrap for the Commons
+  //    Operations Committee (`SetElectoralDelegation("Commons Operations
+  //    Committee", commOpsPolicy)`, which lets it manage its own members);
+  //    that's a single-target case where the toggle would just point at
+  //    `group` from both buttons.
   useEffect(() => {
     let cancelled = false;
     async function loadGroups() {
@@ -216,7 +222,9 @@ export default function NewCommunityProposal({
              g.policy_address === group.electoral_policy_address)
         );
         const managed = groups.find(
-          (g) => g.electoral_policy_address === group.policy_address
+          (g) =>
+            g.electoral_policy_address === group.policy_address &&
+            g.policy_address !== group.policy_address
         ) ?? null;
         if (!cancelled) {
           setChildGroups(children);
@@ -468,7 +476,7 @@ export default function NewCommunityProposal({
               }`}
             >
               <div className="font-medium">{electoralFor.index}</div>
-              <div className="mt-0.5 text-xs text-zinc-500">Manage members of the council this committee oversees</div>
+              <div className="mt-0.5 text-xs text-zinc-500">Manage members of the main council</div>
             </button>
             <button
               type="button"
