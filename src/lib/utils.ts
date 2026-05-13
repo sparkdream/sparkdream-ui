@@ -54,8 +54,11 @@ export function countToNum(count: string | undefined): number {
   return parseInt(count, 10) || 0;
 }
 
-// Time remaining until a deadline, e.g. "2d 4h" or "45m" or "expired"
-export function timeRemaining(deadline: string | number): string {
+// Time remaining until a deadline, e.g. "2d 4h" or "45m" or "expired".
+// `now` is overridable so callers ticking from a shared clock (e.g. a
+// `useNow()` hook) can drive live countdowns without re-evaluating Date.now()
+// on every formatter call.
+export function timeRemaining(deadline: string | number, now: number = Date.now()): string {
   let target: number;
   if (typeof deadline === "string") {
     // Could be unix seconds string or ISO 8601
@@ -70,7 +73,7 @@ export function timeRemaining(deadline: string | number): string {
 
   if (!target || isNaN(target)) return "";
 
-  const diff = target - Date.now();
+  const diff = target - now;
   if (diff <= 0) return "expired";
 
   const days = Math.floor(diff / 86_400_000);

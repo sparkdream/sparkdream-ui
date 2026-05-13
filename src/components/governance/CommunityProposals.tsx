@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Group, Proposal, Member } from "@/types/commons";
 import { ProposalStatus, VoteOption, VOTE_OPTION_LABELS } from "@/types/commons";
 import { getProposal } from "@/lib/api";
@@ -46,6 +46,10 @@ export default function CommunityProposals({
   const [showNewProposal, setShowNewProposal] = useState(!!initialAction);
 
   const isMember = members.some((m) => m.address === address);
+  // Single shared clock for every card's voting / execution countdowns — ticks
+  // every 30s so the Execute button flips itself enabled without a manual
+  // refresh when its min-execution-period window opens.
+  const now = useNow(30_000);
 
   const handleVote = async (proposalId: string, option: number) => {
     setActionLoading(`vote-${proposalId}`);
@@ -173,6 +177,7 @@ export default function CommunityProposals({
               proposal={proposal}
               isMember={isMember}
               actionLoading={actionLoading}
+              now={now}
               onVote={handleVote}
               onExecute={handleExecute}
             />
@@ -181,6 +186,22 @@ export default function CommunityProposals({
       )}
     </div>
   );
+}
+
+// ── Live-clock hook ─────────────────────────────────────────────────
+
+/**
+ * Re-renders subscribers on a shared `setInterval` so countdowns tick down
+ * and the Execute button can flip itself enabled when the min-execution
+ * window opens — no manual refresh needed.
+ */
+function useNow(intervalMs = 30_000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
 }
 
 // ── Status badge ────────────────────────────────────────────────────
@@ -279,12 +300,15 @@ function CommonsProposalCard({
   proposal,
   isMember,
   actionLoading,
+  now,
   onVote,
   onExecute,
 }: {
   proposal: Proposal;
   isMember: boolean;
   actionLoading: string | null;
+  /** Shared ticking clock from the parent — see useNow(). */
+  now: number;
   onVote: (id: string, option: number) => void;
   onExecute: (id: string) => void;
 }) {
@@ -319,7 +343,25 @@ function CommonsProposalCard({
   const typeLabel = describeProposalMessages(proposal.messages);
   const remaining =
     isVoting && proposal.voting_deadline && proposal.voting_deadline !== "0"
-      ? timeRemaining(proposal.voting_deadline)
+      ? timeRemaining(proposal.voting_deadline, now)
+      : null;
+
+  // `execution_time` is set by the chain when the proposal becomes ACCEPTED:
+  // voting_deadline + DecisionPolicy.min_execution_period (the cooldown a
+  // council enforces between acceptance and execution). Be lenient with
+  // missing / "0" / unparseable values so policies without a cooldown still
+  // let the button work immediately.
+  const executionTimeMs = (() => {
+    const v = proposal.execution_time;
+    if (!v || v === "0") return null;
+    const n = parseInt(v, 10);
+    if (!n || isNaN(n)) return null;
+    return n * 1000;
+  })();
+  const isExecutable = !executionTimeMs || now >= executionTimeMs;
+  const executionWait =
+    isAccepted && executionTimeMs && !isExecutable
+      ? timeRemaining(proposal.execution_time, now)
       : null;
 
   return (
@@ -335,6 +377,11 @@ function CommonsProposalCard({
           {remaining && (
             <span className={`text-xs font-medium ${remaining === "expired" ? "text-red-400" : "text-blue-400"}`}>
               {remaining}
+            </span>
+          )}
+          {executionWait && (
+            <span className="text-xs font-medium text-amber-400">
+              Executable in {executionWait.replace(" left", "")}
             </span>
           )}
         </div>
@@ -415,8 +462,13 @@ function CommonsProposalCard({
           {isAccepted && (
             <button
               onClick={() => onExecute(proposal.id)}
-              disabled={actionLoading === `exec-${proposal.id}`}
-              className="rounded-lg border border-green-500/30 bg-green-600/20 px-3 py-1 text-xs text-green-400 transition-colors hover:bg-green-600/30 disabled:opacity-50"
+              disabled={!isExecutable || actionLoading === `exec-${proposal.id}`}
+              title={
+                !isExecutable
+                  ? `Min-execution cooldown — executable at ${formatTime(proposal.execution_time)}`
+                  : undefined
+              }
+              className="rounded-lg border border-green-500/30 bg-green-600/20 px-3 py-1 text-xs text-green-400 transition-colors hover:bg-green-600/30 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {actionLoading === `exec-${proposal.id}`
                 ? "Executing..."
