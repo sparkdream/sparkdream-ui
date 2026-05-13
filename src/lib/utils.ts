@@ -75,6 +75,11 @@ export function timeRemaining(deadline: string | number, now: number = Date.now(
 
   const diff = target - now;
   if (diff <= 0) return "expired";
+  // Avoid floor()'ing sub-minute remainders to "0m left" — the badge would
+  // park there for up to a full tick (30s) before flipping to expired,
+  // reading as a stuck/broken countdown ("Executable in 0m"). Anything below
+  // a minute collapses to a single sentinel instead.
+  if (diff < 60_000) return "<1m left";
 
   const days = Math.floor(diff / 86_400_000);
   const hours = Math.floor((diff % 86_400_000) / 3_600_000);

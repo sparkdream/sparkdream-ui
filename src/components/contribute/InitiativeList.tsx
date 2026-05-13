@@ -16,6 +16,10 @@ import {
   InitiativeTier,
   InitiativeCategory,
 } from "@/types/rep";
+import {
+  initiativeTierFromJSON,
+  initiativeCategoryFromJSON,
+} from "@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/initiative";
 import SearchableSelect from "@/components/contribute/SearchableSelect";
 
 type Tab = "all" | "available" | "mine";
@@ -184,8 +188,13 @@ export default function InitiativeList() {
             title: formTitle.trim(),
             description: formDesc.trim(),
             tags: formTags,
-            tier: formTier,
-            category: formCategory,
+            // Tier / category are proto3 enums on Initiative but declared as
+            // uint64 on MsgCreateInitiative (wire-compatible). The form keeps
+            // them as their enum-string keys for the <select>; Telescope's
+            // fromPartial does `BigInt(object.tier.toString())` which throws
+            // SyntaxError on the string form — convert to int first.
+            tier: initiativeTierFromJSON(formTier),
+            category: initiativeCategoryFromJSON(formCategory),
             templateId: "",
             budget: budgetAmount,
           },

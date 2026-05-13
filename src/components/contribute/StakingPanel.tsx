@@ -15,6 +15,7 @@ import { truncateAddress } from "@/lib/utils";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import type { RepStake } from "@/types/rep";
 import { STAKE_TARGET_LABELS, StakeTargetType } from "@/types/rep";
+import { stakeTargetTypeFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/stake";
 import SearchableSelect from "@/components/contribute/SearchableSelect";
 
 interface TargetOption {
@@ -204,7 +205,11 @@ export default function StakingPanel() {
         typeUrl: RepMsgTypeUrls.Stake,
         value: {
           staker: address,
-          targetType: formTargetType,
+          // StakeTargetType is a proto3 int32 enum; the form holds the
+          // enum-string key for the <select>. Convert to int before
+          // broadcast so the proto encoder doesn't NaN-coerce it to 0 and
+          // amino sigverify doesn't fail on the string-vs-int mismatch.
+          targetType: stakeTargetTypeFromJSON(formTargetType),
           targetId: formTargetId ? parseInt(formTargetId) : 0,
           targetIdentifier: formTargetIdentifier,
           amount,

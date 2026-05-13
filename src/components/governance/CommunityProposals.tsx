@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Group, Proposal, Member } from "@/types/commons";
 import { ProposalStatus, VoteOption, VOTE_OPTION_LABELS } from "@/types/commons";
 import { getProposal } from "@/lib/api";
@@ -46,10 +46,26 @@ export default function CommunityProposals({
   const [showNewProposal, setShowNewProposal] = useState(!!initialAction);
 
   const isMember = members.some((m) => m.address === address);
-  // Single shared clock for every card's voting / execution countdowns — ticks
-  // every 30s so the Execute button flips itself enabled without a manual
-  // refresh when its min-execution-period window opens.
-  const now = useNow(30_000);
+  // Shared clock for every card's voting / execution countdowns. Tick
+  // adapts: 30s normally, 5s when *any* visible card is in its sub-minute
+  // window, so the "<1m left" badge transitions to "expired" / the Execute
+  // button flips enabled within ~5s of the chain accepting the call rather
+  // than parking at the floor of the previous bucket for up to 30s.
+  const soonestDeadline = useMemo(() => {
+    let soonest: number | null = null;
+    for (const p of proposals) {
+      const candidates: (string | undefined)[] = [];
+      if (p.status === ProposalStatus.SUBMITTED) candidates.push(p.voting_deadline);
+      if (p.status === ProposalStatus.ACCEPTED) candidates.push(p.execution_time);
+      for (const c of candidates) {
+        if (!c || c === "0") continue;
+        const ms = parseInt(c, 10) * 1000;
+        if (Number.isFinite(ms) && (soonest === null || ms < soonest)) soonest = ms;
+      }
+    }
+    return soonest;
+  }, [proposals]);
+  const now = useNow(soonestDeadline);
 
   const handleVote = async (proposalId: string, option: number) => {
     setActionLoading(`vote-${proposalId}`);
@@ -191,16 +207,34 @@ export default function CommunityProposals({
 // ── Live-clock hook ─────────────────────────────────────────────────
 
 /**
- * Re-renders subscribers on a shared `setInterval` so countdowns tick down
- * and the Execute button can flip itself enabled when the min-execution
- * window opens — no manual refresh needed.
+ * Re-renders subscribers on a recursive `setTimeout` whose cadence shortens
+ * when the next deadline is close: 30s by default, 5s once we're inside the
+ * last minute of `soonestDeadlineMs`. Pass `null` (or omit) when no card has
+ * a live countdown and the hook will just tick at 30s for refresh hygiene.
+ *
+ * Why recursive setTimeout instead of setInterval: the interval needs to
+ * change *as the deadline approaches* without restarting the effect every
+ * render (which `now`-dependent useEffect deps would do). Each tick decides
+ * the next delay itself, so we only restart the chain when the deadline
+ * value itself moves (e.g. a proposal flips from voting to accepted).
  */
-function useNow(intervalMs = 30_000): number {
+function useNow(soonestDeadlineMs: number | null = null): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
+    const pickDelay = (from: number): number => {
+      if (soonestDeadlineMs === null) return 30_000;
+      const left = soonestDeadlineMs - from;
+      return left > 0 && left < 60_000 ? 5_000 : 30_000;
+    };
+    let id: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      const next = Date.now();
+      setNow(next);
+      id = setTimeout(tick, pickDelay(next));
+    };
+    id = setTimeout(tick, pickDelay(Date.now()));
+    return () => clearTimeout(id);
+  }, [soonestDeadlineMs]);
   return now;
 }
 

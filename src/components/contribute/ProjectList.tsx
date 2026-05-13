@@ -16,6 +16,7 @@ import {
   TRUST_LEVEL_LABELS,
   TrustLevel,
 } from "@/types/rep";
+import { projectCategoryFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/project";
 
 // Chain defaults (x/rep params) — used as fallbacks if the params query
 // hasn't completed when the form renders.
@@ -213,7 +214,13 @@ export default function ProjectList() {
             name: formName.trim(),
             description: formDesc.trim(),
             tags: formTags,
-            category: formCategory,
+            // ProjectCategory is a proto3 enum (int32 on the wire). The form
+            // state holds it as its enum-string key for the <select> ("…
+            // _INFRASTRUCTURE"); pass the int through fromJSON so the proto
+            // encoder doesn't NaN-coerce the string to 0 (which both loses
+            // the user's pick and breaks amino sigverify — JS would sign the
+            // string while the chain reconstructs an omitted/numeric field).
+            category: projectCategoryFromJSON(formCategory),
             council,
             requestedBudget: budgetAmount,
             requestedSpark: sparkAmount,

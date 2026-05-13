@@ -5,6 +5,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { CollectMsgTypeUrls } from "@/lib/tx";
 import { collectTags } from "@/lib/api";
 import { CollectionType, CollectionVisibility } from "@/types/collect";
+import { collectionTypeFromJSON, visibilityFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/types";
 import TagPicker from "@/components/contribute/TagPicker";
 
 interface CreateCollectionFormProps {
@@ -50,8 +51,14 @@ export default function CreateCollectionForm({ onCreated, onCancel }: CreateColl
           name: name.trim(),
           description: description.trim(),
           coverUri: coverUri.trim(),
-          type: collectionType,
-          visibility,
+          // CollectionType / Visibility are proto3 int32 enums; the UI keeps
+          // them as their enum-string keys for the <select>, so route through
+          // fromJSON before broadcast — otherwise the proto encoder
+          // NaN-coerces the string to 0 and amino emits the string, which
+          // mismatches the chain's reconstructed sign bytes (sigverify fails
+          // as "unauthorized"). Same fix shape as ProjectList.tsx.
+          type: collectionTypeFromJSON(collectionType),
+          visibility: visibilityFromJSON(visibility),
           tags,
           encrypted: false,
         },

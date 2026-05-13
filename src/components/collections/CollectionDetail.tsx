@@ -16,6 +16,7 @@ import type {
   Collaborator,
   CurationSummary,
 } from "@/types/collect";
+import { referenceTypeFromJSON, collaboratorRoleFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/types";
 import {
   COLLECTION_TYPE_LABELS,
   COLLECTION_STATUS_LABELS,
@@ -102,7 +103,12 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         title: newItemTitle.trim(),
         description: newItemDesc.trim(),
         imageUri: newItemImageUri.trim(),
-        referenceType: newItemRefType,
+        // ReferenceType is a proto3 int32 enum; the form holds the enum-string
+        // key (e.g. "REFERENCE_TYPE_LINK") for the <select>. Convert to int
+        // before broadcast so the proto encoder doesn't NaN-coerce it to 0
+        // and amino sigverify doesn't fail on the string vs reconstructed
+        // int mismatch (same pattern as ProjectList.tsx).
+        referenceType: referenceTypeFromJSON(newItemRefType),
       };
       if (newItemRefType === ReferenceType.LINK && newItemLinkUri.trim()) {
         value.link = { uri: newItemLinkUri.trim(), contentHash: "", contentType: "" };
@@ -147,7 +153,8 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
           creator: address,
           collectionId: collectionId,
           address: newCollabAddress.trim(),
-          role: newCollabRole,
+          // Same int32-enum-as-string fix as referenceType above.
+          role: collaboratorRoleFromJSON(newCollabRole),
         },
       }]);
       setNewCollabAddress("");
