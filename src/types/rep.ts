@@ -59,6 +59,14 @@ export interface RepProject {
   approved_by: string;
   approved_at: string;
   completed_at: string;
+  /** True for self-publish projects that skipped council approval (zero
+   * budget, APPRENTICE/STANDARD tiers only, rewards minted on completion). */
+  permissionless?: boolean;
+  /** Block height after which the EndBlocker auto-expires this project if
+   * still PROPOSED. Set to creation_height + params.proposed_project_expiry_blocks
+   * for budget-backed projects; "0" for permissionless ones (no expiry) and
+   * cleared once the project transitions out of PROPOSED. */
+  expiry_block_height?: string;
 }
 
 export interface Initiative {
@@ -190,6 +198,10 @@ export const ProjectStatus = {
   ACTIVE: "PROJECT_STATUS_ACTIVE",
   COMPLETED: "PROJECT_STATUS_COMPLETED",
   CANCELLED: "PROJECT_STATUS_CANCELLED",
+  // EXPIRED is terminal — the EndBlocker flips PROPOSED projects to this
+  // state once they pass their `expiry_block_height` without approval.
+  // Kept (not deleted) so the audit trail of stale proposals survives.
+  EXPIRED: "PROJECT_STATUS_EXPIRED",
 } as const;
 
 export const PROJECT_STATUS_LABELS: Record<string, string> = {
@@ -197,6 +209,7 @@ export const PROJECT_STATUS_LABELS: Record<string, string> = {
   [ProjectStatus.ACTIVE]: "Active",
   [ProjectStatus.COMPLETED]: "Completed",
   [ProjectStatus.CANCELLED]: "Cancelled",
+  [ProjectStatus.EXPIRED]: "Expired",
 };
 
 export const ProjectCategory = {

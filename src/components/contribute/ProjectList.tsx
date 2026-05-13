@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useWallet } from "@/contexts/WalletContext";
-import { listRepProjects, listGroups, getRepParams } from "@/lib/api";
+import { listRepProjects, listGroups, getRepParams, getLatestBlockHeight } from "@/lib/api";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
 import type { Group } from "@/types/commons";
@@ -40,6 +40,10 @@ function statusColor(status: string): string {
     case ProjectStatus.PROPOSED: return "bg-blue-500/15 text-blue-400";
     case ProjectStatus.COMPLETED: return "bg-zinc-500/15 text-zinc-300";
     case ProjectStatus.CANCELLED: return "bg-red-500/15 text-red-400";
+    // EndBlocker-set terminal status for PROPOSED projects past their
+    // expiry_block_height. Muted amber so it reads as "stale" rather than
+    // "actively rejected" (which CANCELLED already covers in red).
+    case ProjectStatus.EXPIRED: return "bg-amber-500/10 text-amber-400";
     default: return "bg-zinc-800/50 text-zinc-400";
   }
 }
@@ -82,6 +86,16 @@ export default function ProjectList() {
   const [largeProjectThresholdUdream, setLargeProjectThresholdUdream] = useState<string>(
     FALLBACK_LARGE_PROJECT_THRESHOLD_UDREAM,
   );
+
+  // Latest block height — used to turn a PROPOSED project's expiry_block_height
+  // into a human-friendly "expires in N blocks" countdown. Best-effort; the
+  // expiry block alone still renders if this fetch fails.
+  const [latestHeight, setLatestHeight] = useState<bigint | null>(null);
+  useEffect(() => {
+    getLatestBlockHeight()
+      .then((h) => setLatestHeight(BigInt(h)))
+      .catch(() => { /* leave null — UI degrades to raw block number */ });
+  }, []);
 
   useEffect(() => {
     getRepParams()
@@ -432,11 +446,32 @@ export default function ProjectList() {
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(p.status)}`}>
                       {PROJECT_STATUS_LABELS[p.status] || p.status}
                     </span>
+                    {p.permissionless && (
+                      <span
+                        className="rounded-full bg-indigo-500/10 px-2 py-0.5 text-xs font-medium text-indigo-300"
+                        title="Self-publish: skipped council approval; zero budget; rewards minted on completion"
+                      >
+                        Self-published
+                      </span>
+                    )}
                   </div>
                   <div className="mt-0.5 flex items-center gap-3 text-xs text-zinc-500">
                     <span>{PROJECT_CATEGORY_LABELS[p.category] || p.category}</span>
                     {p.council && <span>Council: {p.council}</span>}
                     <span>Budget: {formatDream(p.approved_budget)} DREAM</span>
+                    {/* Show expiry only while still PROPOSED — once the project
+                        transitions out (Active/Cancelled/Expired) the chain
+                        clears expiry_block_height to 0. The amber/red colors
+                        flag <100/<10 remaining blocks so council approvers
+                        notice imminent EndBlocker expiry. */}
+                    {p.status === ProjectStatus.PROPOSED &&
+                      p.expiry_block_height &&
+                      p.expiry_block_height !== "0" && (
+                        <ProposedExpiryHint
+                          expiryBlockHeight={p.expiry_block_height}
+                          latestHeight={latestHeight}
+                        />
+                      )}
                   </div>
                 </div>
                 <svg
@@ -488,4 +523,38 @@ export default function ProjectList() {
       )}
     </div>
   );
+}
+
+// Renders the per-project "expires in N blocks" hint for PROPOSED rows.
+// Falls back to "expires at block N" when the chain head couldn't be fetched
+// (so the data is still legible, just without a delta). Amber under 100
+// blocks, red under 10 — that's the window where a council approval should
+// be moving rather than queued.
+function ProposedExpiryHint({
+  expiryBlockHeight,
+  latestHeight,
+}: {
+  expiryBlockHeight: string;
+  latestHeight: bigint | null;
+}) {
+  let expiry: bigint;
+  try {
+    expiry = BigInt(expiryBlockHeight);
+  } catch {
+    return null;
+  }
+  if (latestHeight === null) {
+    return <span title="Latest block height unavailable">Expires at block {expiryBlockHeight}</span>;
+  }
+  const remaining = expiry - latestHeight;
+  if (remaining <= BigInt(0)) {
+    // EndBlocker hasn't run yet but the deadline has passed — flag it.
+    return <span className="text-amber-400">Expiring this block</span>;
+  }
+  const cls = remaining < BigInt(10)
+    ? "text-red-400"
+    : remaining < BigInt(100)
+      ? "text-amber-400"
+      : "text-zinc-500";
+  return <span className={cls}>Expires in {remaining.toString()} blocks</span>;
 }
