@@ -4,8 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import { MsgTypeUrls } from "@/lib/tx";
+import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import type { Post } from "@/types/blog";
 import { CONTENT_TYPE_INFO } from "@/types/blog";
+import TagPicker from "@/components/contribute/TagPicker";
 
 interface EditPostFormProps {
   post: Post;
@@ -19,8 +21,11 @@ export default function EditPostForm({ post }: EditPostFormProps) {
   const [contentType, setContentType] = useState<number>(parseInt(post.content_type) || 0);
   const [repliesEnabled, setRepliesEnabled] = useState(!!post.replies_enabled);
   const [minReplyTrustLevel, setMinReplyTrustLevel] = useState(post.min_reply_trust_level);
+  const [tags, setTags] = useState<string[]>(post.tags || []);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const canCreateTags = useCanCreateTags(address);
+  const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +35,15 @@ export default function EditPostForm({ post }: EditPostFormProps) {
     setError(null);
 
     try {
+      // x/blog's UpdatePost overwrites val.Tags = msg.Tags unconditionally and
+      // diffs old vs new to drop the post from removed tags' index entries
+      // (see x/blog/keeper/msg_server_update_post.go), so we must always
+      // include the current tag set or every edit wipes the post's tags. Any
+      // newly typed tag that isn't yet in the registry is pre-created via
+      // MsgCreateTag — same pattern as CreatePostForm.
+      const tagMsgs = buildCreateTagMsgs(address!, tags, availableTags);
       await signAndBroadcast([
+        ...tagMsgs,
         {
           typeUrl: MsgTypeUrls.UpdatePost,
           value: {
@@ -41,9 +54,11 @@ export default function EditPostForm({ post }: EditPostFormProps) {
             contentType,
             repliesEnabled,
             minReplyTrustLevel,
+            tags,
           },
         },
       ]);
+      if (tagMsgs.length > 0) refreshTags();
       router.push(`/imaginarium/${post.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update dream");
@@ -110,6 +125,18 @@ export default function EditPostForm({ post }: EditPostFormProps) {
         <p className="mt-1 text-xs text-zinc-600">
           {body.length} characters
         </p>
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-sm font-medium text-zinc-300">Tags</label>
+        <TagPicker
+          options={availableTags}
+          value={tags}
+          onChange={setTags}
+          placeholder={canCreateTags ? "Select or create tags..." : "Select tags..."}
+          loading={loadingTags}
+          allowCreate={canCreateTags}
+        />
       </div>
 
       <div className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">

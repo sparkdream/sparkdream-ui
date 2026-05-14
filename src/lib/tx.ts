@@ -89,6 +89,11 @@ export const RepMsgTypeUrls = {
 // Collect transaction message type URLs
 export const CollectMsgTypeUrls = {
   CreateCollection: "/sparkdream.collect.v1.MsgCreateCollection",
+  // MsgUpdateCollection's `tags` field overwrites the collection's tag set
+  // unconditionally (see x/collect's update handler) — any Edit Collection
+  // UI must include the existing tags or every edit wipes them. Use the
+  // useTagRegistry + buildCreateTagMsgs pattern from @/lib/tags, same as
+  // CreateCollectionForm / EditPostForm.
   UpdateCollection: "/sparkdream.collect.v1.MsgUpdateCollection",
   DeleteCollection: "/sparkdream.collect.v1.MsgDeleteCollection",
   AddItem: "/sparkdream.collect.v1.MsgAddItem",
