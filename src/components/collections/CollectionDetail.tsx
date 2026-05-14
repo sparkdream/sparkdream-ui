@@ -107,7 +107,11 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     try {
       const value: Record<string, unknown> = {
         creator: address,
-        collectionId: collectionId,
+        // collection_id is uint64; pass BigInt so sparkdreamjs's amino
+        // override `!== BigInt(0)` survives strict equality. String values
+        // happen to fail-open the check (any non-zero string is unequal to
+        // BigInt(0)), but for robustness we normalize at the call site.
+        collectionId: BigInt(collectionId),
         title: newItemTitle.trim(),
         description: newItemDesc.trim(),
         imageUri: newItemImageUri.trim(),
@@ -141,7 +145,9 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     try {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.RemoveItem,
-        value: { creator: address, id: itemId },
+        // item id is uint64; same Number-vs-BigInt normalization rationale
+        // as the other uint64 ids in this file — see handleAddItem above.
+        value: { creator: address, id: BigInt(itemId) },
       }]);
       await fetchData();
     } catch (err) {
@@ -159,7 +165,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         typeUrl: CollectMsgTypeUrls.AddCollaborator,
         value: {
           creator: address,
-          collectionId: collectionId,
+          collectionId: BigInt(collectionId),
           address: newCollabAddress.trim(),
           // Same int32-enum-as-string fix as referenceType above.
           role: collaboratorRoleFromJSON(newCollabRole),
@@ -181,7 +187,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     try {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.RemoveCollaborator,
-        value: { creator: address, collectionId: collectionId, address: collabAddress },
+        value: { creator: address, collectionId: BigInt(collectionId), address: collabAddress },
       }]);
       await fetchData();
     } catch (err) {
@@ -197,7 +203,9 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     try {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.UpvoteContent,
-        value: { creator: address, targetId: collectionId, targetType: 1 },
+        // target_id is uint64; pass BigInt. target_type is int32 enum (1 =
+        // COLLECTION) — Number stays a Number, the override uses `=== 0`.
+        value: { creator: address, targetId: BigInt(collectionId), targetType: 1 },
       }]);
       await fetchData();
     } catch (err) {
@@ -213,7 +221,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     try {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.DeleteCollection,
-        value: { creator: address, id: collectionId },
+        value: { creator: address, id: BigInt(collectionId) },
       }]);
       onBack();
     } catch (err) {

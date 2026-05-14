@@ -54,7 +54,10 @@ function ReplyItem({
       await signAndBroadcast([
         {
           typeUrl: MsgTypeUrls.DeleteReply,
-          value: { creator: address, id: parseInt(reply.id) },
+          // reply id is uint64; pass BigInt so the override's `!== BigInt(0)`
+          // check stays sound under strict equality (a Number value would
+          // sign "id":"0" for any zero-valued id while the chain omits).
+          value: { creator: address, id: BigInt(reply.id) },
         },
       ]);
       onReplySubmitted?.();
@@ -71,7 +74,10 @@ function ReplyItem({
       await signAndBroadcast([
         {
           typeUrl: isHidden ? MsgTypeUrls.UnhideReply : MsgTypeUrls.HideReply,
-          value: { creator: address, id: parseInt(reply.id) },
+          // reply id is uint64; pass BigInt so the override's `!== BigInt(0)`
+          // check stays sound under strict equality (a Number value would
+          // sign "id":"0" for any zero-valued id while the chain omits).
+          value: { creator: address, id: BigInt(reply.id) },
         },
       ]);
       onReplySubmitted?.();
@@ -88,7 +94,10 @@ function ReplyItem({
       await signAndBroadcast([
         {
           typeUrl: MsgTypeUrls.PinReply,
-          value: { creator: address, id: parseInt(reply.id) },
+          // reply id is uint64; pass BigInt so the override's `!== BigInt(0)`
+          // check stays sound under strict equality (a Number value would
+          // sign "id":"0" for any zero-valued id while the chain omits).
+          value: { creator: address, id: BigInt(reply.id) },
         },
       ]);
       onReplySubmitted?.();

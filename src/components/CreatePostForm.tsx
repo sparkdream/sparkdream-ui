@@ -66,7 +66,15 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
         body: body.trim(),
         contentType,
         minReplyTrustLevel,
-        initiativeId: 0,
+        // MsgCreatePost.initiative_id is uint64, so sparkdreamjs's amino
+        // override compares `message.initiativeId !== BigInt(0)`. Passing the
+        // JS number 0 made that ternary truthy (Number !== BigInt is always
+        // true) and signed `"initiative_id":"0"` — but the chain's aminojson
+        // omits uint64 zeros as proto3 defaults, so sigverify failed as
+        // "unauthorized" on every Imaginarium post. Omit the field so the
+        // override returns `undefined?.toString() = undefined` and aminojson
+        // drops it on both sides; fromAmino still seeds initiativeId to
+        // BigInt(0) via createBaseMsgCreatePost for the proto round-trip.
         tags,
       };
       if (authorBond && parseInt(authorBond) > 0) {

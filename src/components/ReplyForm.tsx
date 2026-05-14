@@ -54,7 +54,12 @@ export default function ReplyForm({
             typeUrl: MsgTypeUrls.UpdateReply,
             value: {
               creator: address,
-              id: parseInt(editReplyId),
+              // Reply IDs are uint64; sparkdreamjs's amino override checks
+              // `message.id !== BigInt(0)` and JS strict-inequality between
+              // Number and BigInt is always true, so a 0-valued Number would
+              // sign "id":"0" while the chain omits — wrap as BigInt so the
+              // override's intended zero-omit branch fires correctly.
+              id: BigInt(editReplyId),
               body: body.trim(),
               contentType,
             },
@@ -63,8 +68,14 @@ export default function ReplyForm({
       } else {
         const value: Record<string, unknown> = {
           creator: address,
-          postId: parseInt(postId),
-          parentReplyId: parseInt(parentReplyId),
+          // post_id / parent_reply_id are uint64. parentReplyId defaults to
+          // "0" for top-level replies, so passing Number(0) signed
+          // `"parent_reply_id":"0"` while aminojson on the chain omits the
+          // uint64 zero — that broke every top-level reply submission with
+          // "unauthorized" sigverify. Wrap both in BigInt so the override's
+          // `!== BigInt(0)` check matches Number-vs-BigInt correctly.
+          postId: BigInt(postId),
+          parentReplyId: BigInt(parentReplyId),
           body: body.trim(),
           contentType,
         };

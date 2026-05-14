@@ -210,7 +210,15 @@ export default function StakingPanel() {
           // broadcast so the proto encoder doesn't NaN-coerce it to 0 and
           // amino sigverify doesn't fail on the string-vs-int mismatch.
           targetType: stakeTargetTypeFromJSON(formTargetType),
-          targetId: formTargetId ? parseInt(formTargetId) : 0,
+          // target_id is uint64. For identifier-based targets (MEMBER, TAG,
+          // FORUM_*_BOND, COLLECTION_*_BOND) formTargetId stays empty and
+          // target_id legitimately defaults to 0. The amino override checks
+          // `message.targetId !== BigInt(0)` and Number(0) !== 0n is always
+          // true under JS strict equality, so the prior Number-typed default
+          // signed `"target_id":"0"` while the chain omits the uint64 zero —
+          // every identifier-target Stake hit "unauthorized" sigverify. Wrap
+          // in BigInt so the zero-omit branch actually fires.
+          targetId: formTargetId ? BigInt(formTargetId) : BigInt(0),
           targetIdentifier: formTargetIdentifier,
           amount,
         },
@@ -233,7 +241,10 @@ export default function StakingPanel() {
       setActionLoading(`claim-${stakeId}`);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.ClaimStakingRewards,
-        value: { staker: address, stakeId: parseInt(stakeId) },
+        // stake_id is uint64; pass BigInt so the override's `!== BigInt(0)`
+        // check works correctly under strict equality (Number-vs-BigInt is
+        // always inequal, which signs "0" for any zero-valued numeric).
+        value: { staker: address, stakeId: BigInt(stakeId) },
       }]);
       await fetchStakes();
     } catch (err) {
@@ -249,7 +260,7 @@ export default function StakingPanel() {
       setActionLoading(`compound-${stakeId}`);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.CompoundStakingRewards,
-        value: { staker: address, stakeId: parseInt(stakeId) },
+        value: { staker: address, stakeId: BigInt(stakeId) },
       }]);
       await fetchStakes();
     } catch (err) {
@@ -265,7 +276,7 @@ export default function StakingPanel() {
       setActionLoading(`unstake-${stakeId}`);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.Unstake,
-        value: { staker: address, stakeId: parseInt(stakeId), amount },
+        value: { staker: address, stakeId: BigInt(stakeId), amount },
       }]);
       await fetchStakes();
     } catch (err) {

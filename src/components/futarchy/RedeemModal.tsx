@@ -74,7 +74,9 @@ export default function RedeemModal({
           typeUrl: FutarchyMsgTypeUrls.Redeem,
           value: {
             creator: address,
-            marketId: market.index,
+            // market_id is uint64; pass BigInt — see TradeModal.tsx for the
+            // amino-override Number-vs-BigInt rationale.
+            marketId: BigInt(market.index),
           },
         },
       ]);

@@ -55,7 +55,11 @@ export default function DreamDetail({
       await signAndBroadcast([
         {
           typeUrl: MsgTypeUrls.DeletePost,
-          value: { creator: address, id: parseInt(postId) },
+          // post id is uint64; pass BigInt so sparkdreamjs's amino override
+          // (`message.id !== BigInt(0)`) survives strict-equality comparison
+          // — a Number value would emit "id":"0" for any zero-valued id and
+          // bust sigverify against the chain's omit-zero aminojson.
+          value: { creator: address, id: BigInt(postId) },
         },
       ]);
       await fetchData();
@@ -73,7 +77,11 @@ export default function DreamDetail({
       await signAndBroadcast([
         {
           typeUrl: isHidden ? MsgTypeUrls.UnhidePost : MsgTypeUrls.HidePost,
-          value: { creator: address, id: parseInt(postId) },
+          // post id is uint64; pass BigInt so sparkdreamjs's amino override
+          // (`message.id !== BigInt(0)`) survives strict-equality comparison
+          // — a Number value would emit "id":"0" for any zero-valued id and
+          // bust sigverify against the chain's omit-zero aminojson.
+          value: { creator: address, id: BigInt(postId) },
         },
       ]);
       await fetchData();
@@ -94,7 +102,7 @@ export default function DreamDetail({
           typeUrl: MsgTypeUrls.UpdatePost,
           value: {
             creator: address,
-            id: parseInt(postId),
+            id: BigInt(postId),
             title: post.title,
             body: post.body,
             contentType: parseInt(post.content_type) || 0,
@@ -117,7 +125,11 @@ export default function DreamDetail({
       await signAndBroadcast([
         {
           typeUrl: MsgTypeUrls.PinPost,
-          value: { creator: address, id: parseInt(postId) },
+          // post id is uint64; pass BigInt so sparkdreamjs's amino override
+          // (`message.id !== BigInt(0)`) survives strict-equality comparison
+          // — a Number value would emit "id":"0" for any zero-valued id and
+          // bust sigverify against the chain's omit-zero aminojson.
+          value: { creator: address, id: BigInt(postId) },
         },
       ]);
       await fetchData();

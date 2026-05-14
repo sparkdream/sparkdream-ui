@@ -153,7 +153,9 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
       setActionLoading(`accept-${invitationId}`);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.AcceptInvitation,
-        value: { invitee: address, invitationId: parseInt(invitationId) },
+        // invitation_id is uint64; pass BigInt so the override's
+        // `!== BigInt(0)` zero-omit branch fires under JS strict equality.
+        value: { invitee: address, invitationId: BigInt(invitationId) },
       }]);
       await fetchInvitations();
     } catch (err) {

@@ -236,8 +236,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
               (msg.messages?.length ?? 0) > 0
                 ? msg.messages!.map((m) => anyToAmino(m))
                 : undefined,
-            initial_deposit:
-              (msg.initialDeposit?.length ?? 0) > 0 ? msg.initialDeposit : undefined,
+            // initial_deposit is `(amino.dont_omitempty)=true` +
+            // `(amino.encoding)="legacy_coins"` in cosmos-sdk's gov/v1/tx.proto,
+            // so cosmossdk.io/x/tx/signing/aminojson always emits the key
+            // (chain's `nullSliceAsEmptyEncoder` writes `[]` for empty Coins).
+            // Dropping it to `undefined` for zero-deposit proposals signed JSON
+            // without the key while the chain reconstructed `"initial_deposit":[]`,
+            // failing sigverify as "unauthorized" — that's what was killing every
+            // ParamChangeForm submission with no deposit (and every other
+            // zero-deposit gov-v1 proposal flow: software-upgrade, register-council,
+            // cancel-market, plain signaling).
+            initial_deposit: msg.initialDeposit ?? [],
             proposer: msg.proposer ? msg.proposer : undefined,
             metadata: msg.metadata ? msg.metadata : undefined,
             title: msg.title ? msg.title : undefined,
@@ -271,10 +280,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // `Type URL '/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade' does not exist
       // in the Amino message type register`. The amino name comes from the
       // chain's proto (`option (amino.name) = "cosmos-sdk/MsgSoftwareUpgrade"`).
-      // Plan.time / Plan.upgraded_client_state are deprecated and the SDK
-      // rejects upgrades that set them, so we omit them entirely; the
-      // remaining fields follow aminojson's omitempty (height 0 / empty
-      // string drop out) to match the chain's reconstructed sign bytes.
+      // Plan.upgraded_client_state is deprecated and the SDK rejects upgrades
+      // that set it, so we omit it entirely. Plan.time is *also* deprecated,
+      // but its proto field has `(amino.dont_omitempty) = true` (see
+      // cosmossdk.io@v0.53.0/proto/cosmos/upgrade/v1beta1/upgrade.proto:31),
+      // so the chain's aminojson always emits it as `marshalTimestamp(default
+      // Timestamp) = "1970-01-01T00:00:00Z"` even though the upgrade keeper
+      // rejects any non-zero value. Omitting `time` from our sign bytes broke
+      // every software-upgrade proposal as "signature verification failed"
+      // because the JS-signed JSON lacked the key the chain reconstructed.
+      // Mirror the chain by always emitting the zero-time string. Other Plan
+      // fields (name / height / info) have no dont_omitempty annotation, so
+      // they follow aminojson's standard omit-when-zero/empty behavior.
       const upgradeV1beta1AminoConverters = {
         "/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade": {
           aminoType: "cosmos-sdk/MsgSoftwareUpgrade",
@@ -283,16 +300,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             plan?: { name?: string; height?: bigint | string; info?: string };
           }) => ({
             authority: msg.authority ? msg.authority : undefined,
-            plan: msg.plan
-              ? {
-                  name: msg.plan.name ? msg.plan.name : undefined,
-                  height:
-                    msg.plan.height !== undefined && msg.plan.height.toString() !== "0"
-                      ? msg.plan.height.toString()
-                      : undefined,
-                  info: msg.plan.info ? msg.plan.info : undefined,
-                }
-              : undefined,
+            // MsgSoftwareUpgrade.plan is `(amino.dont_omitempty)=true` +
+            // `(gogoproto.nullable)=false` — the chain always emits the `plan`
+            // key (with `{}` for an absent plan after the inner-field
+            // omitempties drop name/height/info). In practice every code path
+            // populates msg.plan, but match the chain's shape unconditionally.
+            plan: {
+              name: msg.plan?.name ? msg.plan.name : undefined,
+              // Mirror the chain's marshalTimestamp output for the default
+              // Timestamp (seconds=0, nanos=0) — this is what the keeper sees
+              // and re-encodes into sign bytes.
+              time: "1970-01-01T00:00:00Z",
+              height:
+                msg.plan?.height !== undefined && msg.plan.height.toString() !== "0"
+                  ? msg.plan.height.toString()
+                  : undefined,
+              info: msg.plan?.info ? msg.plan.info : undefined,
+            },
           }),
           fromAmino: (obj: {
             authority?: string;
@@ -301,6 +325,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             authority: obj.authority ?? "",
             plan: {
               name: obj.plan?.name ?? "",
+              // We never round-trip a non-default time (chain rejects it
+              // anyway), so leave the proto field undefined; cosmjs's
+              // Plan.fromPartial seeds it back to Timestamp.fromPartial({})
+              // which matches the wire shape we produced on the way in.
               time: undefined,
               height: BigInt(obj.plan?.height ?? "0"),
               info: obj.plan?.info ?? "",

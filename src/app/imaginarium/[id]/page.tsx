@@ -52,7 +52,10 @@ export default function PostDetailPage() {
       await signAndBroadcast([
         {
           typeUrl: MsgTypeUrls.DeletePost,
-          value: { creator: address, id: parseInt(id) },
+          // post id is uint64; pass BigInt so sparkdreamjs's amino override
+          // `!== BigInt(0)` works under JS strict equality (Number-vs-BigInt
+          // is always inequal, which silently signs "id":"0" for zero ids).
+          value: { creator: address, id: BigInt(id) },
         },
       ]);
       await fetchData();
@@ -70,7 +73,10 @@ export default function PostDetailPage() {
       await signAndBroadcast([
         {
           typeUrl: isHidden ? MsgTypeUrls.UnhidePost : MsgTypeUrls.HidePost,
-          value: { creator: address, id: parseInt(id) },
+          // post id is uint64; pass BigInt so sparkdreamjs's amino override
+          // `!== BigInt(0)` works under JS strict equality (Number-vs-BigInt
+          // is always inequal, which silently signs "id":"0" for zero ids).
+          value: { creator: address, id: BigInt(id) },
         },
       ]);
       await fetchData();
@@ -91,7 +97,7 @@ export default function PostDetailPage() {
           typeUrl: MsgTypeUrls.UpdatePost,
           value: {
             creator: address,
-            id: parseInt(id),
+            id: BigInt(id),
             title: post.title,
             body: post.body,
             contentType: parseInt(post.content_type) || 0,
@@ -114,7 +120,10 @@ export default function PostDetailPage() {
       await signAndBroadcast([
         {
           typeUrl: MsgTypeUrls.PinPost,
-          value: { creator: address, id: parseInt(id) },
+          // post id is uint64; pass BigInt so sparkdreamjs's amino override
+          // `!== BigInt(0)` works under JS strict equality (Number-vs-BigInt
+          // is always inequal, which silently signs "id":"0" for zero ids).
+          value: { creator: address, id: BigInt(id) },
         },
       ]);
       await fetchData();

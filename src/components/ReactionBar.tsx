@@ -43,6 +43,13 @@ export default function ReactionBar({ postId, replyId = "0" }: ReactionBarProps)
     setLoading(true);
 
     try {
+      // post_id / reply_id are uint64. replyId defaults to "0" for reactions
+      // on a top-level post; passing Number(0) made the override's
+      // `!== BigInt(0)` check fail-open (Number !== BigInt is always true)
+      // and signed `"reply_id":"0"` while aminojson on the chain omits the
+      // uint64 zero — every reaction on a non-reply hit "unauthorized"
+      // sigverify. Wrap both in BigInt so the override's zero-omit branch
+      // actually fires.
       if (userReaction === reactionType) {
         // Remove reaction
         await signAndBroadcast([
@@ -50,8 +57,8 @@ export default function ReactionBar({ postId, replyId = "0" }: ReactionBarProps)
             typeUrl: MsgTypeUrls.RemoveReaction,
             value: {
               creator: address,
-              postId: parseInt(postId),
-              replyId: parseInt(replyId),
+              postId: BigInt(postId),
+              replyId: BigInt(replyId),
             },
           },
         ]);
@@ -62,8 +69,10 @@ export default function ReactionBar({ postId, replyId = "0" }: ReactionBarProps)
             typeUrl: MsgTypeUrls.React,
             value: {
               creator: address,
-              postId: parseInt(postId),
-              replyId: parseInt(replyId),
+              postId: BigInt(postId),
+              replyId: BigInt(replyId),
+              // reaction_type is int32 enum on the wire — Number stays a
+              // Number, the override uses `=== 0` which works correctly.
               reactionType: (Object.values(ReactionType) as string[]).indexOf(reactionType) + 1,
             },
           },

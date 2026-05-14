@@ -184,17 +184,26 @@ export default function InitiativeList() {
           typeUrl: RepMsgTypeUrls.CreateInitiative,
           value: {
             creator: address,
-            projectId: parseInt(formProjectId),
+            // project_id / tier / category are uint64 on MsgCreateInitiative
+            // (tier and category are proto3 enums on Initiative but the msg
+            // declares them uint64 for wire compatibility). sparkdreamjs's
+            // amino override compares each via `!== BigInt(0)` — passing a
+            // JS Number makes the ternary always-truthy (Number !== BigInt is
+            // always true under strict equality), so signing a zero category
+            // emitted `"category":"0"` while the chain's aminojson omits
+            // uint64 zeros, breaking sigverify as "unauthorized". This bit
+            // every "Create Initiative" submission because the form's default
+            // INITIATIVE_CATEGORY_FEATURE happens to be enum value 0. Wrap in
+            // BigInt so the override correctly omits zero and the form keeps
+            // working when STANDARD tier (1) is also picked. The enum-string
+            // → number routing through *FromJSON still happens first to dodge
+            // the prior `BigInt("INITIATIVE_TIER_STANDARD")` SyntaxError.
+            projectId: BigInt(parseInt(formProjectId) || 0),
             title: formTitle.trim(),
             description: formDesc.trim(),
             tags: formTags,
-            // Tier / category are proto3 enums on Initiative but declared as
-            // uint64 on MsgCreateInitiative (wire-compatible). The form keeps
-            // them as their enum-string keys for the <select>; Telescope's
-            // fromPartial does `BigInt(object.tier.toString())` which throws
-            // SyntaxError on the string form — convert to int first.
-            tier: initiativeTierFromJSON(formTier),
-            category: initiativeCategoryFromJSON(formCategory),
+            tier: BigInt(initiativeTierFromJSON(formTier)),
+            category: BigInt(initiativeCategoryFromJSON(formCategory)),
             templateId: "",
             budget: budgetAmount,
           },
@@ -220,7 +229,10 @@ export default function InitiativeList() {
       setActionLoading(`assign-${initiativeId}`);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.AssignInitiative,
-        value: { creator: address, initiativeId: parseInt(initiativeId), assignee: address },
+        // initiative_id is uint64; pass BigInt so the override's
+        // `!== BigInt(0)` check survives JS strict equality (a Number(0)
+        // would sign "initiative_id":"0" against an omit-zero chain).
+        value: { creator: address, initiativeId: BigInt(initiativeId), assignee: address },
       }]);
       await fetchInitiatives(tab);
     } catch (err) {
@@ -236,7 +248,7 @@ export default function InitiativeList() {
       setActionLoading(`abandon-${initiativeId}`);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.AbandonInitiative,
-        value: { creator: address, initiativeId: parseInt(initiativeId), reason: "" },
+        value: { creator: address, initiativeId: BigInt(initiativeId), reason: "" },
       }]);
       await fetchInitiatives(tab);
     } catch (err) {

@@ -101,7 +101,11 @@ export default function TradeModal({
           typeUrl: FutarchyMsgTypeUrls.Trade,
           value: {
             creator: address,
-            marketId: market.index,
+            // market_id is uint64; pass BigInt so the amino override's
+            // `!== BigInt(0)` zero-omit branch works under JS strict equality
+            // (a Number/string from `market.index` would sign "market_id":"0"
+            // for a zero id, mismatching the chain's omit-zero aminojson).
+            marketId: BigInt(market.index),
             isYes: outcome === "yes",
             amountIn: amountMicro,
           },

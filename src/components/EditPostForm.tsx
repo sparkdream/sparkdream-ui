@@ -50,7 +50,11 @@ export default function EditPostForm({ post }: EditPostFormProps) {
             creator: address,
             title: title.trim(),
             body: body.trim(),
-            id: parseInt(post.id),
+            // post id is uint64; pass BigInt so sparkdreamjs's amino override
+            // `!== BigInt(0)` survives strict equality (Number !== BigInt is
+            // always true, which would sign "id":"0" for any zero id and
+            // mismatch the chain's omit-zero aminojson on sigverify).
+            id: BigInt(post.id),
             contentType,
             repliesEnabled,
             minReplyTrustLevel,
