@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode, Ref } from "react";
+import Image from "next/image";
 
 /**
  * Standard 3-column shell for content pages (Imaginarium, Swarm, Wonders).
@@ -145,7 +146,7 @@ export function ContentToolbar({
                 <path d="M12 2s4 4.5 4 8.5a4 4 0 01-8 0c0-1.2.4-2.2.9-3-.2 1.6-1.4 2.5-1.4 4.2A5.5 5.5 0 0013 17.5c3 0 5.5-2.5 5.5-5.8 0-4-2-6.5-3.5-8.2C13.8 2.3 12 2 12 2zm-1.1 13.2c-.9.6-1.4 1.4-1.4 2.4a2.5 2.5 0 005 0c0-1.6-1.6-2.2-1.6-3.6 0 .9-.7 1.6-1 2-.4-.2-.7-.5-1-.8z" />
               </svg>
             ) : primaryAction.variant === "dream" ? (
-              <img
+              <Image
                 src="/vision.svg"
                 alt=""
                 aria-hidden="true"

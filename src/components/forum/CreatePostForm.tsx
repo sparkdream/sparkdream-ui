@@ -19,7 +19,6 @@ export default function CreatePostForm({
   mode,
   categoryId,
   parentId,
-  rootId,
   onCreated,
   onCancel,
 }: CreatePostFormProps) {

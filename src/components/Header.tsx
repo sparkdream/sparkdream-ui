@@ -326,9 +326,17 @@ export default function Header() {
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(href + "/");
 
-  useEffect(() => {
+  // Close the mobile menu whenever the route changes, without an effect:
+  // React allows adjusting state during render as long as it's guarded by a
+  // condition that eventually settles. Tracking pathname in state lets us
+  // detect the transition the same way an effect would, but the setState
+  // call runs in the same render the user navigated in — no extra commit,
+  // no `react-hooks/set-state-in-effect` warning.
+  const [navPathname, setNavPathname] = useState(pathname);
+  if (pathname !== navPathname) {
+    setNavPathname(pathname);
     setMobileOpen(false);
-  }, [pathname]);
+  }
 
   useEffect(() => {
     if (!mobileOpen) return;

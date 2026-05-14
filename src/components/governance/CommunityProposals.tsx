@@ -7,7 +7,6 @@ import { getProposal } from "@/lib/api";
 import { CommonsMsgTypeUrls } from "@/lib/tx";
 import { useWallet } from "@/contexts/WalletContext";
 import {
-  truncateAddress,
   formatTime,
   timeRemaining,
   describeProposalMessages,

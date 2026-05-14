@@ -74,30 +74,43 @@ export function useResolveName(address: string | undefined | null): {
     return !(cached && Date.now() - cached.ts < CACHE_TTL);
   });
 
-  useEffect(() => {
+  // Sync `name`/`loading` to the new address synchronously during render
+  // (React-supported "adjust state while rendering" pattern). Doing this in
+  // a useEffect would flash the previous address's name on mount and trip
+  // `react-hooks/set-state-in-effect`. The TTL check + async resolve stay
+  // in the effect — calling `Date.now()` during render is impure.
+  const [trackedAddress, setTrackedAddress] = useState(address);
+  if (address !== trackedAddress) {
+    setTrackedAddress(address);
     if (!address) {
       setName("");
       setLoading(false);
-      return;
+    } else {
+      // Show any cached value immediately (SWR-style); the effect below
+      // revalidates against the TTL and refetches if stale.
+      const cached = nameCache.get(address);
+      if (cached) {
+        setName(cached.name);
+        setLoading(false);
+      } else {
+        setName("");
+        setLoading(true);
+      }
     }
+  }
 
+  useEffect(() => {
+    if (!address) return;
     const cached = nameCache.get(address);
-    if (cached && Date.now() - cached.ts < CACHE_TTL) {
-      setName(cached.name);
-      setLoading(false);
-      return;
-    }
+    if (cached && Date.now() - cached.ts < CACHE_TTL) return;
 
     let cancelled = false;
-    setLoading(true);
-
     resolveWithCache(address).then((resolved) => {
       if (!cancelled) {
         setName(resolved);
         setLoading(false);
       }
     });
-
     return () => {
       cancelled = true;
     };

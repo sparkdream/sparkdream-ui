@@ -11,11 +11,11 @@ import {
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { ForumMsgTypeUrls } from "@/lib/tx";
-import { truncateAddress, timeAgo, formatTime } from "@/lib/utils";
+import { timeAgo } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import CreatePostForm from "@/components/forum/CreatePostForm";
 import type { ForumPost, ThreadMetadata, Bounty } from "@/types/forum";
-import { PostStatus, BOUNTY_STATUS_LABELS, BountyStatus } from "@/types/forum";
+import { PostStatus, BountyStatus } from "@/types/forum";
 
 function formatAmount(amount: string): string {
   if (!amount || amount === "0") return "0";

@@ -159,6 +159,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
       const { SigningStargateClient, AminoTypes, defaultRegistryTypes, createDefaultAminoConverters } = await import("@cosmjs/stargate");
       const { Registry } = await import("@cosmjs/proto-signing");
+      type GeneratedType = import("@cosmjs/proto-signing").GeneratedType;
+      type EncodeObject = import("@cosmjs/proto-signing").EncodeObject;
+      // Both the TsProto and Pbjs codecs that ship in cosmjs-types have
+      // `encode`/`fromPartial` but with incompatible argument shapes — the
+      // union doesn't simplify into a callable type, so calls through
+      // `registry.lookupType` need a narrowing cast. This is the structural
+      // shape both halves satisfy.
+      type RegistryCodec = {
+        encode: (msg: unknown) => { finish: () => Uint8Array };
+        fromPartial: (val: unknown) => unknown;
+      };
 
       const { load: loadBlog } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx.registry");
       const { load: loadSession } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx.registry");
@@ -175,9 +186,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const { MsgSoftwareUpgrade, MsgCancelUpgrade } = await import("cosmjs-types/cosmos/upgrade/v1beta1/tx");
 
       const registry = new Registry(defaultRegistryTypes);
-      registry.register("/cosmos.gov.v1.MsgSubmitProposal", GovV1MsgSubmitProposal as any);
-      registry.register("/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade", MsgSoftwareUpgrade as any);
-      registry.register("/cosmos.upgrade.v1beta1.MsgCancelUpgrade", MsgCancelUpgrade as any);
+      registry.register("/cosmos.gov.v1.MsgSubmitProposal", GovV1MsgSubmitProposal as unknown as GeneratedType);
+      registry.register("/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade", MsgSoftwareUpgrade as unknown as GeneratedType);
+      registry.register("/cosmos.upgrade.v1beta1.MsgCancelUpgrade", MsgCancelUpgrade as unknown as GeneratedType);
       loadBlog(registry);
       loadSession(registry);
       loadCommons(registry);
@@ -441,7 +452,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           if (!msgType) {
             throw new Error(`Unknown message type: ${msg.typeUrl}`);
           }
-          const encoded = (msgType as any).encode((msgType as any).fromPartial(msg.value)).finish();
+          const codec = msgType as unknown as RegistryCodec;
+          const encoded = codec.encode(codec.fromPartial(msg.value)).finish();
           return { typeUrl: msg.typeUrl, value: encoded };
         });
 
@@ -457,13 +469,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         ];
       }
 
-      const result = await client.signAndBroadcast(rawAddress, finalMsgs as any, fee, memo);
+      const result = await client.signAndBroadcast(
+        rawAddress,
+        finalMsgs as readonly EncodeObject[],
+        fee,
+        memo
+      );
       if (result.code !== 0) {
         throw new Error(`Transaction failed: ${result.rawLog}`);
       }
       return result.transactionHash;
     },
-    [rawAddress, activeSession, config.chainId, config.rpcEndpoint, config.denom]
+    [rawAddress, activeSession, config.chainId, config.rpcEndpoint, config.denom, chainInfo.feeCurrencies]
   );
 
   const activateSession = useCallback((session: Session) => {

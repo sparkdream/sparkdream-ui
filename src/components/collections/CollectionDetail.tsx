@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Image from "next/image";
 import {
   getCollection,
   listCollectionItems,
@@ -468,8 +469,18 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         {item.image_uri && (
-                          <div className="h-10 w-10 shrink-0 rounded-lg bg-zinc-800 overflow-hidden">
-                            <img src={item.image_uri} alt="" className="h-full w-full object-cover" />
+                          <div className="relative h-10 w-10 shrink-0 rounded-lg bg-zinc-800 overflow-hidden">
+                            {/* `unoptimized` skips Next's image optimizer (which would */}
+                            {/* require allow-listing every remote host the collection */}
+                            {/* item URI might come from in next.config.js). */}
+                            <Image
+                              src={item.image_uri}
+                              alt=""
+                              fill
+                              sizes="40px"
+                              unoptimized
+                              className="object-cover"
+                            />
                           </div>
                         )}
                         <div className="min-w-0">

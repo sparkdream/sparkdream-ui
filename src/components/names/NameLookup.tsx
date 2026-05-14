@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { resolveName, reverseResolveName } from "@/lib/api";
-import { truncateAddress } from "@/lib/utils";
 import type { NameRecord } from "@/types/name";
 
 type Mode = "forward" | "reverse";

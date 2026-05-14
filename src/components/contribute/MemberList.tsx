@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { listRepMembers, membersByTrustLevel } from "@/lib/api";
-import { truncateAddress } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import type { RepMember } from "@/types/rep";
 import { TRUST_LEVEL_LABELS, MEMBER_STATUS_LABELS, TrustLevel } from "@/types/rep";

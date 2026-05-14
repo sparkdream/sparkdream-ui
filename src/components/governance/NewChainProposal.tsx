@@ -538,7 +538,7 @@ export default function NewChainProposal({
           )}
           {depositBelowFloor && depositFloor && (
             <p className="mt-1 text-xs text-red-400">
-              Below the chain's submission floor — x/gov will reject this tx
+              Below the chain&apos;s submission floor — x/gov will reject this tx
               with <span className="font-mono">ErrMinDepositTooSmall</span>.
               Raise to at least {depositFloor.submit} {config.displayDenom}.
             </p>
@@ -835,13 +835,16 @@ export default function NewChainProposal({
 
 function MemberListEditor({
   members,
-  onChange,
   onAdd,
   onRemove,
   onUpdate,
 }: {
   members: { address: string; weight: string }[];
-  onChange: (v: { address: string; weight: string }[]) => void;
+  // Whole-list setter is accepted by callers (setElectionMembers /
+  // setCouncilMembers) but not used internally — row-level edits go
+  // through onAdd/onRemove/onUpdate. Kept on the interface so existing
+  // callers don't have to change.
+  onChange?: (v: { address: string; weight: string }[]) => void;
   onAdd: () => void;
   onRemove: (i: number) => void;
   onUpdate: (i: number, field: "address" | "weight", value: string) => void;

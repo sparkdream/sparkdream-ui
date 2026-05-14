@@ -32,10 +32,24 @@ interface Keplr {
   experimentalSuggestChain(chainInfo: unknown): Promise<void>;
   enable(chainId: string): Promise<void>;
   getKey(chainId: string): Promise<KeplrKey>;
-  getOfflineSigner(chainId: string): any;
-  getOfflineSignerOnlyAmino(chainId: string): any;
-  signAmino(chainId: string, signer: string, signDoc: any, signOptions?: KeplrSignOptions): Promise<any>;
-  signDirect(chainId: string, signer: string, signDoc: any, signOptions?: KeplrSignOptions): Promise<any>;
+  // `OfflineSigner` from `@cosmjs/proto-signing` is the union of direct +
+  // amino signers — what `SigningStargateClient.connectWithSigner` accepts.
+  // Inline `import("…")` types keep this file ambient (no top-level import
+  // would convert it into a module and break the global `Window` augmentation).
+  getOfflineSigner(chainId: string): import("@cosmjs/proto-signing").OfflineSigner;
+  getOfflineSignerOnlyAmino(chainId: string): import("@cosmjs/amino").OfflineAminoSigner;
+  signAmino(
+    chainId: string,
+    signer: string,
+    signDoc: import("@cosmjs/amino").StdSignDoc,
+    signOptions?: KeplrSignOptions
+  ): Promise<import("@cosmjs/amino").AminoSignResponse>;
+  signDirect(
+    chainId: string,
+    signer: string,
+    signDoc: import("cosmjs-types/cosmos/tx/v1beta1/tx").SignDoc,
+    signOptions?: KeplrSignOptions
+  ): Promise<import("@cosmjs/proto-signing").DirectSignResponse>;
 }
 
 interface Window {

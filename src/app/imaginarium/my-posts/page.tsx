@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import Image from "next/image";
 import type { Post } from "@/types/blog";
 import { PostStatus } from "@/types/blog";
 import { listPostsByCreator } from "@/lib/api";
@@ -133,7 +134,7 @@ export default function MyPostsPage() {
           onClick={() => setShowCreate(true)}
           className="sd-btn sd-btn-dream"
         >
-          <img
+          <Image
             src="/vision.svg"
             alt=""
             aria-hidden="true"
