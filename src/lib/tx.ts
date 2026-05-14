@@ -13,6 +13,25 @@ export const UpgradeMsgTypeUrls = {
   CancelUpgrade: "/cosmos.upgrade.v1beta1.MsgCancelUpgrade",
 } as const;
 
+// Cosmos SDK x/staking validator-delegation message type URLs. Registered
+// in WalletContext via the cosmjs `defaultRegistryTypes` +
+// `createDefaultAminoConverters()` (no sparkdreamjs override needed — the
+// chain accepts the standard amino names "cosmos-sdk/MsgDelegate", etc.).
+export const StakingMsgTypeUrls = {
+  Delegate: "/cosmos.staking.v1beta1.MsgDelegate",
+  Undelegate: "/cosmos.staking.v1beta1.MsgUndelegate",
+  BeginRedelegate: "/cosmos.staking.v1beta1.MsgBeginRedelegate",
+  CancelUnbondingDelegation: "/cosmos.staking.v1beta1.MsgCancelUnbondingDelegation",
+} as const;
+
+// Cosmos SDK x/distribution — only WithdrawDelegatorReward is exposed in
+// the UI today (one msg per delegation, batched into a single tx by the
+// "Claim All Rewards" button).
+export const DistributionMsgTypeUrls = {
+  WithdrawDelegatorReward: "/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward",
+  SetWithdrawAddress: "/cosmos.distribution.v1beta1.MsgSetWithdrawAddress",
+} as const;
+
 // Commons transaction message type URLs
 export const CommonsMsgTypeUrls = {
   SubmitProposal: "/sparkdream.commons.v1.MsgSubmitProposal",

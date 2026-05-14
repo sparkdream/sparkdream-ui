@@ -162,6 +162,16 @@ import type {
   ListIdentityLinksResponse,
   ListOutboundAttestationsResponse,
 } from "@/types/federation";
+import type {
+  ListValidatorsResponse,
+  ListDelegationsResponse,
+  ListUnbondingsResponse,
+  DelegatorRewardsResponse,
+  StakingPoolResponse,
+  StakingParamsResponse,
+  BankBalanceResponse,
+  ValidatorStatus,
+} from "@/types/staking";
 
 // In the browser, route through our Next.js proxy to avoid CORS issues.
 // On the server (SSR), call the LCD endpoint directly.
@@ -1418,6 +1428,119 @@ export async function listFederationOutboundAttestations(
     "/sparkdream/federation/v1/list_outbound_attestations",
     paginationParams(pagination)
   );
+}
+
+// ── Cosmos SDK x/staking · x/distribution · x/bank ─────────────────
+
+// List validators, optionally filtered by bond status. Defaults to BONDED
+// (the active set) — callers wanting the full list pass an empty status.
+export async function listStakingValidators(
+  status: ValidatorStatus | "" = "BOND_STATUS_BONDED",
+  pagination?: PaginationRequest
+): Promise<ListValidatorsResponse> {
+  const params = paginationParams(pagination);
+  if (status) params.set("status", status);
+  return get<ListValidatorsResponse>(
+    "/cosmos/staking/v1beta1/validators",
+    params
+  );
+}
+
+// All delegations from a delegator (one entry per validator they've staked to).
+// Returns a 501 on chains without the staking module (treat as empty in caller).
+export async function listDelegationsByDelegator(
+  delegator: string,
+  pagination?: PaginationRequest
+): Promise<ListDelegationsResponse> {
+  return get<ListDelegationsResponse>(
+    `/cosmos/staking/v1beta1/delegations/${delegator}`,
+    paginationParams(pagination)
+  );
+}
+
+// All in-flight unbonding entries for a delegator. Each entry has a
+// completion_time — UI counts down to it for the "X days remaining" hint.
+export async function listUnbondingsByDelegator(
+  delegator: string,
+  pagination?: PaginationRequest
+): Promise<ListUnbondingsResponse> {
+  return get<ListUnbondingsResponse>(
+    `/cosmos/staking/v1beta1/delegators/${delegator}/unbonding_delegations`,
+    paginationParams(pagination)
+  );
+}
+
+// Per-validator rewards + total, for the connected delegator. `reward[].amount`
+// is a legacy DecCoin string (fractional) — use `decCoinToBaseDenom` to floor
+// it to integer base-denom before displaying or comparing.
+export async function getDelegatorRewards(
+  delegator: string
+): Promise<DelegatorRewardsResponse> {
+  return get<DelegatorRewardsResponse>(
+    `/cosmos/distribution/v1beta1/delegators/${delegator}/rewards`
+  );
+}
+
+// Total bonded / not-bonded supply — drives validator voting-power percent.
+export async function getStakingPool(): Promise<StakingPoolResponse> {
+  return get<StakingPoolResponse>("/cosmos/staking/v1beta1/pool");
+}
+
+// Module params — `unbonding_time` powers the unbonding-period hint shown
+// on the Undelegate tab. `max_validators` clamps the active set.
+export async function getStakingParams(): Promise<StakingParamsResponse> {
+  return get<StakingParamsResponse>("/cosmos/staking/v1beta1/params");
+}
+
+// Single-denom bank balance — used for the "Available SPARK" summary +
+// the Delegate-tab MAX button. Returns `{balance:{denom,amount:"0"}}` for
+// addresses with zero balance (LCD doesn't 404).
+export async function getBankBalance(
+  address: string,
+  denom: string
+): Promise<BankBalanceResponse> {
+  return get<BankBalanceResponse>(
+    `/cosmos/bank/v1beta1/balances/${address}/by_denom`,
+    new URLSearchParams({ denom })
+  );
+}
+
+// Fetch all validators across paginated pages. Bonded set is typically
+// small (≤200) but spec-compliant chains paginate at 100/page.
+export async function listAllValidators(
+  status: ValidatorStatus | "" = ""
+): Promise<ListValidatorsResponse["validators"]> {
+  const out: ListValidatorsResponse["validators"] = [];
+  let key: string | undefined;
+  // Hard cap iterations to keep a misbehaving LCD from spinning forever.
+  for (let i = 0; i < 20; i++) {
+    const res = await listStakingValidators(status, {
+      limit: "200",
+      key,
+    });
+    out.push(...(res.validators || []));
+    key = res.pagination?.next_key || undefined;
+    if (!key) break;
+  }
+  return out;
+}
+
+// Fetch all delegations for a delegator across paginated pages.
+export async function listAllDelegationsByDelegator(
+  delegator: string
+): Promise<ListDelegationsResponse["delegation_responses"]> {
+  const out: ListDelegationsResponse["delegation_responses"] = [];
+  let key: string | undefined;
+  for (let i = 0; i < 20; i++) {
+    const res = await listDelegationsByDelegator(delegator, {
+      limit: "200",
+      key,
+    });
+    out.push(...(res.delegation_responses || []));
+    key = res.pagination?.next_key || undefined;
+    if (!key) break;
+  }
+  return out;
 }
 
 // Fetch all member addresses across every council and return as a Set

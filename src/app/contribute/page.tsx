@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import MemberProfile from "@/components/contribute/MemberProfile";
@@ -8,12 +8,13 @@ import MemberList from "@/components/contribute/MemberList";
 import ProjectList from "@/components/contribute/ProjectList";
 import InitiativeList from "@/components/contribute/InitiativeList";
 import StakingPanel from "@/components/contribute/StakingPanel";
+import DelegationPanel from "@/components/contribute/DelegationPanel";
 import InvitationPanel from "@/components/contribute/InvitationPanel";
 import ConnectPrompt from "@/components/layout/ConnectPrompt";
 
-type View = "profile" | "staking" | "invitations" | "members" | "projects" | "initiatives";
+type View = "profile" | "staking" | "delegate" | "invitations" | "members" | "projects" | "initiatives";
 
-const VALID_VIEWS: View[] = ["profile", "staking", "invitations", "members", "projects", "initiatives"];
+const VALID_VIEWS: View[] = ["profile", "staking", "delegate", "invitations", "members", "projects", "initiatives"];
 
 export default function ReputationPage() {
   return (
@@ -43,6 +44,19 @@ function ReputationPageInner() {
   const [exploreOpen, setExploreOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
+  // Sync external URL changes (e.g. Header dropdown → /contribute?view=delegate
+  // while already on /contribute) into the local view state. `useState` only
+  // reads its initial value once, so without this the deep-link is a no-op
+  // when the user is already on this page. Intentionally not depending on
+  // `view` to avoid clobbering in-page sidebar clicks (which don't touch the
+  // URL); `urlView` only changes on real navigations.
+  useEffect(() => {
+    if (urlView !== null && urlView !== view) {
+      setView(urlView);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlView]);
+
   const switchView = (v: View) => {
     setView(v);
     setMobileSidebarOpen(false);
@@ -70,6 +84,7 @@ function ReputationPageInner() {
   const viewLabels: Record<View, string> = {
     profile: "My Account / Profile",
     staking: "My Account / Staking",
+    delegate: "My Account / Delegate",
     invitations: "My Account / Invitations",
     members: "Explore / Members",
     projects: "Explore / Projects",
@@ -124,6 +139,20 @@ function ReputationPageInner() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               Staking
+            </button>
+
+            <button
+              onClick={() => switchView("delegate")}
+              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
+                view === "delegate"
+                  ? "bg-indigo-600/15 text-indigo-400"
+                  : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"
+              }`}
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+              </svg>
+              Delegate
             </button>
 
             <button
@@ -257,6 +286,9 @@ function ReputationPageInner() {
           )}
           {view === "staking" && (
             connected ? <StakingPanel /> : <ConnectPrompt message="Connect your wallet to manage your staking." />
+          )}
+          {view === "delegate" && (
+            connected ? <DelegationPanel /> : <ConnectPrompt message="Connect your wallet to delegate your SPARK." />
           )}
           {view === "invitations" && (
             connected ? <InvitationPanel defaultShowForm={initialView === "invitations"} /> : <ConnectPrompt message="Connect your wallet to manage invitations." />

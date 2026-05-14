@@ -54,6 +54,90 @@ export function countToNum(count: string | undefined): number {
   return parseInt(count, 10) || 0;
 }
 
+// Format an integer base-denom amount (uspark) for display as the
+// display denom (SPARK, 6 decimals). Trailing zeros in the fractional
+// part are trimmed; whole numbers omit the decimal point entirely.
+export function formatSpark(uspark: string | bigint, opts?: { maxFractionDigits?: number }): string {
+  if (uspark === undefined || uspark === null || uspark === "") return "0";
+  const max = opts?.maxFractionDigits ?? 6;
+  let n: bigint;
+  try {
+    n = typeof uspark === "bigint" ? uspark : BigInt(uspark);
+  } catch {
+    return "0";
+  }
+  if (n === BigInt(0)) return "0";
+  const divisor = BigInt(1_000_000);
+  const negative = n < BigInt(0);
+  if (negative) n = -n;
+  const whole = n / divisor;
+  const frac = n % divisor;
+  const wholeStr = whole.toLocaleString();
+  if (frac === BigInt(0)) return negative ? `-${wholeStr}` : wholeStr;
+  let fracStr = frac.toString().padStart(6, "0").replace(/0+$/, "");
+  if (fracStr.length > max) fracStr = fracStr.slice(0, max);
+  if (!fracStr) return negative ? `-${wholeStr}` : wholeStr;
+  return negative ? `-${wholeStr}.${fracStr}` : `${wholeStr}.${fracStr}`;
+}
+
+// Parse a user-entered SPARK amount (e.g. "1.5") to integer uspark.
+// Returns null on invalid input so callers can show inline validation.
+export function parseSparkToUspark(input: string): string | null {
+  if (!input || !/^\d*\.?\d*$/.test(input)) return null;
+  const [whole, frac = ""] = input.split(".");
+  if (!whole && !frac) return null;
+  const fracPadded = (frac + "000000").slice(0, 6);
+  const result = BigInt(whole || "0") * BigInt(1_000_000) + BigInt(fracPadded || "0");
+  return result.toString();
+}
+
+// Floor a legacy `sdk.DecCoin` amount string (e.g. "1.234567890000000000")
+// to its integer base-denom part. The x/distribution withdraw handler does
+// the same flooring on-chain, so this is what users actually receive.
+export function decCoinToBaseDenom(amount: string | undefined): bigint {
+  if (!amount) return BigInt(0);
+  const [intPart] = amount.split(".");
+  try {
+    return BigInt(intPart || "0");
+  } catch {
+    return BigInt(0);
+  }
+}
+
+// Format a legacy Dec rate (e.g. "0.100000000000000000") as a percent
+// string with up to 2 fractional digits ("10%" / "12.5%").
+export function formatDecPercent(decStr: string | undefined): string {
+  if (!decStr) return "0%";
+  const n = parseFloat(decStr);
+  if (!isFinite(n)) return "0%";
+  const pct = n * 100;
+  // Drop trailing zeros after the decimal point.
+  return `${pct % 1 === 0 ? pct.toFixed(0) : pct.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}%`;
+}
+
+// Parse a duration string like "1814400s" (chain's unbonding_time format)
+// into seconds. Returns 0 on parse failure.
+export function parseDurationSeconds(d: string | undefined): number {
+  if (!d) return 0;
+  const m = /^(\d+(?:\.\d+)?)s$/.exec(d.trim());
+  if (!m) {
+    const n = parseInt(d, 10);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return Math.floor(parseFloat(m[1]));
+}
+
+// Format a duration in seconds as a human-readable span ("21d", "4h 30m").
+export function formatDurationApprox(seconds: number): string {
+  if (!seconds || seconds <= 0) return "—";
+  const days = Math.floor(seconds / 86_400);
+  const hours = Math.floor((seconds % 86_400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  return `${minutes}m`;
+}
+
 // Time remaining until a deadline, e.g. "2d 4h" or "45m" or "expired".
 // `now` is overridable so callers ticking from a shared clock (e.g. a
 // `useNow()` hook) can drive live countdowns without re-evaluating Date.now()
