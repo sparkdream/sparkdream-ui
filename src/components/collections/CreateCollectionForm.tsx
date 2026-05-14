@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { CollectMsgTypeUrls } from "@/lib/tx";
-import { collectTags } from "@/lib/api";
+import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import { CollectionType, CollectionVisibility } from "@/types/collect";
 import { collectionTypeFromJSON, visibilityFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/types";
 import TagPicker from "@/components/contribute/TagPicker";
@@ -21,22 +21,9 @@ export default function CreateCollectionForm({ onCreated, onCancel }: CreateColl
   const [collectionType, setCollectionType] = useState<string>(CollectionType.MIXED);
   const [visibility, setVisibility] = useState<string>(CollectionVisibility.PUBLIC);
   const [tags, setTags] = useState<string[]>([]);
-  const [availableTags, setAvailableTags] = useState<string[]>([]);
-  const [loadingTags, setLoadingTags] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoadingTags(true);
-    collectTags().then((t) => {
-      if (!cancelled) setAvailableTags(t);
-    }).catch(() => {
-      if (!cancelled) setAvailableTags([]);
-    }).finally(() => {
-      if (!cancelled) setLoadingTags(false);
-    });
-    return () => { cancelled = true; };
-  }, []);
+  const canCreateTags = useCanCreateTags(address);
+  const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,25 +31,34 @@ export default function CreateCollectionForm({ onCreated, onCancel }: CreateColl
 
     setLoading(true);
     try {
-      await signAndBroadcast([{
-        typeUrl: CollectMsgTypeUrls.CreateCollection,
-        value: {
-          creator: address,
-          name: name.trim(),
-          description: description.trim(),
-          coverUri: coverUri.trim(),
-          // CollectionType / Visibility are proto3 int32 enums; the UI keeps
-          // them as their enum-string keys for the <select>, so route through
-          // fromJSON before broadcast — otherwise the proto encoder
-          // NaN-coerces the string to 0 and amino emits the string, which
-          // mismatches the chain's reconstructed sign bytes (sigverify fails
-          // as "unauthorized"). Same fix shape as ProjectList.tsx.
-          type: collectionTypeFromJSON(collectionType),
-          visibility: visibilityFromJSON(visibility),
-          tags,
-          encrypted: false,
+      // x/collect rejects MsgCreateCollection with ErrTagNotFound for any tag
+      // not in the x/rep registry, so prepend MsgCreateTag for everything the
+      // user typed that doesn't already exist — same pattern as ProjectList /
+      // InitiativeList / CreatePostForm.
+      const tagMsgs = buildCreateTagMsgs(address, tags, availableTags);
+      await signAndBroadcast([
+        ...tagMsgs,
+        {
+          typeUrl: CollectMsgTypeUrls.CreateCollection,
+          value: {
+            creator: address,
+            name: name.trim(),
+            description: description.trim(),
+            coverUri: coverUri.trim(),
+            // CollectionType / Visibility are proto3 int32 enums; the UI keeps
+            // them as their enum-string keys for the <select>, so route through
+            // fromJSON before broadcast — otherwise the proto encoder
+            // NaN-coerces the string to 0 and amino emits the string, which
+            // mismatches the chain's reconstructed sign bytes (sigverify fails
+            // as "unauthorized"). Same fix shape as ProjectList.tsx.
+            type: collectionTypeFromJSON(collectionType),
+            visibility: visibilityFromJSON(visibility),
+            tags,
+            encrypted: false,
+          },
         },
-      }]);
+      ]);
+      if (tagMsgs.length > 0) refreshTags();
 
       setName("");
       setDescription("");
@@ -157,9 +153,9 @@ export default function CreateCollectionForm({ onCreated, onCancel }: CreateColl
             options={availableTags}
             value={tags}
             onChange={setTags}
-            placeholder="Select or create tags..."
+            placeholder={canCreateTags ? "Select or create tags..." : "Select tags..."}
             loading={loadingTags}
-            allowCreate
+            allowCreate={canCreateTags}
           />
         </div>
 
