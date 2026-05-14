@@ -11,6 +11,7 @@ import {
   listGovProposals,
   getGovProposalVotes,
   getGovProposalTally,
+  getGovDepositParams,
 } from "@/lib/api";
 import { GovMsgTypeUrls } from "@/lib/tx";
 import { useWallet } from "@/contexts/WalletContext";
@@ -31,6 +32,27 @@ export default function ChainProposals() {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showNewProposal, setShowNewProposal] = useState(false);
+  // Chain's gov `min_deposit` for the bond denom, in micro-units. Used per
+  // DEPOSIT_PERIOD card to prefill the top-up input with the exact missing
+  // amount and surface a "Needs X more to start voting" hint. `null` while
+  // loading or if the LCD lookup fails — in either case the cards fall back
+  // to the prior "type any amount" behavior.
+  const [minDepositMicro, setMinDepositMicro] = useState<bigint | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getGovDepositParams()
+      .then((res) => {
+        if (cancelled) return;
+        const min = res.params?.min_deposit ?? [];
+        const match = min.find((c) => c.denom === config.denom) ?? min[0];
+        if (match) setMinDepositMicro(BigInt(match.amount));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [config.denom]);
 
   const fetchProposals = useCallback(async () => {
     try {
@@ -167,6 +189,7 @@ export default function ChainProposals() {
               actionLoading={actionLoading}
               displayDenom={config.displayDenom}
               denom={config.denom}
+              minDepositMicro={minDepositMicro}
               onVote={handleVote}
               onDeposit={handleDeposit}
             />
@@ -379,6 +402,7 @@ function GovProposalCard({
   actionLoading,
   displayDenom,
   denom,
+  minDepositMicro,
   onVote,
   onDeposit,
 }: {
@@ -387,13 +411,55 @@ function GovProposalCard({
   actionLoading: string | null;
   displayDenom: string;
   denom: string;
+  minDepositMicro: bigint | null;
   onVote: (id: string, option: number) => void;
   onDeposit: (id: string, amount: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [tally, setTally] = useState<GovTallyResult | null>(null);
   const [votes, setVotes] = useState<GovVote[] | null>(null);
+
+  // Compute the missing deposit (in micro-units) needed to push this proposal
+  // out of DEPOSIT_PERIOD into VOTING_PERIOD. The chain transitions as soon
+  // as total_deposit >= min_deposit, so in DEPOSIT_PERIOD the difference is
+  // always positive — but defensively clamp to zero. Returns null when we
+  // don't have the chain's min_deposit yet (the LCD query is still in
+  // flight or failed), in which case the card falls back to the prior
+  // "type any amount" UX.
+  const missingMicro: bigint | null = (() => {
+    if (minDepositMicro === null) return null;
+    const current = (proposal.total_deposit ?? []).find(
+      (c) => c.denom === denom
+    );
+    const currentMicro = current ? BigInt(current.amount) : BigInt(0);
+    const diff = minDepositMicro - currentMicro;
+    return diff > BigInt(0) ? diff : BigInt(0);
+  })();
+
+  // Display form of the missing amount in the bond denom (e.g. "4.75").
+  // Reused for both the prefill seed and the hint label, so we format
+  // once. Trailing zeros stripped to keep the prefill tidy.
+  const missingDisplay: string | null = (() => {
+    if (missingMicro === null || missingMicro === BigInt(0)) return null;
+    const MICRO = BigInt(1_000_000);
+    const whole = missingMicro / MICRO;
+    const frac = missingMicro % MICRO;
+    if (frac === BigInt(0)) return whole.toString();
+    return `${whole}.${frac.toString().padStart(6, "0").replace(/0+$/, "")}`;
+  })();
+
+  // Prefill the deposit input with the missing amount the first time we
+  // know it. useState's lazy init runs only once per component instance and
+  // the card uses `key={proposal.id}` in the list, so the user's typed
+  // override survives proposal-list refreshes — but the initializer here
+  // fires before `missingDisplay` is computed on first render (the LCD
+  // query hasn't returned yet), so seed via a follow-up effect that only
+  // touches an untouched field. Same pattern as NewChainProposal's prefill.
   const [depositAmount, setDepositAmount] = useState("");
+  useEffect(() => {
+    if (!missingDisplay) return;
+    setDepositAmount((cur) => (cur === "" ? missingDisplay : cur));
+  }, [missingDisplay]);
 
   const loadDetail = async () => {
     if (tally) {
@@ -484,6 +550,11 @@ function GovProposalCard({
         {isDeposit && (
           <span>
             Deposit: {formatCoins(proposal.total_deposit, displayDenom)}
+          </span>
+        )}
+        {isDeposit && missingDisplay && (
+          <span className="text-yellow-400">
+            Needs {missingDisplay} {displayDenom} more to start voting
           </span>
         )}
         {isVoting && proposal.voting_end_time && (
@@ -594,6 +665,21 @@ function GovProposalCard({
                   ? "Depositing..."
                   : "Deposit"}
               </button>
+              {/* Re-snap to the missing amount if the user has wandered off
+                  of it (e.g. typed a different number and now wants the
+                  exact-to-voting value back). Hidden when the typed value
+                  already matches the missing amount so the chrome stays
+                  quiet in the common case. */}
+              {missingDisplay && depositAmount !== missingDisplay && (
+                <button
+                  type="button"
+                  onClick={() => setDepositAmount(missingDisplay)}
+                  className="text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+                  title="Set to the exact amount needed to start voting"
+                >
+                  set to {missingDisplay}
+                </button>
+              )}
             </div>
           )}
         </div>

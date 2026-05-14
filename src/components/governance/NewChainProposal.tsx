@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import type { Group } from "@/types/commons";
 import { GovMsgTypeUrls, UpgradeMsgTypeUrls, CommonsMsgTypeUrls } from "@/lib/tx";
-import { listGroups, getCurrentUpgradePlan, type UpgradePlan } from "@/lib/api";
+import { listGroups, getCurrentUpgradePlan, getGovDepositParams, type UpgradePlan } from "@/lib/api";
 import { getGovModuleAddress } from "@/lib/gov";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
@@ -46,6 +46,22 @@ export default function NewChainProposal({
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [deposit, setDeposit] = useState("");
+  // Chain-side deposit thresholds, in display units (SPARK):
+  // - `voting` is the full gov `min_deposit` — the amount that gets the
+  //   proposal straight into the voting period. We prefill the input with
+  //   this so the common path is one-click.
+  // - `submit` is `min_deposit_ratio × min_deposit` — the floor the chain
+  //   enforces at MsgSubmitProposal time (x/gov returns ErrMinDepositTooSmall
+  //   below this). We surface it and refuse to submit when the user has
+  //   typed less than that, since the chain would otherwise reject the tx
+  //   after the signing prompt.
+  // Both are `undefined` while loading, `null` if the LCD lookup failed —
+  // we don't block the form on a params query.
+  const [depositFloor, setDepositFloor] = useState<
+    | { submit: string; voting: string; submitMicro: bigint }
+    | null
+    | undefined
+  >(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,6 +111,96 @@ export default function NewChainProposal({
         .catch(() => {});
     }
   }, [type]);
+
+  // Prefill the Initial Deposit with the chain's gov `min_deposit` so users
+  // don't have to look it up. The chain enforces `min_deposit_ratio *
+  // min_deposit` as the floor at submission time (x/gov MinInitial — see
+  // /home/chill/go/pkg/mod/cosmossdk.io@v0.53.0/x/gov/keeper/msg_server.go),
+  // and the full min_deposit is what gets the proposal straight into the
+  // voting period. We pick the entry whose denom matches the chain's bond
+  // denom (typically the first/only entry) and convert from micro-units.
+  // Only seed when the user hasn't typed anything — we don't want to clobber
+  // an in-progress edit if the LCD response arrives late.
+  useEffect(() => {
+    let cancelled = false;
+    getGovDepositParams()
+      .then((res) => {
+        if (cancelled) return;
+        const minDeposit = res.params?.min_deposit ?? [];
+        const match =
+          minDeposit.find((c) => c.denom === config.denom) ?? minDeposit[0];
+        if (!match) {
+          setDepositFloor(null);
+          return;
+        }
+        const votingMicro = BigInt(match.amount);
+        // Compute `min_deposit_ratio × min_deposit` in micro-units using
+        // BigInt math so we match the chain's behavior exactly. The chain
+        // stores Dec as a fixed-point int with 18 fractional digits; the
+        // LCD serializes it as a decimal string like "0.250000000000000000".
+        // x/gov's MinInitial calls Mul(...).RoundInt() — we mirror that with
+        // banker's rounding via half-to-even, since round-half-up could let
+        // through one micro-token below the chain's accepted floor.
+        // (BigInt literal syntax (`10n`) needs ES2020+; this project still
+        // targets ES2017, so use the `BigInt(...)` constructor throughout.)
+        const ZERO = BigInt(0);
+        const ONE = BigInt(1);
+        const TWO = BigInt(2);
+        const TEN_18 = BigInt(10) ** BigInt(18);
+        const MICRO = BigInt(1_000_000);
+        const ratioStr = res.params?.min_deposit_ratio ?? "0";
+        const [wholePart, fracPart = ""] = ratioStr.split(".");
+        const ratioFixed18 =
+          BigInt(wholePart || "0") * TEN_18 +
+          BigInt((fracPart + "0".repeat(18)).slice(0, 18));
+        const product = votingMicro * ratioFixed18; // scaled by 10^18
+        const quot = product / TEN_18;
+        const rem = product % TEN_18;
+        const half = TEN_18 / TWO;
+        // Half-to-even: when remainder is exactly half, round to the even
+        // integer; otherwise round half away from zero (positive only here).
+        let submitMicro = quot;
+        if (rem > half) submitMicro += ONE;
+        else if (rem === half && quot % TWO === ONE) submitMicro += ONE;
+
+        const toDisplay = (microUnits: bigint): string => {
+          const whole = microUnits / MICRO;
+          const frac = microUnits % MICRO;
+          if (frac === ZERO) return whole.toString();
+          // Trim trailing zeros so we render "1.5" instead of "1.500000".
+          return `${whole}.${frac.toString().padStart(6, "0").replace(/0+$/, "")}`;
+        };
+
+        const submit = toDisplay(submitMicro);
+        const voting = toDisplay(votingMicro);
+        setDepositFloor({ submit, voting, submitMicro });
+        // Only prefill if the field is still untouched. React's useState
+        // updater form lets us read the current value without depending on it
+        // in the effect's deps array (which would re-fire whenever the user
+        // typed).
+        setDeposit((cur) => (cur === "" ? voting : cur));
+      })
+      .catch(() => {
+        if (!cancelled) setDepositFloor(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [config.denom]);
+
+  // True when the user's typed amount is below the chain-enforced submission
+  // floor (`min_deposit_ratio × min_deposit`). We compute in micro-units to
+  // avoid float-precision dropping a fractionally-just-above-floor amount
+  // below the threshold. Returns false while params are still loading or if
+  // the LCD lookup failed — we'd rather let the user submit and surface the
+  // chain's own error than block on a flaky params query.
+  const depositBelowFloor = (() => {
+    if (!depositFloor || !deposit) return false;
+    const parsed = parseFloat(deposit);
+    if (!Number.isFinite(parsed) || parsed < 0) return true;
+    const enteredMicro = BigInt(Math.round(parsed * 1_000_000));
+    return enteredMicro < depositFloor.submitMicro;
+  })();
 
   // Pull the pending upgrade plan when the user picks "Cancel Upgrade".
   // We don't cache across switches — the user may have been sitting on the
@@ -149,6 +255,15 @@ export default function NewChainProposal({
     e.preventDefault();
     if (!title.trim()) {
       setError("Title is required");
+      return;
+    }
+    // Don't even open the signing prompt for a deposit the chain will
+    // immediately reject. The chain enforces this server-side, so this is a
+    // UX shortcut rather than the source of truth.
+    if (depositBelowFloor && depositFloor) {
+      setError(
+        `Initial deposit must be at least ${depositFloor.submit} ${config.displayDenom} (min_deposit_ratio × min_deposit) to submit.`
+      );
       return;
     }
     setSubmitting(true);
@@ -383,15 +498,51 @@ export default function NewChainProposal({
           </label>
           <NumberInput
             step="any"
-            min="0"
+            min={depositFloor?.submit ?? "0"}
             value={deposit}
             onChange={(e) => setDeposit(e.target.value)}
             placeholder="0.00"
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className={`w-full rounded-lg border bg-zinc-800/50 px-4 py-2.5 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-1 ${
+              depositBelowFloor
+                ? "border-red-700 focus:border-red-500 focus:ring-red-500"
+                : "border-zinc-700 focus:border-indigo-500 focus:ring-indigo-500"
+            }`}
           />
-          <p className="mt-1 text-xs text-zinc-500">
-            Proposals need a minimum deposit to enter the voting period.
-          </p>
+          {depositFloor ? (
+            <p className="mt-1 text-xs text-zinc-500">
+              The chain accepts deposits as low as{" "}
+              <button
+                type="button"
+                onClick={() => setDeposit(depositFloor.submit)}
+                className="font-mono text-zinc-400 underline-offset-2 hover:text-zinc-200 hover:underline"
+                title="Set to min_deposit_ratio × min_deposit (the floor x/gov enforces at MsgSubmitProposal)"
+              >
+                {depositFloor.submit} {config.displayDenom}
+              </button>{" "}
+              (min_deposit_ratio × min_deposit). The proposal stays in the
+              deposit period until total deposits reach{" "}
+              <button
+                type="button"
+                onClick={() => setDeposit(depositFloor.voting)}
+                className="font-mono text-zinc-400 underline-offset-2 hover:text-zinc-200 hover:underline"
+                title="Set to the full gov min_deposit (skips deposit period)"
+              >
+                {depositFloor.voting} {config.displayDenom}
+              </button>
+              , when voting starts.
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-zinc-500">
+              Proposals need a minimum deposit to enter the voting period.
+            </p>
+          )}
+          {depositBelowFloor && depositFloor && (
+            <p className="mt-1 text-xs text-red-400">
+              Below the chain's submission floor — x/gov will reject this tx
+              with <span className="font-mono">ErrMinDepositTooSmall</span>.
+              Raise to at least {depositFloor.submit} {config.displayDenom}.
+            </p>
+          )}
         </div>
       </div>
 
@@ -660,7 +811,12 @@ export default function NewChainProposal({
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || depositBelowFloor}
+          title={
+            depositBelowFloor && depositFloor
+              ? `Initial deposit must be at least ${depositFloor.submit} ${config.displayDenom}`
+              : undefined
+          }
           className="sd-btn sd-btn-primary"
         >
           {submitting ? "Submitting..." : "Submit Proposal"}
