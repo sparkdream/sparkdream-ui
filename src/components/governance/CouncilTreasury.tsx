@@ -5,7 +5,7 @@ import type { Group } from "@/types/commons";
 import { getAllBankBalances } from "@/lib/api";
 import type { BankBalance } from "@/lib/api";
 import { formatDream } from "@/lib/reveal-fmt";
-import { truncateAddress } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 
 interface Balances {
@@ -88,12 +88,7 @@ export function CouncilTreasuryBanner({ group }: CouncilTreasuryBannerProps) {
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm">
         <div className="flex items-center gap-2 text-xs text-zinc-500">
           <span>Treasury</span>
-          <span
-            className="font-mono text-zinc-400"
-            title={group.policy_address}
-          >
-            {truncateAddress(group.policy_address)}
-          </span>
+          <CopyableAddress className="font-mono text-zinc-400" address={group.policy_address} />
         </div>
         {error ? (
           <span className="text-xs text-red-400">{error}</span>
@@ -188,12 +183,7 @@ export function CommunityTreasuries({ groups }: CommunityTreasuriesProps) {
                   </div>
                   <div>
                     <p className="text-xs text-zinc-500">Address</p>
-                    <p
-                      className="font-mono text-zinc-300"
-                      title={g.policy_address}
-                    >
-                      {truncateAddress(g.policy_address)}
-                    </p>
+                    <CopyableAddress className="font-mono text-zinc-300" address={g.policy_address} style={{ display: "block" }} />
                   </div>
                 </div>
               </div>

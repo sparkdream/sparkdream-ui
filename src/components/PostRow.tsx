@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { Post, ReactionCounts } from "@/types/blog";
 import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
-import { timeAgo, countToNum, truncateAddress } from "@/lib/utils";
+import { timeAgo, countToNum } from "@/lib/utils";
 import { getReactionCounts } from "@/lib/api";
 import { useDisplayName } from "@/hooks/useDisplayName";
+import CopyableAddress from "@/components/CopyableAddress";
 
 const AVATAR_GRADIENTS = [
   "linear-gradient(135deg, #6366f1, #f472b6)",
@@ -64,7 +65,7 @@ export default function PostRow({
       </div>
       <div className="body-col">
         <div className="head">
-          <span className="addr">{name || truncateAddress(post.creator)}</span>
+          <CopyableAddress className="addr" address={post.creator} resolveName nested />
           <span className="sep">·</span>
           <span>{timeAgo(post.created_at)}</span>
           {post.edited && (

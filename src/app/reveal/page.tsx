@@ -15,7 +15,7 @@ import ContributionDetail from "@/components/reveal/ContributionDetail";
 import ProposeForm from "@/components/reveal/ProposeForm";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
-import { truncateAddress } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import { formatDecPercent, formatDream } from "@/lib/reveal-fmt";
 import { CONTRIBUTION_STATUS_LABELS } from "@/types/reveal";
 import type { Contribution, RevealParams } from "@/types/reveal";
@@ -341,9 +341,7 @@ function SessionKeyCard({
         {sessionActive && granteeAddr ? (
           <>
             Granted to{" "}
-            <span className="sd-pill trust-core" style={{ fontFamily: "var(--font-geist-mono)" }}>
-              {truncateAddress(granteeAddr)}
-            </span>
+            <CopyableAddress className="sd-pill trust-core" style={{ fontFamily: "var(--font-geist-mono)" }} address={granteeAddr} />
           </>
         ) : (
           <>

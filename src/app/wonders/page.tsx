@@ -14,7 +14,7 @@ import {
   SidebarSection,
 } from "@/components/layout/ContentPageLayout";
 import ConnectPrompt from "@/components/layout/ConnectPrompt";
-import { truncateAddress } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
@@ -365,7 +365,7 @@ function CuratorRow({ addr, count, idx }: { addr: string; count: number; idx: nu
         {initial}
       </div>
       <div className="info">
-        <span className="addr">{name || truncateAddress(addr)}</span>
+        <CopyableAddress className="addr" address={addr} resolveName />
         <div className="meta">{count} {count === 1 ? "collection" : "collections"}</div>
       </div>
     </div>
@@ -386,9 +386,7 @@ function SessionKeyCard({
         {sessionActive && granteeAddr ? (
           <>
             Granted to{" "}
-            <span className="sd-pill trust-core" style={{ fontFamily: "var(--font-geist-mono)" }}>
-              {truncateAddress(granteeAddr)}
-            </span>{" "}
+            <CopyableAddress className="sd-pill trust-core" style={{ fontFamily: "var(--font-geist-mono)" }} address={granteeAddr} />{" "}
             with <span style={{ color: "var(--ink)" }}>CreateCollection · AddItem · Endorse</span>.
           </>
         ) : (

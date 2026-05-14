@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { listBondedRolesByType, getCuratorActivity } from "@/lib/api";
-import { truncateAddress, formatTime } from "@/lib/utils";
+import { formatTime } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import {
   RoleType,
   BondedRoleStatus,
@@ -129,7 +130,7 @@ export default function CuratorList() {
                   className="flex w-full items-center justify-between px-4 py-3 text-left"
                 >
                   <div className="flex items-center gap-3">
-                    <span className="font-mono text-sm text-zinc-300">{truncateAddress(c.address)}</span>
+                    <CopyableAddress className="font-mono text-sm text-zinc-300" address={c.address} nested />
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(c.bond_status)}`}>
                       {BONDED_ROLE_STATUS_LABELS[c.bond_status] || c.bond_status}
                     </span>

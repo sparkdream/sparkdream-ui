@@ -6,8 +6,8 @@ import {
   listContributionsByContributor,
   listContributionsByStatus,
 } from "@/lib/api";
-import { useDisplayName } from "@/hooks/useDisplayName";
-import { truncateAddress, timeAgo } from "@/lib/utils";
+import { timeAgo } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import {
   CONTRIBUTION_STATUS_LABELS,
   ContributionStatus,
@@ -113,7 +113,6 @@ function ContributionCard({
   contribution: Contribution;
   onSelect: (c: Contribution) => void;
 }) {
-  const { name } = useDisplayName(contribution.contributor);
   const statusLabel = CONTRIBUTION_STATUS_LABELS[contribution.status] || contribution.status;
   const trancheCount = contribution.tranches?.length || 0;
   const verifiedCount = (contribution.tranches || []).filter(
@@ -143,7 +142,7 @@ function ContributionCard({
             </p>
           )}
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
-            <span>by {name || truncateAddress(contribution.contributor)}</span>
+            <span>by <CopyableAddress address={contribution.contributor} resolveName nested /></span>
             <span>·</span>
             <span>
               {verifiedCount}/{trancheCount} tranche{trancheCount === 1 ? "" : "s"} verified

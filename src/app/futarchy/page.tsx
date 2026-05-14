@@ -17,6 +17,7 @@ import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { useWallet } from "@/contexts/WalletContext";
+import CopyableAddress from "@/components/CopyableAddress";
 import { formatDream } from "@/lib/reveal-fmt";
 import {
   MarketStatus,
@@ -950,7 +951,7 @@ function MarketRow({
       <div className="question">
         {market.question || "—"}
         <span className="by">
-          by <span className="who">{shortAddr(market.creator)}</span>
+          by <CopyableAddress className="who" address={market.creator} prefixLen={9} suffixLen={4} />
         </span>
       </div>
       <div className="prob-cell">
@@ -1651,12 +1652,6 @@ function statusPillClass(status: string): string {
   if (status === MarketStatus.RESOLVED_INVALID) return "invalid";
   if (status === MarketStatus.CANCELLED) return "cancelled";
   return "invalid";
-}
-
-function shortAddr(addr: string | undefined | null): string {
-  if (!addr) return "—";
-  if (addr.length <= 14) return addr;
-  return `${addr.slice(0, 9)}…${addr.slice(-4)}`;
 }
 
 // Share denoms minted by x/futarchy follow `f/{marketId}/{outcome}`. See

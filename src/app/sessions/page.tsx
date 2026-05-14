@@ -11,6 +11,7 @@ import {
 import { useWallet } from "@/contexts/WalletContext";
 import { SessionMsgTypeUrls } from "@/lib/tx";
 import { truncateAddress, formatTime } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import NumberInput from "@/components/NumberInput";
 
@@ -501,9 +502,7 @@ export default function SessionsPage() {
                     <span className="text-zinc-500">
                       {isGranter ? "Grantee:" : "Granter:"}
                     </span>
-                    <span className="font-mono text-zinc-300">
-                      {truncateAddress(isGranter ? session.grantee : session.granter)}
-                    </span>
+                    <CopyableAddress className="font-mono text-zinc-300" address={isGranter ? session.grantee : session.granter} />
                     {expired && (
                       <span className="rounded bg-red-900/30 px-1.5 py-0.5 text-red-400">
                         Expired

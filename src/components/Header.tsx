@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { useDisplayName } from "@/hooks/useDisplayName";
-import { truncateAddress } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import SessionModeSwitcher from "@/components/SessionModeSwitcher";
 
 type NavLeaf = {
@@ -394,11 +394,10 @@ export default function Header() {
               <SessionModeSwitcher />
               <div className="sd-identity">
                 {name && <div className="name">{name}</div>}
-                <div className="addr">
-                  {sessionActive
-                    ? truncateAddress(signerAddress!)
-                    : truncateAddress(address!)}
-                </div>
+                <CopyableAddress
+                  className="addr"
+                  address={sessionActive ? signerAddress! : address!}
+                />
               </div>
             </>
           )}
@@ -589,11 +588,10 @@ function MobileMenu({
             <>
               <div className="sd-mobile-identity">
                 {name && <div className="name">{name}</div>}
-                <div className="addr">
-                  {sessionActive
-                    ? truncateAddress(signerAddress!)
-                    : truncateAddress(address!)}
-                </div>
+                <CopyableAddress
+                  className="addr"
+                  address={sessionActive ? signerAddress! : address!}
+                />
               </div>
               <button
                 className="sd-btn-ghost"

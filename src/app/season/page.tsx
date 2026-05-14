@@ -17,7 +17,7 @@ import {
 } from "@/lib/api";
 import { SeasonMsgTypeUrls } from "@/lib/tx";
 import { useWallet } from "@/contexts/WalletContext";
-import { truncateAddress } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import type {
   Achievement,
   Title,
@@ -2606,7 +2606,7 @@ function GuildCard({
         </div>
       </div>
       <div style={{ fontSize: 11, color: "var(--ink-mute)" }}>
-        Founder: <span style={{ fontFamily: "var(--font-mono), monospace" }}>{truncateAddress(guild.founder)}</span>
+        Founder: <CopyableAddress style={{ fontFamily: "var(--font-mono), monospace" }} address={guild.founder} />
       </div>
       {children && <div>{children}</div>}
     </div>
@@ -2698,7 +2698,7 @@ function GuildDetailView({
           </div>
         </div>
         <div style={{ fontSize: 12, color: "var(--ink-mute)" }}>
-          Founder: <span style={{ fontFamily: "var(--font-mono), monospace" }}>{truncateAddress(guild.founder)}</span>
+          Founder: <CopyableAddress style={{ fontFamily: "var(--font-mono), monospace" }} address={guild.founder} />
           {" · "}
           Members: {members.length}
         </div>
@@ -2750,7 +2750,7 @@ function GuildDetailView({
                 <div className="sd-avatar sm">{m.member.charAt(8).toUpperCase()}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, color: "var(--ink)", fontFamily: "var(--font-mono), monospace" }}>
-                    {truncateAddress(m.member)}
+                    <CopyableAddress address={m.member} />
                     {isSelf && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--ink-mute)" }}>(you)</span>}
                   </div>
                   <div style={{ fontSize: 11, color: "var(--ink-mute)" }}>
@@ -2855,9 +2855,7 @@ function GuildDetailView({
                       fontSize: 12,
                     }}
                   >
-                    <span style={{ flex: 1, fontFamily: "var(--font-mono), monospace", color: "var(--ink-soft)" }}>
-                      {truncateAddress(inv)}
-                    </span>
+                    <CopyableAddress style={{ flex: 1, fontFamily: "var(--font-mono), monospace", color: "var(--ink-soft)" }} address={inv} />
                     <button
                       type="button"
                       className="sd-btn-ghost"
@@ -3161,9 +3159,7 @@ function NominationCard({
       </div>
       <div style={{ fontSize: 11, color: "var(--ink-mute)" }}>
         Nominated by{" "}
-        <span style={{ fontFamily: "var(--font-mono), monospace" }}>
-          {truncateAddress(nomination.nominator)}
-        </span>
+        <CopyableAddress style={{ fontFamily: "var(--font-mono), monospace" }} address={nomination.nominator} />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 12 }}>
         <div>
@@ -3431,7 +3427,7 @@ function RetroRewardsView({
                 {r.content_ref}
               </div>
               <div style={{ fontSize: 11, color: "var(--ink-mute)" }}>
-                to {truncateAddress(r.recipient)} · block {formatNum(r.distributed_at_block)}
+                to <CopyableAddress address={r.recipient} /> · block {formatNum(r.distributed_at_block)}
               </div>
             </div>
             <div style={{ textAlign: "right", fontSize: 11, color: "var(--ink-mute)" }}>

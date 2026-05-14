@@ -21,6 +21,7 @@ import {
   timeRemaining,
   describeProposalMessages,
 } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import NewChainProposal from "./NewChainProposal";
 import NumberInput from "@/components/NumberInput";
 
@@ -545,7 +546,7 @@ function GovProposalCard({
 
       {/* Info row */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
-        <span>by {truncateAddress(proposal.proposer)}</span>
+        <span>by <CopyableAddress address={proposal.proposer} /></span>
         <span>{formatISOTime(proposal.submit_time)}</span>
         {isDeposit && (
           <span>
@@ -585,9 +586,7 @@ function GovProposalCard({
                   key={v.voter}
                   className="flex items-center gap-2 text-xs"
                 >
-                  <span className="font-mono text-zinc-400">
-                    {truncateAddress(v.voter)}
-                  </span>
+                  <CopyableAddress className="font-mono text-zinc-400" address={v.voter} />
                   <span className="text-zinc-500">
                     {v.options
                       ?.map(

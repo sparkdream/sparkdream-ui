@@ -10,7 +10,8 @@ import {
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { CollectMsgTypeUrls } from "@/lib/tx";
-import { truncateAddress, timeAgo, formatTime } from "@/lib/utils";
+import { timeAgo, formatTime } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import type {
   Collection,
   CollectionItem,
@@ -314,7 +315,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
           </div>
           <div>
             <dt className="text-xs text-zinc-500">Owner</dt>
-            <dd className="font-mono text-xs text-zinc-300">{truncateAddress(collection.owner)}</dd>
+            <dd className="font-mono text-xs text-zinc-300"><CopyableAddress address={collection.owner} /></dd>
           </div>
           <div>
             <dt className="text-xs text-zinc-500">Deposit</dt>
@@ -329,7 +330,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
           {collection.sponsored_by && (
             <div>
               <dt className="text-xs text-zinc-500">Sponsor</dt>
-              <dd className="font-mono text-xs text-zinc-300">{truncateAddress(collection.sponsored_by)}</dd>
+              <dd className="font-mono text-xs text-zinc-300"><CopyableAddress address={collection.sponsored_by} /></dd>
             </div>
           )}
         </dl>
@@ -513,7 +514,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
                           <div>
                             <dt className="text-xs text-zinc-500">Added by</dt>
-                            <dd className="font-mono text-xs text-zinc-300">{truncateAddress(item.added_by)}</dd>
+                            <dd className="font-mono text-xs text-zinc-300"><CopyableAddress address={item.added_by} /></dd>
                           </div>
                           {item.added_at && (
                             <div>
@@ -631,7 +632,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                 {collaborators.map((c) => (
                   <div key={c.address} className="flex items-center justify-between sd-hull-tile rounded-xl px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <span className="font-mono text-sm text-zinc-300">{truncateAddress(c.address)}</span>
+                      <CopyableAddress className="font-mono text-sm text-zinc-300" address={c.address} />
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                         c.role === CollaboratorRole.ADMIN ? "bg-amber-500/15 text-amber-400" : "bg-blue-500/15 text-blue-400"
                       }`}>

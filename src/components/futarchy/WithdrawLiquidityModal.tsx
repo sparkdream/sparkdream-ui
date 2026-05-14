@@ -6,6 +6,7 @@ import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { FutarchyMsgTypeUrls } from "@/lib/tx";
 import { formatDream } from "@/lib/reveal-fmt";
 import { MarketStatus, MARKET_STATUS_LABELS, type Market } from "@/types/futarchy";
+import CopyableAddress from "@/components/CopyableAddress";
 import Modal from "./Modal";
 
 /**
@@ -125,7 +126,7 @@ export default function WithdrawLiquidityModal({
 
       {!isCreator && (
         <p style={{ fontSize: 12, color: "var(--rose)", margin: 0 }}>
-          Only the market creator (<span className="sd-mono">{shortAddr(market.creator)}</span>)
+          Only the market creator (<CopyableAddress className="sd-mono" address={market.creator} prefixLen={9} suffixLen={4} />)
           can withdraw subsidy from this market.
         </p>
       )}
@@ -155,8 +156,3 @@ function bigIntFromOptional(s: string | undefined | null): bigint {
   }
 }
 
-function shortAddr(addr: string | undefined | null): string {
-  if (!addr) return "—";
-  if (addr.length <= 14) return addr;
-  return `${addr.slice(0, 9)}…${addr.slice(-4)}`;
-}

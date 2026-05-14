@@ -6,7 +6,7 @@ import { listRepInitiatives, availableInitiatives, initiativesByAssignee, listRe
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
 import { RepMsgTypeUrls } from "@/lib/tx";
-import { truncateAddress } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import type { Initiative, RepProject } from "@/types/rep";
 import {
   INITIATIVE_STATUS_LABELS,
@@ -443,7 +443,7 @@ export default function InitiativeList() {
                   <div className="mt-0.5 flex items-center gap-3 text-xs text-zinc-500">
                     <span>{INITIATIVE_CATEGORY_LABELS[ini.category] || ini.category}</span>
                     <span>Budget: {formatDream(ini.budget)} DREAM</span>
-                    {ini.assignee && <span>Assignee: {truncateAddress(ini.assignee, 8, 4)}</span>}
+                    {ini.assignee && <span>Assignee: <CopyableAddress address={ini.assignee} prefixLen={8} suffixLen={4} nested /></span>}
                   </div>
                 </div>
                 <svg

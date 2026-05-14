@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, type ReactNode } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import {
   getContribution,
@@ -10,7 +10,8 @@ import {
 import { RevealMsgTypeUrls } from "@/lib/tx";
 import CouncilActions from "@/components/reveal/CouncilActions";
 import { useDisplayName } from "@/hooks/useDisplayName";
-import { formatTime, timeAgo, truncateAddress } from "@/lib/utils";
+import { formatTime, timeAgo } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import { dreamToMicro, formatDream } from "@/lib/reveal-fmt";
 import {
   CONTRIBUTION_STATUS_LABELS,
@@ -120,7 +121,7 @@ export default function ContributionDetail({
               <p className="mt-2 text-sm text-zinc-300">{contribution.description}</p>
             )}
             <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-xs text-zinc-400 sm:grid-cols-4">
-              <Metric label="Contributor" value={contributorName || truncateAddress(contribution.contributor)} mono={!contributorName} />
+              <Metric label="Contributor" value={<CopyableAddress address={contribution.contributor} resolveName />} mono={!contributorName} />
               <Metric label="Total valuation" value={`${formatDream(contribution.total_valuation)} DREAM`} />
               <Metric label="Bond" value={`${formatDream(contribution.bond_remaining)} / ${formatDream(contribution.bond_amount)} DREAM`} />
               <Metric label="Holdback" value={`${formatDream(contribution.holdback_amount)} DREAM`} />
@@ -166,7 +167,7 @@ export default function ContributionDetail({
   );
 }
 
-function Metric({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Metric({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div>
       <div className="text-[10px] uppercase tracking-wide text-zinc-500">{label}</div>
@@ -382,7 +383,6 @@ function StakeRow({
   onChanged: () => void;
 }) {
   const { address, signAndBroadcast } = useWallet();
-  const { name } = useDisplayName(stake.staker);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -413,7 +413,7 @@ function StakeRow({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-zinc-900/60 px-2 py-1 text-xs">
-      <span className="font-mono text-zinc-300">{name || truncateAddress(stake.staker)}</span>
+      <CopyableAddress className="font-mono text-zinc-300" address={stake.staker} resolveName />
       <span className="text-zinc-200">{formatDream(stake.amount)} DREAM</span>
       <span className="text-zinc-500">{timeAgo(stake.staked_at)}</span>
       {canWithdraw && (

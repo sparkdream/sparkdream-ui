@@ -12,7 +12,7 @@ import {
 import { useWallet } from "@/contexts/WalletContext";
 import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
 import { ForumMsgTypeUrls, RepMsgTypeUrls } from "@/lib/tx";
-import { truncateAddress } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import type { HideRecord, SentinelActivity } from "@/types/forum";
 import {
   RoleType,
@@ -542,7 +542,7 @@ export default function SentinelPanel() {
                           </span>
                         )}
                         <span className="text-[10px] text-zinc-500">
-                          by {truncateAddress(r.sentinel)}
+                          by <CopyableAddress address={r.sentinel} />
                         </span>
                       </div>
                       {r.reason_text && (

@@ -6,7 +6,8 @@ import { invitationsByInviter, listRepInvitations } from "@/lib/api";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
 import { RepMsgTypeUrls } from "@/lib/tx";
-import { truncateAddress, formatTime } from "@/lib/utils";
+import { formatTime } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import type { Invitation } from "@/types/rep";
 import { INVITATION_STATUS_LABELS, InvitationStatus } from "@/types/rep";
@@ -194,7 +195,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
               <div key={inv.id} className="flex items-center justify-between rounded-xl border border-yellow-800/50 bg-yellow-900/10 px-4 py-3">
                 <div>
                   <p className="text-sm text-zinc-200">
-                    Invited by <span className="font-mono text-xs">{truncateAddress(inv.inviter)}</span>
+                    Invited by <CopyableAddress className="font-mono text-xs" address={inv.inviter} />
                   </p>
                   {inv.vouched_tags?.length > 0 && (
                     <p className="mt-0.5 text-xs text-zinc-500">
@@ -308,7 +309,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm text-zinc-300">{truncateAddress(inv.invitee_address)}</span>
+                      <CopyableAddress className="font-mono text-sm text-zinc-300" address={inv.invitee_address} />
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(inv.status)}`}>
                         {INVITATION_STATUS_LABELS[inv.status] || inv.status}
                       </span>

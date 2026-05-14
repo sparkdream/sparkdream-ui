@@ -1,7 +1,6 @@
 "use client";
 
-import { useDisplayName } from "@/hooks/useDisplayName";
-import { truncateAddress } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 
 interface NameOrAddressProps {
   address: string;
@@ -9,32 +8,15 @@ interface NameOrAddressProps {
 }
 
 /**
- * Displays a resolved name if the address has a primary name,
- * otherwise falls back to a truncated address.
- * Shows the full address as a tooltip on hover.
+ * Displays a resolved name if the address has a primary name, otherwise
+ * falls back to a truncated address. The full address copies to the
+ * clipboard on click — implemented as a thin wrapper around
+ * `<CopyableAddress resolveName />`.
+ *
+ * Kept as a named component so existing callsites don't all need to
+ * import the new component; new code should prefer `<CopyableAddress>`
+ * directly (it also exposes the no-name-resolution path).
  */
 export default function NameOrAddress({ address, className }: NameOrAddressProps) {
-  const { name, loading } = useDisplayName(address);
-
-  if (loading) {
-    return (
-      <span className={className} title={address}>
-        {truncateAddress(address)}
-      </span>
-    );
-  }
-
-  if (name) {
-    return (
-      <span className={className} title={address}>
-        {name}
-      </span>
-    );
-  }
-
-  return (
-    <span className={className} title={address}>
-      {truncateAddress(address)}
-    </span>
-  );
+  return <CopyableAddress address={address} className={className} resolveName />;
 }

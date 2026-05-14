@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { Group, Member } from "@/types/commons";
 import { useWallet } from "@/contexts/WalletContext";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
-import { truncateAddress } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 
 interface CommunityMembersProps {
   group: Group;
@@ -60,14 +60,14 @@ export default function CommunityMembers({ group, members }: CommunityMembersPro
                     <>
                       <span className="font-sans font-medium">{m.metadata}</span>{" "}
                       {/* Full address on desktop, truncated on mobile */}
-                      <span className="hidden text-zinc-500 sm:inline">{m.address}</span>
-                      <span className="text-zinc-500 sm:hidden">{truncateAddress(m.address)}</span>
+                      <CopyableAddress className="hidden text-zinc-500 sm:inline" address={m.address} full />
+                      <CopyableAddress className="text-zinc-500 sm:hidden" address={m.address} />
                     </>
                   ) : (
                     <>
                       {/* Full address on desktop, truncated on mobile */}
-                      <span className="hidden sm:inline">{m.address}</span>
-                      <span className="sm:hidden">{truncateAddress(m.address)}</span>
+                      <CopyableAddress className="hidden sm:inline" address={m.address} full />
+                      <CopyableAddress className="sm:hidden" address={m.address} />
                     </>
                   )}
                 </span>

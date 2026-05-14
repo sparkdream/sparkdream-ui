@@ -9,7 +9,8 @@ import { RoleCard } from "@/components/layout/RoleCard";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { useWallet } from "@/contexts/WalletContext";
-import { truncateAddress, timeAgo } from "@/lib/utils";
+import { timeAgo } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import {
   listFederationPeers,
   listFederationBridgeOperators,
@@ -567,7 +568,7 @@ function IdentityLinkTable({
         return (
           <div key={`${l.local_address}-${l.peer_id}-${l.remote_identity}`} className="row">
             <div className="me">{(l.local_address.slice(-2) || "K").toUpperCase()}</div>
-            <span className="local">{truncateAddress(l.local_address)} · King of Bitchain</span>
+            <span className="local"><CopyableAddress address={l.local_address} /> · King of Bitchain</span>
             <span className="arrow">→</span>
             <span className="remote">
               <span className={`peer-mark ${t}`} />
@@ -712,7 +713,7 @@ function AttestationsList({ attestations }: { attestations: OutboundAttestation[
           <span className="desc">
             Federated <b>{a.content_type} #{a.local_content_id}</b> outbound to{" "}
             <b>{a.peer_id}</b>
-            <span className="src">· by {truncateAddress(a.submitted_by)}</span>
+            <span className="src">· by <CopyableAddress address={a.submitted_by} /></span>
           </span>
           <span className="verb">bridge attest</span>
         </div>

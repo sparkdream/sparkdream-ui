@@ -15,7 +15,8 @@ import {
   SidebarSection,
 } from "@/components/layout/ContentPageLayout";
 import { useWallet } from "@/contexts/WalletContext";
-import { timeAgo, truncateAddress } from "@/lib/utils";
+import { timeAgo } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
@@ -491,8 +492,8 @@ function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => v
           <div className="who">
             <div className="sd-avatar">{(name || post.creator).charAt(name ? 0 : 8).toUpperCase()}</div>
             <div>
-              <div className="name">{name || truncateAddress(post.creator)}</div>
-              <div className="addr">{truncateAddress(post.creator)}</div>
+              <div className="name"><CopyableAddress address={post.creator} resolveName nested /></div>
+              <CopyableAddress className="addr" address={post.creator} nested style={{ display: "block" }} />
             </div>
           </div>
           <div className="stats">
@@ -575,7 +576,7 @@ function ActiveVoiceRow({ addr, count, idx }: { addr: string; count: number; idx
         {initial}
       </div>
       <div className="info">
-        <span className="addr">{name || truncateAddress(addr)}</span>
+        <CopyableAddress className="addr" address={addr} resolveName />
         <div className="meta">{count} {count === 1 ? "dream" : "dreams"}</div>
       </div>
     </div>
@@ -596,9 +597,7 @@ function SessionKeyCard({
         {sessionActive && granteeAddr ? (
           <>
             Granted to{" "}
-            <span className="sd-pill trust-core" style={{ fontFamily: "var(--font-geist-mono)" }}>
-              {truncateAddress(granteeAddr)}
-            </span>{" "}
+            <CopyableAddress className="sd-pill trust-core" style={{ fontFamily: "var(--font-geist-mono)" }} address={granteeAddr} />{" "}
             with <span style={{ color: "var(--ink)" }}>CreatePost · CreateReply · React</span>.
           </>
         ) : (

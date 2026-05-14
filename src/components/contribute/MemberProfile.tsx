@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { getRepMember } from "@/lib/api";
-import { truncateAddress, formatTime } from "@/lib/utils";
+import { formatTime } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import type { RepMember } from "@/types/rep";
 import { TRUST_LEVEL_LABELS, MEMBER_STATUS_LABELS, TrustLevel } from "@/types/rep";
 
@@ -99,7 +100,7 @@ export default function MemberProfile() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs text-zinc-500">Member</p>
-            <p className="mt-0.5 font-mono text-sm text-zinc-300">{truncateAddress(member.address, 14, 6)}</p>
+            <CopyableAddress className="mt-0.5 font-mono text-sm text-zinc-300" address={member.address} prefixLen={14} suffixLen={6} style={{ display: "block" }} />
           </div>
           <div className="flex items-center gap-2">
             <span className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${trustLevelColor(member.trust_level)}`}>
@@ -159,7 +160,7 @@ export default function MemberProfile() {
           {member.invited_by && (
             <div className="flex justify-between">
               <dt className="text-zinc-500">Invited by</dt>
-              <dd className="font-mono text-xs text-zinc-300">{truncateAddress(member.invited_by)}</dd>
+              <dd className="font-mono text-xs text-zinc-300"><CopyableAddress address={member.invited_by} /></dd>
             </div>
           )}
           <div className="flex justify-between">

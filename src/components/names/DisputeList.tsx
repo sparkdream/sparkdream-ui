@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { listDisputes, getNameParams } from "@/lib/api";
 import { NameMsgTypeUrls } from "@/lib/tx";
-import { truncateAddress } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 import type { Dispute, NameParams } from "@/types/name";
 
 export default function DisputeList() {
@@ -232,7 +232,7 @@ export default function DisputeList() {
                       )}
                     </div>
                     <div className="mt-2 space-y-1 text-xs text-zinc-400">
-                      <p>Claimant: {truncateAddress(d.claimant)}</p>
+                      <p>Claimant: <CopyableAddress address={d.claimant} /></p>
                       <p>Stake: {d.stake_amount} DREAM</p>
                       <p>Filed at block: {d.filed_at}</p>
                       {isContested && d.contested_at !== "0" && (

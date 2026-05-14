@@ -5,7 +5,8 @@ import Link from "next/link";
 import type { Post, Reply } from "@/types/blog";
 import { PostStatus } from "@/types/blog";
 import { getPost, listReplies } from "@/lib/api";
-import { truncateAddress, formatTime, timeAgo } from "@/lib/utils";
+import { formatTime, timeAgo } from "@/lib/utils";
+import CopyableAddress from "./CopyableAddress";
 import ReactionBar from "./ReactionBar";
 import ReplyThread from "./ReplyThread";
 import ReplyForm from "./ReplyForm";
@@ -222,7 +223,7 @@ export default function DreamDetail({
         </div>
 
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-zinc-500">
-          <span className="font-mono">{truncateAddress(post.creator)}</span>
+          <CopyableAddress className="font-mono" address={post.creator} resolveName />
           <span>&middot;</span>
           <span title={formatTime(post.created_at)}>{timeAgo(post.created_at)}</span>
           {post.edited && (

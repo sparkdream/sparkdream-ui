@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { useDisplayName } from "@/hooks/useDisplayName";
-import { truncateAddress } from "@/lib/utils";
+import CopyableAddress from "@/components/CopyableAddress";
 
 export default function SessionModeSwitcher() {
   const {
@@ -31,7 +31,7 @@ export default function SessionModeSwitcher() {
           <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
           <span className="flex flex-col leading-tight">
             <span>Acting as</span>
-            <span>{truncateAddress(activeSession.granter)}</span>
+            <CopyableAddress address={activeSession.granter} nested />
           </span>
         </button>
       ) : (
@@ -51,7 +51,7 @@ export default function SessionModeSwitcher() {
             disabled={!hasSessions}
           >
             {name && <span className="name">{name}</span>}
-            <span className="addr">{truncateAddress(signerAddress)}</span>
+            <CopyableAddress className="addr" address={signerAddress} nested />
           </button>
         </>
       )}
@@ -82,9 +82,7 @@ export default function SessionModeSwitcher() {
                       : "border border-zinc-800 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-800"
                   }`}
                 >
-                  <div className="font-mono">
-                    {truncateAddress(session.granter)}
-                  </div>
+                  <CopyableAddress className="font-mono" address={session.granter} nested style={{ display: "block" }} />
                   <div className="mt-0.5 text-zinc-500">
                     {session.allowed_msg_types.length} msg type
                     {session.allowed_msg_types.length !== 1 ? "s" : ""}
