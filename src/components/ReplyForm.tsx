@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
+import { useIsReadOnly } from "@/contexts/ArchiveContext";
 import { MsgTypeUrls } from "@/lib/tx";
 import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
 import NumberInput from "@/components/NumberInput";
@@ -31,6 +32,7 @@ export default function ReplyForm({
   variant,
 }: ReplyFormProps) {
   const { address, connected, signAndBroadcast } = useWallet();
+  const isReadOnly = useIsReadOnly();
   const [body, setBody] = useState(initialBody);
   const [contentType, setContentType] = useState<number>(initialContentType ?? ContentType.TEXT);
   const [authorBond, setAuthorBond] = useState("");
@@ -95,6 +97,7 @@ export default function ReplyForm({
     }
   };
 
+  if (isReadOnly) return null;
   if (!connected) {
     return (
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 text-center text-sm text-zinc-500">

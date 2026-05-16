@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useRef, useState, useCallback, useEffect } from "react";
 import { useChainConfig } from "./ChainConfigContext";
 import type { Session } from "@/types/session";
-import { getCommonsParams, getSessionsByGrantee } from "@/lib/api";
+import { getCommonsParams, getSessionsByGrantee, isArchiveModeActive } from "@/lib/api";
 import { CommonsMsgTypeUrls, SessionMsgTypeUrls } from "@/lib/tx";
 
 interface WalletState {
@@ -153,6 +153,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const signAndBroadcast = useCallback(
     async (msgs: readonly { typeUrl: string; value: unknown }[], memo = "") => {
+      if (isArchiveModeActive()) {
+        throw new Error("Archive mode is read-only");
+      }
       if (!rawAddress || !window.keplr) {
         throw new Error("Wallet not connected");
       }

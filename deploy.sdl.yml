@@ -19,6 +19,12 @@ services:
       - NEXT_PUBLIC_DISPLAY_DENOM=SPARK
       - NEXT_PUBLIC_BECH32_PREFIX=sprkdrm
       - NEXT_PUBLIC_CHAIN_NAME=Spark Dream
+      # Optional: point at a manifests.json hosted in object storage
+      # (4everland / R2 / S3) so new snapshots become visible by uploading
+      # files — no redeploy. Set after running `npm run snapshot:upload`.
+      # The bucket must CORS-allow this deployment's hostname — see
+      # deploy/s3-cors.json for a sample policy.
+      # - NEXT_PUBLIC_REMOTE_MANIFEST_URL=https://my-bucket.4everbucket.com/manifests.json
 
 profiles:
   compute:

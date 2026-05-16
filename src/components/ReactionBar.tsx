@@ -5,6 +5,7 @@ import type { ReactionCounts } from "@/types/blog";
 import { ReactionType, REACTION_INFO } from "@/types/blog";
 import { getReactionCounts, getUserReaction } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
+import { useIsReadOnly } from "@/contexts/ArchiveContext";
 import { MsgTypeUrls } from "@/lib/tx";
 import { countToNum } from "@/lib/utils";
 
@@ -15,6 +16,7 @@ interface ReactionBarProps {
 
 export default function ReactionBar({ postId, replyId = "0" }: ReactionBarProps) {
   const { address, connected, signAndBroadcast } = useWallet();
+  const isReadOnly = useIsReadOnly();
   const [counts, setCounts] = useState<ReactionCounts | null>(null);
   const [userReaction, setUserReaction] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -99,8 +101,14 @@ export default function ReactionBar({ postId, replyId = "0" }: ReactionBarProps)
           <button
             key={value}
             onClick={() => handleReact(value)}
-            disabled={!connected || loading}
-            title={connected ? info.label : "Connect wallet to react"}
+            disabled={!connected || loading || isReadOnly}
+            title={
+              isReadOnly
+                ? "Archived — read only"
+                : connected
+                  ? info.label
+                  : "Connect wallet to react"
+            }
             className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-sm transition-colors ${
               isActive
                 ? "bg-indigo-600/20 text-indigo-400 border border-indigo-500/50"

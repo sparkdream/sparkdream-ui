@@ -175,6 +175,18 @@ const SYSTEM_GROUP: NavGroup = {
         </svg>
       ),
     },
+    {
+      href: "/archive",
+      label: "Archive",
+      desc: "Browse past testnet snapshots",
+      icon: (
+        <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M3 7h18v4H3z" />
+          <path d="M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8" />
+          <path d="M10 15h4" />
+        </svg>
+      ),
+    },
   ],
 };
 

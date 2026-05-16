@@ -188,8 +188,56 @@ function paginationParams(p?: PaginationRequest): URLSearchParams {
   return params;
 }
 
+// ---- Archive mode --------------------------------------------------------
+//
+// When an ArchiveSource is set, every get<T>() returns the recorded JSON for
+// that LCD path instead of hitting the live LCD. The snapshot script records
+// each list endpoint with all pages already merged into a single response
+// (next_key=""), so we deliberately ignore pagination.* params when looking
+// up the archive key — any UI pagination request resolves to the one
+// pre-merged file for that endpoint.
+
+export interface ArchiveSource {
+  fetch(path: string, qs: string | null): Promise<Response>;
+}
+
+let archiveSource: ArchiveSource | null = null;
+
+export function setArchiveSource(source: ArchiveSource | null): void {
+  archiveSource = source;
+}
+
+export function isArchiveModeActive(): boolean {
+  return archiveSource !== null;
+}
+
+export class ArchiveMissingEndpoint extends Error {
+  constructor(public path: string, public qs: string | null) {
+    super(`Archive missing endpoint: ${path}${qs ? `?${qs}` : ""}`);
+    this.name = "ArchiveMissingEndpoint";
+  }
+}
+
+export function archiveKey(path: string, qs: string | null): string {
+  const trimmed = path.startsWith("/") ? path.slice(1) : path;
+  if (!qs) return `${trimmed}.json`;
+  const stripped = new URLSearchParams();
+  for (const [k, v] of new URLSearchParams(qs)) {
+    if (!k.startsWith("pagination.")) stripped.append(k, v);
+  }
+  stripped.sort();
+  const remaining = stripped.toString();
+  if (!remaining) return `${trimmed}.json`;
+  return `${trimmed}__qs__${encodeURIComponent(remaining)}.json`;
+}
+
 async function get<T>(path: string, params?: URLSearchParams): Promise<T> {
-  const qs = params?.toString();
+  const qs = params?.toString() || null;
+  if (archiveSource) {
+    const res = await archiveSource.fetch(path, qs);
+    if (!res.ok) throw new ArchiveMissingEndpoint(path, qs);
+    return res.json();
+  }
   const url = `${BASE}${path}${qs ? `?${qs}` : ""}`;
   const res = await fetch(url);
   if (!res.ok) {

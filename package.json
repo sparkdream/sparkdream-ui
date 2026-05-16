@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "snapshot:capture": "tsx scripts/snapshot-chain.mts",
+    "snapshot:upload": "node --env-file-if-exists=.env.local --import tsx scripts/snapshot-upload.mts",
+    "snapshot:delete": "node --env-file-if-exists=.env.local --import tsx scripts/snapshot-delete.mts"
   },
   "dependencies": {
     "@cosmjs/amino": "^0.38.1",
@@ -21,6 +24,7 @@
     "react-dom": "19.2.4"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1047.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -28,6 +32,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
     "tailwindcss": "^4",
+    "tsx": "^4.22.0",
     "typescript": "^5"
   }
 }

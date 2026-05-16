@@ -26,6 +26,11 @@ export default function PostDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
+    if (!/^\d+$/.test(id)) {
+      setError("Not found");
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const [postRes, repliesRes] = await Promise.all([
