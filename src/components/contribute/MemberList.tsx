@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { listRepMembers, membersByTrustLevel } from "@/lib/api";
 import NameOrAddress from "@/components/NameOrAddress";
 import type { RepMember } from "@/types/rep";
-import { TRUST_LEVEL_LABELS, MEMBER_STATUS_LABELS, TrustLevel } from "@/types/rep";
+import { TRUST_LEVEL_LABELS, MEMBER_STATUS_LABELS, MemberStatus, TrustLevel } from "@/types/rep";
 
 function trustLevelBadge(level: string) {
   const colors: Record<string, string> = {
@@ -129,29 +129,34 @@ export default function MemberList() {
           <p className="text-zinc-400">No members found</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="@container space-y-2">
           {filtered.map((m) => (
             <div key={m.address} className="rounded-xl sd-hull-tile">
               <button
                 onClick={() => setExpanded(expanded === m.address ? null : m.address)}
-                className="flex w-full items-center justify-between px-4 py-3 text-left"
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
               >
-                <div className="flex items-center gap-3">
-                  <NameOrAddress address={m.address} className="font-mono text-sm text-zinc-300" />
-                  {trustLevelBadge(m.trust_level)}
+                <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                  <div className="flex items-center gap-3">
+                    <NameOrAddress address={m.address} className="hidden font-mono text-sm text-zinc-300 @2xl:inline" full />
+                    <NameOrAddress address={m.address} className="font-mono text-sm text-zinc-300 @2xl:hidden" />
+                    {trustLevelBadge(m.trust_level)}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-zinc-500 sm:ml-auto">
+                    <span>{formatDream(m.dream_balance)} DREAM</span>
+                    {m.status !== MemberStatus.ACTIVE && (
+                      <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-400">
+                        {MEMBER_STATUS_LABELS[m.status] || m.status}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-xs text-zinc-500">{formatDream(m.dream_balance)} DREAM</span>
-                  <span className="text-xs text-zinc-600">
-                    {MEMBER_STATUS_LABELS[m.status] || m.status}
-                  </span>
-                  <svg
-                    className={`h-4 w-4 text-zinc-500 transition-transform ${expanded === m.address ? "rotate-180" : ""}`}
-                    fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
+                <svg
+                  className={`h-4 w-4 shrink-0 text-zinc-500 transition-transform ${expanded === m.address ? "rotate-180" : ""}`}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
               </button>
 
               {expanded === m.address && (

@@ -125,6 +125,12 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* Geist Mono ligates literal "..." into a single ellipsis glyph (U+2026),
+     which makes truncated bech32 addresses, tx hashes, etc. look like they
+     have a single period in the middle. This is a wallet/governance UI, not
+     a code editor — character fidelity for addresses and amounts beats the
+     fi/fl ligatures, which most readers won't notice are gone. */
+  font-variant-ligatures: none;
 }
 
 ::selection { background: var(--violet-soft); color: var(--ink); }

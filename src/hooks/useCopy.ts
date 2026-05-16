@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * http on a LAN IP), older Safari, or embedded webviews that gate the async
  * clipboard API behind permissions we don't ask for.
  */
-export function useCopy(resetMs = 1500) {
+export function useCopy(resetMs = 1000) {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<number | null>(null);
 

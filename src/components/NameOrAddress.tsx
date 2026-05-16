@@ -5,6 +5,9 @@ import CopyableAddress from "@/components/CopyableAddress";
 interface NameOrAddressProps {
   address: string;
   className?: string;
+  /** When the surrounding layout has room, render the full bech32 instead of the
+   *  11+...+4 truncation. The resolved name (if any) is shown either way. */
+  full?: boolean;
 }
 
 /**
@@ -17,6 +20,6 @@ interface NameOrAddressProps {
  * import the new component; new code should prefer `<CopyableAddress>`
  * directly (it also exposes the no-name-resolution path).
  */
-export default function NameOrAddress({ address, className }: NameOrAddressProps) {
-  return <CopyableAddress address={address} className={className} resolveName />;
+export default function NameOrAddress({ address, className, full }: NameOrAddressProps) {
+  return <CopyableAddress address={address} className={className} resolveName full={full} />;
 }

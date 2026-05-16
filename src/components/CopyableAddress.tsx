@@ -40,7 +40,7 @@ interface CopyableAddressProps {
  * name → truncated) like the old `<NameOrAddress>`.
  *
  * UX: cursor flips to pointer on hover, title tooltip shows the full
- * address, click swaps the tooltip to "Copied ✓" for ~1.5s. Keyboard
+ * address, click swaps the tooltip to "Copied ✓" for ~1s. Keyboard
  * activatable via Enter/Space.
  */
 export default function CopyableAddress({
@@ -61,13 +61,14 @@ export default function CopyableAddress({
 
   if (!address) return null;
 
-  const visible =
-    children ??
-    (resolveName && name
-      ? name
-      : full
-      ? address
-      : truncateAddress(address, prefixLen ?? 11, suffixLen ?? 4));
+  const visible = copied
+    ? "Copied ✓"
+    : children ??
+      (resolveName && name
+        ? name
+        : full
+        ? address
+        : truncateAddress(address, prefixLen ?? 11, suffixLen ?? 4));
 
   const title = copied ? `Copied ✓ ${address}` : address;
 
