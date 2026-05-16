@@ -6,6 +6,15 @@ import type { Session } from "@/types/session";
 import { getCommonsParams, getSessionsByGrantee, isArchiveModeActive } from "@/lib/api";
 import { CommonsMsgTypeUrls, SessionMsgTypeUrls } from "@/lib/tx";
 
+/**
+ * Phases a tx walks through, in order. Callers pass `onPhase` to drive UI
+ * (button label, elapsed timer) so users see progress instead of a stuck spinner.
+ *  - "signing":     Keplr popup is open / awaiting user signature
+ *  - "broadcasting": signed; sending to the RPC mempool
+ *  - "confirming":   accepted by mempool; polling for block inclusion
+ */
+export type TxPhase = "signing" | "broadcasting" | "confirming";
+
 interface WalletState {
   /** Returns the granter address when session mode is active, otherwise the connected wallet address. */
   address: string | null;
@@ -19,7 +28,11 @@ interface WalletState {
   isLedger: boolean;
   connect: () => Promise<void>;
   disconnect: () => void;
-  signAndBroadcast: (msgs: readonly { typeUrl: string; value: unknown }[], memo?: string) => Promise<string>;
+  signAndBroadcast: (
+    msgs: readonly { typeUrl: string; value: unknown }[],
+    memo?: string,
+    onPhase?: (phase: TxPhase, hash?: string) => void,
+  ) => Promise<string>;
   // Session mode
   sessionActive: boolean;
   activeSession: Session | null;
@@ -152,7 +165,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signAndBroadcast = useCallback(
-    async (msgs: readonly { typeUrl: string; value: unknown }[], memo = "") => {
+    async (
+      msgs: readonly { typeUrl: string; value: unknown }[],
+      memo = "",
+      onPhase?: (phase: TxPhase, hash?: string) => void,
+    ) => {
       if (isArchiveModeActive()) {
         throw new Error("Archive mode is read-only");
       }
@@ -472,16 +489,44 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         ];
       }
 
-      const result = await client.signAndBroadcast(
-        rawAddress,
-        finalMsgs as readonly EncodeObject[],
-        fee,
-        memo
-      );
-      if (result.code !== 0) {
-        throw new Error(`Transaction failed: ${result.rawLog}`);
+      // Split sign vs broadcast vs confirm so the caller can drive a phased
+      // progress UI (button label, elapsed timer). cosmjs's one-shot
+      // `signAndBroadcast` polls internally with a 60s default and surfaces a
+      // timeout as a hard error even when the tx actually landed — see commit
+      // tied to the delegate-modal UX work.
+      onPhase?.("signing");
+      const txRaw = await client.sign(rawAddress, finalMsgs as readonly EncodeObject[], fee, memo);
+      const { TxRaw } = await import("cosmjs-types/cosmos/tx/v1beta1/tx");
+      const txBytes = TxRaw.encode(txRaw).finish();
+
+      onPhase?.("broadcasting");
+      const hash = await client.broadcastTxSync(txBytes);
+      onPhase?.("confirming", hash);
+
+      // Poll for inclusion ourselves with a much longer ceiling than cosmjs's
+      // 60s default. Typical inclusion on this chain is ~90s, so 300s leaves
+      // comfortable headroom; if a tx is going to be rejected by CheckTx that's
+      // already been raised by broadcastTxSync.
+      const timeoutMs = 300_000;
+      const pollIntervalMs = 3_000;
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const indexed = await client.getTx(hash);
+        if (indexed) {
+          if (indexed.code !== 0) {
+            // `rawLog` is deprecated in favor of `events`, but for a failed
+            // tx it's still the only source of the chain's formatted error
+            // string (e.g. "insufficient fees: got X, expected Y") — `events`
+            // doesn't include it in a structured way for human display.
+            throw new Error(`Transaction failed: ${indexed.rawLog}`);
+          }
+          return indexed.hash;
+        }
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
       }
-      return result.transactionHash;
+      throw new Error(
+        `Transaction ${hash} was broadcast but not yet found on the chain after ${Math.round(timeoutMs / 1000)}s. It may still confirm — check a block explorer for the hash.`,
+      );
     },
     [rawAddress, activeSession, config.chainId, config.rpcEndpoint, config.denom, chainInfo.feeCurrencies]
   );

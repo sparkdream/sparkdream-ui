@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import {
@@ -19,7 +19,8 @@ import {
   formatSpark,
   timeRemaining,
 } from "@/lib/utils";
-import DelegateModal, { type DelegateMode } from "@/components/contribute/DelegateModal";
+import DelegateForm, { type DelegateMode } from "@/components/contribute/DelegateForm";
+import { useTxPhase } from "@/hooks/useTxPhase";
 import type {
   DelegationResponse,
   StakingParams,
@@ -51,8 +52,11 @@ export default function DelegationPanel() {
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [claimingAll, setClaimingAll] = useState(false);
+  const claimTx = useTxPhase();
 
-  const [modal, setModal] = useState<{ validator: Validator; mode: DelegateMode } | null>(null);
+  // Which validator row is showing its inline delegate/undelegate/redelegate
+  // form, and which tab opens by default. `null` = no form open.
+  const [openForm, setOpenForm] = useState<{ operatorAddress: string; mode: DelegateMode } | null>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -191,6 +195,7 @@ export default function DelegationPanel() {
   const handleClaimAll = async () => {
     if (!address || claimableRewards.length === 0) return;
     setClaimingAll(true);
+    claimTx.setPhase(null);
     setError(null);
     try {
       const msgs = claimableRewards.map((valAddr) => ({
@@ -200,17 +205,25 @@ export default function DelegationPanel() {
           validatorAddress: valAddr,
         },
       }));
-      await signAndBroadcast(msgs);
+      await signAndBroadcast(msgs, "", claimTx.setPhase);
       await fetchAll();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setClaimingAll(false);
+      claimTx.setPhase(null);
     }
   };
 
-  const openModal = (validator: Validator, mode: DelegateMode) => {
-    setModal({ validator, mode });
+  // Toggle the inline form for a row. Clicking the same action again on a row
+  // that already has its form open collapses it; clicking a different action
+  // on the same row switches the form's tab without re-mounting.
+  const toggleForm = (validator: Validator, mode: DelegateMode) => {
+    setOpenForm((prev) =>
+      prev && prev.operatorAddress === validator.operator_address && prev.mode === mode
+        ? null
+        : { operatorAddress: validator.operator_address, mode }
+    );
   };
 
   if (loading) {
@@ -246,14 +259,18 @@ export default function DelegationPanel() {
                 : `Withdraw from ${claimableRewards.length} validator${claimableRewards.length === 1 ? "" : "s"}`
             }
           >
-            {claimingAll
-              ? "Claiming..."
-              : claimableRewards.length === 0
-              ? "Claim Rewards"
-              : `Claim ${formatSpark(totalRewards)} ${config.displayDenom}`}
+            {claimTx.buttonLabel(
+              claimableRewards.length === 0
+                ? "Claim Rewards"
+                : `Claim ${formatSpark(totalRewards)} ${config.displayDenom}`,
+            )}
           </button>
         )}
       </div>
+
+      {claimingAll && claimTx.hint && (
+        <p className="mb-3 text-[11px] text-zinc-500">{claimTx.hint}</p>
+      )}
 
       {error && (
         <div className="mb-3 rounded-lg border border-red-800 bg-red-950/30 px-3 py-2 text-xs text-red-300 break-words">
@@ -375,95 +392,118 @@ export default function DelegationPanel() {
                     : v.status !== "BOND_STATUS_BONDED"
                     ? { label: "Inactive", color: "bg-zinc-500/10 text-zinc-400" }
                     : null;
+                const formOpenHere = openForm?.operatorAddress === v.operator_address;
+                const activeMode = formOpenHere ? openForm!.mode : null;
+                const actionBtn = (mode: DelegateMode, label: string, tone: "neutral" | "danger" | "primary") => {
+                  const active = activeMode === mode;
+                  const base = "rounded-md border px-2 py-1 text-[11px]";
+                  const cls =
+                    tone === "danger"
+                      ? active
+                        ? `${base} border-red-700 bg-red-900/30 text-red-300`
+                        : `${base} border-red-800/60 text-red-400 hover:bg-red-900/20`
+                      : tone === "primary"
+                      ? active
+                        ? "sd-btn sd-btn-primary !px-3 !py-1 !text-xs ring-2 ring-indigo-400/60"
+                        : "sd-btn sd-btn-primary !px-3 !py-1 !text-xs"
+                      : active
+                      ? `${base} border-indigo-500/60 bg-indigo-500/10 text-indigo-300`
+                      : `${base} border-zinc-700 text-zinc-300 hover:border-zinc-600 hover:text-white`;
+                  return (
+                    <button
+                      key={mode}
+                      onClick={() => toggleForm(v, mode)}
+                      disabled={!address || (mode === "delegate" && !myDel ? v.jailed : false)}
+                      className={cls}
+                    >
+                      {label}
+                    </button>
+                  );
+                };
                 return (
-                  <tr
-                    key={v.operator_address}
-                    className="border-b border-zinc-900 last:border-0 hover:bg-zinc-900/30"
-                  >
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-zinc-200">
-                          {v.description.moniker || v.operator_address.slice(0, 18)}
-                        </span>
-                        {status && (
-                          <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${status.color}`}>
-                            {status.label}
+                  <Fragment key={v.operator_address}>
+                    <tr className="border-b border-zinc-900 last:border-0 hover:bg-zinc-900/30">
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-zinc-200">
+                            {v.description.moniker || v.operator_address.slice(0, 18)}
                           </span>
-                        )}
-                      </div>
-                      {v.description.website && (
-                        <a
-                          href={v.description.website}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-[11px] text-indigo-400/80 hover:text-indigo-300"
-                        >
-                          {v.description.website.replace(/^https?:\/\//, "")}
-                        </a>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-right text-zinc-300">
-                      {vpPct !== null ? `${vpPct.toFixed(2)}%` : "—"}
-                      <div className="text-[10px] text-zinc-500">
-                        {formatSpark(tokens, { maxFractionDigits: 0 })}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5 text-right text-zinc-300">
-                      {formatDecPercent(v.commission.commission_rates.rate)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right text-zinc-300">
-                      {myDel ? (
-                        <>
-                          <div>{formatSpark(myDel.balance.amount)}</div>
-                          {myReward > BigInt(0) && (
-                            <div className="text-[10px] text-emerald-400/80">
-                              +{formatSpark(myReward)} rewards
-                            </div>
+                          {status && (
+                            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${status.color}`}>
+                              {status.label}
+                            </span>
                           )}
-                        </>
-                      ) : (
-                        <span className="text-zinc-600">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      <div className="inline-flex items-center gap-1">
+                        </div>
+                        {v.description.website && (
+                          <a
+                            href={v.description.website}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-[11px] text-indigo-400/80 hover:text-indigo-300"
+                          >
+                            {v.description.website.replace(/^https?:\/\//, "")}
+                          </a>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-zinc-300">
+                        {vpPct !== null ? `${vpPct.toFixed(2)}%` : "—"}
+                        <div className="text-[10px] text-zinc-500">
+                          {formatSpark(tokens, { maxFractionDigits: 0 })}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-zinc-300">
+                        {formatDecPercent(v.commission.commission_rates.rate)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-zinc-300">
                         {myDel ? (
                           <>
-                            <button
-                              onClick={() => openModal(v, "delegate")}
-                              disabled={!address}
-                              className="rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 hover:border-zinc-600 hover:text-white"
-                            >
-                              Add
-                            </button>
-                            <button
-                              onClick={() => openModal(v, "redelegate")}
-                              disabled={!address}
-                              className="rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 hover:border-zinc-600 hover:text-white"
-                            >
-                              Move
-                            </button>
-                            <button
-                              onClick={() => openModal(v, "undelegate")}
-                              disabled={!address}
-                              className="rounded-md border border-red-800/60 px-2 py-1 text-[11px] text-red-400 hover:bg-red-900/20"
-                            >
-                              Unbond
-                            </button>
+                            <div>{formatSpark(myDel.balance.amount)}</div>
+                            {myReward > BigInt(0) && (
+                              <div className="text-[10px] text-emerald-400/80">
+                                +{formatSpark(myReward)} rewards
+                              </div>
+                            )}
                           </>
                         ) : (
-                          <button
-                            onClick={() => openModal(v, "delegate")}
-                            disabled={!address || v.jailed}
-                            className="sd-btn sd-btn-primary !px-3 !py-1 !text-xs"
-                          >
-                            Delegate
-                          </button>
+                          <span className="text-zinc-600">—</span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          {myDel ? (
+                            <>
+                              {actionBtn("delegate", "Add", "neutral")}
+                              {actionBtn("redelegate", "Move", "neutral")}
+                              {actionBtn("undelegate", "Unbond", "danger")}
+                            </>
+                          ) : (
+                            actionBtn("delegate", "Delegate", "primary")
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {formOpenHere && (
+                      <tr className="border-b border-zinc-900 bg-zinc-950/40">
+                        <td colSpan={5} className="px-3 py-3 sm:px-4 sm:py-4">
+                          <DelegateForm
+                            key={`${v.operator_address}-${openForm!.mode}`}
+                            validator={v}
+                            initialMode={openForm!.mode}
+                            allValidators={validators}
+                            availableBalance={balance}
+                            myDelegation={myDel}
+                            params={params}
+                            onCancel={() => setOpenForm(null)}
+                            onSuccess={() => {
+                              setOpenForm(null);
+                              fetchAll();
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })
             )}
@@ -471,18 +511,6 @@ export default function DelegationPanel() {
         </table>
       </div>
 
-      {modal && (
-        <DelegateModal
-          validator={modal.validator}
-          initialMode={modal.mode}
-          allValidators={validators}
-          availableBalance={balance}
-          myDelegation={delegationByValidator.get(modal.validator.operator_address)}
-          params={params}
-          onClose={() => setModal(null)}
-          onSuccess={() => fetchAll()}
-        />
-      )}
     </div>
   );
 }
