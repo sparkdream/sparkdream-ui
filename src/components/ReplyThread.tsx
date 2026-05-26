@@ -8,12 +8,18 @@ import ReactionBar from "./ReactionBar";
 import NameOrAddress from "@/components/NameOrAddress";
 import ReplyForm from "./ReplyForm";
 import { useWallet } from "@/contexts/WalletContext";
+import { useCanPin } from "@/hooks/useCanPin";
+import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { MsgTypeUrls } from "@/lib/tx";
 
 interface ReplyThreadProps {
   replies: Reply[];
   postId: string;
   postCreator?: string;
+  // The parent post's min_reply_trust_level — governs reaction eligibility
+  // on this post's replies (the post author's audience choice applies to
+  // both top-level and reply reactions). See ReactionBar for value semantics.
+  postMinReplyTrustLevel?: number;
   onReplySubmitted?: () => void;
 }
 
@@ -21,16 +27,19 @@ function ReplyItem({
   reply,
   postId,
   postCreator,
+  postMinReplyTrustLevel,
   childReplies,
   onReplySubmitted,
 }: {
   reply: Reply;
   postId: string;
   postCreator?: string;
+  postMinReplyTrustLevel?: number;
   childReplies: Reply[];
   onReplySubmitted?: () => void;
 }) {
   const { address, connected, signAndBroadcast } = useWallet();
+  const canPin = useCanPin(address);
   const [showReplyForm, setShowReplyForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -161,7 +170,7 @@ function ReplyItem({
         )}
 
         <div className="flex items-center gap-3">
-          <ReactionBar postId={postId} replyId={reply.id} />
+          <ReactionBar postId={postId} replyId={reply.id} minReplyTrustLevel={postMinReplyTrustLevel} />
           {connected && depth < 3 && !showEditForm && (
             <button
               onClick={() => setShowReplyForm(!showReplyForm)}
@@ -200,7 +209,8 @@ function ReplyItem({
           {connected && !reply.pinned_by && reply.expires_at && reply.expires_at !== "0" && (
             <button
               onClick={handlePin}
-              disabled={actionLoading}
+              disabled={actionLoading || canPin === false}
+              title={canPin === false ? "Pinning requires Established trust level or higher" : undefined}
               className="text-xs text-amber-500 transition-colors hover:text-amber-400 disabled:opacity-50"
             >
               Pin
@@ -215,6 +225,7 @@ function ReplyItem({
               parentReplyId={reply.id}
               variant="dream"
               compact
+              minReplyTrustLevel={postMinReplyTrustLevel}
               onCancel={() => setShowReplyForm(false)}
               onSubmitted={() => {
                 setShowReplyForm(false);
@@ -231,6 +242,7 @@ function ReplyItem({
           reply={child}
           postId={postId}
           postCreator={postCreator}
+          postMinReplyTrustLevel={postMinReplyTrustLevel}
           childReplies={[]}
           onReplySubmitted={onReplySubmitted}
         />
@@ -239,7 +251,15 @@ function ReplyItem({
   );
 }
 
-export default function ReplyThread({ replies, postId, postCreator, onReplySubmitted }: ReplyThreadProps) {
+export default function ReplyThread({ replies, postId, postCreator, postMinReplyTrustLevel, onReplySubmitted }: ReplyThreadProps) {
+  const { address, connected } = useWallet();
+  const isMember = useIsRepMember(address);
+  // Same gate ReplyForm uses to swap in the member-only notice. When that
+  // notice is showing, the "Be the first to reply!" empty-state contradicts
+  // it ("can't reply" vs "be the first"), so hide it.
+  const replyBlocked =
+    postMinReplyTrustLevel !== -1 && connected && isMember === false;
+
   // Organize replies into parent-child structure
   const replyMap = new Map<string, Reply[]>();
   const topLevel: Reply[] = [];
@@ -256,6 +276,7 @@ export default function ReplyThread({ replies, postId, postCreator, onReplySubmi
   }
 
   if (replies.length === 0) {
+    if (replyBlocked) return null;
     return (
       <div className="py-6 text-center text-sm text-zinc-600">
         No replies yet. Be the first to reply!
@@ -271,6 +292,7 @@ export default function ReplyThread({ replies, postId, postCreator, onReplySubmi
           reply={reply}
           postId={postId}
           postCreator={postCreator}
+          postMinReplyTrustLevel={postMinReplyTrustLevel}
           childReplies={replyMap.get(reply.id) || []}
           onReplySubmitted={onReplySubmitted}
         />

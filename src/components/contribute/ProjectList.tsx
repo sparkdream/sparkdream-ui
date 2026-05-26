@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { useWallet } from "@/contexts/WalletContext";
 import { listRepProjects, listGroups, getRepParams, getLatestBlockHeight } from "@/lib/api";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
 import type { Group } from "@/types/commons";
 import { RepMsgTypeUrls } from "@/lib/tx";
+import { useIsRepMember } from "@/hooks/useIsRepMember";
 import type { RepProject } from "@/types/rep";
 import {
   PROJECT_STATUS_LABELS,
@@ -57,6 +59,8 @@ function formatDream(amount: string): string {
 
 export default function ProjectList() {
   const { address, signAndBroadcast } = useWallet();
+  const isMember = useIsRepMember(address);
+  const canPropose = isMember === true;
   const [projects, setProjects] = useState<RepProject[]>([]);
   const [councils, setCouncils] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +70,7 @@ export default function ProjectList() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Form state
   const [formMode, setFormMode] = useState<"self-publish" | "request-funding">("self-publish");
@@ -180,6 +185,14 @@ export default function ProjectList() {
     fetchProjects();
   }, [fetchProjects]);
 
+  // Auto-close the form once we learn the user isn't a member.
+  useEffect(() => {
+    if (isMember === false) {
+      setShowForm(false);
+      setCreateError(null);
+    }
+  }, [isMember]);
+
   const handlePropose = async () => {
     if (!address || !formName.trim()) return;
 
@@ -196,7 +209,7 @@ export default function ProjectList() {
       // Guard: an all-zero request-funding submit would silently take the
       // permissionless path on-chain. Surface that to the user instead.
       if (budgetAmount === "0" && sparkAmount === "0") {
-        console.error("Request-funding mode requires a non-zero DREAM or SPARK amount");
+        setCreateError("Request-funding mode requires a non-zero DREAM or SPARK amount.");
         return;
       }
       council = formCouncil.trim();
@@ -204,6 +217,7 @@ export default function ProjectList() {
 
     try {
       setSubmitting(true);
+      setCreateError(null);
       const tagMsgs = buildCreateTagMsgs(address, formTags, availableTags);
       await signAndBroadcast([
         ...tagMsgs,
@@ -240,6 +254,7 @@ export default function ProjectList() {
       await fetchProjects();
     } catch (err) {
       console.error("Propose project failed:", err);
+      setCreateError(err instanceof Error ? err.message : "Failed to propose project");
     } finally {
       setSubmitting(false);
     }
@@ -272,8 +287,14 @@ export default function ProjectList() {
           <button
             type="button"
             onClick={() => setShowForm(true)}
-            disabled={!address}
-            title={address ? "MsgProposeProject" : "Connect a wallet to propose a project"}
+            disabled={!address || !canPropose}
+            title={
+              !address
+                ? "Connect a wallet to propose a project"
+                : isMember === false
+                ? "Only existing members can propose projects"
+                : "MsgProposeProject"
+            }
             className="sd-btn sd-btn-primary"
           >
             Propose Project
@@ -281,9 +302,25 @@ export default function ProjectList() {
         )}
       </div>
 
-      {showForm && (
+      {address && isMember === false && (
+        <p className="mb-3 text-xs text-zinc-500">
+          Want to propose a project? Proposing projects is open to members. Ask any existing{" "}
+          <Link href="/contribute?view=members" className="text-indigo-400 hover:text-indigo-300 underline">
+            member
+          </Link>
+          {" "}to invite you in. We&apos;d love to have you contribute.
+        </p>
+      )}
+
+      {showForm && canPropose && (
         <div className="mb-4 rounded-xl sd-hull-tile p-4">
           <h3 className="mb-3 text-sm font-semibold text-zinc-200">New Project Proposal</h3>
+
+          {createError && (
+            <div className="mb-3 rounded-lg border border-red-800 bg-red-900/20 px-3 py-2 text-sm text-red-400">
+              {createError}
+            </div>
+          )}
 
           {/* Mode toggle: permissionless self-publish vs. budget-backed request.
               The chain branches on whether requested_budget + requested_spark
@@ -425,7 +462,10 @@ export default function ProjectList() {
               </button>
               <button
                 type="button"
-                onClick={() => setShowForm(false)}
+                onClick={() => {
+                  setShowForm(false);
+                  setCreateError(null);
+                }}
                 className="sd-btn sd-btn-secondary"
               >
                 Cancel

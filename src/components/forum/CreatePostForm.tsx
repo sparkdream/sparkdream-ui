@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
+import { useIsRepMember } from "@/hooks/useIsRepMember";
+import { useEphemeralTtl, formatTtl } from "@/hooks/useEphemeralTtl";
 import { ForumMsgTypeUrls } from "@/lib/tx";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
@@ -23,6 +25,9 @@ export default function CreatePostForm({
   onCancel,
 }: CreatePostFormProps) {
   const { address, signAndBroadcast } = useWallet();
+  const isMember = useIsRepMember(address);
+  const ephemeralTtl = useEphemeralTtl("forum");
+  const showEphemeralHint = isMember === false && ephemeralTtl !== null;
 
   const [content, setContent] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -66,6 +71,11 @@ export default function CreatePostForm({
         {mode === "thread" ? "New ´spark" : "Reply"}
       </h3>
       <div className="space-y-3">
+        {showEphemeralHint && ephemeralTtl !== null && (
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 text-sm text-zinc-500">
+            Heads up: as a non-member, your {mode === "thread" ? "spark" : "reply"} is ephemeral and expires in {formatTtl(ephemeralTtl)}. Once a member replies in the thread, it becomes permanent.
+          </div>
+        )}
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}

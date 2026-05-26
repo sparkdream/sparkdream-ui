@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
+import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { ForumMsgTypeUrls, RepMsgTypeUrls } from "@/lib/tx";
 import CopyableAddress from "@/components/CopyableAddress";
 import type { HideRecord, SentinelActivity } from "@/types/forum";
@@ -42,6 +43,8 @@ function accuracyRate(activity: SentinelActivity | null): string {
 
 export default function SentinelPanel() {
   const { address, signAndBroadcast } = useWallet();
+  const isMember = useIsRepMember(address);
+  const cannotBond = address ? isMember === false : false;
   const { isOpsCommitteeMember } = useCommonsCouncil(address);
 
   const [bond, setBond] = useState<BondedRole | null>(null);
@@ -245,10 +248,21 @@ export default function SentinelPanel() {
                 ` · Min trust: ${config.min_trust_level.replace("TRUST_LEVEL_", "")}`}
             </p>
           )}
+          {cannotBond && (
+            <p className="mb-3 text-xs text-zinc-500">
+              Want to become a Sentinel? Bonding as a Sentinel is open to members. Ask any existing{" "}
+              <Link href="/contribute?view=members" className="text-indigo-400 hover:text-indigo-300 underline">
+                member
+              </Link>
+              {" "}to invite you in. We&apos;d love to have you help moderate.
+            </p>
+          )}
           {!showBondForm ? (
             <button
               type="button"
               onClick={() => setShowBondForm(true)}
+              disabled={cannotBond}
+              title={cannotBond ? "Only existing members can become a Sentinel" : undefined}
               className="sd-btn sd-btn-primary"
             >
               Become a Sentinel
@@ -265,7 +279,8 @@ export default function SentinelPanel() {
                 <button
                   type="button"
                   onClick={handleBond}
-                  disabled={!bondAmount.trim() || actionLoading === "bond"}
+                  disabled={!bondAmount.trim() || actionLoading === "bond" || cannotBond}
+                  title={cannotBond ? "Only existing members can become a Sentinel" : undefined}
                   className="sd-btn sd-btn-primary"
                 >
                   {actionLoading === "bond" ? "Bonding..." : "Bond"}
@@ -357,7 +372,8 @@ export default function SentinelPanel() {
                   <button
                     type="button"
                     onClick={handleBond}
-                    disabled={!bondAmount.trim() || !!actionLoading}
+                    disabled={!bondAmount.trim() || !!actionLoading || cannotBond}
+                    title={cannotBond ? "Only existing members can bond" : undefined}
                     className="sd-btn sd-btn-primary"
                   >
                     {actionLoading === "bond" ? "..." : "Bond"}

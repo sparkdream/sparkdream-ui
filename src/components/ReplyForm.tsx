@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useWallet } from "@/contexts/WalletContext";
 import { useIsReadOnly } from "@/contexts/ArchiveContext";
+import { useIsRepMember } from "@/hooks/useIsRepMember";
+import { useEphemeralTtl, formatTtl } from "@/hooks/useEphemeralTtl";
 import { MsgTypeUrls } from "@/lib/tx";
 import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
 import NumberInput from "@/components/NumberInput";
@@ -18,6 +21,11 @@ interface ReplyFormProps {
   compact?: boolean;
   /** Entity palette for the submit button. Defaults to indigo. */
   variant?: "spark" | "dream" | "collection";
+  // Parent post's min_reply_trust_level — governs the new-reply audience.
+  // -1 lets non-members reply; 0 (default) requires active membership.
+  // Ignored when editing an existing reply (chain only enforces authorship
+  // on UpdateReply, not membership).
+  minReplyTrustLevel?: number;
 }
 
 export default function ReplyForm({
@@ -30,9 +38,12 @@ export default function ReplyForm({
   onCancel,
   compact = false,
   variant,
+  minReplyTrustLevel = 0,
 }: ReplyFormProps) {
   const { address, connected, signAndBroadcast } = useWallet();
   const isReadOnly = useIsReadOnly();
+  const isMember = useIsRepMember(address);
+  const ephemeralTtl = useEphemeralTtl("blog");
   const [body, setBody] = useState(initialBody);
   const [contentType, setContentType] = useState<number>(initialContentType ?? ContentType.TEXT);
   const [authorBond, setAuthorBond] = useState("");
@@ -41,6 +52,15 @@ export default function ReplyForm({
   const [error, setError] = useState<string | null>(null);
 
   const isEditing = !!editReplyId;
+  // For new replies, mirror the chain's MsgCreateReply gate. Editing bypasses
+  // this because chain UpdateReply only checks creator == reply.creator.
+  const openToAll = minReplyTrustLevel === -1;
+  const replyBlocked = !isEditing && !openToAll && connected && isMember === false;
+  // Only show the ephemeral hint when the form is actually usable by a
+  // non-member — i.e. open posts. Editing keeps the existing TTL, and on
+  // member-only posts the form is replaced by the "members only" notice.
+  const showEphemeralHint =
+    !isEditing && openToAll && connected && isMember === false && ephemeralTtl !== null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,7 +101,11 @@ export default function ReplyForm({
           body: body.trim(),
           contentType,
         };
-        if (authorBond && parseInt(authorBond) > 0) {
+        // Defensive: only attach the bond for confirmed members. The input is
+        // hidden for non-members above, but a stale state value (e.g. typed
+        // while isMember was loading, then resolved to false) shouldn't sneak
+        // into the broadcast and tank the whole reply tx.
+        if (isMember === true && authorBond && parseInt(authorBond) > 0) {
           value.authorBond = authorBond;
         }
         await signAndBroadcast([
@@ -105,9 +129,25 @@ export default function ReplyForm({
       </div>
     );
   }
+  if (replyBlocked) {
+    return (
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 text-sm text-zinc-500">
+        Want to reply? Replies to this post are open to members. Ask any existing{" "}
+        <Link href="/contribute?view=members" className="text-indigo-400 hover:text-indigo-300 underline">
+          member
+        </Link>
+        {" "}to invite you in. We&apos;d love to have you join the conversation.
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
+      {showEphemeralHint && ephemeralTtl !== null && (
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 text-sm text-zinc-500">
+          Heads up: as a non-member, your reply is ephemeral and expires in {formatTtl(ephemeralTtl)} unless you become a member or a member pins it.
+        </div>
+      )}
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
@@ -129,7 +169,11 @@ export default function ReplyForm({
               </option>
             ))}
           </select>
-          {!isEditing && (
+          {/* Author bond is a member-only affordance: x/rep's CreateAuthorBond
+              calls GetMember() and rejects non-members, which would tank the
+              whole reply tx. Hide the field for confirmed non-members so they
+              can't type a value that's guaranteed to fail. */}
+          {!isEditing && isMember !== false && (
             <NumberInput
               min="0"
               value={authorBond}

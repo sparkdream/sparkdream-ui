@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useWallet } from "@/contexts/WalletContext";
+import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { listContributions, getRevealParams } from "@/lib/api";
 import {
   ContentPageLayout,
@@ -31,6 +32,8 @@ type View =
 
 export default function RevealPage() {
   const { address, connected, ready, sessionActive, activeSession } = useWallet();
+  const isMember = useIsRepMember(address);
+  const cannotPropose = connected && isMember === false;
 
   const [view, setView] = useState<View>("all");
   const [browseOpen, setBrowseOpen] = useLocalStorageBoolean("reveal-browse-open", true);
@@ -160,8 +163,12 @@ export default function RevealPage() {
       primaryAction={{
         label: "Propose",
         onClick: () => switchView("propose"),
-        disabled: !connected,
-        title: connected ? "MsgProposeContribution" : "Connect a wallet to propose a contribution",
+        disabled: !connected || cannotPropose,
+        title: !connected
+          ? "Connect a wallet to propose a contribution"
+          : cannotPropose
+            ? "Only existing members can propose contributions"
+            : "MsgProposeContribution",
       }}
     />
   ) : null;
@@ -225,10 +232,23 @@ export default function RevealPage() {
         )
       )}
       {view === "propose" && (
-        connected ? (
-          <ProposeForm onProposed={handleProposed} onCancel={() => switchView("all")} />
-        ) : (
+        !connected ? (
           <ConnectPrompt message="Connect your wallet to propose a contribution." />
+        ) : cannotPropose ? (
+          <ConnectPrompt
+            align="left"
+            message={
+              <>
+                Want to propose a contribution? Proposing contributions is open to members. Ask any existing{" "}
+                <Link href="/contribute?view=members" className="text-indigo-400 hover:text-indigo-300 underline">
+                  member
+                </Link>
+                {" "}to invite you in. We&apos;d love to have you contribute.
+              </>
+            }
+          />
+        ) : (
+          <ProposeForm onProposed={handleProposed} onCancel={() => switchView("all")} />
         )
       )}
       {view === "detail" && selectedId && (

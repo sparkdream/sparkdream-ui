@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { useWallet } from "@/contexts/WalletContext";
 import { listRepInitiatives, availableInitiatives, initiativesByAssignee, listRepProjects } from "@/lib/api";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import CopyableAddress from "@/components/CopyableAddress";
+import { useIsRepMember } from "@/hooks/useIsRepMember";
 import type { Initiative, RepProject } from "@/types/rep";
 import {
   INITIATIVE_STATUS_LABELS,
@@ -55,6 +57,8 @@ function formatDream(amount: string): string {
 
 export default function InitiativeList() {
   const { address, signAndBroadcast } = useWallet();
+  const isMember = useIsRepMember(address);
+  const canCreate = isMember === true;
   const [initiatives, setInitiatives] = useState<Initiative[]>([]);
   const [initialLoad, setInitialLoad] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -66,6 +70,7 @@ export default function InitiativeList() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Projects for the create form dropdown
   const [projects, setProjects] = useState<RepProject[]>([]);
@@ -172,10 +177,19 @@ export default function InitiativeList() {
     fetchInitiatives(tab);
   }, [tab, fetchInitiatives]);
 
+  // Auto-close the form once we learn the user isn't a member.
+  useEffect(() => {
+    if (isMember === false) {
+      setShowForm(false);
+      setCreateError(null);
+    }
+  }, [isMember]);
+
   const handleCreate = async () => {
     if (!address || !formTitle.trim() || !formProjectId) return;
     try {
       setSubmitting(true);
+      setCreateError(null);
       const budgetAmount = formBudget ? (BigInt(Math.floor(parseFloat(formBudget) * 1e6))).toString() : "0";
       const tagMsgs = buildCreateTagMsgs(address, formTags, availableTags);
       await signAndBroadcast([
@@ -218,6 +232,7 @@ export default function InitiativeList() {
       await fetchInitiatives(tab);
     } catch (err) {
       console.error("Create initiative failed:", err);
+      setCreateError(err instanceof Error ? err.message : "Failed to create initiative");
     } finally {
       setSubmitting(false);
     }
@@ -296,8 +311,14 @@ export default function InitiativeList() {
           <button
             type="button"
             onClick={() => setShowForm(true)}
-            disabled={!address}
-            title={address ? "MsgCreateInitiative" : "Connect a wallet to create an initiative"}
+            disabled={!address || !canCreate}
+            title={
+              !address
+                ? "Connect a wallet to create an initiative"
+                : isMember === false
+                ? "Only existing members can create initiatives"
+                : "MsgCreateInitiative"
+            }
             className="sd-btn sd-btn-primary"
           >
             Create Initiative
@@ -305,10 +326,25 @@ export default function InitiativeList() {
         )}
       </div>
 
-      {showForm && (
+      {address && isMember === false && (
+        <p className="mb-3 text-xs text-zinc-500">
+          Want to create an initiative? Creating initiatives is open to members. Ask any existing{" "}
+          <Link href="/contribute?view=members" className="text-indigo-400 hover:text-indigo-300 underline">
+            member
+          </Link>
+          {" "}to invite you in. We&apos;d love to have you contribute.
+        </p>
+      )}
+
+      {showForm && canCreate && (
         <div className="mb-4 rounded-xl sd-hull-tile p-4">
           <h3 className="mb-3 text-sm font-semibold text-zinc-200">New Initiative</h3>
           <div className="space-y-3">
+            {createError && (
+              <div className="rounded-lg border border-red-800 bg-red-900/20 px-3 py-2 text-sm text-red-400">
+                {createError}
+              </div>
+            )}
             {loadingProjects ? (
               <div className="flex items-center gap-2 px-1 py-2 text-xs text-zinc-500">
                 <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-600 border-t-indigo-400" />
@@ -389,7 +425,10 @@ export default function InitiativeList() {
               </button>
               <button
                 type="button"
-                onClick={() => setShowForm(false)}
+                onClick={() => {
+                  setShowForm(false);
+                  setCreateError(null);
+                }}
                 className="sd-btn sd-btn-secondary"
               >
                 Cancel
@@ -491,7 +530,12 @@ export default function InitiativeList() {
                       <button
                         type="button"
                         onClick={() => handleAssign(ini.id)}
-                        disabled={actionLoading === `assign-${ini.id}`}
+                        disabled={actionLoading === `assign-${ini.id}` || !canCreate}
+                        title={
+                          isMember === false
+                            ? "Only existing members can self-assign initiatives"
+                            : undefined
+                        }
                         className="sd-btn sd-btn-primary"
                       >
                         {actionLoading === `assign-${ini.id}` ? "Assigning..." : "Assign to Me"}

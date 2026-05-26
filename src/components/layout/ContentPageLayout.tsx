@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { ReactNode, Ref } from "react";
 import Image from "next/image";
 
@@ -119,62 +120,79 @@ export function ContentToolbar({
       {extraFilters}
       {primaryAction && (
         <div className="sd-toolbar-actions">
-          <button
-            type="button"
-            onClick={primaryAction.onClick}
-            disabled={primaryAction.disabled}
-            title={primaryAction.title}
-            className={`sd-btn ${
-              primaryAction.variant === "spark"
-                ? "sd-btn-spark"
-                : primaryAction.variant === "dream"
-                  ? "sd-btn-dream"
-                  : primaryAction.variant === "collection"
-                    ? "sd-btn-collection"
-                    : "sd-btn-primary"
-            }`}
-          >
-            {primaryAction.variant === "spark" ? (
-              <svg
-                className="flame"
-                aria-hidden="true"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
-                <path d="M12 2s4 4.5 4 8.5a4 4 0 01-8 0c0-1.2.4-2.2.9-3-.2 1.6-1.4 2.5-1.4 4.2A5.5 5.5 0 0013 17.5c3 0 5.5-2.5 5.5-5.8 0-4-2-6.5-3.5-8.2C13.8 2.3 12 2 12 2zm-1.1 13.2c-.9.6-1.4 1.4-1.4 2.4a2.5 2.5 0 005 0c0-1.6-1.6-2.2-1.6-3.6 0 .9-.7 1.6-1 2-.4-.2-.7-.5-1-.8z" />
-              </svg>
-            ) : primaryAction.variant === "dream" ? (
-              <Image
-                src="/vision.svg"
-                alt=""
-                aria-hidden="true"
-                width={15}
-                height={15}
-                className="telescope"
-              />
-            ) : primaryAction.variant === "collection" ? (
-              <svg
-                className="collection-stars"
-                aria-hidden="true"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
-                <path d="M8 3 L9 11 L14 12 L9 13 L8 21 L7 13 L2 12 L7 11 Z" />
-                <path d="M17 2.5 L17.82 4.87 L20.33 4.92 L18.33 6.43 L19.06 8.83 L17 7.4 L14.94 8.83 L15.67 6.43 L13.67 4.92 L16.18 4.87 Z" />
-                <path d="M18 14.5 L18.5 16.5 L20.5 17 L18.5 17.5 L18 19.5 L17.5 17.5 L15.5 17 L17.5 16.5 Z" />
-              </svg>
-            ) : (
-              primaryAction.glyph && <span aria-hidden="true">{primaryAction.glyph}</span>
-            )}
-            {primaryAction.label}
-          </button>
+          <PrimaryActionButton action={primaryAction} />
         </div>
       )}
     </div>
+  );
+}
+
+// Primary action buttons frequently encode wallet/member state in their
+// `disabled` and `title` props. That state isn't available during SSR (no
+// window/localStorage/Keplr), so the server renders the unconnected version
+// while the client's first paint may already have the connected version,
+// producing a hydration mismatch. Defer the prop-driven version until after
+// hydration: render disabled-with-no-tooltip on first paint (matching SSR),
+// then swap in the real values via a post-mount effect.
+function PrimaryActionButton({ action }: { action: PrimaryAction }) {
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+  const effectiveDisabled = hydrated ? !!action.disabled : true;
+  const effectiveTitle = hydrated ? action.title : undefined;
+  return (
+    <button
+      type="button"
+      onClick={action.onClick}
+      disabled={effectiveDisabled}
+      title={effectiveTitle}
+      className={`sd-btn ${
+        action.variant === "spark"
+          ? "sd-btn-spark"
+          : action.variant === "dream"
+            ? "sd-btn-dream"
+            : action.variant === "collection"
+              ? "sd-btn-collection"
+              : "sd-btn-primary"
+      }`}
+    >
+      {action.variant === "spark" ? (
+        <svg
+          className="flame"
+          aria-hidden="true"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+        >
+          <path d="M12 2s4 4.5 4 8.5a4 4 0 01-8 0c0-1.2.4-2.2.9-3-.2 1.6-1.4 2.5-1.4 4.2A5.5 5.5 0 0013 17.5c3 0 5.5-2.5 5.5-5.8 0-4-2-6.5-3.5-8.2C13.8 2.3 12 2 12 2zm-1.1 13.2c-.9.6-1.4 1.4-1.4 2.4a2.5 2.5 0 005 0c0-1.6-1.6-2.2-1.6-3.6 0 .9-.7 1.6-1 2-.4-.2-.7-.5-1-.8z" />
+        </svg>
+      ) : action.variant === "dream" ? (
+        <Image
+          src="/vision.svg"
+          alt=""
+          aria-hidden="true"
+          width={15}
+          height={15}
+          className="telescope"
+        />
+      ) : action.variant === "collection" ? (
+        <svg
+          className="collection-stars"
+          aria-hidden="true"
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+        >
+          <path d="M8 3 L9 11 L14 12 L9 13 L8 21 L7 13 L2 12 L7 11 Z" />
+          <path d="M17 2.5 L17.82 4.87 L20.33 4.92 L18.33 6.43 L19.06 8.83 L17 7.4 L14.94 8.83 L15.67 6.43 L13.67 4.92 L16.18 4.87 Z" />
+          <path d="M18 14.5 L18.5 16.5 L20.5 17 L18.5 17.5 L18 19.5 L17.5 17.5 L15.5 17 L17.5 16.5 Z" />
+        </svg>
+      ) : (
+        action.glyph && <span aria-hidden="true">{action.glyph}</span>
+      )}
+      {action.label}
+    </button>
   );
 }
 

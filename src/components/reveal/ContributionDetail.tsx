@@ -8,6 +8,7 @@ import {
   listTrancheStakes,
 } from "@/lib/api";
 import { RevealMsgTypeUrls } from "@/lib/tx";
+import { useIsRepMember } from "@/hooks/useIsRepMember";
 import CouncilActions from "@/components/reveal/CouncilActions";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { formatTime, timeAgo } from "@/lib/utils";
@@ -445,6 +446,7 @@ function TrancheActions({
   onChanged: () => void;
 }) {
   const { address, signAndBroadcast } = useWallet();
+  const isMember = useIsRepMember(address);
   const [open, setOpen] = useState<null | "stake" | "reveal" | "verify">(null);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -556,6 +558,7 @@ function TrancheActions({
 
   const canStake =
     !!address &&
+    isMember === true &&
     !isContributor &&
     tranche.status === TrancheStatus.STAKING;
   const canReveal =

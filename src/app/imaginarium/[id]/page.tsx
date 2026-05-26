@@ -12,12 +12,14 @@ import ReactionBar from "@/components/ReactionBar";
 import ReplyThread from "@/components/ReplyThread";
 import ReplyForm from "@/components/ReplyForm";
 import { useWallet } from "@/contexts/WalletContext";
+import { useCanPin } from "@/hooks/useCanPin";
 import { MsgTypeUrls } from "@/lib/tx";
 
 export default function PostDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const { address, connected, signAndBroadcast } = useWallet();
+  const canPin = useCanPin(address);
 
   const [post, setPost] = useState<Post | null>(null);
   const [replies, setReplies] = useState<Reply[]>([]);
@@ -249,13 +251,14 @@ export default function PostDetailPage() {
 
         {/* Actions */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 pt-4">
-          <ReactionBar postId={post.id} />
+          <ReactionBar postId={post.id} minReplyTrustLevel={post.min_reply_trust_level} />
 
           <div className="flex flex-wrap items-center gap-2">
             {connected && !isDeleted && !post.pinned_by && post.expires_at && post.expires_at !== "0" && (
               <button
                 onClick={handlePin}
-                disabled={actionLoading}
+                disabled={actionLoading || canPin === false}
+                title={canPin === false ? "Pinning requires Established trust level or higher" : undefined}
                 className="rounded px-3 py-1 text-xs text-amber-500 transition-colors hover:bg-amber-900/20 hover:text-amber-400 disabled:opacity-50"
               >
                 Pin
@@ -329,13 +332,14 @@ export default function PostDetailPage() {
           ) : (
             <>
               <div className="mb-6">
-                <ReplyForm postId={post.id} variant="dream" onSubmitted={fetchData} />
+                <ReplyForm postId={post.id} variant="dream" minReplyTrustLevel={post.min_reply_trust_level} onSubmitted={fetchData} />
               </div>
 
               <ReplyThread
                 replies={replies}
                 postId={post.id}
                 postCreator={post.creator}
+                postMinReplyTrustLevel={post.min_reply_trust_level}
                 onReplySubmitted={fetchData}
               />
             </>

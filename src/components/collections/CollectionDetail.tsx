@@ -9,6 +9,7 @@ import {
   getCurationSummary,
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
+import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { CollectMsgTypeUrls } from "@/lib/tx";
 import { timeAgo, formatTime } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
@@ -50,6 +51,8 @@ function linkHostname(uri: string): string | null {
 
 export default function CollectionDetail({ collectionId, onBack }: CollectionDetailProps) {
   const { address, signAndBroadcast } = useWallet();
+  const isMember = useIsRepMember(address);
+  const cannotUpvote = address ? isMember === false : false;
 
   const [collection, setCollection] = useState<Collection | null>(null);
   const [items, setItems] = useState<CollectionItem[]>([]);
@@ -279,7 +282,8 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
           <div className="flex items-center gap-2">
             <button
               onClick={handleUpvote}
-              disabled={actionLoading === "upvote"}
+              disabled={actionLoading === "upvote" || cannotUpvote}
+              title={cannotUpvote ? "Only existing members can upvote" : undefined}
               className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-emerald-400 disabled:opacity-50"
             >
               {actionLoading === "upvote" ? "..." : `+${collection.upvote_count || 0}`}

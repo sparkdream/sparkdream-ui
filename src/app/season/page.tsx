@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   getCurrentSeason,
   getSeasonStats,
@@ -17,6 +18,7 @@ import {
 } from "@/lib/api";
 import { SeasonMsgTypeUrls } from "@/lib/tx";
 import { useWallet } from "@/contexts/WalletContext";
+import { useIsRepMember } from "@/hooks/useIsRepMember";
 import CopyableAddress from "@/components/CopyableAddress";
 import type {
   Achievement,
@@ -138,6 +140,7 @@ function formatNum(n: string | number | undefined): string {
 
 export default function SeasonPage() {
   const { connected, address, ready, signAndBroadcast } = useWallet();
+  const isRepMember = useIsRepMember(address);
   const [view, setView] = useState<View>("overview");
   const [rarityFilter, setRarityFilter] = useState<RarityFilter>("all");
   const [questFilter, setQuestFilter] = useState<QuestFilter>("all");
@@ -708,6 +711,12 @@ export default function SeasonPage() {
                 type="button"
                 className={`sd-side-item${nominationSubview === "create" ? " active" : ""}`}
                 onClick={() => setNominationSubview("create")}
+                disabled={connected && isRepMember === false}
+                title={
+                  connected && isRepMember === false
+                    ? "Only existing members can nominate"
+                    : undefined
+                }
               >
                 Nominate
               </button>
@@ -1106,6 +1115,7 @@ export default function SeasonPage() {
               params={params}
               address={address}
               connected={connected}
+              isRepMember={isRepMember}
               txPending={txPending}
               onNominate={(contentRef, rationale) =>
                 handleNominationTx(
@@ -2143,6 +2153,22 @@ const identityInputStyle: React.CSSProperties = {
   outline: "none",
 };
 
+function NonMemberHint({ message }: { message: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        padding: "48px 24px",
+        backgroundColor: "var(--panel)", backgroundImage: "var(--hull-texture)",
+        border: "1px dashed var(--rule-strong)",
+        borderRadius: "var(--r-lg)",
+        color: "var(--ink-mute)",
+      }}
+    >
+      <p style={{ margin: 0 }}>{message}</p>
+    </div>
+  );
+}
+
 function FormCard({
   title,
   hint,
@@ -2994,6 +3020,7 @@ function NominationsView({
   params,
   address,
   connected,
+  isRepMember,
   txPending,
   onNominate,
   onStake,
@@ -3007,12 +3034,31 @@ function NominationsView({
   params: SeasonParams | null;
   address: string | null;
   connected: boolean;
+  isRepMember: boolean | null;
   txPending: string | null;
   onNominate: (contentRef: string, rationale: string) => void;
   onStake: (id: string, amount: string) => void;
   onUnstake: (id: string) => void;
 }) {
   if (subview === "create") {
+    if (connected && isRepMember === false) {
+      return (
+        <NonMemberHint
+          message={
+            <>
+              Want to nominate a contribution? Nominations are open to members. Ask any existing{" "}
+              <Link
+                href="/contribute?view=members"
+                style={{ color: "var(--violet-hi)", textDecoration: "underline" }}
+              >
+                member
+              </Link>
+              {" "}to invite you in. We&apos;d love to have you weigh in.
+            </>
+          }
+        />
+      );
+    }
     return (
       <NominateForm
         params={params}
@@ -3061,6 +3107,12 @@ function NominationsView({
             className="sd-btn sd-btn-primary"
             style={{ marginTop: 14 }}
             onClick={() => setSubview("create")}
+            disabled={isRepMember === false}
+            title={
+              isRepMember === false
+                ? "Only existing members can nominate"
+                : undefined
+            }
           >
             Nominate a contribution
           </button>
@@ -3080,6 +3132,7 @@ function NominationsView({
           minConviction={minConviction}
           address={address}
           connected={connected}
+          isRepMember={isRepMember}
           txPending={txPending}
           onStake={onStake}
           onUnstake={onUnstake}
@@ -3094,6 +3147,7 @@ function NominationCard({
   minConviction,
   address,
   connected,
+  isRepMember,
   txPending,
   onStake,
   onUnstake,
@@ -3102,10 +3156,12 @@ function NominationCard({
   minConviction: number;
   address: string | null;
   connected: boolean;
+  isRepMember: boolean | null;
   txPending: string | null;
   onStake: (id: string, amount: string) => void;
   onUnstake: (id: string) => void;
 }) {
+  const canStake = isRepMember === true;
   const [stakeInput, setStakeInput] = useState("");
   const conviction = Number(nomination.conviction || 0);
   const pct = minConviction > 0 ? Math.min(100, Math.round((conviction / minConviction) * 100)) : 0;
@@ -3196,6 +3252,7 @@ function NominationCard({
             value={stakeInput}
             onChange={(e) => setStakeInput(e.target.value)}
             inputMode="decimal"
+            disabled={!canStake}
           />
           <button
             type="button"
@@ -3204,7 +3261,8 @@ function NominationCard({
               onStake(nomination.id, stakeInput);
               setStakeInput("");
             }}
-            disabled={!stakeInput || Number(stakeInput) <= 0 || txPending === stakeKey}
+            disabled={!canStake || !stakeInput || Number(stakeInput) <= 0 || txPending === stakeKey}
+            title={!canStake ? "Only existing members can stake on nominations" : undefined}
           >
             {txPending === stakeKey ? "Staking…" : "Stake"}
           </button>

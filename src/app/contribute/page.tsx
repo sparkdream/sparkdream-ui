@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import MemberProfile from "@/components/contribute/MemberProfile";
 import MemberList from "@/components/contribute/MemberList";
@@ -33,33 +33,24 @@ export default function ReputationPage() {
 
 function ReputationPageInner() {
   const { connected, ready } = useWallet();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const urlView = VALID_VIEWS.includes(searchParams.get("view") as View)
     ? (searchParams.get("view") as View)
     : null;
-  const initialView: View = urlView ?? (connected ? "profile" : "members");
 
-  const [view, setView] = useState<View>(initialView);
+  // URL is the single source of truth for `view`. Sidebar clicks call
+  // switchView → router.push, and external Links (e.g. the "member" link in
+  // member-only notices on this very page) likewise update the URL; both
+  // paths funnel through urlView so the page can't disagree with itself.
+  const view: View = urlView ?? (connected ? "profile" : "members");
   const [accountOpen, setAccountOpen] = useState(true);
   const [exploreOpen, setExploreOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  // Sync external URL changes (e.g. Header dropdown → /contribute?view=delegate
-  // while already on /contribute) into the local view state. `useState` only
-  // reads its initial value once, so without this the deep-link is a no-op
-  // when the user is already on this page. Intentionally not depending on
-  // `view` to avoid clobbering in-page sidebar clicks (which don't touch the
-  // URL); `urlView` only changes on real navigations.
-  useEffect(() => {
-    if (urlView !== null && urlView !== view) {
-      setView(urlView);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlView]);
-
   const switchView = (v: View) => {
-    setView(v);
     setMobileSidebarOpen(false);
+    router.push(`/contribute?view=${v}`, { scroll: false });
   };
 
   if (!ready) {
@@ -291,7 +282,7 @@ function ReputationPageInner() {
             connected ? <DelegationPanel /> : <ConnectPrompt message="Connect your wallet to delegate your SPARK." />
           )}
           {view === "invitations" && (
-            connected ? <InvitationPanel defaultShowForm={initialView === "invitations"} /> : <ConnectPrompt message="Connect your wallet to manage invitations." />
+            connected ? <InvitationPanel defaultShowForm={urlView === "invitations"} /> : <ConnectPrompt message="Connect your wallet to manage invitations." />
           )}
           {view === "members" && <MemberList />}
           {view === "projects" && <ProjectList />}
