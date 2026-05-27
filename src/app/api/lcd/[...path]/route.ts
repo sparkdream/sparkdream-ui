@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Runtime LCD_ENDPOINT wins over the build-time NEXT_PUBLIC_* fallback so the
+// proxy target tracks the same source as /api/config without a rebuild.
 const LCD_ENDPOINT =
-  process.env.NEXT_PUBLIC_LCD_ENDPOINT || process.env.LCD_ENDPOINT || "https://api-test.sparkdream.io";
+  process.env.LCD_ENDPOINT || process.env.NEXT_PUBLIC_LCD_ENDPOINT || "https://api-test.sparkdream.io";
 
 export async function GET(
   request: NextRequest,

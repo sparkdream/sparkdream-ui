@@ -3,17 +3,20 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { loadManifest, type ManifestEntry } from "@/lib/archive";
+import { useChainConfig } from "@/contexts/ChainConfigContext";
 
 export default function ArchiveIndexPage() {
   const [snapshots, setSnapshots] = useState<ManifestEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const { config, ready: configReady } = useChainConfig();
 
   useEffect(() => {
-    loadManifest().then((m) => {
+    if (!configReady) return;
+    loadManifest(config.remoteManifestUrl).then((m) => {
       setSnapshots(m.snapshots);
       setLoading(false);
     });
-  }, []);
+  }, [configReady, config.remoteManifestUrl]);
 
   const byChain = snapshots.reduce<Record<string, ManifestEntry[]>>((acc, s) => {
     (acc[s.chainId] ||= []).push(s);

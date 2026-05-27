@@ -12,19 +12,23 @@ services:
         to:
           - global: true
     env:
-      - NEXT_PUBLIC_CHAIN_ID=sparkdream-test-1
-      - NEXT_PUBLIC_LCD_ENDPOINT=https://api-test.sparkdream.io
-      - NEXT_PUBLIC_RPC_ENDPOINT=https://rpc-test.sparkdream.io
-      - NEXT_PUBLIC_DENOM=uspark
-      - NEXT_PUBLIC_DISPLAY_DENOM=SPARK
-      - NEXT_PUBLIC_BECH32_PREFIX=sprkdrm
-      - NEXT_PUBLIC_CHAIN_NAME=Spark Dream
+      # Runtime config — read by /api/config and the LCD proxy at request time,
+      # so denom/endpoint changes only need a deployment update, not a rebuild.
+      # The NEXT_PUBLIC_* variants are inlined at build time and would not pick
+      # up edits made here, so they are intentionally not used in the SDL.
+      - CHAIN_ID=sparkdream-test-1
+      - LCD_ENDPOINT=https://api-test.sparkdream.io
+      - RPC_ENDPOINT=https://rpc-test.sparkdream.io
+      - CHAIN_DENOM=uspark.sparkdreamtest
+      - DISPLAY_DENOM=SPARK
+      - BECH32_PREFIX=sprkdrm
+      - CHAIN_NAME=Spark Dream
       # Optional: point at a manifests.json hosted in object storage
       # (4everland / R2 / S3) so new snapshots become visible by uploading
       # files — no redeploy. Set after running `npm run snapshot:upload`.
       # The bucket must CORS-allow this deployment's hostname — see
       # deploy/s3-cors.json for a sample policy.
-      # - NEXT_PUBLIC_REMOTE_MANIFEST_URL=https://my-bucket.4everbucket.com/manifests.json
+      # - REMOTE_MANIFEST_URL=https://my-bucket.4everbucket.com/manifests.json
 
 profiles:
   compute:

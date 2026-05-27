@@ -40,11 +40,11 @@ export function sourceFor(entry: ManifestEntry): ArchiveSource {
   return new LocalArchiveSource(entry.id);
 }
 
-export async function loadManifest(): Promise<ManifestFile> {
-  // Production deploys (e.g. Akash) point this env var at a manifests.json
-  // hosted in object storage so new snapshots can be added by uploading a
-  // file — no redeploy.
-  const remoteUrl = process.env.NEXT_PUBLIC_REMOTE_MANIFEST_URL;
+export async function loadManifest(remoteUrl: string): Promise<ManifestFile> {
+  // Production deploys (e.g. Akash) point REMOTE_MANIFEST_URL at a manifests.json
+  // in object storage so new snapshots can be added by uploading a file — no
+  // redeploy. The URL arrives via /api/config (see ChainConfig.remoteManifestUrl)
+  // so it can be changed at runtime without rebuilding the image.
   if (remoteUrl) {
     try {
       const res = await fetch(remoteUrl);

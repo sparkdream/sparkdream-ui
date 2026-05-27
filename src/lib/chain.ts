@@ -1,5 +1,6 @@
 // Chain configuration — defaults are used for SSR and as fallback.
-// At runtime the client fetches /api/config for the actual values.
+// At runtime the client fetches /api/config for the actual values
+// (which read non-NEXT_PUBLIC_* server env vars, see api/config/route.ts).
 
 export interface ChainConfig {
   chainId: string;
@@ -10,6 +11,7 @@ export interface ChainConfig {
   denom: string;
   displayDenom: string;
   bech32Prefix: string;
+  remoteManifestUrl: string;
 }
 
 export const defaults: ChainConfig = {
@@ -18,9 +20,10 @@ export const defaults: ChainConfig = {
   lcdEndpoint: process.env.NEXT_PUBLIC_LCD_ENDPOINT || "https://api-test.sparkdream.io",
   rpcEndpoint: process.env.NEXT_PUBLIC_RPC_ENDPOINT || "https://rpc-test.sparkdream.io",
   explorerUrl: process.env.NEXT_PUBLIC_EXPLORER_URL || "https://explorer-testnet.sparkdream.io/sparkdream",
-  denom: process.env.NEXT_PUBLIC_DENOM || "uspark",
+  denom: process.env.NEXT_PUBLIC_DENOM || "uspark.sparkdreamtest",
   displayDenom: process.env.NEXT_PUBLIC_DISPLAY_DENOM || "SPARK",
   bech32Prefix: process.env.NEXT_PUBLIC_BECH32_PREFIX || "sprkdrm",
+  remoteManifestUrl: process.env.NEXT_PUBLIC_REMOTE_MANIFEST_URL || "",
 };
 
 export function buildChainInfo(c: ChainConfig) {

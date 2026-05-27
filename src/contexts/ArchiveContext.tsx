@@ -8,6 +8,7 @@ import {
   type ManifestEntry,
   type ManifestFile,
 } from "@/lib/archive";
+import { useChainConfig } from "@/contexts/ChainConfigContext";
 
 interface ArchiveState {
   entry: ManifestEntry | null;
@@ -38,10 +39,12 @@ export function ArchiveProvider({
 }) {
   const [manifest, setManifest] = useState<ManifestFile>({ snapshots: [] });
   const [manifestReady, setManifestReady] = useState(false);
+  const { config, ready: configReady } = useChainConfig();
 
   useEffect(() => {
+    if (!configReady) return;
     let cancelled = false;
-    loadManifest().then((m) => {
+    loadManifest(config.remoteManifestUrl).then((m) => {
       if (cancelled) return;
       setManifest(m);
       setManifestReady(true);
@@ -49,7 +52,7 @@ export function ArchiveProvider({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [configReady, config.remoteManifestUrl]);
 
   const entry = useMemo(() => {
     if (!snapshotId) return null;
