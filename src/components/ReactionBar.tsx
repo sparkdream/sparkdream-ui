@@ -7,6 +7,7 @@ import { getReactionCounts, getUserReaction } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useIsReadOnly } from "@/contexts/ArchiveContext";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
+import { useTrustRank } from "@/hooks/useTrustRank";
 import { MsgTypeUrls } from "@/lib/tx";
 import { countToNum } from "@/lib/utils";
 
@@ -24,8 +25,21 @@ export default function ReactionBar({ postId, replyId = "0", minReplyTrustLevel 
   const { address, connected, signAndBroadcast } = useWallet();
   const isReadOnly = useIsReadOnly();
   const isMember = useIsRepMember(address);
+  const trustRank = useTrustRank(address);
   const openToAll = minReplyTrustLevel === -1;
-  const cannotReact = !openToAll && connected && isMember === false;
+  const cannotReactMember = !openToAll && connected && isMember === false;
+  // As of chain commit 1124a9b reactions consult the same min_reply_trust_level
+  // as replies. A value >= 1 means a member must additionally meet the trust
+  // bar. We block only when we have a definitive answer (trustRank !== null);
+  // otherwise leave enabled so we don't flash disabled while loading.
+  const cannotReactTrust =
+    !openToAll &&
+    minReplyTrustLevel >= 1 &&
+    connected &&
+    isMember === true &&
+    trustRank !== null &&
+    trustRank < minReplyTrustLevel;
+  const cannotReact = cannotReactMember || cannotReactTrust;
   const [counts, setCounts] = useState<ReactionCounts | null>(null);
   const [userReaction, setUserReaction] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -116,9 +130,11 @@ export default function ReactionBar({ postId, replyId = "0", minReplyTrustLevel 
                 ? "Archived — read only"
                 : !connected
                   ? "Connect wallet to react"
-                  : cannotReact
-                    ? "Only existing members can react"
-                    : info.label
+                  : cannotReactTrust
+                    ? `Reach trust level ${minReplyTrustLevel} to react on this post`
+                    : cannotReactMember
+                      ? "Only existing members can react"
+                      : info.label
             }
             className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-sm transition-colors ${
               isActive

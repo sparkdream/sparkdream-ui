@@ -15,6 +15,8 @@ import {
   listGuildMemberships,
   listNominations,
   listRetroRewardHistory,
+  getRepTreasuryStatus,
+  type QueryTreasuryStatusResponse,
 } from "@/lib/api";
 import { SeasonMsgTypeUrls } from "@/lib/tx";
 import { useWallet } from "@/contexts/WalletContext";
@@ -164,6 +166,10 @@ export default function SeasonPage() {
   const [retroRewards, setRetroRewards] = useState<RetroRewardRecord[]>([]);
   const [nominationSubview, setNominationSubview] = useState<NominationSubview>("all");
   const [nominationNavCollapsed, setNominationNavCollapsed] = useState(false);
+  // Treasury balance + inflow/outflow per chain commit 5da98bd. Surfaced on
+  // the SeasonCard so members can see how much of this season's DREAM came
+  // from the treasury vs. fresh mint.
+  const [treasury, setTreasury] = useState<QueryTreasuryStatusResponse | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -235,6 +241,10 @@ export default function SeasonPage() {
         listNominations({ limit: "500" }).catch(() => ({ nominations: [] })),
         listRetroRewardHistory(seasonRes.number, { limit: "500" }).catch(() => ({ records: [] })),
       ]);
+      // Treasury — separate await so a missing /treasury_status (pre-v1.0.10
+      // chain or LCD outage) doesn't block the rest of the season load.
+      const treasuryRes = await getRepTreasuryStatus().catch(() => null);
+      setTreasury(treasuryRes);
       setStats(statsRes);
       setAchievements(achRes.achievements || []);
       setTitles(titleRes.titles || []);
@@ -1148,6 +1158,7 @@ export default function SeasonPage() {
         <aside className="sd-rail">
           <div className="sd-rail-filters">{sidebar}</div>
           <SeasonCard season={season} stats={stats} />
+          {treasury && <TreasuryCard treasury={treasury} />}
           {connected && profile ? (
             <ProfileCard profile={profile} displayTitle={titles.find((t) => t.title_id === profile.display_title)?.name || null} />
           ) : (
@@ -1641,6 +1652,65 @@ function SeasonCard({
               {formatNum(stats.active_members)}
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatDream(amount: string | undefined): string {
+  if (!amount || amount === "0") return "0";
+  try {
+    return (BigInt(amount) / BigInt(1_000_000)).toLocaleString();
+  } catch {
+    return "0";
+  }
+}
+
+// Surfaces the rep treasury accounting added in chain commit 5da98bd:
+// `season_inflow` accumulates the 10% TreasuryShare on every completed
+// initiative; `season_outflow` is what's been drained back out to fund
+// interim payouts / retro-PGF rewards (when the matching flags are on).
+// `balance` is the live DREAM balance the treasury can pay from.
+function TreasuryCard({ treasury }: { treasury: QueryTreasuryStatusResponse }) {
+  return (
+    <div className="sd-rail-card">
+      <h5>Treasury</h5>
+      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>
+        {formatDream(treasury.balance)} DREAM
+        {treasury.max_balance && treasury.max_balance !== "0" && (
+          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 400, color: "var(--ink-mute)" }}>
+            / {formatDream(treasury.max_balance)}
+          </span>
+        )}
+      </div>
+      <div
+        style={{
+          marginTop: 12,
+          paddingTop: 12,
+          borderTop: "1px solid var(--rule)",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 10,
+          fontSize: 12,
+        }}
+      >
+        <div>
+          <div style={{ color: "var(--ink-mute)" }}>Season inflow</div>
+          <div style={{ color: "var(--emerald-hi, #34d399)", fontWeight: 600 }}>
+            +{formatDream(treasury.season_inflow)}
+          </div>
+        </div>
+        <div>
+          <div style={{ color: "var(--ink-mute)" }}>Season outflow</div>
+          <div style={{ color: "var(--amber-hi, #fbbf24)", fontWeight: 600 }}>
+            −{formatDream(treasury.season_outflow)}
+          </div>
+        </div>
+      </div>
+      {treasury.season_burned && treasury.season_burned !== "0" && (
+        <div style={{ marginTop: 8, fontSize: 11, color: "var(--ink-mute)" }}>
+          Burned this season: {formatDream(treasury.season_burned)} DREAM
         </div>
       )}
     </div>

@@ -414,8 +414,60 @@ export interface ForumStatusResponse {
   current_epoch: string;
 }
 
+// Forum module params. As of chain v1.0.11 fee/tax/deposit fields are bare
+// math.Int strings in bond-denom micro-units; denom is resolved at runtime
+// from x/identity (see commit efcf392).
+export interface ForumParams {
+  forum_paused: boolean;
+  moderation_paused: boolean;
+  bounties_enabled: boolean;
+  reactions_enabled: boolean;
+  appeals_paused: boolean;
+  editing_enabled: boolean;
+  spam_tax_amount: string;
+  reaction_spam_tax_amount: string;
+  flag_spam_tax_amount: string;
+  downvote_deposit_amount: string;
+  appeal_fee_amount: string;
+  lock_appeal_fee_amount: string;
+  move_appeal_fee_amount: string;
+  edit_fee_amount: string;
+  bounty_cancellation_fee_percent: string;
+  max_content_size: string;
+  daily_post_limit: string;
+  max_reply_depth: number;
+  edit_grace_period: string;
+  edit_max_window: string;
+  max_follows_per_day: string;
+  archive_threshold: string;
+  unarchive_cooldown: string;
+  archive_cooldown: string;
+  hide_appeal_cooldown: string;
+  lock_appeal_cooldown: string;
+  move_appeal_cooldown: string;
+  cost_per_byte_amount: string;
+  cost_per_byte_exempt: boolean;
+  ephemeral_ttl: string;
+  conviction_renewal_threshold: string;
+  conviction_renewal_period: string;
+  // Sentinel bonded-role config (flattened from forum's source of truth into
+  // x/rep BondedRoleConfig for ROLE_TYPE_FORUM_SENTINEL).
+  min_sentinel_bond: string;
+  min_sentinel_rep_tier: string;
+  // Trust-level enum name, e.g. "TRUST_LEVEL_ESTABLISHED". As of commit
+  // d01f7b8 the sentinel gate prefers trust level over rep tier.
+  min_sentinel_trust_level: string;
+  min_sentinel_age_blocks: string;
+  sentinel_demotion_cooldown: string;
+  sentinel_demotion_threshold: string;
+  sentinel_unhide_window: string;
+  // Bond stays locked & slashable for this many seconds after MsgUnbondRole;
+  // BondedRole status flips to UNBONDING during the cooldown (commit 6d7e7ce).
+  sentinel_unbond_cooldown: string;
+}
+
 export interface ForumParamsResponse {
-  params: Record<string, unknown>;
+  params: ForumParams;
 }
 
 export interface PinnedPostsResponse {

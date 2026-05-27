@@ -20,7 +20,7 @@ export function useEphemeralTtl(kind: "blog" | "forum"): number | null {
     fetcher
       .then((res) => {
         if (cancelled) return;
-        const p = (res.params ?? {}) as Record<string, unknown>;
+        const p = (res.params ?? {}) as unknown as Record<string, unknown>;
         const raw = kind === "blog" ? p.ephemeral_content_ttl : p.ephemeral_ttl;
         if (typeof raw === "string" && /^\d+$/.test(raw)) {
           setTtl(parseInt(raw, 10));

@@ -65,7 +65,7 @@ export default function SessionsPage() {
     ? Math.max(1, Math.floor(parseDurationSeconds(sessionParams.max_expiration) / 86400))
     : FALLBACK_MAX_DAYS;
   const maxSpendDisplay = sessionParams
-    ? parseInt(sessionParams.max_spend_limit.amount || "0", 10) / 1_000_000
+    ? parseInt(sessionParams.max_spend_limit_amount || "0", 10) / 1_000_000
     : FALLBACK_MAX_SPEND;
   const maxExecCountCap = sessionParams
     ? parseInt(sessionParams.max_exec_count || "0", 10) || FALLBACK_MAX_EXEC

@@ -31,6 +31,22 @@ function formatAmount(amount: string): string {
   return (n / BigInt(1000000)).toLocaleString();
 }
 
+// Render unbond_completion_time (unix seconds) as a human-friendly "Xd Yh"
+// countdown. Empty when already matured or unset.
+function formatCooldownRemaining(completionUnix: string): string {
+  if (!completionUnix || completionUnix === "0") return "";
+  const n = parseInt(completionUnix, 10);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  const remaining = n - Math.floor(Date.now() / 1000);
+  if (remaining <= 0) return "matured";
+  const days = Math.floor(remaining / 86400);
+  const hours = Math.floor((remaining % 86400) / 3600);
+  if (days > 0) return `${days}d ${hours}h`;
+  const minutes = Math.floor((remaining % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
 function accuracyRate(activity: SentinelActivity | null): string {
   if (!activity) return "—";
   const upheld = BigInt(activity.upheld_hides || "0");
@@ -302,13 +318,24 @@ export default function SentinelPanel() {
         <>
           {/* Bond overview */}
           <div className="sd-hull-tile rounded-xl p-5">
+            {/* Per chain commit 6d7e7ce, MsgUnbondRole now queues a withdrawal
+                that stays slashable until unbond_completion_time and flips
+                bond_status to UNBONDING. The owning module refuses authority
+                during that window. Surface both the chip and the cooldown
+                here so sentinels aren't surprised when their actions bounce. */}
+            {bondStatus === BondedRoleStatus.UNBONDING && bond?.unbond_completion_time && (
+              <div className="mb-3 rounded-lg border border-amber-800/50 bg-amber-900/15 px-3 py-2 text-xs text-amber-300">
+                Unbond in progress. <b>{formatAmount(bond.pending_unbond_amount || "0")} DREAM</b> stays locked + slashable for {formatCooldownRemaining(bond.unbond_completion_time) || "—"}. Sentinel actions are refused until cooldown matures.
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
               <div>
                 <p className="text-xs text-zinc-500">Status</p>
                 <p className={`font-medium ${
                   bondStatus === BondedRoleStatus.NORMAL ? "text-emerald-400"
                     : bondStatus === BondedRoleStatus.RECOVERY ? "text-amber-400"
-                      : "text-red-400"
+                      : bondStatus === BondedRoleStatus.UNBONDING ? "text-amber-400"
+                        : "text-red-400"
                 }`}>
                   {BONDED_ROLE_STATUS_LABELS[bondStatus] || bondStatus}
                 </p>
@@ -337,6 +364,14 @@ export default function SentinelPanel() {
                   <span className="text-zinc-600">Demotion floor: </span>
                   <span className="text-zinc-400">{formatAmount(config.demotion_threshold)} DREAM</span>
                 </div>
+                {config.unbond_cooldown && config.unbond_cooldown !== "0" && (
+                  <div>
+                    <span className="text-zinc-600">Unbond cooldown: </span>
+                    <span className="text-zinc-400">
+                      {Math.round(parseInt(config.unbond_cooldown, 10) / 86400)}d
+                    </span>
+                  </div>
+                )}
                 {bond?.cumulative_rewards && bond.cumulative_rewards !== "0" && (
                   <div>
                     <span className="text-zinc-600">Rewards: </span>

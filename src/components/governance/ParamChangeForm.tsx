@@ -20,7 +20,13 @@ type FieldKind =
   // them untouched (no micro-denom conversion etc.). All three render the
   // same plain text input.
   | "int"
-  | "dec";
+  | "dec"
+  // Post-chain-v1.0.11 (commit efcf392) most fee/tax/deposit fields are bare
+  // math.Int strings in bond-denom micro-units; the denom is resolved at
+  // runtime from x/identity. "amount" renders as the chain's displayDenom
+  // (SPARK), converts the user-entered decimal to micro-units, and emits a
+  // bare string on the wire (no `{denom, amount}` wrapper).
+  | "amount";
 
 interface FieldDef {
   /** Unique editedValues key. For nested fields use the dot path, e.g.
@@ -178,12 +184,12 @@ const MODULES: Record<string, ModuleDef> = {
       { key: "maxPostsPerDay", apiKey: "max_posts_per_day", label: "Max Posts Per Day", kind: "number" },
       { key: "maxRepliesPerDay", apiKey: "max_replies_per_day", label: "Max Replies Per Day", kind: "number" },
       { key: "maxReactionsPerDay", apiKey: "max_reactions_per_day", label: "Max Reactions Per Day", kind: "number" },
-      { key: "costPerByte", apiKey: "cost_per_byte", label: "Cost Per Byte", kind: "coin" },
-      { key: "reactionFee", apiKey: "reaction_fee", label: "Reaction Fee", kind: "coin" },
+      { key: "costPerByte", apiKey: "cost_per_byte_amount", label: "Cost Per Byte", kind: "amount" },
+      { key: "reactionFee", apiKey: "reaction_fee_amount", label: "Reaction Fee", kind: "amount" },
       { key: "costPerByteExempt", apiKey: "cost_per_byte_exempt", label: "Cost Per Byte Exempt", kind: "boolean" },
       { key: "reactionFeeExempt", apiKey: "reaction_fee_exempt", label: "Reaction Fee Exempt", kind: "boolean" },
-      { key: "maxCostPerByte", apiKey: "max_cost_per_byte", label: "Max Cost Per Byte", kind: "coin" },
-      { key: "maxReactionFee", apiKey: "max_reaction_fee", label: "Max Reaction Fee", kind: "coin" },
+      { key: "maxCostPerByte", apiKey: "max_cost_per_byte_amount", label: "Max Cost Per Byte", kind: "amount" },
+      { key: "maxReactionFee", apiKey: "max_reaction_fee_amount", label: "Max Reaction Fee", kind: "amount" },
       { key: "ephemeralContentTtl", apiKey: "ephemeral_content_ttl", label: "Ephemeral Content TTL (blocks)", kind: "bigint" },
       { key: "minEphemeralContentTtl", apiKey: "min_ephemeral_content_ttl", label: "Min Ephemeral Content TTL (blocks)", kind: "bigint" },
       { key: "pinMinTrustLevel", apiKey: "pin_min_trust_level", label: "Pin Min Trust Level", kind: "number" },
@@ -208,7 +214,7 @@ const MODULES: Record<string, ModuleDef> = {
       { key: "maxSessionsPerGranter", apiKey: "max_sessions_per_granter", label: "Max Sessions Per Granter", kind: "bigint" },
       { key: "maxMsgTypesPerSession", apiKey: "max_msg_types_per_session", label: "Max Msg Types Per Session", kind: "bigint" },
       { key: "maxExpiration", apiKey: "max_expiration", label: "Max Expiration", kind: "duration", unit: "days", unitDivisor: 86400 },
-      { key: "maxSpendLimit", apiKey: "max_spend_limit", label: "Max Spend Limit", kind: "coin" },
+      { key: "maxSpendLimit", apiKey: "max_spend_limit_amount", label: "Max Spend Limit", kind: "amount" },
       { key: "maxExecCount", apiKey: "max_exec_count", label: "Max Exec Count", kind: "bigint" },
     ],
   },
@@ -229,15 +235,15 @@ const MODULES: Record<string, ModuleDef> = {
       { key: "bountiesEnabled", apiKey: "bounties_enabled", label: "Bounties Enabled", kind: "boolean" },
       { key: "reactionsEnabled", apiKey: "reactions_enabled", label: "Reactions Enabled", kind: "boolean" },
       { key: "editingEnabled", apiKey: "editing_enabled", label: "Editing Enabled", kind: "boolean" },
-      { key: "spamTax", apiKey: "spam_tax", label: "Spam Tax", kind: "coin" },
-      { key: "reactionSpamTax", apiKey: "reaction_spam_tax", label: "Reaction Spam Tax", kind: "coin" },
-      { key: "flagSpamTax", apiKey: "flag_spam_tax", label: "Flag Spam Tax", kind: "coin" },
-      { key: "downvoteDeposit", apiKey: "downvote_deposit", label: "Downvote Deposit", kind: "coin" },
-      { key: "appealFee", apiKey: "appeal_fee", label: "Appeal Fee", kind: "coin" },
-      { key: "lockAppealFee", apiKey: "lock_appeal_fee", label: "Lock Appeal Fee", kind: "coin" },
-      { key: "moveAppealFee", apiKey: "move_appeal_fee", label: "Move Appeal Fee", kind: "coin" },
-      { key: "editFee", apiKey: "edit_fee", label: "Edit Fee", kind: "coin" },
-      { key: "costPerByte", apiKey: "cost_per_byte", label: "Cost Per Byte", kind: "coin" },
+      { key: "spamTax", apiKey: "spam_tax_amount", label: "Spam Tax", kind: "amount" },
+      { key: "reactionSpamTax", apiKey: "reaction_spam_tax_amount", label: "Reaction Spam Tax", kind: "amount" },
+      { key: "flagSpamTax", apiKey: "flag_spam_tax_amount", label: "Flag Spam Tax", kind: "amount" },
+      { key: "downvoteDeposit", apiKey: "downvote_deposit_amount", label: "Downvote Deposit", kind: "amount" },
+      { key: "appealFee", apiKey: "appeal_fee_amount", label: "Appeal Fee", kind: "amount" },
+      { key: "lockAppealFee", apiKey: "lock_appeal_fee_amount", label: "Lock Appeal Fee", kind: "amount" },
+      { key: "moveAppealFee", apiKey: "move_appeal_fee_amount", label: "Move Appeal Fee", kind: "amount" },
+      { key: "editFee", apiKey: "edit_fee_amount", label: "Edit Fee", kind: "amount" },
+      { key: "costPerByte", apiKey: "cost_per_byte_amount", label: "Cost Per Byte", kind: "amount" },
       { key: "costPerByteExempt", apiKey: "cost_per_byte_exempt", label: "Cost Per Byte Exempt", kind: "boolean" },
       { key: "bountyCancellationFeePercent", apiKey: "bounty_cancellation_fee_percent", label: "Bounty Cancellation Fee (%)", kind: "bigint" },
       { key: "maxContentSize", apiKey: "max_content_size", label: "Max Content Size (bytes)", kind: "bigint" },
@@ -260,6 +266,7 @@ const MODULES: Record<string, ModuleDef> = {
       { key: "sentinelDemotionCooldown", apiKey: "sentinel_demotion_cooldown", label: "Sentinel Demotion Cooldown (blocks)", kind: "bigint" },
       { key: "sentinelDemotionThreshold", apiKey: "sentinel_demotion_threshold", label: "Sentinel Demotion Threshold", kind: "dec" },
       { key: "sentinelUnhideWindow", apiKey: "sentinel_unhide_window", label: "Sentinel Unhide Window (blocks)", kind: "bigint" },
+      { key: "sentinelUnbondCooldown", apiKey: "sentinel_unbond_cooldown", label: "Sentinel Unbond Cooldown (seconds)", kind: "bigint", hint: "0 = immediate withdrawal; otherwise bond stays locked + slashable for this many seconds after MsgUnbondRole" },
       { key: "convictionRenewalThreshold", apiKey: "conviction_renewal_threshold", label: "Conviction Renewal Threshold", kind: "dec" },
       { key: "convictionRenewalPeriod", apiKey: "conviction_renewal_period", label: "Conviction Renewal Period (blocks)", kind: "bigint" },
     ],
@@ -298,7 +305,7 @@ const MODULES: Record<string, ModuleDef> = {
       { key: "maxNameLength", apiKey: "max_name_length", label: "Max Name Length", kind: "bigint" },
       { key: "maxNamesPerAddress", apiKey: "max_names_per_address", label: "Max Names Per Address", kind: "bigint" },
       { key: "expirationDuration", apiKey: "expiration_duration", label: "Expiration Duration", kind: "duration", unit: "days", unitDivisor: 86400 },
-      { key: "registrationFee", apiKey: "registration_fee", label: "Registration Fee", kind: "coin" },
+      { key: "registrationFee", apiKey: "registration_fee_amount", label: "Registration Fee", kind: "amount" },
       { key: "disputeStakeDream", apiKey: "dispute_stake_dream", label: "Dispute Stake (DREAM)", kind: "int" },
       { key: "contestStakeDream", apiKey: "contest_stake_dream", label: "Contest Stake (DREAM)", kind: "int" },
       { key: "disputeTimeoutBlocks", apiKey: "dispute_timeout_blocks", label: "Dispute Timeout (blocks)", kind: "bigint" },
@@ -345,10 +352,11 @@ const MODULES: Record<string, ModuleDef> = {
     // encoder still round-trips the rest from the LCD response, so unedited
     // fields keep their current values.
     fields: [
-      { key: "minBridgeStake", apiKey: "min_bridge_stake", label: "Min Bridge Stake", kind: "coin" },
-      { key: "maxBridgesPerPeer", apiKey: "max_bridges_per_peer", label: "Max Bridges Per Peer", kind: "bigint" },
-      { key: "bridgeRevocationCooldown", apiKey: "bridge_revocation_cooldown", label: "Bridge Revocation Cooldown", kind: "duration", unit: "hours", unitDivisor: 3600 },
-      { key: "bridgeUnbondingPeriod", apiKey: "bridge_unbonding_period", label: "Bridge Unbonding Period", kind: "duration", unit: "days", unitDivisor: 86400 },
+      // Bridge min_bond / unbonding period / slash caps now live on the
+      // x/service ServiceTypeConfig entries ("federation-bridge-activitypub"
+      // / "federation-bridge-atproto" / -nostr / -lens). Edit those via the
+      // service module, not federation params.
+      { key: "maxBridgesPerPeer", apiKey: "max_bridges_per_peer", label: "Max Bridges Per Peer", kind: "bigint", hint: "Effective kill-switch; the real defenses are min_bond + content-hash dedup + rate limits" },
       { key: "maxInboundPerBlock", apiKey: "max_inbound_per_block", label: "Max Inbound Per Block", kind: "bigint" },
       { key: "maxOutboundPerBlock", apiKey: "max_outbound_per_block", label: "Max Outbound Per Block", kind: "bigint" },
       { key: "maxContentBodySize", apiKey: "max_content_body_size", label: "Max Content Body Size", kind: "bigint" },
@@ -362,7 +370,8 @@ const MODULES: Record<string, ModuleDef> = {
       { key: "verifierSlashAmount", apiKey: "verifier_slash_amount", label: "Verifier Slash Amount", kind: "int" },
       { key: "verificationWindow", apiKey: "verification_window", label: "Verification Window", kind: "duration", unit: "hours", unitDivisor: 3600 },
       { key: "challengeWindow", apiKey: "challenge_window", label: "Challenge Window", kind: "duration", unit: "hours", unitDivisor: 3600 },
-      { key: "challengeFee", apiKey: "challenge_fee", label: "Challenge Fee", kind: "coin" },
+      { key: "challengeFee", apiKey: "challenge_fee_amount", label: "Challenge Fee", kind: "amount" },
+      { key: "escalationFee", apiKey: "escalation_fee_amount", label: "Escalation Fee", kind: "amount", hint: "Escrowed by the party escalating a challenge to a system report" },
       { key: "minEpochVerifications", apiKey: "min_epoch_verifications", label: "Min Epoch Verifications", kind: "number" },
       { key: "minVerifierAccuracy", apiKey: "min_verifier_accuracy", label: "Min Verifier Accuracy", kind: "dec" },
       { key: "verifierDreamReward", apiKey: "verifier_dream_reward", label: "Verifier DREAM Reward", kind: "int" },
@@ -853,7 +862,7 @@ function ParamField({
 
   const label = field.unit
     ? `${field.label} (${field.unit})`
-    : field.kind === "coin" || field.kind === "coins"
+    : field.kind === "coin" || field.kind === "coins" || field.kind === "amount"
       ? `${field.label} (${displayDenom})`
       : field.label;
 
@@ -903,6 +912,13 @@ function displayValue(field: FieldDef, raw: unknown): string {
     const c = raw as { denom: string; amount: string };
     if (!c?.amount) return "0";
     return String(parseInt(c.amount, 10) / 1_000_000);
+  }
+
+  if (field.kind === "amount") {
+    // Bare math.Int string in bond-denom micro-units (post-efcf392). Render
+    // as a decimal display unit (1 SPARK = 1_000_000 micro).
+    if (typeof raw !== "string" || !raw) return "0";
+    return String(parseInt(raw, 10) / 1_000_000);
   }
 
   if (field.kind === "boolean") {
@@ -1209,6 +1225,11 @@ function convertEditToAmino(
       const denom = cur?.[0]?.denom || "uspark";
       const micro = (parseFloat(edited) * 1_000_000).toFixed(0);
       return [{ denom, amount: micro }];
+    }
+    case "amount": {
+      // Bare math.Int string in micro-units; the chain wraps it into the
+      // bond-denom Coin at use time from x/identity (post-efcf392).
+      return (parseFloat(edited) * 1_000_000).toFixed(0);
     }
     case "string":
     case "int":

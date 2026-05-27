@@ -80,23 +80,27 @@ export interface PeerPolicy {
   blocked_identities: string[];
 }
 
-export interface BridgeOperator {
+// BridgeBinding: federation-side record per (operator, peer). Economic state
+// (bond, status, slashing history) lives on x/service Operator keyed by
+// (address, "federation-bridge-<protocol>"). See commit 0747637.
+export interface BridgeBinding {
   address: string;
   peer_id: string;
   protocol: string;
   endpoint: string;
-  stake: { denom: string; amount: string };
   registered_at: string;
-  status: string;
   content_submitted: string;
-  content_rejected: string;
-  slash_count: string;
-  revoked_at: string;
-  last_submission_at: string;
-  unbonding_end_time: string;
   content_verified: string;
+  content_rejected: string;
   content_unverified: string;
+  last_submission_at: string;
+  // Toggled by service hooks AfterOperatorUnderfunded / AfterOperatorReFunded.
+  suspended: boolean;
 }
+
+// Legacy alias: older code refers to `BridgeOperator`, but post-0747637 the
+// shape is BridgeBinding and the bond/status moved to x/service.
+export type BridgeOperator = BridgeBinding;
 
 export interface FederatedContent {
   id: string;
@@ -155,10 +159,13 @@ export interface GetPeerResponse {
   peer: Peer;
 }
 
-export interface ListBridgeOperatorsResponse {
-  bridge_operators: BridgeOperator[];
+// Post-0747637 the federation LCD returns `bridge_bindings`; we keep the
+// historical name on the alias for the old `list_bridge_operators` callers.
+export interface ListBridgeBindingsResponse {
+  bridge_bindings: BridgeBinding[];
   pagination: Pagination;
 }
+export type ListBridgeOperatorsResponse = ListBridgeBindingsResponse;
 
 export interface ListFederatedContentResponse {
   content: FederatedContent[];

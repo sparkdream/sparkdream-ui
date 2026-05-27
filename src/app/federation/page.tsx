@@ -81,7 +81,7 @@ export default function FederationPage() {
     let cancelled = false;
     Promise.all([
       listFederationPeers({ limit: "100", reverse: true }).then((r) => r.peers || []).catch(() => [] as Peer[]),
-      listFederationBridgeOperators({ limit: "100", reverse: true }).then((r) => r.bridge_operators || []).catch(() => [] as BridgeOperator[]),
+      listFederationBridgeOperators({ limit: "100", reverse: true }).then((r) => r.bridge_bindings || []).catch(() => [] as BridgeOperator[]),
       listFederatedContent({ limit: "100", reverse: true }).then((r) => r.content || []).catch(() => [] as FederatedContent[]),
       listFederationIdentityLinks({ limit: "100", reverse: true }).then((r) => r.links || []).catch(() => [] as IdentityLink[]),
       listFederationOutboundAttestations({ limit: "20", reverse: true }).then((r) => r.attestations || []).catch(() => [] as OutboundAttestation[]),
@@ -258,7 +258,70 @@ export default function FederationPage() {
       <Section title="Recent attestations" meta="IBC packets & bridge submissions">
         <AttestationsList attestations={displayAttestations} />
       </Section>
+
+      <BridgeBindingsSection bindings={bridges} />
     </ContentPageLayout>
+  );
+}
+
+// ───────────────────────── Bridge bindings ─────────────────────────
+
+// Post-commit 0747637 the bridge operator's economic state (bond, status,
+// slash history) moved to x/service.Operator. Federation only stores the
+// per-(operator, peer) binding — protocol, endpoint, content counters, plus
+// the `suspended` flag the service hooks toggle on underfund/refund. Surface
+// the binding list here with a pointer to the unified operator view in
+// governance.
+function BridgeBindingsSection({ bindings }: { bindings: BridgeOperator[] }) {
+  if (!bindings.length) return null;
+  const suspended = bindings.filter((b) => b.suspended);
+  return (
+    <Section
+      title="Bridge bindings"
+      meta={`${bindings.length} binding${bindings.length === 1 ? "" : "s"} · ${suspended.length} suspended · bond + slashing live on x/service`}
+    >
+      <div className="sd-hull-tile overflow-hidden rounded-xl">
+        <table className="w-full text-sm">
+          <thead className="bg-zinc-900/40 text-left text-xs text-zinc-500">
+            <tr>
+              <th className="px-3 py-2 font-medium">Operator</th>
+              <th className="px-3 py-2 font-medium">Peer</th>
+              <th className="px-3 py-2 font-medium">Protocol</th>
+              <th className="px-3 py-2 font-medium text-right">Submitted</th>
+              <th className="px-3 py-2 font-medium text-right">Verified</th>
+              <th className="px-3 py-2 font-medium text-right">Rejected</th>
+              <th className="px-3 py-2 font-medium">State</th>
+            </tr>
+          </thead>
+          <tbody>
+            {bindings.map((b) => (
+              <tr key={`${b.address}/${b.peer_id}`} className="border-t border-zinc-800/60">
+                <td className="px-3 py-2 font-mono text-xs text-zinc-400">
+                  {b.address.slice(0, 12)}…{b.address.slice(-6)}
+                </td>
+                <td className="px-3 py-2 text-xs text-zinc-300">{b.peer_id}</td>
+                <td className="px-3 py-2 font-mono text-xs text-zinc-400">{b.protocol}</td>
+                <td className="px-3 py-2 text-right text-xs text-zinc-200">{b.content_submitted}</td>
+                <td className="px-3 py-2 text-right text-xs text-emerald-400">{b.content_verified}</td>
+                <td className="px-3 py-2 text-right text-xs text-red-400">{b.content_rejected}</td>
+                <td className="px-3 py-2">
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] ${
+                    b.suspended
+                      ? "bg-amber-500/15 text-amber-400"
+                      : "bg-emerald-500/15 text-emerald-400"
+                  }`}>
+                    {b.suspended ? "suspended" : "active"}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs text-zinc-500">
+        Bond / slashing / unbonding now live on <a href="/governance?view=chain-operators" className="text-indigo-400 hover:text-indigo-300 underline">Governance → Operators</a>.
+      </p>
+    </Section>
   );
 }
 

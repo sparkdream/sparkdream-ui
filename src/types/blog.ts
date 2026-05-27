@@ -124,14 +124,17 @@ export interface Coin {
   amount: string;
 }
 
+// As of chain v1.0.11 fee/cost fields are bare math.Int strings in bond-denom
+// micro-units; the denom is resolved at runtime from x/identity. The old Coin
+// shape (`{denom, amount}`) was renamed to `_amount` suffix in commit efcf392.
 export interface BlogParams {
   max_title_length: string;
   max_body_length: string;
-  cost_per_byte: Coin;
+  cost_per_byte_amount: string;
   cost_per_byte_exempt: boolean;
   max_reply_length: string;
   max_reply_depth: number;
-  reaction_fee: Coin;
+  reaction_fee_amount: string;
   reaction_fee_exempt: boolean;
   max_posts_per_day: number;
   max_replies_per_day: number;
@@ -140,8 +143,8 @@ export interface BlogParams {
   pin_min_trust_level: number;
   max_pins_per_day: number;
   min_ephemeral_content_ttl: string;
-  max_cost_per_byte: Coin;
-  max_reaction_fee: Coin;
+  max_cost_per_byte_amount: string;
+  max_reaction_fee_amount: string;
   conviction_renewal_threshold: string;
   conviction_renewal_period: string;
 }

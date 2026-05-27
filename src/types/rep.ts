@@ -492,12 +492,17 @@ export const BondedRoleStatus = {
   NORMAL: "BONDED_ROLE_STATUS_NORMAL",
   RECOVERY: "BONDED_ROLE_STATUS_RECOVERY",
   DEMOTED: "BONDED_ROLE_STATUS_DEMOTED",
+  // Added in commit 6d7e7ce: MsgUnbondRole now queues a withdrawal that stays
+  // slashable through unbond_cooldown; bond_status flips to UNBONDING and the
+  // owning module refuses authority until the EndBlocker matures it.
+  UNBONDING: "BONDED_ROLE_STATUS_UNBONDING",
 } as const;
 
 export const BONDED_ROLE_STATUS_LABELS: Record<string, string> = {
   [BondedRoleStatus.NORMAL]: "Normal",
   [BondedRoleStatus.RECOVERY]: "Recovery",
   [BondedRoleStatus.DEMOTED]: "Demoted",
+  [BondedRoleStatus.UNBONDING]: "Unbonding",
 };
 
 export interface BondedRole {
@@ -512,6 +517,12 @@ export interface BondedRole {
   demotion_cooldown_until: string;
   cumulative_rewards: string;
   last_reward_epoch: string;
+  // DREAM queued for withdrawal via MsgUnbondRole and not yet matured; counts
+  // toward current_bond, so slashes consume both (commit 6d7e7ce).
+  pending_unbond_amount: string;
+  // Unix timestamp at which the in-flight unbond matures and pending DREAM is
+  // released; 0 when no unbond is in flight.
+  unbond_completion_time: string;
 }
 
 export interface BondedRoleConfig {
@@ -522,6 +533,9 @@ export interface BondedRoleConfig {
   min_age_blocks: string;
   demotion_cooldown: string;
   demotion_threshold: string;
+  // Seconds the bond stays locked + slashable after MsgUnbondRole; 0 =
+  // immediate (legacy). Sourced from the owning module's operational params.
+  unbond_cooldown: string;
 }
 
 export interface BondedRoleResponse {

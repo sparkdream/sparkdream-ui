@@ -25,13 +25,15 @@ export interface Dispute {
   contest_succeeded: boolean;
 }
 
+// As of chain v1.0.11 fee fields are bare math.Int strings in bond-denom
+// micro-units; the denom is resolved at runtime from x/identity.
 export interface NameParams {
   blocked_names: string[];
   min_name_length: string;
   max_name_length: string;
   max_names_per_address: string;
   expiration_duration: string;
-  registration_fee: { denom: string; amount: string };
+  registration_fee_amount: string;
   dispute_stake_dream: string;
   dispute_timeout_blocks: string;
   contest_stake_dream: string;

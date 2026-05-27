@@ -183,8 +183,11 @@ export default function MyNames() {
   }
 
   const maxNames = params ? parseInt(params.max_names_per_address || "5", 10) : 5;
-  const regFee = params?.registration_fee
-    ? `${parseInt(params.registration_fee.amount, 10) / 1_000_000} ${params.registration_fee.denom === "usparkdream" ? "SPARK" : params.registration_fee.denom}`
+  // As of chain v1.0.11 the denom is resolved at runtime from x/identity,
+  // not carried per-param. Display as SPARK (the bond denom) since the chain
+  // wraps the param into bond-denom Coin at the point of use.
+  const regFee = params?.registration_fee_amount
+    ? `${parseInt(params.registration_fee_amount, 10) / 1_000_000} SPARK`
     : "";
 
   return (

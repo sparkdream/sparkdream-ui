@@ -24,7 +24,10 @@ function statusBadge(status: string) {
   if (status === BondedRoleStatus.NORMAL) {
     return "bg-emerald-500/15 text-emerald-400";
   }
-  if (status === BondedRoleStatus.RECOVERY) {
+  // UNBONDING is a transitional state (commit 6d7e7ce): bond still locked +
+  // slashable, but authority refused. Amber matches the user-perception
+  // "in flight" of RECOVERY.
+  if (status === BondedRoleStatus.RECOVERY || status === BondedRoleStatus.UNBONDING) {
     return "bg-amber-500/15 text-amber-400";
   }
   return "bg-red-500/15 text-red-400";

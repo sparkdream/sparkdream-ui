@@ -172,6 +172,19 @@ import type {
   BankBalanceResponse,
   ValidatorStatus,
 } from "@/types/staking";
+import type {
+  QueryOperatorResponse,
+  QueryOperatorsResponse,
+  QueryServiceTypeResponse,
+  QueryServiceTypesResponse,
+  QueryReportResponse,
+  QueryReportsByOperatorResponse,
+} from "@/types/service";
+import type {
+  QueryChainIdentityResponse,
+  QueryBondDenomResponse,
+  QueryDreamDenomResponse,
+} from "@/types/identity";
 
 // In the browser, route through our Next.js proxy to avoid CORS issues.
 // On the server (SSR), call the LCD endpoint directly.
@@ -687,6 +700,22 @@ export async function invitationsByInviter(
 
 export async function getRepParams(): Promise<RepParamsResponse> {
   return get<RepParamsResponse>("/sparkdream/rep/v1/params");
+}
+
+// Treasury inflow/outflow accounting (commit 5da98bd): the 10% TreasuryShare
+// from initiative completions accrues to `season_inflow`; PayDREAMFromTreasury-
+// First drains to `season_outflow` on interim & retro-PGF payouts when the
+// matching flag is on.
+export interface QueryTreasuryStatusResponse {
+  balance: string;
+  max_balance: string;
+  season_inflow: string;
+  season_outflow: string;
+  season_burned: string;
+}
+
+export async function getRepTreasuryStatus(): Promise<QueryTreasuryStatusResponse> {
+  return get<QueryTreasuryStatusResponse>("/sparkdream/rep/v1/treasury_status");
 }
 
 /** Collect unique tags from all projects and initiatives. */
@@ -1442,11 +1471,16 @@ export async function listFederationPeers(
   );
 }
 
+// Post-0747637, federation only owns the per-(operator, peer) binding —
+// bond/status/slashing moved to x/service. The endpoint and response key
+// renamed accordingly. We keep the function name `listFederationBridgeOperators`
+// for backwards compatibility with callers that already projected the binding
+// shape under the old "bridge_operator" label.
 export async function listFederationBridgeOperators(
   pagination?: PaginationRequest
 ): Promise<ListBridgeOperatorsResponse> {
   return get<ListBridgeOperatorsResponse>(
-    "/sparkdream/federation/v1/list_bridge_operators",
+    "/sparkdream/federation/v1/list_bridge_bindings",
     paginationParams(pagination)
   );
 }
@@ -1589,6 +1623,88 @@ export async function listAllDelegationsByDelegator(
     if (!key) break;
   }
   return out;
+}
+
+// ── x/service (chain commit 95a0e38) ─────────────────────────────────
+
+export async function listServiceOperators(
+  pagination?: PaginationRequest
+): Promise<QueryOperatorsResponse> {
+  return get<QueryOperatorsResponse>(
+    "/sparkdream/service/v1/operators",
+    paginationParams(pagination)
+  );
+}
+
+export async function listServiceOperatorsByServiceType(
+  serviceType: string,
+  pagination?: PaginationRequest
+): Promise<QueryOperatorsResponse> {
+  return get<QueryOperatorsResponse>(
+    `/sparkdream/service/v1/operators_by_service_type/${encodeURIComponent(serviceType)}`,
+    paginationParams(pagination)
+  );
+}
+
+export async function getServiceOperator(
+  address: string,
+  serviceType: string
+): Promise<QueryOperatorResponse> {
+  return get<QueryOperatorResponse>(
+    `/sparkdream/service/v1/operator/${encodeURIComponent(address)}/${encodeURIComponent(serviceType)}`
+  );
+}
+
+export async function listServiceTypes(
+  pagination?: PaginationRequest
+): Promise<QueryServiceTypesResponse> {
+  return get<QueryServiceTypesResponse>(
+    "/sparkdream/service/v1/service_types",
+    paginationParams(pagination)
+  );
+}
+
+export async function getServiceType(
+  serviceType: string
+): Promise<QueryServiceTypeResponse> {
+  return get<QueryServiceTypeResponse>(
+    `/sparkdream/service/v1/service_type/${encodeURIComponent(serviceType)}`
+  );
+}
+
+export async function getServiceReport(
+  reportId: string
+): Promise<QueryReportResponse> {
+  return get<QueryReportResponse>(
+    `/sparkdream/service/v1/report/${encodeURIComponent(reportId)}`
+  );
+}
+
+export async function listReportsByOperator(
+  operatorAddress: string,
+  serviceType: string,
+  pagination?: PaginationRequest
+): Promise<QueryReportsByOperatorResponse> {
+  return get<QueryReportsByOperatorResponse>(
+    `/sparkdream/service/v1/reports_by_operator/${encodeURIComponent(operatorAddress)}/${encodeURIComponent(serviceType)}`,
+    paginationParams(pagination)
+  );
+}
+
+// ── x/identity (chain commit efcf392) ─────────────────────────────────
+
+export async function getChainIdentity(): Promise<QueryChainIdentityResponse> {
+  return get<QueryChainIdentityResponse>(
+    "/sparkdream/identity/v1/chain-identity"
+  );
+}
+
+export async function getIdentityBondDenom(): Promise<QueryBondDenomResponse> {
+  return get<QueryBondDenomResponse>("/sparkdream/identity/v1/bond-denom");
+}
+
+export async function getIdentityDreamDenom(): Promise<QueryDreamDenomResponse> {
+  return get<QueryDreamDenomResponse>("/sparkdream/identity/v1/dream-denom");
 }
 
 // Fetch all member addresses across every council and return as a Set

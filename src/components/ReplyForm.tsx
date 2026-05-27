@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useWallet } from "@/contexts/WalletContext";
 import { useIsReadOnly } from "@/contexts/ArchiveContext";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
+import { useTrustRank } from "@/hooks/useTrustRank";
 import { useEphemeralTtl, formatTtl } from "@/hooks/useEphemeralTtl";
 import { MsgTypeUrls } from "@/lib/tx";
 import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
@@ -43,6 +44,7 @@ export default function ReplyForm({
   const { address, connected, signAndBroadcast } = useWallet();
   const isReadOnly = useIsReadOnly();
   const isMember = useIsRepMember(address);
+  const trustRank = useTrustRank(address);
   const ephemeralTtl = useEphemeralTtl("blog");
   const [body, setBody] = useState(initialBody);
   const [contentType, setContentType] = useState<number>(initialContentType ?? ContentType.TEXT);
@@ -55,7 +57,19 @@ export default function ReplyForm({
   // For new replies, mirror the chain's MsgCreateReply gate. Editing bypasses
   // this because chain UpdateReply only checks creator == reply.creator.
   const openToAll = minReplyTrustLevel === -1;
-  const replyBlocked = !isEditing && !openToAll && connected && isMember === false;
+  const memberBlocked = !isEditing && !openToAll && connected && isMember === false;
+  // Per commit 1124a9b: when min_reply_trust_level >= 1 a *member* must still
+  // meet the trust bar. Distinct error path so we can render a different
+  // remediation ("earn trust") vs. "join the conversation".
+  const trustBlocked =
+    !isEditing &&
+    !openToAll &&
+    minReplyTrustLevel >= 1 &&
+    connected &&
+    isMember === true &&
+    trustRank !== null &&
+    trustRank < minReplyTrustLevel;
+  const replyBlocked = memberBlocked || trustBlocked;
   // Only show the ephemeral hint when the form is actually usable by a
   // non-member — i.e. open posts. Editing keeps the existing TTL, and on
   // member-only posts the form is replaced by the "members only" notice.
@@ -132,11 +146,32 @@ export default function ReplyForm({
   if (replyBlocked) {
     return (
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 text-sm text-zinc-500">
-        Want to reply? Replies to this post are open to members. Ask any existing{" "}
-        <Link href="/contribute?view=members" className="text-indigo-400 hover:text-indigo-300 underline">
-          member
-        </Link>
-        {" "}to invite you in. We&apos;d love to have you join the conversation.
+        {trustBlocked ? (
+          <>
+            Replies to this post require trust level {minReplyTrustLevel} or
+            higher. Keep contributing to raise your trust — see{" "}
+            <Link
+              href="/contribute"
+              className="text-indigo-400 hover:text-indigo-300 underline"
+            >
+              Contribute
+            </Link>
+            .
+          </>
+        ) : (
+          <>
+            Want to reply? Replies to this post are open to members. Ask any
+            existing{" "}
+            <Link
+              href="/contribute?view=members"
+              className="text-indigo-400 hover:text-indigo-300 underline"
+            >
+              member
+            </Link>
+            {" "}to invite you in. We&apos;d love to have you join the
+            conversation.
+          </>
+        )}
       </div>
     );
   }
