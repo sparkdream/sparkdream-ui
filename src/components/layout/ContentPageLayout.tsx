@@ -133,7 +133,9 @@ export function ContentToolbar({
 // while the client's first paint may already have the connected version,
 // producing a hydration mismatch. Defer the prop-driven version until after
 // hydration: render disabled-with-no-tooltip on first paint (matching SSR),
-// then swap in the real values via a post-mount effect.
+// then swap in the real values via a post-mount effect. `suppressHydration
+// Warning` covers a residual React 19 diff that reports `disabled` as
+// null-vs-true even though the SSR HTML carries `disabled=""`.
 function PrimaryActionButton({ action }: { action: PrimaryAction }) {
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
@@ -145,6 +147,7 @@ function PrimaryActionButton({ action }: { action: PrimaryAction }) {
       onClick={action.onClick}
       disabled={effectiveDisabled}
       title={effectiveTitle}
+      suppressHydrationWarning
       className={`sd-btn ${
         action.variant === "spark"
           ? "sd-btn-spark"

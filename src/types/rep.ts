@@ -438,6 +438,18 @@ export interface RepParamsResponse {
   params: Record<string, unknown>;
 }
 
+// Effective minimum stake an inviter must lock for their next invitation.
+// All "stake" amounts are micro-DREAM strings; cost_multiplier is a LegacyDec
+// serialized as a string (e.g. "1.100000000000000000").
+export interface RequiredInvitationStakeResponse {
+  required_stake: string;
+  base_stake: string;
+  cost_multiplier: string;
+  credits_used: number;
+  credits_remaining: number;
+  trust_level: string;
+}
+
 export interface GetTagResponse {
   tag: Tag;
 }

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { Suspense, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { Post } from "@/types/blog";
 import { PostStatus } from "@/types/blog";
 import { listPosts, getAllMemberAddresses, membersByTrustLevel, listTags, getLatestBlockHeight } from "@/lib/api";
@@ -33,6 +34,21 @@ const TRUST_LEVELS: { key: string; label: string; cls: string; value: string; ra
 ];
 
 export default function ImaginariumPage() {
+  return (
+    <Suspense fallback={null}>
+      <ImaginariumPageInner />
+    </Suspense>
+  );
+}
+
+function ImaginariumPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // URL is the single source of truth for the selected post so a reload keeps
+  // the user on the dream they were reading. `?post=<id>` is restricted to
+  // digit-only ids (post ids are uint64) to avoid open-redirect-ish surfaces.
+  const postParam = searchParams.get("post");
+  const selectedPostId = postParam && /^\d+$/.test(postParam) ? postParam : null;
   const { connected, address, sessionActive, activeSession } = useWallet();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +67,6 @@ export default function ImaginariumPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterRestored, setFilterRestored] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
 
   const [feedOpen, setFeedOpen] = useLocalStorageBoolean("imaginarium-feed-open", true);
   const [trustOpen, setTrustOpen] = useLocalStorageBoolean("imaginarium-trust-open", true);
@@ -340,8 +355,10 @@ export default function ImaginariumPage() {
     title: connected ? "MsgCreatePost" : "Connect a wallet to create a dream",
   };
 
-  const handleSelectPost = (p: Post) => setSelectedPostId(p.id);
-  const handleBackFromDetail = () => setSelectedPostId(null);
+  const handleSelectPost = (p: Post) =>
+    router.push(`/imaginarium?post=${p.id}`, { scroll: false });
+  const handleBackFromDetail = () =>
+    router.push("/imaginarium", { scroll: false });
 
   const toolbar = !showCreate && !selectedPostId && (
     <ContentToolbar

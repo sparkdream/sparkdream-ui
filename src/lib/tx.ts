@@ -145,6 +145,11 @@ export const NameMsgTypeUrls = {
   SetPrimary: "/sparkdream.name.v1.MsgSetPrimary",
   UpdateName: "/sparkdream.name.v1.MsgUpdateName",
   SetDisplayName: "/sparkdream.name.v1.MsgSetDisplayName",
+  // SetTarget points forward-resolution at a different address. The target
+  // must call AcceptTarget before that address may set the name as primary.
+  SetTarget: "/sparkdream.name.v1.MsgSetTarget",
+  AcceptTarget: "/sparkdream.name.v1.MsgAcceptTarget",
+  TransferName: "/sparkdream.name.v1.MsgTransferName",
   FileDispute: "/sparkdream.name.v1.MsgFileDispute",
   ContestDispute: "/sparkdream.name.v1.MsgContestDispute",
   ResolveDispute: "/sparkdream.name.v1.MsgResolveDispute",

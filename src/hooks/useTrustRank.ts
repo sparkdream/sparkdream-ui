@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getRepMember } from "@/lib/api";
+import { loadRepMember } from "@/lib/repMember";
 import { TrustLevel } from "@/types/rep";
 
 // Numeric ranks match the on-chain TrustLevel enum:
@@ -31,18 +31,14 @@ export function useTrustRank(address: string | null | undefined): number | null 
   useEffect(() => {
     if (!address) return;
     let cancelled = false;
-    getRepMember(address)
-      .then((res) => {
-        if (cancelled) return;
-        if (!res.member?.address) {
-          setRank(-1);
-          return;
-        }
-        setRank(TRUST_RANK[res.member.trust_level || ""] ?? 0);
-      })
-      .catch(() => {
-        if (!cancelled) setRank(-1);
-      });
+    loadRepMember(address).then((m) => {
+      if (cancelled) return;
+      if (!m) {
+        setRank(-1);
+        return;
+      }
+      setRank(TRUST_RANK[m.trust_level || ""] ?? 0);
+    });
     return () => {
       cancelled = true;
     };

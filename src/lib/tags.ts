@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getRepMember, listTags } from "@/lib/api";
+import { listTags } from "@/lib/api";
+import { loadRepMember } from "@/lib/repMember";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { TrustLevel } from "@/types/rep";
 
@@ -59,15 +60,11 @@ export function useCanCreateTags(address: string | null | undefined): boolean {
   useEffect(() => {
     if (!address) return;
     let cancelled = false;
-    getRepMember(address)
-      .then((res) => {
-        if (cancelled) return;
-        const rank = TRUST_RANK[res.member?.trust_level || ""] ?? -1;
-        setAllowed(rank >= TRUST_RANK[TrustLevel.ESTABLISHED]);
-      })
-      .catch(() => {
-        if (!cancelled) setAllowed(false);
-      });
+    loadRepMember(address).then((m) => {
+      if (cancelled) return;
+      const rank = TRUST_RANK[m?.trust_level || ""] ?? -1;
+      setAllowed(rank >= TRUST_RANK[TrustLevel.ESTABLISHED]);
+    });
     return () => {
       cancelled = true;
     };

@@ -72,6 +72,7 @@ import type {
   ListInvitationResponse,
   InvitationsByInviterResponse,
   RepParamsResponse,
+  RequiredInvitationStakeResponse,
   ListTagResponse,
   TagExistsResponse,
   GetTagBudgetResponse,
@@ -83,6 +84,7 @@ import type {
   ResolveResponse,
   ReverseResolveResponse,
   ListNamesResponse,
+  ListTargetsResponse,
   GetDisputeResponse,
   GetOwnerInfoResponse,
   ListDisputeResponse,
@@ -702,6 +704,14 @@ export async function getRepParams(): Promise<RepParamsResponse> {
   return get<RepParamsResponse>("/sparkdream/rep/v1/params");
 }
 
+export async function getRequiredInvitationStake(
+  inviter: string,
+): Promise<RequiredInvitationStakeResponse> {
+  return get<RequiredInvitationStakeResponse>(
+    `/sparkdream/rep/v1/required_invitation_stake/${inviter}`,
+  );
+}
+
 // Treasury inflow/outflow accounting (commit 5da98bd): the 10% TreasuryShare
 // from initiative completions accrues to `season_inflow`; PayDREAMFromTreasury-
 // First drains to `season_outflow` on interim & retro-PGF payouts when the
@@ -893,6 +903,18 @@ export async function listNamesByOwner(
 ): Promise<ListNamesResponse> {
   return get<ListNamesResponse>(
     `/sparkdream/name/v1/names/${address}`,
+    paginationParams(pagination)
+  );
+}
+
+// Names where `address` is the *accepted* resolver target. Pending (set but
+// not yet accepted) targets are not enumerable — the target accepts by name.
+export async function listTargetsForAddress(
+  address: string,
+  pagination?: PaginationRequest
+): Promise<ListTargetsResponse> {
+  return get<ListTargetsResponse>(
+    `/sparkdream/name/v1/targets/${address}`,
     paginationParams(pagination)
   );
 }
@@ -1707,17 +1729,20 @@ export async function getIdentityDreamDenom(): Promise<QueryDreamDenomResponse> 
   return get<QueryDreamDenomResponse>("/sparkdream/identity/v1/dream-denom");
 }
 
-// Fetch all member addresses across every council and return as a Set
+// Fetch every rep member's address as a Set. Pages through the x/rep Member
+// collection — "member" here is the x/rep notion (anyone with a Member
+// record), not council seating, matching how the rest of the app uses
+// `useIsRepMember` / the "ask a member to invite you" notices.
 export async function getAllMemberAddresses(): Promise<Set<string>> {
-  const { group: groups } = await listGroups();
-  const results = await Promise.all(
-    groups.map((g) => getCouncilMembers(g.index))
-  );
   const addresses = new Set<string>();
-  for (const res of results) {
-    for (const m of res.members) {
-      addresses.add(m.address);
-    }
-  }
+  let nextKey: string | null = null;
+  do {
+    const res: ListMemberResponse = await listRepMembers({
+      limit: "500",
+      ...(nextKey ? { key: nextKey } : {}),
+    });
+    for (const m of res.member || []) addresses.add(m.address);
+    nextKey = res.pagination?.next_key || null;
+  } while (nextKey);
   return addresses;
 }

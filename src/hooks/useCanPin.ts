@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getRepMember, getParams } from "@/lib/api";
+import { getParams } from "@/lib/api";
+import { loadRepMember } from "@/lib/repMember";
 import { TrustLevel } from "@/types/rep";
 
 const TRUST_RANK: Record<string, number> = {
@@ -27,14 +28,14 @@ export function useCanPin(address: string | null | undefined): boolean | null {
       return;
     }
     let cancelled = false;
-    Promise.all([getRepMember(address), getParams()])
-      .then(([memberRes, paramsRes]) => {
+    Promise.all([loadRepMember(address), getParams()])
+      .then(([member, paramsRes]) => {
         if (cancelled) return;
-        if (!memberRes.member?.address) {
+        if (!member) {
           setAllowed(false);
           return;
         }
-        const rank = TRUST_RANK[memberRes.member.trust_level || ""] ?? -1;
+        const rank = TRUST_RANK[member.trust_level || ""] ?? -1;
         const required = paramsRes.params?.pin_min_trust_level ?? TRUST_RANK[TrustLevel.ESTABLISHED];
         setAllowed(rank >= required);
       })

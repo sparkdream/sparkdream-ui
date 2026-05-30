@@ -2,12 +2,25 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useWallet } from "@/contexts/WalletContext";
-import { listNamesByOwner, reverseResolveName, getNameParams, getOwnerInfo } from "@/lib/api";
+import {
+  listNamesByOwner,
+  listTargetsForAddress,
+  reverseResolveName,
+  getNameParams,
+  getOwnerInfo,
+} from "@/lib/api";
 import { NameMsgTypeUrls } from "@/lib/tx";
 import type { NameRecord, NameParams } from "@/types/name";
 
 const DISPLAY_NAME_MAX_CODEPOINTS = 32;
 const codepointLength = (s: string) => Array.from(s).length;
+
+// Bech32 sanity check — chain prefix + 39-char body. Catches typos before
+// the chain rejects the tx; not a full bech32 checksum verification.
+const BECH32_RE = /^sprkdrm1[02-9ac-hj-np-z]{38}$/;
+const isValidAddress = (s: string) => BECH32_RE.test(s.trim());
+const shortAddress = (a: string) =>
+  a.length > 16 ? `${a.slice(0, 10)}…${a.slice(-6)}` : a;
 
 export default function MyNames() {
   const { address, signAndBroadcast } = useWallet();
@@ -29,6 +42,16 @@ export default function MyNames() {
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editData, setEditData] = useState("");
 
+  // Target form (per-name inline editor for MsgSetTarget)
+  const [editingTargetName, setEditingTargetName] = useState<string | null>(null);
+  const [targetDraft, setTargetDraft] = useState("");
+  const [savingTarget, setSavingTarget] = useState(false);
+
+  // Names pointing at this address (accepted targets) + accept-by-name form.
+  const [incomingTargets, setIncomingTargets] = useState<NameRecord[]>([]);
+  const [acceptDraft, setAcceptDraft] = useState("");
+  const [accepting, setAccepting] = useState(false);
+
   // Display name form
   const [editingDisplayName, setEditingDisplayName] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState("");
@@ -39,16 +62,18 @@ export default function MyNames() {
     try {
       setLoading(true);
       setError(null);
-      const [namesRes, reverseRes, ownerRes, paramsRes] = await Promise.all([
+      const [namesRes, reverseRes, ownerRes, paramsRes, targetsRes] = await Promise.all([
         listNamesByOwner(address),
         reverseResolveName(address).catch(() => ({ name: "" })),
         getOwnerInfo(address).catch(() => null),
         getNameParams(),
+        listTargetsForAddress(address).catch(() => ({ names: [], pagination: { next_key: null, total: "0" } })),
       ]);
       setNames(namesRes.names || []);
       setPrimaryName(reverseRes.name || "");
       setDisplayName(ownerRes?.owner_info?.display_name || "");
       setParams(paramsRes.params);
+      setIncomingTargets(targetsRes.names || []);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to load names";
       if (msg.includes("404") || msg.includes("not found")) {
@@ -149,6 +174,54 @@ export default function MyNames() {
       fetchNames();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to set primary");
+    }
+  }
+
+  async function handleSetTarget(name: string, target: string) {
+    if (!address) return;
+    const trimmed = target.trim();
+    if (trimmed && !isValidAddress(trimmed)) {
+      setSubmitError("Target must be a valid sprkdrm1… address");
+      return;
+    }
+    setSavingTarget(true);
+    setSubmitError(null);
+    try {
+      await signAndBroadcast([
+        {
+          typeUrl: NameMsgTypeUrls.SetTarget,
+          value: { authority: address, name, target: trimmed },
+        },
+      ]);
+      setEditingTargetName(null);
+      setTargetDraft("");
+      fetchNames();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to set target");
+    } finally {
+      setSavingTarget(false);
+    }
+  }
+
+  async function handleAcceptTarget(name: string) {
+    if (!address) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setAccepting(true);
+    setSubmitError(null);
+    try {
+      await signAndBroadcast([
+        {
+          typeUrl: NameMsgTypeUrls.AcceptTarget,
+          value: { authority: address, name: trimmed },
+        },
+      ]);
+      setAcceptDraft("");
+      fetchNames();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to accept target");
+    } finally {
+      setAccepting(false);
     }
   }
 
@@ -376,11 +449,23 @@ export default function MyNames() {
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium text-white">{nr.name}</span>
                     {nr.name === primaryName && (
                       <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-400 border border-emerald-500/30">
                         Primary
+                      </span>
+                    )}
+                    {nr.target && (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs border ${
+                          nr.target_accepted
+                            ? "bg-indigo-500/15 text-indigo-300 border-indigo-500/30"
+                            : "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                        }`}
+                        title={nr.target}
+                      >
+                        {nr.target_accepted ? "Points to" : "Pending"} {shortAddress(nr.target)}
                       </span>
                     )}
                   </div>
@@ -388,7 +473,7 @@ export default function MyNames() {
                     <p className="mt-1 break-all text-xs text-zinc-400">{nr.data}</p>
                   )}
                 </div>
-                <div className="flex shrink-0 items-center gap-1.5">
+                <div className="flex shrink-0 flex-wrap items-center gap-1.5">
                   {nr.name !== primaryName && (
                     <button
                       onClick={() => handleSetPrimary(nr.name)}
@@ -399,11 +484,26 @@ export default function MyNames() {
                   )}
                   <button
                     onClick={() => {
+                      if (editingTargetName === nr.name) {
+                        setEditingTargetName(null);
+                      } else {
+                        setEditingTargetName(nr.name);
+                        setTargetDraft(nr.target || "");
+                        setEditingName(null);
+                      }
+                    }}
+                    className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-white"
+                  >
+                    {editingTargetName === nr.name ? "Cancel" : nr.target ? "Target" : "Assign"}
+                  </button>
+                  <button
+                    onClick={() => {
                       if (editingName === nr.name) {
                         setEditingName(null);
                       } else {
                         setEditingName(nr.name);
                         setEditData(nr.data || "");
+                        setEditingTargetName(null);
                       }
                     }}
                     className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-white"
@@ -433,10 +533,118 @@ export default function MyNames() {
                   </button>
                 </div>
               )}
+
+              {/* Target form */}
+              {editingTargetName === nr.name && (
+                <div className="mt-3 space-y-2 border-t border-zinc-800 pt-3">
+                  <label className="block text-xs text-zinc-500">
+                    Resolver target (the address {nr.name} resolves to)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={targetDraft}
+                      onChange={(e) => setTargetDraft(e.target.value)}
+                      placeholder="sprkdrm1…"
+                      spellCheck={false}
+                      className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 font-mono text-xs text-white placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleSetTarget(nr.name, targetDraft)}
+                      disabled={
+                        savingTarget ||
+                        targetDraft.trim() === (nr.target || "") ||
+                        (targetDraft.trim() !== "" && !isValidAddress(targetDraft))
+                      }
+                      className="sd-btn sd-btn-primary"
+                    >
+                      {savingTarget ? "..." : "Save"}
+                    </button>
+                    {nr.target && (
+                      <button
+                        type="button"
+                        onClick={() => handleSetTarget(nr.name, "")}
+                        disabled={savingTarget}
+                        className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-red-500/50 hover:text-red-400"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    After saving, the target address must sign{" "}
+                    <span className="text-zinc-400">Accept</span> before it can use{" "}
+                    {nr.name} as its primary name. Ownership stays with you.
+                  </p>
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
+
+      {/* Names pointing at this address */}
+      <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+        <h3 className="text-sm font-medium text-zinc-200">Names pointing at me</h3>
+        <p className="mt-0.5 text-xs text-zinc-500">
+          Names where you are the accepted resolver target. Eligible to be set as your primary.
+        </p>
+
+        {incomingTargets.length > 0 && (
+          <ul className="mt-3 space-y-1.5">
+            {incomingTargets.map((nr) => (
+              <li
+                key={nr.name}
+                className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <span className="text-sm text-white">{nr.name}</span>
+                  <span className="ml-2 font-mono text-xs text-zinc-500">
+                    owner {shortAddress(nr.owner)}
+                  </span>
+                </div>
+                {nr.name !== primaryName && (
+                  <button
+                    onClick={() => handleSetPrimary(nr.name)}
+                    className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-white"
+                  >
+                    Set Primary
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="mt-3 border-t border-zinc-800 pt-3">
+          <label className="block text-xs text-zinc-500">
+            Accept a name pointing at you (enter the name)
+          </label>
+          <div className="mt-1 flex gap-2">
+            <input
+              type="text"
+              value={acceptDraft}
+              onChange={(e) =>
+                setAcceptDraft(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))
+              }
+              placeholder="name"
+              className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => handleAcceptTarget(acceptDraft)}
+              disabled={accepting || !acceptDraft.trim()}
+              className="sd-btn sd-btn-primary"
+            >
+              {accepting ? "..." : "Accept"}
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-zinc-600">
+            Required before you can set a name owned by someone else as your primary.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { reverseResolveName, getSessionsByGrantee } from "@/lib/api";
+import { reverseResolveName, getSessionsByGrantee, listTargetsForAddress } from "@/lib/api";
 
 // Simple in-memory cache shared across all hook instances.
 // Key: address, Value: { name, timestamp }
@@ -39,6 +39,19 @@ async function resolveWithCache(address: string): Promise<string> {
         if (granter && granter !== address) {
           name = await resolveDirect(granter);
         }
+      } catch {
+        // ignore
+      }
+    }
+    if (!name) {
+      // Fallback: names where this address is the accepted resolver target but
+      // hasn't been set as primary yet. Alphabetical tiebreaker since an
+      // address can be the accepted target of multiple names — stable across
+      // reloads avoids flicker.
+      try {
+        const res = await listTargetsForAddress(address);
+        const candidates = (res.names || []).map((n) => n.name).sort();
+        if (candidates.length > 0) name = candidates[0];
       } catch {
         // ignore
       }

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { Suspense, useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import { listCategories as fetchForumCategories, listForumPosts, listTags } from "@/lib/api";
 import CategoryList from "@/components/forum/CategoryList";
@@ -45,6 +46,22 @@ const TRUST_LEVELS: { key: string; label: string; cls: string }[] = [
 ];
 
 export default function SwarmPage() {
+  return (
+    <Suspense fallback={null}>
+      <SwarmPageInner />
+    </Suspense>
+  );
+}
+
+function SwarmPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // URL is the single source of truth for the open thread so a reload keeps
+  // the user on the spark they were reading. `?thread=<id>` is digit-restricted
+  // (root-post ids are uint64); when present it overrides whatever in-memory
+  // `view` was set so the rendered content tracks the URL.
+  const threadParam = searchParams.get("thread");
+  const urlThreadId = threadParam && /^\d+$/.test(threadParam) ? threadParam : null;
   const { connected, ready, sessionActive, activeSession, address } = useWallet();
   const { isOpsCommitteeMember } = useCommonsCouncil(address);
 
@@ -56,8 +73,10 @@ export default function SwarmPage() {
   const [tagsOpen, setTagsOpen] = useLocalStorageBoolean("swarm-tags-open", true);
 
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
-  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [listKey, setListKey] = useState(0);
+  // URL overrides in-memory `view` so `?thread=<id>` always renders the detail.
+  const effectiveView: View = urlThreadId ? "thread-detail" : view;
+  const selectedThreadId = urlThreadId;
 
   const [searchQuery, setSearchQuery] = useState("");
   const [sort, setSort] = useState<"newest" | "oldest">("newest");
@@ -111,7 +130,10 @@ export default function SwarmPage() {
   const switchView = (v: View) => {
     setView(v);
     if (v !== "category-threads") setSelectedCategory(null);
-    if (v !== "thread-detail") setSelectedThreadId(null);
+    // `view` is in-memory but `thread` lives in the URL. When switching away
+    // from the detail via the sidebar (instead of the Back button), strip the
+    // URL param so the chosen view actually renders.
+    if (urlThreadId) router.push("/swarm", { scroll: false });
   };
 
   const handleSelectCategory = (cat: Category) => {
@@ -121,18 +143,16 @@ export default function SwarmPage() {
 
   const handleSelectThread = (post: ForumPost) => {
     const rootId = !post.root_id || post.root_id === "0" ? post.post_id : post.root_id;
-    setSelectedThreadId(rootId);
-    setView("thread-detail");
+    router.push(`/swarm?thread=${rootId}`, { scroll: false });
   };
 
   const handleSelectThreadById = (threadId: string) => {
-    setSelectedThreadId(threadId);
-    setView("thread-detail");
+    router.push(`/swarm?thread=${threadId}`, { scroll: false });
   };
 
   const handleBackFromThread = () => {
-    setSelectedThreadId(null);
     setView(selectedCategory ? "category-threads" : "all-threads");
+    router.push("/swarm", { scroll: false });
   };
 
   const handleCreated = () => {
@@ -160,7 +180,7 @@ export default function SwarmPage() {
       >
         <button
           type="button"
-          className={`sd-side-item spark-item${view === "all-threads" || view === "thread-detail" ? " active" : ""}`}
+          className={`sd-side-item spark-item${effectiveView === "all-threads" || effectiveView === "thread-detail" ? " active" : ""}`}
           onClick={() => switchView("all-threads")}
         >
           <svg className="ic" viewBox="0 0 24 24" fill="currentColor">
@@ -170,7 +190,7 @@ export default function SwarmPage() {
         </button>
         <button
           type="button"
-          className={`sd-side-item${view === "categories" || view === "category-threads" ? " active" : ""}`}
+          className={`sd-side-item${effectiveView === "categories" || effectiveView === "category-threads" ? " active" : ""}`}
           onClick={() => switchView("categories")}
         >
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -180,7 +200,7 @@ export default function SwarmPage() {
         </button>
         <button
           type="button"
-          className={`sd-side-item spark-item${view === "top-posts" ? " active" : ""}`}
+          className={`sd-side-item spark-item${effectiveView === "top-posts" ? " active" : ""}`}
           onClick={() => switchView("top-posts")}
         >
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -190,7 +210,7 @@ export default function SwarmPage() {
         </button>
         <button
           type="button"
-          className={`sd-side-item spark-item${view === "my-posts" ? " active" : ""}`}
+          className={`sd-side-item spark-item${effectiveView === "my-posts" ? " active" : ""}`}
           onClick={() => switchView("my-posts")}
         >
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -208,7 +228,7 @@ export default function SwarmPage() {
       >
         <button
           type="button"
-          className={`sd-side-item${view === "active-bounties" ? " active" : ""}`}
+          className={`sd-side-item${effectiveView === "active-bounties" ? " active" : ""}`}
           onClick={() => switchView("active-bounties")}
         >
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -218,7 +238,7 @@ export default function SwarmPage() {
         </button>
         <button
           type="button"
-          className={`sd-side-item${view === "my-bounties" ? " active" : ""}`}
+          className={`sd-side-item${effectiveView === "my-bounties" ? " active" : ""}`}
           onClick={() => switchView("my-bounties")}
         >
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -235,7 +255,7 @@ export default function SwarmPage() {
       >
         <button
           type="button"
-          className={`sd-side-item${view === "sentinel" ? " active" : ""}`}
+          className={`sd-side-item${effectiveView === "sentinel" ? " active" : ""}`}
           onClick={() => switchView("sentinel")}
         >
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -312,19 +332,19 @@ export default function SwarmPage() {
       segments={
         <>
           <button
-            className={view === "all-threads" ? "on" : ""}
+            className={effectiveView === "all-threads" ? "on" : ""}
             onClick={() => switchView("all-threads")}
           >
             All sparks
           </button>
           <button
-            className={view === "top-posts" ? "on" : ""}
+            className={effectiveView === "top-posts" ? "on" : ""}
             onClick={() => switchView("top-posts")}
           >
             Top sparks
           </button>
           <button
-            className={view === "my-posts" ? "on" : ""}
+            className={effectiveView === "my-posts" ? "on" : ""}
             onClick={() => switchView("my-posts")}
           >
             My sparks
@@ -358,7 +378,7 @@ export default function SwarmPage() {
         </>
       }
     >
-      {view === "all-threads" && (
+      {effectiveView === "all-threads" && (
         <ThreadList
           key={`all-${listKey}`}
           mode="all"
@@ -367,7 +387,7 @@ export default function SwarmPage() {
           onCreate={connected ? () => switchView("create") : undefined}
         />
       )}
-      {view === "categories" && (
+      {effectiveView === "categories" && (
         <div>
           {isOpsCommitteeMember && (
             <div className="mb-4 flex items-center justify-between rounded-xl border border-indigo-500/30 bg-indigo-600/10 px-4 py-3">
@@ -388,7 +408,7 @@ export default function SwarmPage() {
           <CategoryList onSelectCategory={handleSelectCategory} />
         </div>
       )}
-      {view === "category-threads" && selectedCategory && (
+      {effectiveView === "category-threads" && selectedCategory && (
         <div>
           <button
             onClick={() => switchView("categories")}
@@ -408,7 +428,7 @@ export default function SwarmPage() {
           />
         </div>
       )}
-      {view === "top-posts" && (
+      {effectiveView === "top-posts" && (
         <ThreadList
           key={`top-${listKey}`}
           mode="top"
@@ -417,13 +437,13 @@ export default function SwarmPage() {
           onCreate={connected ? () => switchView("create") : undefined}
         />
       )}
-      {view === "create" && (
+      {effectiveView === "create" && (
         <CreateThreadView
           onCreated={handleCreated}
           onCancel={() => switchView("all-threads")}
         />
       )}
-      {view === "my-posts" && (
+      {effectiveView === "my-posts" && (
         connected ? (
           <ThreadList
             key={`my-${listKey}`}
@@ -436,24 +456,24 @@ export default function SwarmPage() {
           <ConnectPrompt message="Connect your wallet to see your sparks." />
         )
       )}
-      {view === "active-bounties" && (
+      {effectiveView === "active-bounties" && (
         <BountyList mode="active" onSelectThread={handleSelectThreadById} />
       )}
-      {view === "my-bounties" && (
+      {effectiveView === "my-bounties" && (
         connected ? (
           <BountyList mode="my" onSelectThread={handleSelectThreadById} />
         ) : (
           <ConnectPrompt message="Connect your wallet to see your bounties." />
         )
       )}
-      {view === "sentinel" && (
+      {effectiveView === "sentinel" && (
         connected ? (
           <SentinelPanel />
         ) : (
           <ConnectPrompt message="Connect your wallet to access Sentinel moderation." />
         )
       )}
-      {view === "thread-detail" && selectedThreadId && (
+      {effectiveView === "thread-detail" && selectedThreadId && (
         <ThreadDetail
           threadId={selectedThreadId}
           onBack={handleBackFromThread}

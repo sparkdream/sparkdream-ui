@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useArchive } from "@/contexts/ArchiveContext";
+import type { ManifestEntry } from "@/lib/archive";
 
 interface SectionInfo {
   slug: string;
@@ -44,8 +45,22 @@ const SECTIONS: SectionInfo[] = [
   },
 ];
 
-async function loadIndexCount(snapshotId: string, name: string): Promise<number> {
-  const res = await fetch(`/archive/${snapshotId}/index/${name}.json`);
+// Index files live alongside the lcd/ tree. For remote snapshots they're in the
+// bucket, not baked into the deployment image — fetch them from remoteBase, the
+// same place the section pages read their lcd/ data from. (Hardcoding the local
+// /archive path here is why remote snapshots showed 0 for every section.)
+function indexBase(entry: ManifestEntry): string {
+  if (entry.location === "remote") {
+    if (!entry.remoteBase) {
+      throw new Error(`Snapshot ${entry.id} is remote but has no remoteBase`);
+    }
+    return `${entry.remoteBase.replace(/\/$/, "")}/${entry.id}/index`;
+  }
+  return `/archive/${entry.id}/index`;
+}
+
+async function loadIndexCount(base: string, name: string): Promise<number> {
+  const res = await fetch(`${base}/${name}.json`);
   if (!res.ok) return 0;
   const ids = (await res.json()) as string[];
   return ids.length;
@@ -65,11 +80,12 @@ export default function ArchiveSnapshotLanding({
     if (!entry) return;
     let cancelled = false;
     (async () => {
+      const base = indexBase(entry);
       const all = new Set(SECTIONS.flatMap((s) => s.indexFiles));
       const pairs = await Promise.all(
-        [...all].map(async (n) => [n, await loadIndexCount(snapshotId, n)] as const),
+        [...all].map(async (n) => [n, await loadIndexCount(base, n)] as const),
       );
-      const members = await loadIndexCount(snapshotId, "members");
+      const members = await loadIndexCount(base, "members");
       if (cancelled) return;
       setCounts(Object.fromEntries(pairs));
       setMemberCount(members);

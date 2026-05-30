@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getRepMember } from "@/lib/api";
+import { freshRepMember, loadRepMember } from "@/lib/repMember";
 
 /**
  * Returns whether `address` has a record in the rep `Member` collection.
@@ -10,18 +10,20 @@ import { getRepMember } from "@/lib/api";
  * (invite, propose project, create tag, etc.).
  */
 export function useIsRepMember(address: string | null | undefined): boolean | null {
-  const [isMember, setIsMember] = useState<boolean | null>(null);
+  const [isMember, setIsMember] = useState<boolean | null>(() => {
+    if (!address) return null;
+    const cached = freshRepMember(address);
+    return cached === undefined ? null : cached !== null;
+  });
   useEffect(() => {
-    if (!address) return;
+    if (!address) {
+      setIsMember(null);
+      return;
+    }
     let cancelled = false;
-    getRepMember(address)
-      .then((res) => {
-        if (cancelled) return;
-        setIsMember(!!res.member?.address);
-      })
-      .catch(() => {
-        if (!cancelled) setIsMember(false);
-      });
+    loadRepMember(address).then((m) => {
+      if (!cancelled) setIsMember(m !== null);
+    });
     return () => {
       cancelled = true;
     };

@@ -5,6 +5,11 @@ export interface NameRecord {
   name: string;
   owner: string;
   data: string;
+  // target, when non-empty, overrides forward resolution: resolve(name) returns
+  // this address instead of owner. Set/cleared via MsgSetTarget; the target
+  // must call MsgAcceptTarget before it can set the name as its primary.
+  target?: string;
+  target_accepted?: boolean;
 }
 
 export interface OwnerInfo {
@@ -59,6 +64,14 @@ export interface ReverseResolveResponse {
 }
 
 export interface ListNamesResponse {
+  names: NameRecord[];
+  pagination: Pagination;
+}
+
+// Targets returns names where the address is the accepted resolver target.
+// Pending (set-but-not-yet-accepted) targets cannot be enumerated; the target
+// address must accept by name.
+export interface ListTargetsResponse {
   names: NameRecord[];
   pagination: Pagination;
 }

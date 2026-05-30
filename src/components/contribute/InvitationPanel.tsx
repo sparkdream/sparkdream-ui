@@ -2,15 +2,16 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useWallet } from "@/contexts/WalletContext";
-import { invitationsByInviter, listRepInvitations } from "@/lib/api";
+import { getRequiredInvitationStake, invitationsByInviter, listRepInvitations } from "@/lib/api";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { formatTime } from "@/lib/utils";
+import { formatDream } from "@/lib/reveal-fmt";
 import CopyableAddress from "@/components/CopyableAddress";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
-import type { Invitation } from "@/types/rep";
-import { INVITATION_STATUS_LABELS, InvitationStatus } from "@/types/rep";
+import type { Invitation, RequiredInvitationStakeResponse } from "@/types/rep";
+import { INVITATION_STATUS_LABELS, InvitationStatus, TRUST_LEVEL_LABELS } from "@/types/rep";
 
 function statusColor(status: string): string {
   switch (status) {
@@ -49,8 +50,35 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
   const [formInvitee, setFormInvitee] = useState("");
   const [formStake, setFormStake] = useState("");
   const [formTags, setFormTags] = useState<string[]>([]);
+  const [requiredStake, setRequiredStake] = useState<RequiredInvitationStakeResponse | null>(null);
   const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
   const canCreateTags = useCanCreateTags(address);
+
+  useEffect(() => {
+    if (!address || !canInvite) {
+      setRequiredStake(null);
+      return;
+    }
+    let cancelled = false;
+    getRequiredInvitationStake(address)
+      .then((res) => {
+        if (!cancelled) setRequiredStake(res);
+      })
+      .catch(() => {
+        if (!cancelled) setRequiredStake(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [address, canInvite]);
+
+  // Pre-fill stake with the chain minimum when the form is opened with an
+  // empty field. Don't overwrite once the user has typed something.
+  useEffect(() => {
+    if (showForm && requiredStake && formStake === "") {
+      setFormStake(formatDream(requiredStake.required_stake));
+    }
+  }, [showForm, requiredStake, formStake]);
 
   const fetchInvitations = useCallback(async () => {
     if (!address) return;
@@ -270,9 +298,25 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
                 />
               </div>
               <p className="text-xs text-zinc-600">
+                Your stake is collateral, not a transfer to the invitee. It is locked from your balance during the accountability period and returned (minus a small burn) when the invitee succeeds, or slashed if they fail.
+              </p>
+              {requiredStake && (() => {
+                const mult = parseFloat(requiredStake.cost_multiplier);
+                const multStr = isFinite(mult) ? mult.toFixed(2).replace(/\.?0+$/, "") : requiredStake.cost_multiplier;
+                const trustLabel = TRUST_LEVEL_LABELS[requiredStake.trust_level] ?? requiredStake.trust_level;
+                const totalCredits = requiredStake.credits_used + requiredStake.credits_remaining;
+                return (
+                  <p className="text-xs text-zinc-600">
+                    Chain minimum for your next invitation: <span className="text-zinc-300">{formatDream(requiredStake.required_stake)} DREAM</span>.
+                    {" "}Computed on-chain as base {formatDream(requiredStake.base_stake)} DREAM × {multStr}^{requiredStake.credits_used}, where {multStr} is the cost multiplier and {requiredStake.credits_used} is how many invitation credits you have used this season.
+                    {" "}You have {requiredStake.credits_remaining} of {totalCredits} credits left at {trustLabel} trust. Each successive invite costs more to deter sybil farming.
+                  </p>
+                );
+              })()}
+              <p className="text-xs text-zinc-600">
                 {canCreateTags
                   ? "New tags burn a small DREAM fee per tag and are added to the shared registry."
-                  : "Tag creation requires Established trust — pick from existing tags only."}
+                  : "Tag creation requires Established trust. Pick from existing tags only."}
               </p>
               <div className="flex items-center gap-3">
                 <button
