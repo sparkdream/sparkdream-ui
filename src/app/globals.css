@@ -1271,10 +1271,22 @@ body > * { position: relative; z-index: 1; }
 .sd-featured p {
   font-size: 14px;
   color: var(--ink-soft);
-  margin: 0 0 18px;
+  margin: 0 0 8px;
   line-height: 1.55;
   text-wrap: pretty;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
+.sd-featured .more {
+  display: inline-block;
+  margin: 0 0 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--violet-hi);
+}
+.sd-featured:hover .more { text-decoration: underline; }
 .sd-featured .foot {
   display: flex;
   align-items: center;

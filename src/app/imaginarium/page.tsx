@@ -3,9 +3,9 @@
 import { Suspense, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { Post } from "@/types/blog";
-import { PostStatus } from "@/types/blog";
-import { listPosts, getAllMemberAddresses, membersByTrustLevel, listTags, getLatestBlockHeight } from "@/lib/api";
+import type { Post, ReactionCounts } from "@/types/blog";
+import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
+import { listPosts, getAllMemberAddresses, membersByTrustLevel, listTags, getLatestBlockHeight, getReactionCounts } from "@/lib/api";
 import { TrustLevel } from "@/types/rep";
 import PostRow from "@/components/PostRow";
 import CreatePostForm from "@/components/CreatePostForm";
@@ -16,7 +16,7 @@ import {
   SidebarSection,
 } from "@/components/layout/ContentPageLayout";
 import { useWallet } from "@/contexts/WalletContext";
-import { timeAgo } from "@/lib/utils";
+import { timeAgo, formatTime, countToNum } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
@@ -482,6 +482,12 @@ function ImaginariumPageInner() {
 
 function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => void }) {
   const { name } = useDisplayName(post.creator);
+  const [counts, setCounts] = useState<ReactionCounts | null>(null);
+  useEffect(() => {
+    getReactionCounts(post.id)
+      .then((r) => setCounts(r.counts))
+      .catch(() => {});
+  }, [post.id]);
   return (
     <button
       type="button"
@@ -493,7 +499,7 @@ function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => v
         <div className="glyph">
           <div className="frame">
             <b>◆ Pinned · Council Memo</b>
-            <span className="hash">block · {post.created_at}</span>
+            <span className="hash">{formatTime(post.created_at)}</span>
           </div>
         </div>
       </div>
@@ -505,6 +511,7 @@ function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => v
         </div>
         <h2>{post.title}</h2>
         <p>{post.body}</p>
+        <span className="more">Read more →</span>
         <div className="foot">
           <div className="who">
             <div className="sd-avatar">{(name || post.creator).charAt(name ? 0 : 8).toUpperCase()}</div>
@@ -514,7 +521,21 @@ function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => v
             </div>
           </div>
           <div className="stats">
-            <span>💬 {post.reply_count} replies</span>
+            {countToNum(post.reply_count) > 0 && (
+              <span>💬 {countToNum(post.reply_count)} replies</span>
+            )}
+            {counts &&
+              Object.values(ReactionType).map((rt) => {
+                const info = REACTION_INFO[rt];
+                const key = `${rt.replace("REACTION_TYPE_", "").toLowerCase()}_count` as keyof ReactionCounts;
+                const n = countToNum(counts[key]);
+                if (n === 0) return null;
+                return (
+                  <span key={rt}>
+                    {info.emoji} {n}
+                  </span>
+                );
+              })}
           </div>
         </div>
       </div>
