@@ -201,7 +201,7 @@ function ReplyItem({
         )}
 
         <div className="flex items-center gap-3">
-          <ReactionBar postId={postId} replyId={reply.id} minReplyTrustLevel={postMinReplyTrustLevel} />
+          <ReactionBar postId={postId} replyId={reply.id} minReplyTrustLevel={postMinReplyTrustLevel} postCreator={postCreator} />
           {connected && depth < 3 && !showEditForm && repliesEnabled && (
             <button
               onClick={() => setShowReplyForm(!showReplyForm)}
@@ -237,31 +237,30 @@ function ReplyItem({
               {isHidden ? "Unhide" : "Hide"}
             </button>
           )}
-          {connected && isEphemeral && (
+          {connected && isEphemeral && canMakePermanent === true && (
             <button
               onClick={handleMakePermanent}
-              disabled={actionLoading || canMakePermanent === false}
-              title={canMakePermanent === false ? "Making a reply permanent requires Provisional trust level or higher" : "Keep this ephemeral reply from expiring"}
+              disabled={actionLoading}
+              title="Keep this ephemeral reply from expiring"
               className="text-xs text-emerald-500 transition-colors hover:text-emerald-400 disabled:opacity-50"
             >
               Make Permanent
             </button>
           )}
-          {connected && !isEphemeral && !reply.pinned_by && (
+          {connected && !isEphemeral && !reply.pinned_by && canPin === true && (
             <button
               onClick={() => handlePin(true)}
-              disabled={actionLoading || canPin === false}
-              title={canPin === false ? "Pinning requires Established trust level or higher" : "Feature this reply"}
+              disabled={actionLoading}
+              title="Feature this reply"
               className="text-xs text-amber-500 transition-colors hover:text-amber-400 disabled:opacity-50"
             >
               Pin
             </button>
           )}
-          {connected && !isEphemeral && reply.pinned_by && (
+          {connected && !isEphemeral && reply.pinned_by && canPin === true && (
             <button
               onClick={() => handlePin(false)}
-              disabled={actionLoading || canPin === false}
-              title={canPin === false ? "Unpinning requires Established trust level or higher" : undefined}
+              disabled={actionLoading}
               className="text-xs text-zinc-500 transition-colors hover:text-zinc-300 disabled:opacity-50"
             >
               Unpin
@@ -277,6 +276,7 @@ function ReplyItem({
               variant="dream"
               compact
               minReplyTrustLevel={postMinReplyTrustLevel}
+              postCreator={postCreator}
               onCancel={() => setShowReplyForm(false)}
               onSubmitted={() => {
                 setShowReplyForm(false);

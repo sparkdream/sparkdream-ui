@@ -9,11 +9,15 @@ import { getParams, getForumParams } from "@/lib/api";
  * - `blog`  → `params.ephemeral_content_ttl` (default 7 days)
  * - `forum` → `params.ephemeral_ttl` (default 24 hours)
  *
- * Returns `null` while loading or if the param fetch fails. Callers should
- * skip the affordance / hint while null rather than guess a default.
+ * `ttl` is `null` while loading or if the param fetch fails — callers should
+ * skip the affordance / hint while null rather than guess a default. `loaded`
+ * flips to true once the fetch settles (success OR failure) so callers can
+ * tell "still loading" from "resolved to no TTL" and render dependent widgets
+ * all at once instead of letting the hint pop in late.
  */
-export function useEphemeralTtl(kind: "blog" | "forum"): number | null {
+export function useEphemeralTtl(kind: "blog" | "forum"): { ttl: number | null; loaded: boolean } {
   const [ttl, setTtl] = useState<number | null>(null);
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const fetcher = kind === "blog" ? getParams() : getForumParams();
@@ -27,15 +31,18 @@ export function useEphemeralTtl(kind: "blog" | "forum"): number | null {
         } else if (typeof raw === "number") {
           setTtl(raw);
         }
+        setLoaded(true);
       })
       .catch(() => {
-        // Leave at null — caller hides the hint rather than showing a guess.
+        // Leave ttl at null — caller hides the hint rather than guessing — but
+        // mark loaded so callers stop waiting on it.
+        if (!cancelled) setLoaded(true);
       });
     return () => {
       cancelled = true;
     };
   }, [kind]);
-  return ttl;
+  return { ttl, loaded };
 }
 
 /**

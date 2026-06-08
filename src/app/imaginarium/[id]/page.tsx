@@ -275,34 +275,33 @@ export default function PostDetailPage() {
 
         {/* Actions */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 pt-4">
-          <ReactionBar postId={post.id} minReplyTrustLevel={post.min_reply_trust_level} />
+          <ReactionBar postId={post.id} minReplyTrustLevel={post.min_reply_trust_level} postCreator={post.creator} />
 
           <div className="flex flex-wrap items-center gap-2">
-            {connected && !isDeleted && isEphemeral && (
+            {connected && !isDeleted && isEphemeral && canMakePermanent === true && (
               <button
                 onClick={handleMakePermanent}
-                disabled={actionLoading || canMakePermanent === false}
-                title={canMakePermanent === false ? "Making a dream permanent requires Provisional trust level or higher" : "Keep this ephemeral dream from expiring"}
+                disabled={actionLoading}
+                title="Keep this ephemeral dream from expiring"
                 className="rounded px-3 py-1 text-xs text-emerald-500 transition-colors hover:bg-emerald-900/20 hover:text-emerald-400 disabled:opacity-50"
               >
                 Make Permanent
               </button>
             )}
-            {connected && !isDeleted && !isEphemeral && !post.pinned_by && (
+            {connected && !isDeleted && !isEphemeral && !post.pinned_by && canPin === true && (
               <button
                 onClick={() => handlePin(true)}
-                disabled={actionLoading || canPin === false}
-                title={canPin === false ? "Pinning requires Established trust level or higher" : "Feature this dream"}
+                disabled={actionLoading}
+                title="Feature this dream"
                 className="rounded px-3 py-1 text-xs text-amber-500 transition-colors hover:bg-amber-900/20 hover:text-amber-400 disabled:opacity-50"
               >
                 Pin
               </button>
             )}
-            {connected && !isDeleted && !isEphemeral && post.pinned_by && (
+            {connected && !isDeleted && !isEphemeral && post.pinned_by && canPin === true && (
               <button
                 onClick={() => handlePin(false)}
-                disabled={actionLoading || canPin === false}
-                title={canPin === false ? "Unpinning requires Established trust level or higher" : undefined}
+                disabled={actionLoading}
                 className="rounded px-3 py-1 text-xs text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 disabled:opacity-50"
               >
                 Unpin
@@ -372,7 +371,7 @@ export default function PostDetailPage() {
           {post.replies_enabled ? (
             <>
               <div className="mb-6">
-                <ReplyForm postId={post.id} variant="dream" minReplyTrustLevel={post.min_reply_trust_level} onSubmitted={fetchData} />
+                <ReplyForm postId={post.id} variant="dream" minReplyTrustLevel={post.min_reply_trust_level} postCreator={post.creator} onSubmitted={fetchData} />
               </div>
 
               <ReplyThread

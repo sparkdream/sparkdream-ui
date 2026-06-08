@@ -27,6 +27,11 @@ interface ReplyFormProps {
   // Ignored when editing an existing reply (chain only enforces authorship
   // on UpdateReply, not membership).
   minReplyTrustLevel?: number;
+  // The parent post's creator. A post author may always reply within their own
+  // thread (subject to moderation + rate limits), regardless of membership or
+  // trust gating, so we never show them the "members only" / "earn trust"
+  // notice on their own post.
+  postCreator?: string;
 }
 
 export default function ReplyForm({
@@ -40,12 +45,13 @@ export default function ReplyForm({
   compact = false,
   variant,
   minReplyTrustLevel = 0,
+  postCreator,
 }: ReplyFormProps) {
   const { address, connected, signAndBroadcast } = useWallet();
   const isReadOnly = useIsReadOnly();
   const isMember = useIsRepMember(address);
   const trustRank = useTrustRank(address);
-  const ephemeralTtl = useEphemeralTtl("blog");
+  const { ttl: ephemeralTtl, loaded: ttlLoaded } = useEphemeralTtl("blog");
   const [body, setBody] = useState(initialBody);
   const [contentType, setContentType] = useState<number>(initialContentType ?? ContentType.TEXT);
   const [authorBond, setAuthorBond] = useState("");
@@ -54,27 +60,46 @@ export default function ReplyForm({
   const [error, setError] = useState<string | null>(null);
 
   const isEditing = !!editReplyId;
+  // The post author may always reply within their own thread, so they skip the
+  // membership / trust gates below (the chain allows creator self-replies,
+  // subject only to moderation + rate limits).
+  const isAuthor = connected && !!postCreator && address === postCreator;
   // For new replies, mirror the chain's MsgCreateReply gate. Editing bypasses
   // this because chain UpdateReply only checks creator == reply.creator.
   const openToAll = minReplyTrustLevel === -1;
-  const memberBlocked = !isEditing && !openToAll && connected && isMember === false;
+  const memberBlocked = !isEditing && !openToAll && !isAuthor && connected && isMember === false;
   // Per commit 1124a9b: when min_reply_trust_level >= 1 a *member* must still
   // meet the trust bar. Distinct error path so we can render a different
   // remediation ("earn trust") vs. "join the conversation".
   const trustBlocked =
     !isEditing &&
     !openToAll &&
+    !isAuthor &&
     minReplyTrustLevel >= 1 &&
     connected &&
     isMember === true &&
     trustRank !== null &&
     trustRank < minReplyTrustLevel;
   const replyBlocked = memberBlocked || trustBlocked;
-  // Only show the ephemeral hint when the form is actually usable by a
-  // non-member — i.e. open posts. Editing keeps the existing TTL, and on
-  // member-only posts the form is replaced by the "members only" notice.
+  // Show the ephemeral hint whenever a non-member can actually post a reply —
+  // open posts, or the non-member author replying on their own post. Their
+  // reply is still ephemeral. Editing keeps the existing TTL.
   const showEphemeralHint =
-    !isEditing && openToAll && connected && isMember === false && ephemeralTtl !== null;
+    !isEditing && (openToAll || isAuthor) && connected && isMember === false && ephemeralTtl !== null;
+
+  // Hold the whole form back until every async gate it depends on has settled,
+  // so the box, the member/trust notice, and the ephemeral hint appear together
+  // instead of the hint popping in late and shoving the textarea down. Only the
+  // inputs that actually change the rendered shape are awaited: membership
+  // always; the TTL only when a non-member could post (it drives the hint); the
+  // trust rank only on a trust-gated post for a confirmed member.
+  const needTtl = !isEditing && connected && isMember === false && (openToAll || isAuthor);
+  const needTrust =
+    !isEditing && !openToAll && !isAuthor && minReplyTrustLevel >= 1 && isMember === true;
+  const ready =
+    isEditing ||
+    !connected ||
+    (isMember !== null && (!needTtl || ttlLoaded) && (!needTrust || trustRank !== null));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,6 +168,16 @@ export default function ReplyForm({
       </div>
     );
   }
+  // Reserve space while the gates resolve so the final form (and any notice or
+  // ephemeral hint) lands in one paint with no layout shift.
+  if (!ready) {
+    return (
+      <div
+        aria-hidden
+        className={`animate-pulse rounded-lg border border-zinc-800 bg-zinc-900/40 ${compact ? "h-16" : "h-24"}`}
+      />
+    );
+  }
   if (replyBlocked) {
     return (
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 text-sm text-zinc-500">
@@ -180,7 +215,7 @@ export default function ReplyForm({
     <form onSubmit={handleSubmit} className="space-y-3">
       {showEphemeralHint && ephemeralTtl !== null && (
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 text-sm text-zinc-500">
-          Heads up: as a non-member, your reply is ephemeral and expires in {formatTtl(ephemeralTtl)} unless you become a member or a member pins it.
+          Heads up: as a non-member, your reply is ephemeral and expires in {formatTtl(ephemeralTtl)} unless you become a member or a member makes it permanent.
         </div>
       )}
       <textarea

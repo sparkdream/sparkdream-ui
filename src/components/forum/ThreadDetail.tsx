@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import {
   getForumPost,
   getForumThread,
@@ -8,15 +9,18 @@ import {
   getThreadFollowCount,
   isFollowingThread,
   getBountyByThread,
+  listCategories,
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useTrustRank } from "@/hooks/useTrustRank";
+import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
 import { ForumMsgTypeUrls } from "@/lib/tx";
 import { timeAgo } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import CreatePostForm from "@/components/forum/CreatePostForm";
 import PostConvictionControl from "@/components/forum/PostConvictionControl";
+import type { Category } from "@/types/commons";
 import type { ForumPost, ThreadMetadata, Bounty } from "@/types/forum";
 import { PostStatus, BountyStatus } from "@/types/forum";
 
@@ -42,6 +46,7 @@ interface ThreadDetailProps {
 export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const { address, signAndBroadcast } = useWallet();
   const rank = useTrustRank(address);
+  const isMember = useIsRepMember(address);
   const { isOpsCommitteeMember } = useCommonsCouncil(address);
   const canMakePermanent = rank !== null && rank >= MAKE_PERMANENT_RANK;
 
@@ -56,6 +61,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showReplyForm, setShowReplyForm] = useState(false);
   const [replyToId, setReplyToId] = useState<string>(threadId);
+  const [category, setCategory] = useState<Category | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -99,6 +105,44 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // The thread's category decides who may post: members_only_write blocks
+  // non-members, admin_only_write blocks everyone but the ops committee. We
+  // list categories (there are few) and match by id so the reply affordance
+  // reflects the chain's CreatePost gate instead of offering a form the chain
+  // would reject.
+  const categoryId = rootPost?.category_id;
+  useEffect(() => {
+    if (!categoryId) {
+      setCategory(null);
+      return;
+    }
+    let cancelled = false;
+    listCategories({ limit: "200" })
+      .then((res) => {
+        if (cancelled) return;
+        setCategory((res.category || []).find((c) => c.category_id === categoryId) || null);
+      })
+      .catch(() => {
+        if (!cancelled) setCategory(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [categoryId]);
+
+  // Mirrors x/forum CreatePost: the ops committee and the thread author may
+  // always reply (the author exception matches the chain's creator self-reply
+  // rule); otherwise admin-only locks out everyone and members-only locks out
+  // confirmed non-members. `isMember !== false` keeps the form available while
+  // membership is still resolving rather than flashing the notice.
+  const adminOnlyWrite = category?.admin_only_write ?? false;
+  const membersOnlyWrite = category?.members_only_write ?? false;
+  const isThreadAuthor = !!address && address === rootPost?.author;
+  const canReply =
+    isOpsCommitteeMember ||
+    isThreadAuthor ||
+    (!adminOnlyWrite && (!membersOnlyWrite || isMember !== false));
 
   const handleVote = async (postId: string, direction: "up" | "down") => {
     if (!address) return;
@@ -298,7 +342,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
             {votes >= 0 ? "+" : ""}{votes}
           </span>
           <div className="flex-1" />
-          {!isRoot && !rootPost.locked && (
+          {!isRoot && !rootPost.locked && canReply && (
             <button
               onClick={() => { setReplyToId(post.post_id); setShowReplyForm(true); }}
               className="text-xs text-zinc-400 transition-colors hover:text-indigo-400"
@@ -408,22 +452,38 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       {/* Reply button for root */}
       {!rootPost.locked && (
         <div className="mt-3">
-          {!showReplyForm ? (
-            <button
-              onClick={() => { setReplyToId(threadId); setShowReplyForm(true); }}
-              className="sd-btn-ember px-4 py-2"
-            >
-              Reply
-            </button>
+          {canReply ? (
+            !showReplyForm ? (
+              <button
+                onClick={() => { setReplyToId(threadId); setShowReplyForm(true); }}
+                className="sd-btn-ember px-4 py-2"
+              >
+                Reply
+              </button>
+            ) : (
+              <CreatePostForm
+                mode="reply"
+                parentId={replyToId}
+                categoryId={rootPost.category_id}
+                rootId={threadId}
+                onCreated={handleReplyCreated}
+                onCancel={() => setShowReplyForm(false)}
+              />
+            )
           ) : (
-            <CreatePostForm
-              mode="reply"
-              parentId={replyToId}
-              categoryId={rootPost.category_id}
-              rootId={threadId}
-              onCreated={handleReplyCreated}
-              onCancel={() => setShowReplyForm(false)}
-            />
+            <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 text-sm text-zinc-500">
+              {adminOnlyWrite ? (
+                "This channel is restricted. Only administrators can post here."
+              ) : (
+                <>
+                  Replies in this channel are open to members. Ask any existing{" "}
+                  <Link href="/contribute?view=members" className="text-indigo-400 underline hover:text-indigo-300">
+                    member
+                  </Link>
+                  {" "}to invite you in.
+                </>
+              )}
+            </div>
           )}
         </div>
       )}

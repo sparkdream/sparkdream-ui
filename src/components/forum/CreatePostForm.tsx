@@ -26,7 +26,7 @@ export default function CreatePostForm({
 }: CreatePostFormProps) {
   const { address, signAndBroadcast } = useWallet();
   const isMember = useIsRepMember(address);
-  const ephemeralTtl = useEphemeralTtl("forum");
+  const { ttl: ephemeralTtl } = useEphemeralTtl("forum");
   const showEphemeralHint = isMember === false && ephemeralTtl !== null;
 
   const [content, setContent] = useState("");
