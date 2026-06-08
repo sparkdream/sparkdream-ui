@@ -298,7 +298,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
             {votes >= 0 ? "+" : ""}{votes}
           </span>
           <div className="flex-1" />
-          {!isRoot && (
+          {!isRoot && !rootPost.locked && (
             <button
               onClick={() => { setReplyToId(post.post_id); setShowReplyForm(true); }}
               className="text-xs text-zinc-400 transition-colors hover:text-indigo-400"

@@ -21,6 +21,10 @@ interface ReplyThreadProps {
   // on this post's replies (the post author's audience choice applies to
   // both top-level and reply reactions). See ReactionBar for value semantics.
   postMinReplyTrustLevel?: number;
+  // When false, existing replies still render (read-only) but the nested
+  // "Reply" compose affordance is hidden — the parent post has replies
+  // disabled, so the chain would reject any new reply.
+  repliesEnabled?: boolean;
   onReplySubmitted?: () => void;
 }
 
@@ -29,6 +33,7 @@ function ReplyItem({
   postId,
   postCreator,
   postMinReplyTrustLevel,
+  repliesEnabled = true,
   childReplies,
   onReplySubmitted,
 }: {
@@ -36,6 +41,7 @@ function ReplyItem({
   postId: string;
   postCreator?: string;
   postMinReplyTrustLevel?: number;
+  repliesEnabled?: boolean;
   childReplies: Reply[];
   onReplySubmitted?: () => void;
 }) {
@@ -196,7 +202,7 @@ function ReplyItem({
 
         <div className="flex items-center gap-3">
           <ReactionBar postId={postId} replyId={reply.id} minReplyTrustLevel={postMinReplyTrustLevel} />
-          {connected && depth < 3 && !showEditForm && (
+          {connected && depth < 3 && !showEditForm && repliesEnabled && (
             <button
               onClick={() => setShowReplyForm(!showReplyForm)}
               className="text-xs text-zinc-500 transition-colors hover:text-zinc-300"
@@ -288,6 +294,7 @@ function ReplyItem({
           postId={postId}
           postCreator={postCreator}
           postMinReplyTrustLevel={postMinReplyTrustLevel}
+          repliesEnabled={repliesEnabled}
           childReplies={[]}
           onReplySubmitted={onReplySubmitted}
         />
@@ -296,7 +303,7 @@ function ReplyItem({
   );
 }
 
-export default function ReplyThread({ replies, postId, postCreator, postMinReplyTrustLevel, onReplySubmitted }: ReplyThreadProps) {
+export default function ReplyThread({ replies, postId, postCreator, postMinReplyTrustLevel, repliesEnabled = true, onReplySubmitted }: ReplyThreadProps) {
   const { address, connected } = useWallet();
   const isMember = useIsRepMember(address);
   // Same gate ReplyForm uses to swap in the member-only notice. When that
@@ -338,6 +345,7 @@ export default function ReplyThread({ replies, postId, postCreator, postMinReply
           postId={postId}
           postCreator={postCreator}
           postMinReplyTrustLevel={postMinReplyTrustLevel}
+          repliesEnabled={repliesEnabled}
           childReplies={replyMap.get(reply.id) || []}
           onReplySubmitted={onReplySubmitted}
         />

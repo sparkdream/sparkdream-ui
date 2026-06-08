@@ -369,11 +369,7 @@ export default function PostDetailPage() {
             )}
           </div>
 
-          {!post.replies_enabled ? (
-            <div className="sd-hull-tile rounded-xl p-6 text-center text-sm text-zinc-500">
-              Replies are disabled for this dream.
-            </div>
-          ) : (
+          {post.replies_enabled ? (
             <>
               <div className="mb-6">
                 <ReplyForm postId={post.id} variant="dream" minReplyTrustLevel={post.min_reply_trust_level} onSubmitted={fetchData} />
@@ -386,6 +382,22 @@ export default function PostDetailPage() {
                 postMinReplyTrustLevel={post.min_reply_trust_level}
                 onReplySubmitted={fetchData}
               />
+            </>
+          ) : (
+            <>
+              <div className="sd-hull-tile rounded-xl p-4 mb-6 text-center text-sm text-zinc-500">
+                New replies are disabled for this dream.
+              </div>
+              {replies.length > 0 && (
+                <ReplyThread
+                  replies={replies}
+                  postId={post.id}
+                  postCreator={post.creator}
+                  postMinReplyTrustLevel={post.min_reply_trust_level}
+                  repliesEnabled={false}
+                  onReplySubmitted={fetchData}
+                />
+              )}
             </>
           )}
         </section>
