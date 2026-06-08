@@ -26,7 +26,15 @@ type FieldKind =
   // runtime from x/identity. "amount" renders as the chain's displayDenom
   // (SPARK), converts the user-entered decimal to micro-units, and emits a
   // bare string on the wire (no `{denom, amount}` wrapper).
-  | "amount";
+  | "amount"
+  // x/rep DREAM is a non-bank token tracked in micro-DREAM (1 DREAM =
+  // 1,000,000 micro-DREAM). "dream" renders/accepts whole DREAM, converts the
+  // user-entered decimal to micro-DREAM, and emits a bare math.Int string on
+  // the wire — same shape as "int", just with the 1e6 display conversion and a
+  // "(DREAM)" unit label. Use it for params consumed via LockDREAM / MintDREAM
+  // / bonded-role DREAM amounts (NOT bond-denom uspark fields — those stay
+  // "int"/"amount").
+  | "dream";
 
 interface FieldDef {
   /** Unique editedValues key. For nested fields use the dot path, e.g.
@@ -198,6 +206,9 @@ const MODULES: Record<string, ModuleDef> = {
       { key: "convictionRenewalPeriod", apiKey: "conviction_renewal_period", label: "Conviction Renewal Period (blocks)", kind: "bigint" },
       { key: "maxTagsPerPost", apiKey: "max_tags_per_post", label: "Max Tags Per Post", kind: "number" },
       { key: "maxTagLength", apiKey: "max_tag_length", label: "Max Tag Length", kind: "number" },
+      { key: "maxPromotionsPerBlock", apiKey: "max_promotions_per_block", label: "Max Promotions Per Block", kind: "number" },
+      { key: "makePermanentMinTrustLevel", apiKey: "make_permanent_min_trust_level", label: "Make Permanent Min Trust Level", kind: "number" },
+      { key: "maxMakePermanentPerDay", apiKey: "max_make_permanent_per_day", label: "Max Make Permanent Per Day", kind: "number" },
     ],
   },
   session: {
@@ -211,11 +222,37 @@ const MODULES: Record<string, ModuleDef> = {
       return { MsgUpdateParams, Params };
     },
     fields: [
-      { key: "maxSessionsPerGranter", apiKey: "max_sessions_per_granter", label: "Max Sessions Per Granter", kind: "bigint" },
-      { key: "maxMsgTypesPerSession", apiKey: "max_msg_types_per_session", label: "Max Msg Types Per Session", kind: "bigint" },
-      { key: "maxExpiration", apiKey: "max_expiration", label: "Max Expiration", kind: "duration", unit: "days", unitDivisor: 86400 },
-      { key: "maxSpendLimit", apiKey: "max_spend_limit_amount", label: "Max Spend Limit", kind: "amount" },
-      { key: "maxExecCount", apiKey: "max_exec_count", label: "Max Exec Count", kind: "bigint" },
+      { group: "Sessions", key: "maxSessionsPerGranter", apiKey: "max_sessions_per_granter", label: "Max Sessions Per Granter", kind: "bigint" },
+      { group: "Sessions", key: "maxMsgTypesPerSession", apiKey: "max_msg_types_per_session", label: "Max Msg Types Per Session", kind: "bigint" },
+      { group: "Sessions", key: "maxExpiration", apiKey: "max_expiration", label: "Max Expiration", kind: "duration", unit: "days", unitDivisor: 86400 },
+      { group: "Sessions", key: "maxSpendLimit", apiKey: "max_spend_limit_amount", label: "Max Spend Limit", kind: "amount" },
+      { group: "Sessions", key: "maxExecCount", apiKey: "max_exec_count", label: "Max Exec Count", kind: "bigint" },
+      { group: "Sessions", key: "maxGrantLifetimeSeconds", apiKey: "max_grant_lifetime_seconds", label: "Max Grant Lifetime (seconds)", kind: "bigint" },
+
+      // Recurring pulls
+      { group: "Recurring Pulls", key: "minRecurringPeriodSeconds", apiKey: "min_recurring_period_seconds", label: "Min Recurring Period (seconds)", kind: "bigint" },
+      { group: "Recurring Pulls", key: "maxRecurringDurationSeconds", apiKey: "max_recurring_duration_seconds", label: "Max Recurring Duration (seconds)", kind: "bigint" },
+      { group: "Recurring Pulls", key: "maxRecurringPullsPerGranter", apiKey: "max_recurring_pulls_per_granter", label: "Max Recurring Pulls Per Granter", kind: "number" },
+
+      // Allowances
+      { group: "Allowances", key: "minAllowancePeriodSeconds", apiKey: "min_allowance_period_seconds", label: "Min Allowance Period (seconds)", kind: "bigint" },
+      { group: "Allowances", key: "maxAllowancesPerGranter", apiKey: "max_allowances_per_granter", label: "Max Allowances Per Granter", kind: "number" },
+      { group: "Allowances", key: "maxAllowanceRecipientList", apiKey: "max_allowance_recipient_list", label: "Max Allowance Recipient List", kind: "number" },
+      { group: "Allowances", key: "minPullAmount", apiKey: "min_pull_amount", label: "Min Pull Amount", kind: "string" },
+
+      // Scheduled / one-shots
+      { group: "Scheduled / One-shots", key: "minScheduleDelaySeconds", apiKey: "min_schedule_delay_seconds", label: "Min Schedule Delay (seconds)", kind: "bigint" },
+      { group: "Scheduled / One-shots", key: "maxScheduleHorizonSeconds", apiKey: "max_schedule_horizon_seconds", label: "Max Schedule Horizon (seconds)", kind: "bigint" },
+      { group: "Scheduled / One-shots", key: "fireToExpiryBufferSeconds", apiKey: "fire_to_expiry_buffer_seconds", label: "Fire-to-Expiry Buffer (seconds)", kind: "bigint" },
+      { group: "Scheduled / One-shots", key: "maxPendingOneshotsPerGranter", apiKey: "max_pending_oneshots_per_granter", label: "Max Pending One-shots Per Granter", kind: "number" },
+      { group: "Scheduled / One-shots", key: "maxPausedOneshotsPerGranter", apiKey: "max_paused_oneshots_per_granter", label: "Max Paused One-shots Per Granter", kind: "number" },
+      { group: "Scheduled / One-shots", key: "pausedOneshotTtlSeconds", apiKey: "paused_oneshot_ttl_seconds", label: "Paused One-shot TTL (seconds)", kind: "bigint" },
+      { group: "Scheduled / One-shots", key: "minOneshotExecGas", apiKey: "min_oneshot_exec_gas", label: "Min One-shot Exec Gas", kind: "bigint" },
+      { group: "Scheduled / One-shots", key: "maxOneshotExecGas", apiKey: "max_oneshot_exec_gas", label: "Max One-shot Exec Gas", kind: "bigint" },
+      { group: "Scheduled / One-shots", key: "oneshotGasPrice", apiKey: "oneshot_gas_price", label: "One-shot Gas Price", kind: "dec" },
+      { group: "Scheduled / One-shots", key: "oneshotCreationFee", apiKey: "oneshot_creation_fee", label: "One-shot Creation Fee", kind: "bigint" },
+      { group: "Scheduled / One-shots", key: "minOneshotDeposit", apiKey: "min_oneshot_deposit", label: "Min One-shot Deposit", kind: "bigint" },
+      { group: "Scheduled / One-shots", key: "maxEndblockerDispatchesPerPass", apiKey: "max_endblocker_dispatches_per_pass", label: "Max EndBlocker Dispatches Per Pass", kind: "number" },
     ],
   },
   forum: {
@@ -259,7 +296,7 @@ const MODULES: Record<string, ModuleDef> = {
       { key: "hideAppealCooldown", apiKey: "hide_appeal_cooldown", label: "Hide Appeal Cooldown (blocks)", kind: "bigint" },
       { key: "lockAppealCooldown", apiKey: "lock_appeal_cooldown", label: "Lock Appeal Cooldown (blocks)", kind: "bigint" },
       { key: "moveAppealCooldown", apiKey: "move_appeal_cooldown", label: "Move Appeal Cooldown (blocks)", kind: "bigint" },
-      { key: "minSentinelBond", apiKey: "min_sentinel_bond", label: "Min Sentinel Bond", kind: "int" },
+      { key: "minSentinelBond", apiKey: "min_sentinel_bond", label: "Min Sentinel Bond", kind: "dream" },
       { key: "minSentinelRepTier", apiKey: "min_sentinel_rep_tier", label: "Min Sentinel Rep Tier", kind: "bigint" },
       { key: "minSentinelTrustLevel", apiKey: "min_sentinel_trust_level", label: "Min Sentinel Trust Level", kind: "string" },
       { key: "minSentinelAgeBlocks", apiKey: "min_sentinel_age_blocks", label: "Min Sentinel Age (blocks)", kind: "bigint" },
@@ -269,6 +306,16 @@ const MODULES: Record<string, ModuleDef> = {
       { key: "sentinelUnbondCooldown", apiKey: "sentinel_unbond_cooldown", label: "Sentinel Unbond Cooldown (seconds)", kind: "bigint", hint: "0 = immediate withdrawal; otherwise bond stays locked + slashable for this many seconds after MsgUnbondRole" },
       { key: "convictionRenewalThreshold", apiKey: "conviction_renewal_threshold", label: "Conviction Renewal Threshold", kind: "dec" },
       { key: "convictionRenewalPeriod", apiKey: "conviction_renewal_period", label: "Conviction Renewal Period (blocks)", kind: "bigint" },
+      { key: "makePermanentMinTrustLevel", apiKey: "make_permanent_min_trust_level", label: "Make Permanent Min Trust Level", kind: "number" },
+      { key: "maxPromotionsPerBlock", apiKey: "max_promotions_per_block", label: "Max Promotions Per Block", kind: "number" },
+      { key: "maxMakePermanentPerDay", apiKey: "max_make_permanent_per_day", label: "Max Make Permanent Per Day", kind: "bigint" },
+      { key: "authorRepSlash", apiKey: "author_rep_slash", label: "Author Rep Slash", kind: "dec", hint: "Reputation slashed from the author when their content is moderated" },
+      // Post conviction staking
+      { group: "Post Conviction", key: "minPostConvictionStake", apiKey: "min_post_conviction_stake", label: "Min Post Conviction Stake", kind: "dream", hint: "Floors out sybil dust stakes that farm the per-tag epoch cap" },
+      { group: "Post Conviction", key: "postConvictionLockSeconds", apiKey: "post_conviction_lock_seconds", label: "Post Conviction Lock (seconds)", kind: "bigint" },
+      { group: "Post Conviction", key: "postConvictionStreamRatePerBlock", apiKey: "post_conviction_stream_rate_per_block", label: "Post Conviction Stream Rate / Block", kind: "dec" },
+      { group: "Post Conviction", key: "maxForumRepPerTagPerEpoch", apiKey: "max_forum_rep_per_tag_per_epoch", label: "Max Forum Rep / Tag / Epoch", kind: "dec" },
+      { group: "Post Conviction", key: "postConvictionStakerSlashBps", apiKey: "post_conviction_staker_slash_bps", label: "Post Conviction Staker Slash (bps)", kind: "bigint", hint: "100 = 1%" },
     ],
   },
   futarchy: {
@@ -282,7 +329,7 @@ const MODULES: Record<string, ModuleDef> = {
       return { MsgUpdateParams, Params };
     },
     fields: [
-      { key: "minLiquidity", apiKey: "min_liquidity", label: "Min Liquidity", kind: "int", hint: "Min base-denom liquidity to create a market" },
+      { key: "minLiquidity", apiKey: "min_liquidity", label: "Min Liquidity", kind: "amount", hint: "Min base-denom liquidity to create a market" },
       { key: "maxDuration", apiKey: "max_duration", label: "Max Duration (blocks)", kind: "bigint" },
       { key: "defaultMinTick", apiKey: "default_min_tick", label: "Default Min Tick", kind: "int" },
       { key: "maxRedemptionDelay", apiKey: "max_redemption_delay", label: "Max Redemption Delay (blocks)", kind: "bigint" },
@@ -306,8 +353,8 @@ const MODULES: Record<string, ModuleDef> = {
       { key: "maxNamesPerAddress", apiKey: "max_names_per_address", label: "Max Names Per Address", kind: "bigint" },
       { key: "expirationDuration", apiKey: "expiration_duration", label: "Expiration Duration", kind: "duration", unit: "days", unitDivisor: 86400 },
       { key: "registrationFee", apiKey: "registration_fee_amount", label: "Registration Fee", kind: "amount" },
-      { key: "disputeStakeDream", apiKey: "dispute_stake_dream", label: "Dispute Stake (DREAM)", kind: "int" },
-      { key: "contestStakeDream", apiKey: "contest_stake_dream", label: "Contest Stake (DREAM)", kind: "int" },
+      { key: "disputeStakeDream", apiKey: "dispute_stake_dream", label: "Dispute Stake", kind: "dream" },
+      { key: "contestStakeDream", apiKey: "contest_stake_dream", label: "Contest Stake", kind: "dream" },
       { key: "disputeTimeoutBlocks", apiKey: "dispute_timeout_blocks", label: "Dispute Timeout (blocks)", kind: "bigint" },
     ],
   },
@@ -329,11 +376,11 @@ const MODULES: Record<string, ModuleDef> = {
       { key: "verificationThreshold", apiKey: "verification_threshold", label: "Verification Threshold", kind: "dec", hint: "e.g. 0.66" },
       { key: "minVerificationVotes", apiKey: "min_verification_votes", label: "Min Verification Votes", kind: "number" },
       { key: "maxTranches", apiKey: "max_tranches", label: "Max Tranches", kind: "number" },
-      { key: "maxTrancheValuation", apiKey: "max_tranche_valuation", label: "Max Tranche Valuation", kind: "int" },
+      { key: "maxTrancheValuation", apiKey: "max_tranche_valuation", label: "Max Tranche Valuation", kind: "dream" },
       { key: "bondRate", apiKey: "bond_rate", label: "Bond Rate", kind: "dec", hint: "Fraction of total_valuation slashed on failure" },
       { key: "minProposerTrustLevel", apiKey: "min_proposer_trust_level", label: "Min Proposer Trust Level", kind: "number", hint: "2 = ESTABLISHED" },
-      { key: "maxTotalValuation", apiKey: "max_total_valuation", label: "Max Total Valuation", kind: "int" },
-      { key: "minStakeAmount", apiKey: "min_stake_amount", label: "Min Stake Amount", kind: "int" },
+      { key: "maxTotalValuation", apiKey: "max_total_valuation", label: "Max Total Valuation", kind: "dream" },
+      { key: "minStakeAmount", apiKey: "min_stake_amount", label: "Min Stake Amount", kind: "dream" },
       { key: "payoutHoldbackRate", apiKey: "payout_holdback_rate", label: "Payout Holdback Rate", kind: "dec" },
       { key: "proposalCooldownEpochs", apiKey: "proposal_cooldown_epochs", label: "Proposal Cooldown (epochs)", kind: "bigint" },
     ],
@@ -348,36 +395,68 @@ const MODULES: Record<string, ModuleDef> = {
       const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/params");
       return { MsgUpdateParams, Params };
     },
-    // Federation has ~44 params; expose the most-tuned ones. The generic
-    // encoder still round-trips the rest from the LCD response, so unedited
-    // fields keep their current values.
+    // Bridge min_bond / unbonding period / slash caps live on the x/service
+    // ServiceTypeConfig entries ("federation-bridge-activitypub" /
+    // "federation-bridge-atproto" / -nostr / -lens). Edit those via the
+    // service module, not federation params. The generic encoder round-trips
+    // the repeated `known_content_types` list (not editable here) untouched.
     fields: [
-      // Bridge min_bond / unbonding period / slash caps now live on the
-      // x/service ServiceTypeConfig entries ("federation-bridge-activitypub"
-      // / "federation-bridge-atproto" / -nostr / -lens). Edit those via the
-      // service module, not federation params.
-      { key: "maxBridgesPerPeer", apiKey: "max_bridges_per_peer", label: "Max Bridges Per Peer", kind: "bigint", hint: "Effective kill-switch; the real defenses are min_bond + content-hash dedup + rate limits" },
-      { key: "maxInboundPerBlock", apiKey: "max_inbound_per_block", label: "Max Inbound Per Block", kind: "bigint" },
-      { key: "maxOutboundPerBlock", apiKey: "max_outbound_per_block", label: "Max Outbound Per Block", kind: "bigint" },
-      { key: "maxContentBodySize", apiKey: "max_content_body_size", label: "Max Content Body Size", kind: "bigint" },
-      { key: "maxContentUriSize", apiKey: "max_content_uri_size", label: "Max Content URI Size", kind: "bigint" },
-      { key: "contentTtl", apiKey: "content_ttl", label: "Content TTL", kind: "duration", unit: "days", unitDivisor: 86400 },
-      { key: "globalMaxTrustCredit", apiKey: "global_max_trust_credit", label: "Global Max Trust Credit", kind: "number" },
-      { key: "trustDiscountRate", apiKey: "trust_discount_rate", label: "Trust Discount Rate", kind: "dec" },
-      { key: "minVerifierTrustLevel", apiKey: "min_verifier_trust_level", label: "Min Verifier Trust Level", kind: "number" },
-      { key: "minVerifierBond", apiKey: "min_verifier_bond", label: "Min Verifier Bond", kind: "int" },
-      { key: "verifierRecoveryThreshold", apiKey: "verifier_recovery_threshold", label: "Verifier Recovery Threshold", kind: "dec" },
-      { key: "verifierSlashAmount", apiKey: "verifier_slash_amount", label: "Verifier Slash Amount", kind: "int" },
-      { key: "verificationWindow", apiKey: "verification_window", label: "Verification Window", kind: "duration", unit: "hours", unitDivisor: 3600 },
-      { key: "challengeWindow", apiKey: "challenge_window", label: "Challenge Window", kind: "duration", unit: "hours", unitDivisor: 3600 },
-      { key: "challengeFee", apiKey: "challenge_fee_amount", label: "Challenge Fee", kind: "amount" },
-      { key: "escalationFee", apiKey: "escalation_fee_amount", label: "Escalation Fee", kind: "amount", hint: "Escrowed by the party escalating a challenge to a system report" },
-      { key: "minEpochVerifications", apiKey: "min_epoch_verifications", label: "Min Epoch Verifications", kind: "number" },
-      { key: "minVerifierAccuracy", apiKey: "min_verifier_accuracy", label: "Min Verifier Accuracy", kind: "dec" },
-      { key: "verifierDreamReward", apiKey: "verifier_dream_reward", label: "Verifier DREAM Reward", kind: "int" },
-      { key: "arbiterQuorum", apiKey: "arbiter_quorum", label: "Arbiter Quorum", kind: "number" },
-      { key: "ibcPort", apiKey: "ibc_port", label: "IBC Port", kind: "string" },
-      { key: "ibcChannelVersion", apiKey: "ibc_channel_version", label: "IBC Channel Version", kind: "string" },
+      // Bridges
+      { group: "Bridges", key: "maxBridgesPerPeer", apiKey: "max_bridges_per_peer", label: "Max Bridges Per Peer", kind: "bigint", hint: "Effective kill-switch; the real defenses are min_bond + content-hash dedup + rate limits" },
+      { group: "Bridges", key: "bridgeInactivityThreshold", apiKey: "bridge_inactivity_threshold", label: "Bridge Inactivity Threshold (blocks)", kind: "bigint" },
+
+      // Content
+      { group: "Content", key: "maxContentBodySize", apiKey: "max_content_body_size", label: "Max Content Body Size", kind: "bigint" },
+      { group: "Content", key: "maxContentUriSize", apiKey: "max_content_uri_size", label: "Max Content URI Size", kind: "bigint" },
+      { group: "Content", key: "maxProtocolMetadataSize", apiKey: "max_protocol_metadata_size", label: "Max Protocol Metadata Size", kind: "bigint" },
+      { group: "Content", key: "contentTtl", apiKey: "content_ttl", label: "Content TTL", kind: "duration", unit: "days", unitDivisor: 86400 },
+      { group: "Content", key: "attestationTtl", apiKey: "attestation_ttl", label: "Attestation TTL", kind: "duration", unit: "days", unitDivisor: 86400 },
+
+      // Identity links
+      { group: "Identity Links", key: "maxIdentityLinksPerUser", apiKey: "max_identity_links_per_user", label: "Max Identity Links Per User", kind: "number" },
+      { group: "Identity Links", key: "unverifiedLinkTtl", apiKey: "unverified_link_ttl", label: "Unverified Link TTL", kind: "duration", unit: "days", unitDivisor: 86400 },
+      { group: "Identity Links", key: "challengeTtl", apiKey: "challenge_ttl", label: "Challenge TTL", kind: "duration", unit: "days", unitDivisor: 86400 },
+
+      // Trust
+      { group: "Trust", key: "globalMaxTrustCredit", apiKey: "global_max_trust_credit", label: "Global Max Trust Credit", kind: "number" },
+      { group: "Trust", key: "trustDiscountRate", apiKey: "trust_discount_rate", label: "Trust Discount Rate", kind: "dec" },
+
+      // Rate limits
+      { group: "Rate Limits", key: "maxInboundPerBlock", apiKey: "max_inbound_per_block", label: "Max Inbound Per Block", kind: "bigint" },
+      { group: "Rate Limits", key: "maxOutboundPerBlock", apiKey: "max_outbound_per_block", label: "Max Outbound Per Block", kind: "bigint" },
+      { group: "Rate Limits", key: "maxPrunePerBlock", apiKey: "max_prune_per_block", label: "Max Prune Per Block", kind: "bigint" },
+      { group: "Rate Limits", key: "rateLimitWindow", apiKey: "rate_limit_window", label: "Rate Limit Window", kind: "duration", unit: "hours", unitDivisor: 3600 },
+
+      // Verifiers
+      { group: "Verifiers", key: "minVerifierTrustLevel", apiKey: "min_verifier_trust_level", label: "Min Verifier Trust Level", kind: "number" },
+      { group: "Verifiers", key: "minVerifierBond", apiKey: "min_verifier_bond", label: "Min Verifier Bond", kind: "dream" },
+      { group: "Verifiers", key: "verifierRecoveryThreshold", apiKey: "verifier_recovery_threshold", label: "Verifier Recovery Threshold", kind: "dream" },
+      { group: "Verifiers", key: "verifierSlashAmount", apiKey: "verifier_slash_amount", label: "Verifier Slash Amount", kind: "dream" },
+      { group: "Verifiers", key: "verificationWindow", apiKey: "verification_window", label: "Verification Window", kind: "duration", unit: "hours", unitDivisor: 3600 },
+      { group: "Verifiers", key: "minEpochVerifications", apiKey: "min_epoch_verifications", label: "Min Epoch Verifications", kind: "number" },
+      { group: "Verifiers", key: "minVerifierAccuracy", apiKey: "min_verifier_accuracy", label: "Min Verifier Accuracy", kind: "dec" },
+      { group: "Verifiers", key: "verifierDemotionCooldown", apiKey: "verifier_demotion_cooldown", label: "Verifier Demotion Cooldown", kind: "duration", unit: "hours", unitDivisor: 3600 },
+      { group: "Verifiers", key: "verifierOverturnBaseCooldown", apiKey: "verifier_overturn_base_cooldown", label: "Verifier Overturn Base Cooldown", kind: "duration", unit: "hours", unitDivisor: 3600 },
+      { group: "Verifiers", key: "upheldToResetOverturns", apiKey: "upheld_to_reset_overturns", label: "Upheld To Reset Overturns", kind: "number" },
+      { group: "Verifiers", key: "verifierUnbondCooldown", apiKey: "verifier_unbond_cooldown", label: "Verifier Unbond Cooldown", kind: "duration", unit: "hours", unitDivisor: 3600 },
+      { group: "Verifiers", key: "operatorRewardShare", apiKey: "operator_reward_share", label: "Operator Reward Share", kind: "dec" },
+      { group: "Verifiers", key: "verifierDreamReward", apiKey: "verifier_dream_reward", label: "Verifier Reward", kind: "dream" },
+      { group: "Verifiers", key: "maxVerifierDreamMintPerEpoch", apiKey: "max_verifier_dream_mint_per_epoch", label: "Max Verifier Mint / Epoch", kind: "dream" },
+
+      // Challenges & arbitration
+      { group: "Challenges & Arbitration", key: "challengeWindow", apiKey: "challenge_window", label: "Challenge Window", kind: "duration", unit: "hours", unitDivisor: 3600 },
+      { group: "Challenges & Arbitration", key: "challengeFee", apiKey: "challenge_fee_amount", label: "Challenge Fee", kind: "amount" },
+      { group: "Challenges & Arbitration", key: "challengeJuryDeadline", apiKey: "challenge_jury_deadline", label: "Challenge Jury Deadline", kind: "duration", unit: "hours", unitDivisor: 3600 },
+      { group: "Challenges & Arbitration", key: "challengeCooldown", apiKey: "challenge_cooldown", label: "Challenge Cooldown", kind: "duration", unit: "hours", unitDivisor: 3600 },
+      { group: "Challenges & Arbitration", key: "escalationFee", apiKey: "escalation_fee_amount", label: "Escalation Fee", kind: "amount", hint: "Escrowed by the party escalating a challenge to a system report" },
+      { group: "Challenges & Arbitration", key: "arbiterQuorum", apiKey: "arbiter_quorum", label: "Arbiter Quorum", kind: "number" },
+      { group: "Challenges & Arbitration", key: "arbiterResolutionWindow", apiKey: "arbiter_resolution_window", label: "Arbiter Resolution Window", kind: "duration", unit: "hours", unitDivisor: 3600 },
+      { group: "Challenges & Arbitration", key: "arbiterEscalationWindow", apiKey: "arbiter_escalation_window", label: "Arbiter Escalation Window", kind: "duration", unit: "hours", unitDivisor: 3600 },
+
+      // IBC
+      { group: "IBC", key: "ibcPort", apiKey: "ibc_port", label: "IBC Port", kind: "string" },
+      { group: "IBC", key: "ibcChannelVersion", apiKey: "ibc_channel_version", label: "IBC Channel Version", kind: "string" },
+      { group: "IBC", key: "ibcPacketTimeout", apiKey: "ibc_packet_timeout", label: "IBC Packet Timeout", kind: "duration", unit: "minutes", unitDivisor: 60 },
     ],
   },
   collect: {
@@ -391,30 +470,102 @@ const MODULES: Record<string, ModuleDef> = {
       return { MsgUpdateParams, Params };
     },
     fields: [
-      { key: "maxCollectionsBase", apiKey: "max_collections_base", label: "Max Collections (base)", kind: "number" },
-      { key: "maxCollectionsPerTrustLevel", apiKey: "max_collections_per_trust_level", label: "Max Collections / Trust Level", kind: "number" },
-      { key: "maxItemsPerCollection", apiKey: "max_items_per_collection", label: "Max Items / Collection", kind: "number" },
-      { key: "maxTagsPerCollection", apiKey: "max_tags_per_collection", label: "Max Tags / Collection", kind: "number" },
-      { key: "maxCollaboratorsPerCollection", apiKey: "max_collaborators_per_collection", label: "Max Collaborators / Collection", kind: "number" },
-      { key: "maxBatchSize", apiKey: "max_batch_size", label: "Max Batch Size", kind: "number" },
-      { key: "baseCollectionDeposit", apiKey: "base_collection_deposit", label: "Base Collection Deposit", kind: "int" },
-      { key: "perItemDeposit", apiKey: "per_item_deposit", label: "Per-Item Deposit", kind: "int" },
-      { key: "perItemSpamTax", apiKey: "per_item_spam_tax", label: "Per-Item Spam Tax", kind: "int" },
-      { key: "sponsorFee", apiKey: "sponsor_fee", label: "Sponsor Fee", kind: "int" },
-      { key: "minSponsorTrustLevel", apiKey: "min_sponsor_trust_level", label: "Min Sponsor Trust Level", kind: "string" },
-      { key: "minCuratorBond", apiKey: "min_curator_bond", label: "Min Curator Bond", kind: "int" },
-      { key: "minCuratorTrustLevel", apiKey: "min_curator_trust_level", label: "Min Curator Trust Level", kind: "string" },
-      { key: "curatorSlashFraction", apiKey: "curator_slash_fraction", label: "Curator Slash Fraction", kind: "dec" },
-      { key: "challengeWindowBlocks", apiKey: "challenge_window_blocks", label: "Challenge Window (blocks)", kind: "bigint" },
-      { key: "challengeDeposit", apiKey: "challenge_deposit", label: "Challenge Deposit", kind: "int" },
-      { key: "challengeRewardFraction", apiKey: "challenge_reward_fraction", label: "Challenge Reward Fraction", kind: "dec" },
-      { key: "downvoteCost", apiKey: "downvote_cost", label: "Downvote Cost", kind: "int" },
-      { key: "maxUpvotesPerDay", apiKey: "max_upvotes_per_day", label: "Max Upvotes / Day", kind: "number" },
-      { key: "maxDownvotesPerDay", apiKey: "max_downvotes_per_day", label: "Max Downvotes / Day", kind: "number" },
-      { key: "flagReviewThreshold", apiKey: "flag_review_threshold", label: "Flag Review Threshold", kind: "number" },
-      { key: "appealFee", apiKey: "appeal_fee", label: "Appeal Fee", kind: "int" },
-      { key: "endorsementCreationFee", apiKey: "endorsement_creation_fee", label: "Endorsement Creation Fee", kind: "int" },
-      { key: "endorsementDreamStake", apiKey: "endorsement_dream_stake", label: "Endorsement DREAM Stake", kind: "int" },
+      // Limits & sizes
+      { group: "Limits", key: "maxCollectionsBase", apiKey: "max_collections_base", label: "Max Collections (base)", kind: "number" },
+      { group: "Limits", key: "maxCollectionsPerTrustLevel", apiKey: "max_collections_per_trust_level", label: "Max Collections / Trust Level", kind: "number" },
+      { group: "Limits", key: "maxItemsPerCollection", apiKey: "max_items_per_collection", label: "Max Items / Collection", kind: "number" },
+      { group: "Limits", key: "maxTitleLength", apiKey: "max_title_length", label: "Max Title Length", kind: "number" },
+      { group: "Limits", key: "maxNameLength", apiKey: "max_name_length", label: "Max Name Length", kind: "number" },
+      { group: "Limits", key: "maxDescriptionLength", apiKey: "max_description_length", label: "Max Description Length", kind: "number" },
+      { group: "Limits", key: "maxTagLength", apiKey: "max_tag_length", label: "Max Tag Length", kind: "number" },
+      { group: "Limits", key: "maxTagsPerCollection", apiKey: "max_tags_per_collection", label: "Max Tags / Collection", kind: "number" },
+      { group: "Limits", key: "maxAttributesPerItem", apiKey: "max_attributes_per_item", label: "Max Attributes / Item", kind: "number" },
+      { group: "Limits", key: "maxAttributeKeyLength", apiKey: "max_attribute_key_length", label: "Max Attribute Key Length", kind: "number" },
+      { group: "Limits", key: "maxAttributeValueLength", apiKey: "max_attribute_value_length", label: "Max Attribute Value Length", kind: "number" },
+      { group: "Limits", key: "maxReferenceFieldLength", apiKey: "max_reference_field_length", label: "Max Reference Field Length", kind: "number" },
+      { group: "Limits", key: "maxEncryptedDataSize", apiKey: "max_encrypted_data_size", label: "Max Encrypted Data Size", kind: "number" },
+      { group: "Limits", key: "maxCollaboratorsPerCollection", apiKey: "max_collaborators_per_collection", label: "Max Collaborators / Collection", kind: "number" },
+      { group: "Limits", key: "maxBatchSize", apiKey: "max_batch_size", label: "Max Batch Size", kind: "number" },
+      { group: "Limits", key: "maxTtlBlocks", apiKey: "max_ttl_blocks", label: "Max TTL (blocks)", kind: "bigint" },
+      { group: "Limits", key: "maxNonMemberTtlBlocks", apiKey: "max_non_member_ttl_blocks", label: "Max Non-Member TTL (blocks)", kind: "bigint" },
+
+      // Deposits & fees
+      { group: "Deposits & Fees", key: "baseCollectionDeposit", apiKey: "base_collection_deposit", label: "Base Collection Deposit", kind: "amount" },
+      { group: "Deposits & Fees", key: "perItemDeposit", apiKey: "per_item_deposit", label: "Per-Item Deposit", kind: "amount" },
+      { group: "Deposits & Fees", key: "perItemSpamTax", apiKey: "per_item_spam_tax", label: "Per-Item Spam Tax", kind: "amount" },
+
+      // Sponsorship
+      { group: "Sponsorship", key: "sponsorFee", apiKey: "sponsor_fee", label: "Sponsor Fee", kind: "amount" },
+      { group: "Sponsorship", key: "minSponsorTrustLevel", apiKey: "min_sponsor_trust_level", label: "Min Sponsor Trust Level", kind: "string" },
+      { group: "Sponsorship", key: "sponsorshipRequestTtlBlocks", apiKey: "sponsorship_request_ttl_blocks", label: "Sponsorship Request TTL (blocks)", kind: "bigint" },
+
+      // Curators
+      { group: "Curators", key: "minCuratorBond", apiKey: "min_curator_bond", label: "Min Curator Bond", kind: "dream" },
+      { group: "Curators", key: "minCuratorTrustLevel", apiKey: "min_curator_trust_level", label: "Min Curator Trust Level", kind: "string" },
+      { group: "Curators", key: "minCuratorAgeBlocks", apiKey: "min_curator_age_blocks", label: "Min Curator Age (blocks)", kind: "bigint" },
+      { group: "Curators", key: "curatorSlashFraction", apiKey: "curator_slash_fraction", label: "Curator Slash Fraction", kind: "dec" },
+      { group: "Curators", key: "curatorDemotionCooldown", apiKey: "curator_demotion_cooldown", label: "Curator Demotion Cooldown (blocks)", kind: "bigint" },
+      { group: "Curators", key: "curatorDemotionThreshold", apiKey: "curator_demotion_threshold", label: "Curator Demotion Threshold", kind: "dream" },
+      { group: "Curators", key: "curatorOverturnDemotionStreak", apiKey: "curator_overturn_demotion_streak", label: "Curator Overturn Demotion Streak", kind: "bigint" },
+      { group: "Curators", key: "curatorUnbondCooldown", apiKey: "curator_unbond_cooldown", label: "Curator Unbond Cooldown (blocks)", kind: "bigint" },
+
+      // Reviews
+      { group: "Reviews", key: "maxTagsPerReview", apiKey: "max_tags_per_review", label: "Max Tags / Review", kind: "number" },
+      { group: "Reviews", key: "maxReviewCommentLength", apiKey: "max_review_comment_length", label: "Max Review Comment Length", kind: "number" },
+      { group: "Reviews", key: "maxReviewsPerCollection", apiKey: "max_reviews_per_collection", label: "Max Reviews / Collection", kind: "number" },
+
+      // Challenges
+      { group: "Challenges", key: "challengeWindowBlocks", apiKey: "challenge_window_blocks", label: "Challenge Window (blocks)", kind: "bigint" },
+      { group: "Challenges", key: "challengeDeposit", apiKey: "challenge_deposit", label: "Challenge Deposit", kind: "dream" },
+      { group: "Challenges", key: "maxChallengeReasonLength", apiKey: "max_challenge_reason_length", label: "Max Challenge Reason Length", kind: "number" },
+      { group: "Challenges", key: "maxPrunePerBlock", apiKey: "max_prune_per_block", label: "Max Prune Per Block", kind: "number" },
+      { group: "Challenges", key: "challengeRewardFraction", apiKey: "challenge_reward_fraction", label: "Challenge Reward Fraction", kind: "dec" },
+
+      // Voting & flags
+      { group: "Voting & Flags", key: "downvoteCost", apiKey: "downvote_cost", label: "Downvote Cost", kind: "amount" },
+      { group: "Voting & Flags", key: "maxUpvotesPerDay", apiKey: "max_upvotes_per_day", label: "Max Upvotes / Day", kind: "number" },
+      { group: "Voting & Flags", key: "maxDownvotesPerDay", apiKey: "max_downvotes_per_day", label: "Max Downvotes / Day", kind: "number" },
+      { group: "Voting & Flags", key: "flagReviewThreshold", apiKey: "flag_review_threshold", label: "Flag Review Threshold", kind: "number" },
+      { group: "Voting & Flags", key: "maxFlagsPerDay", apiKey: "max_flags_per_day", label: "Max Flags / Day", kind: "number" },
+      { group: "Voting & Flags", key: "maxFlaggersPerTarget", apiKey: "max_flaggers_per_target", label: "Max Flaggers / Target", kind: "number" },
+      { group: "Voting & Flags", key: "flagExpirationBlocks", apiKey: "flag_expiration_blocks", label: "Flag Expiration (blocks)", kind: "bigint" },
+      { group: "Voting & Flags", key: "maxFlagReasonLength", apiKey: "max_flag_reason_length", label: "Max Flag Reason Length", kind: "number" },
+
+      // Sentinel & hiding
+      { group: "Sentinel & Hiding", key: "sentinelCommitAmount", apiKey: "sentinel_commit_amount", label: "Sentinel Commit Amount", kind: "dream", hint: "Bonded DREAM reserved to commit a hide" },
+      { group: "Sentinel & Hiding", key: "hideExpiryBlocks", apiKey: "hide_expiry_blocks", label: "Hide Expiry (blocks)", kind: "bigint" },
+
+      // Appeals
+      { group: "Appeals", key: "appealFee", apiKey: "appeal_fee", label: "Appeal Fee", kind: "amount" },
+      { group: "Appeals", key: "appealCooldownBlocks", apiKey: "appeal_cooldown_blocks", label: "Appeal Cooldown (blocks)", kind: "bigint" },
+      { group: "Appeals", key: "appealDeadlineBlocks", apiKey: "appeal_deadline_blocks", label: "Appeal Deadline (blocks)", kind: "bigint" },
+
+      // Endorsements
+      { group: "Endorsements", key: "endorsementCreationFee", apiKey: "endorsement_creation_fee", label: "Endorsement Creation Fee", kind: "amount" },
+      { group: "Endorsements", key: "endorsementDreamStake", apiKey: "endorsement_dream_stake", label: "Endorsement Stake", kind: "dream" },
+      { group: "Endorsements", key: "endorsementStakeDuration", apiKey: "endorsement_stake_duration", label: "Endorsement Stake Duration (blocks)", kind: "bigint" },
+      { group: "Endorsements", key: "endorsementExpiryBlocks", apiKey: "endorsement_expiry_blocks", label: "Endorsement Expiry (blocks)", kind: "bigint" },
+      { group: "Endorsements", key: "endorsementFeeEndorserShare", apiKey: "endorsement_fee_endorser_share", label: "Endorsement Fee Endorser Share", kind: "dec" },
+      { group: "Endorsements", key: "endorsementDeletionBurnFraction", apiKey: "endorsement_deletion_burn_fraction", label: "Endorsement Deletion Burn Fraction", kind: "dec" },
+
+      // Conviction & pinning
+      { group: "Conviction & Pinning", key: "convictionRenewalThreshold", apiKey: "conviction_renewal_threshold", label: "Conviction Renewal Threshold", kind: "dec" },
+      { group: "Conviction & Pinning", key: "convictionRenewalPeriod", apiKey: "conviction_renewal_period", label: "Conviction Renewal Period (blocks)", kind: "bigint" },
+      { group: "Conviction & Pinning", key: "pinMinTrustLevel", apiKey: "pin_min_trust_level", label: "Pin Min Trust Level", kind: "number" },
+      { group: "Conviction & Pinning", key: "maxPinsPerDay", apiKey: "max_pins_per_day", label: "Max Pins / Day", kind: "number" },
+      { group: "Conviction & Pinning", key: "makePermanentMinTrustLevel", apiKey: "make_permanent_min_trust_level", label: "Make Permanent Min Trust Level", kind: "number" },
+      { group: "Conviction & Pinning", key: "maxMakePermanentPerDay", apiKey: "max_make_permanent_per_day", label: "Max Make Permanent / Day", kind: "number" },
+      { group: "Conviction & Pinning", key: "maxPromotionsPerBlock", apiKey: "max_promotions_per_block", label: "Max Promotions Per Block", kind: "number" },
+
+      // Non-member collaboration
+      { group: "Non-Member Collaboration", key: "nonMemberCollabDreamStake", apiKey: "non_member_collab_dream_stake", label: "Non-Member Collab Stake", kind: "dream" },
+      { group: "Non-Member Collaboration", key: "nonMemberCollabBurnFraction", apiKey: "non_member_collab_burn_fraction", label: "Non-Member Collab Burn Fraction", kind: "dec" },
+      { group: "Non-Member Collaboration", key: "maxNonMemberCollaboratorsPerCollection", apiKey: "max_non_member_collaborators_per_collection", label: "Max Non-Member Collaborators / Collection", kind: "number" },
+
+      // Reputation penalties
+      { group: "Reputation Penalties", key: "endorserRepPenalty", apiKey: "endorser_rep_penalty", label: "Endorser Rep Penalty", kind: "dec" },
+      { group: "Reputation Penalties", key: "collabInviterRepPenalty", apiKey: "collab_inviter_rep_penalty", label: "Collab Inviter Rep Penalty", kind: "dec" },
+      { group: "Reputation Penalties", key: "authorRepPenalty", apiKey: "author_rep_penalty", label: "Author Rep Penalty", kind: "dec" },
     ],
   },
   season: {
@@ -428,36 +579,91 @@ const MODULES: Record<string, ModuleDef> = {
       return { MsgUpdateParams, Params };
     },
     fields: [
-      { key: "epochBlocks", apiKey: "epoch_blocks", label: "Epoch (blocks)", kind: "bigint" },
-      { key: "seasonDurationEpochs", apiKey: "season_duration_epochs", label: "Season Duration (epochs)", kind: "bigint" },
-      { key: "seasonTransitionEpochs", apiKey: "season_transition_epochs", label: "Season Transition (epochs)", kind: "bigint" },
-      { key: "xpVoteCast", apiKey: "xp_vote_cast", label: "XP: Vote Cast", kind: "bigint" },
-      { key: "xpProposalCreated", apiKey: "xp_proposal_created", label: "XP: Proposal Created", kind: "bigint" },
-      { key: "xpForumReplyReceived", apiKey: "xp_forum_reply_received", label: "XP: Forum Reply Received", kind: "bigint" },
-      { key: "xpForumMarkedHelpful", apiKey: "xp_forum_marked_helpful", label: "XP: Forum Marked Helpful", kind: "bigint" },
-      { key: "xpInviteeFirstInitiative", apiKey: "xp_invitee_first_initiative", label: "XP: Invitee First Initiative", kind: "bigint" },
-      { key: "xpInviteeEstablished", apiKey: "xp_invitee_established", label: "XP: Invitee ESTABLISHED", kind: "bigint" },
-      { key: "maxVoteXpPerEpoch", apiKey: "max_vote_xp_per_epoch", label: "Max Vote XP / Epoch", kind: "number" },
-      { key: "maxForumXpPerEpoch", apiKey: "max_forum_xp_per_epoch", label: "Max Forum XP / Epoch", kind: "bigint" },
-      { key: "maxXpPerEpoch", apiKey: "max_xp_per_epoch", label: "Max Total XP / Epoch", kind: "bigint" },
-      { key: "baselineReputation", apiKey: "baseline_reputation", label: "Baseline Reputation", kind: "dec" },
-      { key: "minGuildMembers", apiKey: "min_guild_members", label: "Min Guild Members", kind: "number" },
-      { key: "maxGuildMembers", apiKey: "max_guild_members", label: "Max Guild Members", kind: "number" },
-      { key: "maxGuildOfficers", apiKey: "max_guild_officers", label: "Max Guild Officers", kind: "number" },
-      { key: "guildCreationCost", apiKey: "guild_creation_cost", label: "Guild Creation Cost", kind: "int" },
-      { key: "guildHopCooldownEpochs", apiKey: "guild_hop_cooldown_epochs", label: "Guild Hop Cooldown (epochs)", kind: "bigint" },
-      { key: "maxGuildsPerSeason", apiKey: "max_guilds_per_season", label: "Max Guilds / Season", kind: "number" },
-      { key: "displayNameMinLength", apiKey: "display_name_min_length", label: "Display Name Min Length", kind: "number" },
-      { key: "displayNameMaxLength", apiKey: "display_name_max_length", label: "Display Name Max Length", kind: "number" },
-      { key: "displayNameChangeCooldownEpochs", apiKey: "display_name_change_cooldown_epochs", label: "Display Name Change Cooldown (epochs)", kind: "bigint" },
-      { key: "usernameMinLength", apiKey: "username_min_length", label: "Username Min Length", kind: "number" },
-      { key: "usernameMaxLength", apiKey: "username_max_length", label: "Username Max Length", kind: "number" },
-      { key: "usernameChangeCooldownEpochs", apiKey: "username_change_cooldown_epochs", label: "Username Change Cooldown (epochs)", kind: "bigint" },
-      { key: "usernameCostDream", apiKey: "username_cost_dream", label: "Username Cost (DREAM)", kind: "int" },
-      { key: "displayNameReportStakeDream", apiKey: "display_name_report_stake_dream", label: "Display Name Report Stake (DREAM)", kind: "int" },
-      { key: "maxActiveQuestsPerMember", apiKey: "max_active_quests_per_member", label: "Max Active Quests / Member", kind: "number" },
-      { key: "maxQuestObjectives", apiKey: "max_quest_objectives", label: "Max Quest Objectives", kind: "number" },
-      { key: "maxQuestXpReward", apiKey: "max_quest_xp_reward", label: "Max Quest XP Reward", kind: "bigint" },
+      // Time
+      { group: "Time", key: "epochBlocks", apiKey: "epoch_blocks", label: "Epoch (blocks)", kind: "bigint" },
+      { group: "Time", key: "seasonDurationEpochs", apiKey: "season_duration_epochs", label: "Season Duration (epochs)", kind: "bigint" },
+      { group: "Time", key: "seasonTransitionEpochs", apiKey: "season_transition_epochs", label: "Season Transition (epochs)", kind: "bigint" },
+      { group: "Time", key: "maxTransitionEpochs", apiKey: "max_transition_epochs", label: "Max Transition (epochs)", kind: "bigint" },
+      { group: "Time", key: "transitionBatchSize", apiKey: "transition_batch_size", label: "Transition Batch Size", kind: "number" },
+      { group: "Time", key: "transitionGracePeriod", apiKey: "transition_grace_period", label: "Transition Grace Period", kind: "number" },
+      { group: "Time", key: "transitionMaxRetries", apiKey: "transition_max_retries", label: "Transition Max Retries", kind: "number" },
+      { group: "Time", key: "maxSeasonExtensions", apiKey: "max_season_extensions", label: "Max Season Extensions", kind: "number" },
+      { group: "Time", key: "maxExtensionEpochs", apiKey: "max_extension_epochs", label: "Max Extension (epochs)", kind: "bigint" },
+
+      // XP
+      { group: "XP", key: "xpVoteCast", apiKey: "xp_vote_cast", label: "XP: Vote Cast", kind: "bigint" },
+      { group: "XP", key: "xpProposalCreated", apiKey: "xp_proposal_created", label: "XP: Proposal Created", kind: "bigint" },
+      { group: "XP", key: "xpForumReplyReceived", apiKey: "xp_forum_reply_received", label: "XP: Forum Reply Received", kind: "bigint" },
+      { group: "XP", key: "xpForumMarkedHelpful", apiKey: "xp_forum_marked_helpful", label: "XP: Forum Marked Helpful", kind: "bigint" },
+      { group: "XP", key: "xpInviteeFirstInitiative", apiKey: "xp_invitee_first_initiative", label: "XP: Invitee First Initiative", kind: "bigint" },
+      { group: "XP", key: "xpInviteeEstablished", apiKey: "xp_invitee_established", label: "XP: Invitee ESTABLISHED", kind: "bigint" },
+      { group: "XP", key: "maxVoteXpPerEpoch", apiKey: "max_vote_xp_per_epoch", label: "Max Vote XP / Epoch", kind: "number" },
+      { group: "XP", key: "maxForumXpPerEpoch", apiKey: "max_forum_xp_per_epoch", label: "Max Forum XP / Epoch", kind: "bigint" },
+      { group: "XP", key: "maxXpPerEpoch", apiKey: "max_xp_per_epoch", label: "Max Total XP / Epoch", kind: "bigint" },
+      { group: "XP", key: "baselineReputation", apiKey: "baseline_reputation", label: "Baseline Reputation", kind: "dec" },
+
+      // Forum XP anti-gaming
+      { group: "Forum XP Anti-Gaming", key: "forumXpMinAccountAgeEpochs", apiKey: "forum_xp_min_account_age_epochs", label: "Forum XP Min Account Age (epochs)", kind: "bigint" },
+      { group: "Forum XP Anti-Gaming", key: "forumXpReciprocalCooldownEpochs", apiKey: "forum_xp_reciprocal_cooldown_epochs", label: "Forum XP Reciprocal Cooldown (epochs)", kind: "bigint" },
+      { group: "Forum XP Anti-Gaming", key: "forumXpSelfReplyCooldownEpochs", apiKey: "forum_xp_self_reply_cooldown_epochs", label: "Forum XP Self-Reply Cooldown (epochs)", kind: "bigint" },
+      { group: "Forum XP Anti-Gaming", key: "forumCooldownRetentionEpochs", apiKey: "forum_cooldown_retention_epochs", label: "Forum Cooldown Retention (epochs)", kind: "number" },
+
+      // Guilds
+      { group: "Guilds", key: "minGuildMembers", apiKey: "min_guild_members", label: "Min Guild Members", kind: "number" },
+      { group: "Guilds", key: "maxGuildMembers", apiKey: "max_guild_members", label: "Max Guild Members", kind: "number" },
+      { group: "Guilds", key: "maxGuildOfficers", apiKey: "max_guild_officers", label: "Max Guild Officers", kind: "number" },
+      { group: "Guilds", key: "guildCreationCost", apiKey: "guild_creation_cost", label: "Guild Creation Cost", kind: "dream" },
+      { group: "Guilds", key: "guildHopCooldownEpochs", apiKey: "guild_hop_cooldown_epochs", label: "Guild Hop Cooldown (epochs)", kind: "bigint" },
+      { group: "Guilds", key: "maxGuildsPerSeason", apiKey: "max_guilds_per_season", label: "Max Guilds / Season", kind: "number" },
+      { group: "Guilds", key: "minGuildAgeEpochs", apiKey: "min_guild_age_epochs", label: "Min Guild Age (epochs)", kind: "bigint" },
+      { group: "Guilds", key: "maxPendingInvites", apiKey: "max_pending_invites", label: "Max Pending Invites", kind: "number" },
+      { group: "Guilds", key: "guildDescriptionMaxLength", apiKey: "guild_description_max_length", label: "Guild Description Max Length", kind: "number" },
+      { group: "Guilds", key: "guildInviteTtlEpochs", apiKey: "guild_invite_ttl_epochs", label: "Guild Invite TTL (epochs)", kind: "bigint" },
+
+      // Display names & usernames
+      { group: "Names", key: "displayNameMinLength", apiKey: "display_name_min_length", label: "Display Name Min Length", kind: "number" },
+      { group: "Names", key: "displayNameMaxLength", apiKey: "display_name_max_length", label: "Display Name Max Length", kind: "number" },
+      { group: "Names", key: "displayNameChangeCooldownEpochs", apiKey: "display_name_change_cooldown_epochs", label: "Display Name Change Cooldown (epochs)", kind: "bigint" },
+      { group: "Names", key: "usernameMinLength", apiKey: "username_min_length", label: "Username Min Length", kind: "number" },
+      { group: "Names", key: "usernameMaxLength", apiKey: "username_max_length", label: "Username Max Length", kind: "number" },
+      { group: "Names", key: "usernameChangeCooldownEpochs", apiKey: "username_change_cooldown_epochs", label: "Username Change Cooldown (epochs)", kind: "bigint" },
+      { group: "Names", key: "usernameCostDream", apiKey: "username_cost_dream", label: "Username Cost", kind: "dream" },
+      { group: "Names", key: "displayNameReportStakeDream", apiKey: "display_name_report_stake_dream", label: "Display Name Report Stake", kind: "dream" },
+      { group: "Names", key: "displayNameAppealStakeDream", apiKey: "display_name_appeal_stake_dream", label: "Display Name Appeal Stake", kind: "dream" },
+      { group: "Names", key: "displayNameAppealPeriodBlocks", apiKey: "display_name_appeal_period_blocks", label: "Display Name Appeal Period (blocks)", kind: "bigint" },
+
+      // Quests
+      { group: "Quests", key: "maxActiveQuestsPerMember", apiKey: "max_active_quests_per_member", label: "Max Active Quests / Member", kind: "number" },
+      { group: "Quests", key: "maxQuestObjectives", apiKey: "max_quest_objectives", label: "Max Quest Objectives", kind: "number" },
+      { group: "Quests", key: "maxQuestXpReward", apiKey: "max_quest_xp_reward", label: "Max Quest XP Reward", kind: "bigint" },
+      { group: "Quests", key: "maxObjectiveDescriptionLength", apiKey: "max_objective_description_length", label: "Max Objective Description Length", kind: "number" },
+
+      // Titles
+      { group: "Titles", key: "maxDisplayableTitles", apiKey: "max_displayable_titles", label: "Max Displayable Titles", kind: "number" },
+      { group: "Titles", key: "maxArchivedTitles", apiKey: "max_archived_titles", label: "Max Archived Titles", kind: "number" },
+
+      // Nominations & retro rewards
+      { group: "Nominations & Retro Rewards", key: "nominationWindowEpochs", apiKey: "nomination_window_epochs", label: "Nomination Window (epochs)", kind: "bigint" },
+      { group: "Nominations & Retro Rewards", key: "maxNominationsPerMember", apiKey: "max_nominations_per_member", label: "Max Nominations / Member", kind: "bigint" },
+      { group: "Nominations & Retro Rewards", key: "nominationConvictionHalfLifeEpochs", apiKey: "nomination_conviction_half_life_epochs", label: "Nomination Conviction Half-Life (epochs)", kind: "bigint" },
+      { group: "Nominations & Retro Rewards", key: "nominationRationaleMaxLength", apiKey: "nomination_rationale_max_length", label: "Nomination Rationale Max Length", kind: "number" },
+      { group: "Nominations & Retro Rewards", key: "nominationMinTrustLevel", apiKey: "nomination_min_trust_level", label: "Nomination Min Trust Level", kind: "number" },
+      { group: "Nominations & Retro Rewards", key: "nominationStakeMinTrustLevel", apiKey: "nomination_stake_min_trust_level", label: "Nomination Stake Min Trust Level", kind: "number" },
+      { group: "Nominations & Retro Rewards", key: "nominationMinStake", apiKey: "nomination_min_stake", label: "Nomination Min Stake", kind: "dec" },
+      { group: "Nominations & Retro Rewards", key: "retroRewardMaxRecipients", apiKey: "retro_reward_max_recipients", label: "Retro Reward Max Recipients", kind: "bigint" },
+      { group: "Nominations & Retro Rewards", key: "retroRewardMinConviction", apiKey: "retro_reward_min_conviction", label: "Retro Reward Min Conviction", kind: "dec" },
+      { group: "Nominations & Retro Rewards", key: "retroRewardBudgetRatio", apiKey: "retro_reward_budget_ratio", label: "Retro Reward Budget Ratio", kind: "dec" },
+      { group: "Nominations & Retro Rewards", key: "retroRewardBudgetMin", apiKey: "retro_reward_budget_min", label: "Retro Reward Budget Min", kind: "dream" },
+      { group: "Nominations & Retro Rewards", key: "retroRewardBudgetMax", apiKey: "retro_reward_budget_max", label: "Retro Reward Budget Max", kind: "dream" },
+
+      // Retention
+      { group: "Retention", key: "snapshotRetentionSeasons", apiKey: "snapshot_retention_seasons", label: "Snapshot Retention (seasons)", kind: "number" },
+      { group: "Retention", key: "epochTrackerRetentionEpochs", apiKey: "epoch_tracker_retention_epochs", label: "Epoch Tracker Retention (epochs)", kind: "number" },
+      { group: "Retention", key: "voteXpRecordRetentionSeasons", apiKey: "vote_xp_record_retention_seasons", label: "Vote XP Record Retention (seasons)", kind: "number" },
+
+      // Invite cleanup
+      { group: "Invite Cleanup", key: "inviteCleanupIntervalBlocks", apiKey: "invite_cleanup_interval_blocks", label: "Invite Cleanup Interval (blocks)", kind: "number" },
+      { group: "Invite Cleanup", key: "inviteCleanupBatchSize", apiKey: "invite_cleanup_batch_size", label: "Invite Cleanup Batch Size", kind: "number" },
     ],
   },
   shield: {
@@ -519,9 +725,9 @@ const MODULES: Record<string, ModuleDef> = {
       // DREAM economics
       { group: "DREAM Economics", key: "unstakedDecayRate", apiKey: "unstaked_decay_rate", label: "Unstaked Decay Rate (per epoch)", kind: "dec", hint: "0.002 ≈ 0.2% per epoch (~73% annualized)" },
       { group: "DREAM Economics", key: "transferTaxRate", apiKey: "transfer_tax_rate", label: "Transfer Tax Rate", kind: "dec" },
-      { group: "DREAM Economics", key: "maxTipAmount", apiKey: "max_tip_amount", label: "Max Tip Amount (DREAM)", kind: "int" },
+      { group: "DREAM Economics", key: "maxTipAmount", apiKey: "max_tip_amount", label: "Max Tip Amount", kind: "dream" },
       { group: "DREAM Economics", key: "maxTipsPerEpoch", apiKey: "max_tips_per_epoch", label: "Max Tips Per Epoch", kind: "number" },
-      { group: "DREAM Economics", key: "maxGiftAmount", apiKey: "max_gift_amount", label: "Max Gift Amount (DREAM)", kind: "int" },
+      { group: "DREAM Economics", key: "maxGiftAmount", apiKey: "max_gift_amount", label: "Max Gift Amount", kind: "dream" },
       { group: "DREAM Economics", key: "giftOnlyToInvitees", apiKey: "gift_only_to_invitees", label: "Gift Only To Invitees", kind: "boolean" },
 
       // Initiative rewards
@@ -530,22 +736,22 @@ const MODULES: Record<string, ModuleDef> = {
       { group: "Initiative Rewards", key: "minReputationMultiplier", apiKey: "min_reputation_multiplier", label: "Min Reputation Multiplier", kind: "dec" },
 
       // Initiative tiers — TierConfig nested messages reached via dot-path.
-      { group: "Apprentice Tier", key: "apprenticeTier.maxBudget", apiKey: "apprentice_tier.max_budget", label: "Max Budget (DREAM)", kind: "int" },
+      { group: "Apprentice Tier", key: "apprenticeTier.maxBudget", apiKey: "apprentice_tier.max_budget", label: "Max Budget", kind: "dream" },
       { group: "Apprentice Tier", key: "apprenticeTier.minReputation", apiKey: "apprentice_tier.min_reputation", label: "Min Reputation", kind: "dec" },
       { group: "Apprentice Tier", key: "apprenticeTier.reputationCap", apiKey: "apprentice_tier.reputation_cap", label: "Reputation Cap", kind: "dec" },
       { group: "Apprentice Tier", key: "apprenticeTier.rewardMultiplier", apiKey: "apprentice_tier.reward_multiplier", label: "Reward Multiplier", kind: "dec" },
 
-      { group: "Standard Tier", key: "standardTier.maxBudget", apiKey: "standard_tier.max_budget", label: "Max Budget (DREAM)", kind: "int" },
+      { group: "Standard Tier", key: "standardTier.maxBudget", apiKey: "standard_tier.max_budget", label: "Max Budget", kind: "dream" },
       { group: "Standard Tier", key: "standardTier.minReputation", apiKey: "standard_tier.min_reputation", label: "Min Reputation", kind: "dec" },
       { group: "Standard Tier", key: "standardTier.reputationCap", apiKey: "standard_tier.reputation_cap", label: "Reputation Cap", kind: "dec" },
       { group: "Standard Tier", key: "standardTier.rewardMultiplier", apiKey: "standard_tier.reward_multiplier", label: "Reward Multiplier", kind: "dec" },
 
-      { group: "Expert Tier", key: "expertTier.maxBudget", apiKey: "expert_tier.max_budget", label: "Max Budget (DREAM)", kind: "int" },
+      { group: "Expert Tier", key: "expertTier.maxBudget", apiKey: "expert_tier.max_budget", label: "Max Budget", kind: "dream" },
       { group: "Expert Tier", key: "expertTier.minReputation", apiKey: "expert_tier.min_reputation", label: "Min Reputation", kind: "dec" },
       { group: "Expert Tier", key: "expertTier.reputationCap", apiKey: "expert_tier.reputation_cap", label: "Reputation Cap", kind: "dec" },
       { group: "Expert Tier", key: "expertTier.rewardMultiplier", apiKey: "expert_tier.reward_multiplier", label: "Reward Multiplier", kind: "dec" },
 
-      { group: "Epic Tier", key: "epicTier.maxBudget", apiKey: "epic_tier.max_budget", label: "Max Budget (DREAM)", kind: "int" },
+      { group: "Epic Tier", key: "epicTier.maxBudget", apiKey: "epic_tier.max_budget", label: "Max Budget", kind: "dream" },
       { group: "Epic Tier", key: "epicTier.minReputation", apiKey: "epic_tier.min_reputation", label: "Min Reputation", kind: "dec" },
       { group: "Epic Tier", key: "epicTier.reputationCap", apiKey: "epic_tier.reputation_cap", label: "Reputation Cap", kind: "dec" },
       { group: "Epic Tier", key: "epicTier.rewardMultiplier", apiKey: "epic_tier.reward_multiplier", label: "Reward Multiplier", kind: "dec" },
@@ -560,7 +766,7 @@ const MODULES: Record<string, ModuleDef> = {
       { group: "Review Periods", key: "defaultChallengePeriodEpochs", apiKey: "default_challenge_period_epochs", label: "Default Challenge Period (epochs)", kind: "bigint" },
 
       // Invitations
-      { group: "Invitations", key: "minInvitationStake", apiKey: "min_invitation_stake", label: "Min Invitation Stake (DREAM)", kind: "int" },
+      { group: "Invitations", key: "minInvitationStake", apiKey: "min_invitation_stake", label: "Min Invitation Stake", kind: "dream" },
       { group: "Invitations", key: "invitationAccountabilityEpochs", apiKey: "invitation_accountability_epochs", label: "Invitation Accountability (epochs)", kind: "bigint" },
       { group: "Invitations", key: "referralRewardRate", apiKey: "referral_reward_rate", label: "Referral Reward Rate", kind: "dec" },
       { group: "Invitations", key: "invitationCostMultiplier", apiKey: "invitation_cost_multiplier", label: "Invitation Cost Multiplier", kind: "dec" },
@@ -582,7 +788,7 @@ const MODULES: Record<string, ModuleDef> = {
       { group: "Trust Levels", key: "trustLevelConfig.coreInvitationCredits", apiKey: "trust_level_config.core_invitation_credits", label: "CORE Invitation Credits", kind: "number" },
 
       // Challenges
-      { group: "Challenges", key: "minChallengeStake", apiKey: "min_challenge_stake", label: "Min Challenge Stake (DREAM)", kind: "int" },
+      { group: "Challenges", key: "minChallengeStake", apiKey: "min_challenge_stake", label: "Min Challenge Stake", kind: "dream" },
       { group: "Challenges", key: "challengerRewardRate", apiKey: "challenger_reward_rate", label: "Challenger Reward Rate", kind: "dec" },
       { group: "Challenges", key: "jurySize", apiKey: "jury_size", label: "Jury Size", kind: "number" },
       { group: "Challenges", key: "jurySuperMajority", apiKey: "jury_super_majority", label: "Jury Super Majority", kind: "dec" },
@@ -590,10 +796,10 @@ const MODULES: Record<string, ModuleDef> = {
       { group: "Challenges", key: "challengeResponseDeadlineEpochs", apiKey: "challenge_response_deadline_epochs", label: "Challenge Response Deadline (epochs)", kind: "bigint" },
 
       // Interim compensation
-      { group: "Interim Compensation", key: "simpleComplexityBudget", apiKey: "simple_complexity_budget", label: "Simple Complexity Budget (DREAM)", kind: "int" },
-      { group: "Interim Compensation", key: "standardComplexityBudget", apiKey: "standard_complexity_budget", label: "Standard Complexity Budget (DREAM)", kind: "int" },
-      { group: "Interim Compensation", key: "complexComplexityBudget", apiKey: "complex_complexity_budget", label: "Complex Complexity Budget (DREAM)", kind: "int" },
-      { group: "Interim Compensation", key: "expertComplexityBudget", apiKey: "expert_complexity_budget", label: "Expert Complexity Budget (DREAM)", kind: "int" },
+      { group: "Interim Compensation", key: "simpleComplexityBudget", apiKey: "simple_complexity_budget", label: "Simple Complexity Budget", kind: "dream" },
+      { group: "Interim Compensation", key: "standardComplexityBudget", apiKey: "standard_complexity_budget", label: "Standard Complexity Budget", kind: "dream" },
+      { group: "Interim Compensation", key: "complexComplexityBudget", apiKey: "complex_complexity_budget", label: "Complex Complexity Budget", kind: "dream" },
+      { group: "Interim Compensation", key: "expertComplexityBudget", apiKey: "expert_complexity_budget", label: "Expert Complexity Budget", kind: "dream" },
       { group: "Interim Compensation", key: "soloExpertBonusRate", apiKey: "solo_expert_bonus_rate", label: "Solo Expert Bonus Rate", kind: "dec" },
       { group: "Interim Compensation", key: "interimDeadlineEpochs", apiKey: "interim_deadline_epochs", label: "Interim Deadline (epochs)", kind: "bigint" },
 
@@ -603,7 +809,7 @@ const MODULES: Record<string, ModuleDef> = {
       { group: "Rate Limits", key: "challengeQueueMaxSize", apiKey: "challenge_queue_max_size", label: "Challenge Queue Max Size", kind: "number" },
       { group: "Rate Limits", key: "maxActiveInitiativesPerMember", apiKey: "max_active_initiatives_per_member", label: "Max Active Initiatives / Member", kind: "number", hint: "0 = unbounded" },
       { group: "Rate Limits", key: "maxActiveInterimsPerMember", apiKey: "max_active_interims_per_member", label: "Max Active Interims / Member", kind: "number", hint: "0 = unbounded" },
-      { group: "Rate Limits", key: "maxDreamMintPerEpoch", apiKey: "max_dream_mint_per_epoch", label: "Max DREAM Mint / Epoch", kind: "int", hint: "0 = unbounded" },
+      { group: "Rate Limits", key: "maxDreamMintPerEpoch", apiKey: "max_dream_mint_per_epoch", label: "Max DREAM Mint / Epoch", kind: "dream", hint: "0 = unbounded" },
       { group: "Rate Limits", key: "maxReputationGainPerEpoch", apiKey: "max_reputation_gain_per_epoch", label: "Max Reputation Gain / Epoch", kind: "dec" },
 
       // Slashing
@@ -618,16 +824,16 @@ const MODULES: Record<string, ModuleDef> = {
       { group: "Extended Staking", key: "tagStakeRevenueShare", apiKey: "tag_stake_revenue_share", label: "Tag Stake Revenue Share", kind: "dec" },
       { group: "Extended Staking", key: "minStakeDurationSeconds", apiKey: "min_stake_duration_seconds", label: "Min Stake Duration (seconds)", kind: "bigint" },
       { group: "Extended Staking", key: "allowSelfMemberStake", apiKey: "allow_self_member_stake", label: "Allow Self Member Stake", kind: "boolean" },
-      { group: "Extended Staking", key: "maxInitiativeStakePerMember", apiKey: "max_initiative_stake_per_member", label: "Max Initiative Stake / Member (DREAM)", kind: "int", hint: "Anti-whale cap on single-initiative stake" },
+      { group: "Extended Staking", key: "maxInitiativeStakePerMember", apiKey: "max_initiative_stake_per_member", label: "Max Initiative Stake / Member", kind: "dream", hint: "Anti-whale cap on single-initiative stake" },
 
       // Gifts
       { group: "Gifts", key: "giftCooldownBlocks", apiKey: "gift_cooldown_blocks", label: "Gift Cooldown (blocks)", kind: "bigint" },
-      { group: "Gifts", key: "maxGiftsPerSenderEpoch", apiKey: "max_gifts_per_sender_epoch", label: "Max Gifts / Sender / Epoch (DREAM)", kind: "int" },
+      { group: "Gifts", key: "maxGiftsPerSenderEpoch", apiKey: "max_gifts_per_sender_epoch", label: "Max Gifts / Sender / Epoch", kind: "dream" },
 
       // Content conviction staking
       { group: "Content Conviction", key: "contentConvictionHalfLifeEpochs", apiKey: "content_conviction_half_life_epochs", label: "Content Conviction Half-Life (epochs)", kind: "bigint" },
-      { group: "Content Conviction", key: "maxContentStakePerMember", apiKey: "max_content_stake_per_member", label: "Max Content Stake / Member (DREAM)", kind: "int" },
-      { group: "Content Conviction", key: "maxAuthorBondPerContent", apiKey: "max_author_bond_per_content", label: "Max Author Bond / Content (DREAM)", kind: "int" },
+      { group: "Content Conviction", key: "maxContentStakePerMember", apiKey: "max_content_stake_per_member", label: "Max Content Stake / Member", kind: "dream" },
+      { group: "Content Conviction", key: "maxAuthorBondPerContent", apiKey: "max_author_bond_per_content", label: "Max Author Bond / Content", kind: "dream" },
       { group: "Content Conviction", key: "authorBondSlashOnModeration", apiKey: "author_bond_slash_on_moderation", label: "Slash Author Bond on Moderation", kind: "boolean" },
       { group: "Content Conviction", key: "contentChallengeRewardShare", apiKey: "content_challenge_reward_share", label: "Content Challenge Reward Share", kind: "dec" },
       { group: "Content Conviction", key: "convictionPropagationRatio", apiKey: "conviction_propagation_ratio", label: "Conviction Propagation Ratio", kind: "dec" },
@@ -635,37 +841,37 @@ const MODULES: Record<string, ModuleDef> = {
 
       // Tag anti-gaming
       { group: "Tags", key: "maxTagsPerInitiative", apiKey: "max_tags_per_initiative", label: "Max Tags / Initiative", kind: "number" },
-      { group: "Tags", key: "tagCreationFee", apiKey: "tag_creation_fee", label: "Tag Creation Fee (micro-DREAM)", kind: "int" },
+      { group: "Tags", key: "tagCreationFee", apiKey: "tag_creation_fee", label: "Tag Creation Fee", kind: "dream" },
 
       // Reputation decay
       { group: "Reputation Decay", key: "reputationDecayRate", apiKey: "reputation_decay_rate", label: "Reputation Decay Rate (per epoch)", kind: "dec" },
 
       // Seasonal staking
-      { group: "Seasonal Staking", key: "maxStakingRewardsPerSeason", apiKey: "max_staking_rewards_per_season", label: "Max Staking Rewards / Season (DREAM)", kind: "int" },
+      { group: "Seasonal Staking", key: "maxStakingRewardsPerSeason", apiKey: "max_staking_rewards_per_season", label: "Max Staking Rewards / Season", kind: "dream" },
       { group: "Seasonal Staking", key: "stakedDecayRate", apiKey: "staked_decay_rate", label: "Staked Decay Rate (per epoch)", kind: "dec" },
       { group: "Seasonal Staking", key: "newMemberDecayGraceEpochs", apiKey: "new_member_decay_grace_epochs", label: "New-Member Decay Grace (epochs)", kind: "bigint" },
 
       // Treasury
-      { group: "Treasury", key: "maxTreasuryBalance", apiKey: "max_treasury_balance", label: "Max Treasury Balance (DREAM)", kind: "int" },
+      { group: "Treasury", key: "maxTreasuryBalance", apiKey: "max_treasury_balance", label: "Max Treasury Balance", kind: "dream" },
       { group: "Treasury", key: "treasuryFundsInterims", apiKey: "treasury_funds_interims", label: "Treasury Funds Interims", kind: "boolean" },
       { group: "Treasury", key: "treasuryFundsRetroPgf", apiKey: "treasury_funds_retro_pgf", label: "Treasury Funds Retro PGF", kind: "boolean" },
 
       // Project caps
-      { group: "Project Caps", key: "maxInitiativeRewardsPerSeason", apiKey: "max_initiative_rewards_per_season", label: "Max Initiative Rewards / Season (DREAM)", kind: "int" },
-      { group: "Project Caps", key: "largeProjectBudgetThreshold", apiKey: "large_project_budget_threshold", label: "Large Project Budget Threshold (DREAM)", kind: "int", hint: "Above this, council proposal approval is required" },
-      { group: "Project Caps", key: "maxProjectRequestedBudget", apiKey: "max_project_requested_budget", label: "Max Project Requested Budget (DREAM)", kind: "int" },
-      { group: "Project Caps", key: "maxProjectRequestedSpark", apiKey: "max_project_requested_spark", label: "Max Project Requested SPARK (uspark)", kind: "int" },
+      { group: "Project Caps", key: "maxInitiativeRewardsPerSeason", apiKey: "max_initiative_rewards_per_season", label: "Max Initiative Rewards / Season", kind: "dream" },
+      { group: "Project Caps", key: "largeProjectBudgetThreshold", apiKey: "large_project_budget_threshold", label: "Large Project Budget Threshold", kind: "dream", hint: "Above this, council proposal approval is required" },
+      { group: "Project Caps", key: "maxProjectRequestedBudget", apiKey: "max_project_requested_budget", label: "Max Project Requested Budget", kind: "dream" },
+      { group: "Project Caps", key: "maxProjectRequestedSpark", apiKey: "max_project_requested_spark", label: "Max Project Requested", kind: "amount" },
       { group: "Project Caps", key: "proposedProjectExpiryBlocks", apiKey: "proposed_project_expiry_blocks", label: "Proposed Project Expiry (blocks)", kind: "bigint" },
 
       // Permissionless creation
-      { group: "Permissionless", key: "projectCreationFee", apiKey: "project_creation_fee", label: "Project Creation Fee (DREAM)", kind: "int" },
-      { group: "Permissionless", key: "initiativeCreationFeeApprentice", apiKey: "initiative_creation_fee_apprentice", label: "Initiative Creation Fee — Apprentice (DREAM)", kind: "int" },
-      { group: "Permissionless", key: "initiativeCreationFeeStandard", apiKey: "initiative_creation_fee_standard", label: "Initiative Creation Fee — Standard (DREAM)", kind: "int" },
+      { group: "Permissionless", key: "projectCreationFee", apiKey: "project_creation_fee", label: "Project Creation Fee", kind: "dream" },
+      { group: "Permissionless", key: "initiativeCreationFeeApprentice", apiKey: "initiative_creation_fee_apprentice", label: "Initiative Creation Fee (Apprentice)", kind: "dream" },
+      { group: "Permissionless", key: "initiativeCreationFeeStandard", apiKey: "initiative_creation_fee_standard", label: "Initiative Creation Fee (Standard)", kind: "dream" },
       { group: "Permissionless", key: "permissionlessMinTrustLevel", apiKey: "permissionless_min_trust_level", label: "Permissionless Min Trust Level", kind: "number", hint: "2 = ESTABLISHED" },
       { group: "Permissionless", key: "permissionlessMaxTier", apiKey: "permissionless_max_tier", label: "Permissionless Max Tier", kind: "number", hint: "1 = STANDARD" },
 
       // Sentinel rewards
-      { group: "Sentinel Rewards", key: "maxSentinelRewardPool", apiKey: "max_sentinel_reward_pool", label: "Max Sentinel Reward Pool (uspark)", kind: "int" },
+      { group: "Sentinel Rewards", key: "maxSentinelRewardPool", apiKey: "max_sentinel_reward_pool", label: "Max Sentinel Reward Pool", kind: "amount" },
       { group: "Sentinel Rewards", key: "sentinelRewardPoolOverflowBurnRatio", apiKey: "sentinel_reward_pool_overflow_burn_ratio", label: "Sentinel Pool Overflow Burn Ratio", kind: "dec" },
       { group: "Sentinel Rewards", key: "sentinelRewardEpochBlocks", apiKey: "sentinel_reward_epoch_blocks", label: "Sentinel Reward Epoch (blocks)", kind: "bigint" },
       { group: "Sentinel Rewards", key: "minSentinelAccuracy", apiKey: "min_sentinel_accuracy", label: "Min Sentinel Accuracy", kind: "dec" },
@@ -864,7 +1070,9 @@ function ParamField({
     ? `${field.label} (${field.unit})`
     : field.kind === "coin" || field.kind === "coins" || field.kind === "amount"
       ? `${field.label} (${displayDenom})`
-      : field.label;
+      : field.kind === "dream"
+        ? `${field.label} (DREAM)`
+        : field.label;
 
   return (
     <div>
@@ -917,6 +1125,13 @@ function displayValue(field: FieldDef, raw: unknown): string {
   if (field.kind === "amount") {
     // Bare math.Int string in bond-denom micro-units (post-efcf392). Render
     // as a decimal display unit (1 SPARK = 1_000_000 micro).
+    if (typeof raw !== "string" || !raw) return "0";
+    return String(parseInt(raw, 10) / 1_000_000);
+  }
+
+  if (field.kind === "dream") {
+    // Bare math.Int micro-DREAM string. Render as whole DREAM (1 DREAM =
+    // 1_000_000 micro-DREAM).
     if (typeof raw !== "string" || !raw) return "0";
     return String(parseInt(raw, 10) / 1_000_000);
   }
@@ -1229,6 +1444,11 @@ function convertEditToAmino(
     case "amount": {
       // Bare math.Int string in micro-units; the chain wraps it into the
       // bond-denom Coin at use time from x/identity (post-efcf392).
+      return (parseFloat(edited) * 1_000_000).toFixed(0);
+    }
+    case "dream": {
+      // Whole DREAM input → bare math.Int micro-DREAM string (1 DREAM =
+      // 1_000_000 micro-DREAM).
       return (parseFloat(edited) * 1_000_000).toFixed(0);
     }
     case "string":

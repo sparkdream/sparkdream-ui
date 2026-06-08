@@ -142,6 +142,11 @@ export interface BlogParams {
   ephemeral_content_ttl: string;
   pin_min_trust_level: number;
   max_pins_per_day: number;
+  // Min trust level (0-4) to call MsgMakePostPermanent / MsgMakeReplyPermanent.
+  // Default PROVISIONAL (1), a separate (lower) gate than pin_min_trust_level
+  // since preserving content is less powerful than featuring it (chain v1.0.12).
+  make_permanent_min_trust_level: number;
+  max_make_permanent_per_day: number;
   min_ephemeral_content_ttl: string;
   max_cost_per_byte_amount: string;
   max_reaction_fee_amount: string;

@@ -30,6 +30,10 @@ export interface ForumPost {
   content_type: string;
   initiative_id: string;
   conviction_sustained: boolean;
+  // Member who called MsgMakePostPermanent on this post; empty if still
+  // ephemeral or made permanent via author admission (chain v1.0.12).
+  promoted_by: string;
+  promoted_at: string;
 }
 
 export interface ThreadMetadata {
@@ -464,6 +468,15 @@ export interface ForumParams {
   // Bond stays locked & slashable for this many seconds after MsgUnbondRole;
   // BondedRole status flips to UNBONDING during the cooldown (commit 6d7e7ce).
   sentinel_unbond_cooldown: string;
+  // Min trust level to call MsgMakePostPermanent (default PROVISIONAL=1) and
+  // its per-address daily cap (chain v1.0.12). Separate gate from pinning.
+  make_permanent_min_trust_level: number;
+  max_make_permanent_per_day: string;
+  // Post conviction-staking config (chain commit 681ff73). min_post_conviction_stake
+  // is the floor DREAM (uDREAM math.Int) to open a stake; post_conviction_lock_seconds
+  // is how long the lock is held before MsgReleasePostConviction is allowed.
+  min_post_conviction_stake: string;
+  post_conviction_lock_seconds: string;
 }
 
 export interface ForumParamsResponse {

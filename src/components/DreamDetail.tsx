@@ -12,6 +12,7 @@ import ReplyThread from "./ReplyThread";
 import ReplyForm from "./ReplyForm";
 import { useWallet } from "@/contexts/WalletContext";
 import { useCanPin } from "@/hooks/useCanPin";
+import { useCanMakePermanent } from "@/hooks/useCanMakePermanent";
 import { MsgTypeUrls } from "@/lib/tx";
 
 export default function DreamDetail({
@@ -23,6 +24,7 @@ export default function DreamDetail({
 }) {
   const { address, connected, signAndBroadcast } = useWallet();
   const canPin = useCanPin(address);
+  const canMakePermanent = useCanMakePermanent(address);
 
   const [post, setPost] = useState<Post | null>(null);
   const [replies, setReplies] = useState<Reply[]>([]);
@@ -122,12 +124,14 @@ export default function DreamDetail({
     }
   };
 
-  const handlePin = async () => {
+  // Pin / Unpin are display-only "feature" markers and only apply to permanent
+  // posts — the chain rejects pinning an ephemeral post (ErrCannotPinEphemeral).
+  const handlePin = async (pin: boolean) => {
     setActionLoading(true);
     try {
       await signAndBroadcast([
         {
-          typeUrl: MsgTypeUrls.PinPost,
+          typeUrl: pin ? MsgTypeUrls.PinPost : MsgTypeUrls.UnpinPost,
           // post id is uint64; pass BigInt so sparkdreamjs's amino override
           // (`message.id !== BigInt(0)`) survives strict-equality comparison
           // — a Number value would emit "id":"0" for any zero-valued id and
@@ -137,7 +141,26 @@ export default function DreamDetail({
       ]);
       await fetchData();
     } catch (err) {
-      console.error("Pin failed:", err);
+      console.error(pin ? "Pin failed:" : "Unpin failed:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Promote an ephemeral post to permanent. Separate lifecycle action from
+  // pinning, gated on the lower make_permanent_min_trust_level.
+  const handleMakePermanent = async () => {
+    setActionLoading(true);
+    try {
+      await signAndBroadcast([
+        {
+          typeUrl: MsgTypeUrls.MakePostPermanent,
+          value: { creator: address, id: BigInt(postId) },
+        },
+      ]);
+      await fetchData();
+    } catch (err) {
+      console.error("Make permanent failed:", err);
     } finally {
       setActionLoading(false);
     }
@@ -174,6 +197,7 @@ export default function DreamDetail({
   const isOwner = connected && address === post.creator;
   const isHidden = post.status === PostStatus.HIDDEN;
   const isDeleted = post.status === PostStatus.DELETED;
+  const isEphemeral = Boolean(post.expires_at && post.expires_at !== "0");
 
   return (
     <div>
@@ -251,14 +275,34 @@ export default function DreamDetail({
           <ReactionBar postId={post.id} minReplyTrustLevel={post.min_reply_trust_level} />
 
           <div className="flex flex-wrap items-center gap-2">
-            {connected && !isDeleted && !post.pinned_by && post.expires_at && post.expires_at !== "0" && (
+            {connected && !isDeleted && isEphemeral && (
               <button
-                onClick={handlePin}
+                onClick={handleMakePermanent}
+                disabled={actionLoading || canMakePermanent === false}
+                title={canMakePermanent === false ? "Making a dream permanent requires Provisional trust level or higher" : "Keep this ephemeral dream from expiring"}
+                className="rounded px-3 py-1 text-xs text-emerald-500 transition-colors hover:bg-emerald-900/20 hover:text-emerald-400 disabled:opacity-50"
+              >
+                Make Permanent
+              </button>
+            )}
+            {connected && !isDeleted && !isEphemeral && !post.pinned_by && (
+              <button
+                onClick={() => handlePin(true)}
                 disabled={actionLoading || canPin === false}
-                title={canPin === false ? "Pinning requires Established trust level or higher" : undefined}
+                title={canPin === false ? "Pinning requires Established trust level or higher" : "Feature this dream"}
                 className="rounded px-3 py-1 text-xs text-amber-500 transition-colors hover:bg-amber-900/20 hover:text-amber-400 disabled:opacity-50"
               >
                 Pin
+              </button>
+            )}
+            {connected && !isDeleted && !isEphemeral && post.pinned_by && (
+              <button
+                onClick={() => handlePin(false)}
+                disabled={actionLoading || canPin === false}
+                title={canPin === false ? "Unpinning requires Established trust level or higher" : undefined}
+                className="rounded px-3 py-1 text-xs text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 disabled:opacity-50"
+              >
+                Unpin
               </button>
             )}
             {isOwner && !isDeleted && (

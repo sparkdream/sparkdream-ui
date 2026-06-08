@@ -10,12 +10,23 @@ import {
   getBountyByThread,
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
+import { useTrustRank } from "@/hooks/useTrustRank";
+import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
 import { ForumMsgTypeUrls } from "@/lib/tx";
 import { timeAgo } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import CreatePostForm from "@/components/forum/CreatePostForm";
+import PostConvictionControl from "@/components/forum/PostConvictionControl";
 import type { ForumPost, ThreadMetadata, Bounty } from "@/types/forum";
 import { PostStatus, BountyStatus } from "@/types/forum";
+
+// Promoting an ephemeral post to permanent is a member action gated on
+// make_permanent_min_trust_level (default PROVISIONAL). Pinning a thread,
+// unlike blog/collect, is NOT trust-gated: forum MsgPinPost/MsgUnpinPost are
+// restricted to the commons "operations" committee and apply only to root
+// posts (it's a moderation/featuring action), so it's gated on ops-committee
+// membership below rather than trust rank.
+const MAKE_PERMANENT_RANK = 1;
 
 function formatAmount(amount: string): string {
   if (!amount || amount === "0") return "0";
@@ -30,6 +41,9 @@ interface ThreadDetailProps {
 
 export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const { address, signAndBroadcast } = useWallet();
+  const rank = useTrustRank(address);
+  const { isOpsCommitteeMember } = useCommonsCouncil(address);
+  const canMakePermanent = rank !== null && rank >= MAKE_PERMANENT_RANK;
 
   const [rootPost, setRootPost] = useState<ForumPost | null>(null);
   const [replies, setReplies] = useState<ForumPost[]>([]);
@@ -142,6 +156,46 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     }
   };
 
+  // Pin/Unpin are display-only "feature" markers requiring a permanent target;
+  // the chain rejects pinning an ephemeral post (ErrCannotPinEphemeral).
+  const handlePin = async (postId: string, pin: boolean) => {
+    if (!address) return;
+    setActionLoading(`pin-${postId}`);
+    try {
+      await signAndBroadcast([{
+        typeUrl: pin ? ForumMsgTypeUrls.PinPost : ForumMsgTypeUrls.UnpinPost,
+        // MsgPinPost carries a pin_priority (higher sorts first); 0 keeps the
+        // chain's default ordering. MsgUnpinPost takes no priority.
+        value: pin
+          ? { creator: address, postId: BigInt(postId), priority: BigInt(0) }
+          : { creator: address, postId: BigInt(postId) },
+      }]);
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : pin ? "Pin failed" : "Unpin failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Promote an ephemeral post to permanent — separate lifecycle action from
+  // pinning, on the lower make_permanent_min_trust_level gate.
+  const handleMakePermanent = async (postId: string) => {
+    if (!address) return;
+    setActionLoading(`permanent-${postId}`);
+    try {
+      await signAndBroadcast([{
+        typeUrl: ForumMsgTypeUrls.MakePostPermanent,
+        value: { creator: address, postId: BigInt(postId) },
+      }]);
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Make permanent failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleReplyCreated = () => {
     setShowReplyForm(false);
     setReplyToId(threadId);
@@ -178,6 +232,8 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     const depth = parseInt(post.depth || "0", 10);
     const indent = isRoot ? 0 : Math.min(depth - 1, 3);
     const isAcceptedReply = metadata?.accepted_reply_id === post.post_id;
+    const isEphemeral = Boolean(post.expiration_time && post.expiration_time !== "0");
+    const isActive = post.status === PostStatus.ACTIVE;
 
     return (
       <div
@@ -202,6 +258,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
           {post.created_at && <span>{timeAgo(post.created_at)}</span>}
           {post.edited && <span className="italic">edited</span>}
           {post.pinned && <span className="text-amber-400">Pinned</span>}
+          {isEphemeral && <span className="text-yellow-500">Ephemeral</span>}
           {post.status !== PostStatus.ACTIVE && (
             <span className="text-red-400">{post.status.replace("POST_STATUS_", "")}</span>
           )}
@@ -247,6 +304,45 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
               className="text-xs text-zinc-400 transition-colors hover:text-indigo-400"
             >
               Reply
+            </button>
+          )}
+          {/* Back the author with a DREAM conviction stake (ESTABLISHED+, not
+              the author). The component self-hides when ineligible. */}
+          {isActive && (
+            <PostConvictionControl postId={post.post_id} author={post.author} onChanged={fetchData} />
+          )}
+          {/* Promote an ephemeral post to permanent. */}
+          {isActive && isEphemeral && (
+            <button
+              onClick={() => handleMakePermanent(post.post_id)}
+              disabled={actionLoading === `permanent-${post.post_id}` || !canMakePermanent}
+              title={canMakePermanent ? "Keep this ephemeral spark from expiring" : "Requires Provisional trust level or higher"}
+              className="text-xs text-emerald-400 transition-colors hover:text-emerald-300 disabled:opacity-50"
+            >
+              {actionLoading === `permanent-${post.post_id}` ? "..." : "Make Permanent"}
+            </button>
+          )}
+          {/* Feature (pin) a permanent thread, or remove the marker. Forum
+              pinning is an ops-committee moderation action limited to root
+              posts, so only surface it to authorized members on the root. */}
+          {isRoot && isOpsCommitteeMember && isActive && !isEphemeral && !post.pinned && (
+            <button
+              onClick={() => handlePin(post.post_id, true)}
+              disabled={actionLoading === `pin-${post.post_id}`}
+              title="Feature this thread (operations committee)"
+              className="text-xs text-amber-400 transition-colors hover:text-amber-300 disabled:opacity-50"
+            >
+              {actionLoading === `pin-${post.post_id}` ? "..." : "Pin"}
+            </button>
+          )}
+          {isRoot && isOpsCommitteeMember && isActive && !isEphemeral && post.pinned && (
+            <button
+              onClick={() => handlePin(post.post_id, false)}
+              disabled={actionLoading === `pin-${post.post_id}`}
+              title="Remove the feature marker (operations committee)"
+              className="text-xs text-zinc-400 transition-colors hover:text-zinc-200 disabled:opacity-50"
+            >
+              {actionLoading === `pin-${post.post_id}` ? "..." : "Unpin"}
             </button>
           )}
           {isAuthor && (

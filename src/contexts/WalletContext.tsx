@@ -231,6 +231,32 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const { AminoConverter: revealAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/reveal/v1/tx.amino");
       const { AminoConverter: futarchyAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/futarchy/v1/tx.amino");
 
+      // The published sparkdreamjs (0.0.19) ships the registry + proto codecs
+      // for the new Pin/MakePermanent-separation and forum post-conviction
+      // messages but its generated AminoConverter maps omit them, so
+      // amino-signing (Keplr/Ledger) these would fail with "does not exist in
+      // the Amino message type register".
+      // The proto message classes still carry the telescope-generated
+      // toAmino/fromAmino statics (the messages have no repeated fields, so the
+      // omit-empty traps that forced the src-overrides overlays don't apply
+      // here), so wire converters by delegating to them, mirroring exactly how
+      // the package's own tx.amino does it. Amino names match the chain's
+      // `option (amino.name)` in each module's tx.proto.
+      const { MsgMakePostPermanent: BlogMakePostPermanent, MsgMakeReplyPermanent: BlogMakeReplyPermanent, MsgUnpinPost: BlogUnpinPost, MsgUnpinReply: BlogUnpinReply } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx");
+      const { MsgMakePostPermanent: ForumMakePostPermanent, MsgStakePostConviction: ForumStakePostConviction, MsgReleasePostConviction: ForumReleasePostConviction } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/forum/v1/tx");
+      const { MsgMakeCollectionPermanent: CollectMakeCollectionPermanent, MsgUnpinCollection: CollectUnpinCollection } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/tx");
+      const pinSeparationAmino = {
+        "/sparkdream.blog.v1.MsgMakePostPermanent": { aminoType: "sparkdream/x/blog/MsgMakePostPermanent", toAmino: BlogMakePostPermanent.toAmino, fromAmino: BlogMakePostPermanent.fromAmino },
+        "/sparkdream.blog.v1.MsgMakeReplyPermanent": { aminoType: "sparkdream/x/blog/MsgMakeReplyPermanent", toAmino: BlogMakeReplyPermanent.toAmino, fromAmino: BlogMakeReplyPermanent.fromAmino },
+        "/sparkdream.blog.v1.MsgUnpinPost": { aminoType: "sparkdream/x/blog/MsgUnpinPost", toAmino: BlogUnpinPost.toAmino, fromAmino: BlogUnpinPost.fromAmino },
+        "/sparkdream.blog.v1.MsgUnpinReply": { aminoType: "sparkdream/x/blog/MsgUnpinReply", toAmino: BlogUnpinReply.toAmino, fromAmino: BlogUnpinReply.fromAmino },
+        "/sparkdream.forum.v1.MsgMakePostPermanent": { aminoType: "sparkdream/x/forum/MsgMakePostPermanent", toAmino: ForumMakePostPermanent.toAmino, fromAmino: ForumMakePostPermanent.fromAmino },
+        "/sparkdream.forum.v1.MsgStakePostConviction": { aminoType: "sparkdream/x/forum/MsgStakePostConviction", toAmino: ForumStakePostConviction.toAmino, fromAmino: ForumStakePostConviction.fromAmino },
+        "/sparkdream.forum.v1.MsgReleasePostConviction": { aminoType: "sparkdream/x/forum/MsgReleasePostConviction", toAmino: ForumReleasePostConviction.toAmino, fromAmino: ForumReleasePostConviction.fromAmino },
+        "/sparkdream.collect.v1.MsgMakeCollectionPermanent": { aminoType: "sparkdream/x/collect/MsgMakeCollectionPermanent", toAmino: CollectMakeCollectionPermanent.toAmino, fromAmino: CollectMakeCollectionPermanent.fromAmino },
+        "/sparkdream.collect.v1.MsgUnpinCollection": { aminoType: "sparkdream/x/collect/MsgUnpinCollection", toAmino: CollectUnpinCollection.toAmino, fromAmino: CollectUnpinCollection.fromAmino },
+      };
+
       // Telescope's auto-generated amino converters don't recursively decode
       // `repeated google.protobuf.Any` fields, so MsgSubmitProposal /
       // MsgSubmitAnonymousProposal / MsgExecSession need the registry + the
@@ -378,7 +404,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         },
       };
 
-      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
+      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...pinSeparationAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
       // Cast: cosmjs's `lookupType` returns `GeneratedType` (union of TsProto +
       // Pbjs); the override only ever encounters TsProto types here.
       configureNestedAminoConverter({ registry: registry as unknown as Parameters<typeof configureNestedAminoConverter>[0]["registry"], aminoTypes });

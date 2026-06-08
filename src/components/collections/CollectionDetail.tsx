@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
+import { useTrustRank } from "@/hooks/useTrustRank";
 import { CollectMsgTypeUrls } from "@/lib/tx";
 import { timeAgo, formatTime } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
@@ -28,6 +29,7 @@ import {
   COLLABORATOR_ROLE_LABELS,
   CollaboratorRole,
   ReferenceType,
+  CollectionStatus,
 } from "@/types/collect";
 
 interface CollectionDetailProps {
@@ -53,6 +55,12 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const { address, signAndBroadcast } = useWallet();
   const isMember = useIsRepMember(address);
   const cannotUpvote = address ? isMember === false : false;
+  const rank = useTrustRank(address);
+  // Default trust gates (chain enforces the real param). Pin: collect
+  // pin_min_trust_level default ESTABLISHED. Make permanent:
+  // make_permanent_min_trust_level default PROVISIONAL.
+  const canPin = rank !== null && rank >= 2;
+  const canMakePermanent = rank !== null && rank >= 1;
 
   const [collection, setCollection] = useState<Collection | null>(null);
   const [items, setItems] = useState<CollectionItem[]>([]);
@@ -78,6 +86,8 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const [newCollabRole, setNewCollabRole] = useState<string>(CollaboratorRole.EDITOR);
 
   const isOwner = collection?.owner === address;
+  const isEphemeral = Boolean(collection?.expires_at && collection.expires_at !== "0");
+  const isCollectionActive = collection?.status === CollectionStatus.ACTIVE;
 
   const fetchData = useCallback(async () => {
     try {
@@ -236,6 +246,42 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     }
   };
 
+  // Pin/Unpin are display-only "feature" markers requiring a permanent
+  // collection; the chain rejects pinning an ephemeral one (ErrCannotPinEphemeral).
+  const handlePin = async (pin: boolean) => {
+    if (!address) return;
+    setActionLoading("pin");
+    try {
+      await signAndBroadcast([{
+        typeUrl: pin ? CollectMsgTypeUrls.PinCollection : CollectMsgTypeUrls.UnpinCollection,
+        value: { creator: address, collectionId: BigInt(collectionId) },
+      }]);
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : pin ? "Failed to pin" : "Failed to unpin");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Promote an ephemeral collection to permanent (burns the deposit). Separate
+  // lifecycle action from pinning, on the lower make_permanent_min_trust_level.
+  const handleMakePermanent = async () => {
+    if (!address || !confirm("Make this collection permanent? Its deposit is burned and it will no longer expire.")) return;
+    setActionLoading("permanent");
+    try {
+      await signAndBroadcast([{
+        typeUrl: CollectMsgTypeUrls.MakeCollectionPermanent,
+        value: { creator: address, collectionId: BigInt(collectionId) },
+      }]);
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to make permanent");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -288,6 +334,36 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
             >
               {actionLoading === "upvote" ? "..." : `+${collection.upvote_count || 0}`}
             </button>
+            {isCollectionActive && isEphemeral && (
+              <button
+                onClick={handleMakePermanent}
+                disabled={actionLoading === "permanent" || !canMakePermanent}
+                title={canMakePermanent ? "Preserve this collection so it no longer expires (burns its deposit)" : "Requires Provisional trust level or higher"}
+                className="rounded-lg border border-emerald-700/50 px-3 py-1.5 text-xs text-emerald-400 transition-colors hover:bg-emerald-900/20 disabled:opacity-50"
+              >
+                {actionLoading === "permanent" ? "..." : "Make Permanent"}
+              </button>
+            )}
+            {isCollectionActive && !isEphemeral && !collection.pinned && (
+              <button
+                onClick={() => handlePin(true)}
+                disabled={actionLoading === "pin" || !canPin}
+                title={canPin ? "Feature this collection" : "Pinning requires Established trust level or higher"}
+                className="rounded-lg border border-amber-700/50 px-3 py-1.5 text-xs text-amber-400 transition-colors hover:bg-amber-900/20 disabled:opacity-50"
+              >
+                {actionLoading === "pin" ? "..." : "Pin"}
+              </button>
+            )}
+            {isCollectionActive && !isEphemeral && collection.pinned && (
+              <button
+                onClick={() => handlePin(false)}
+                disabled={actionLoading === "pin" || !canPin}
+                title={canPin ? undefined : "Unpinning requires Established trust level or higher"}
+                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-50"
+              >
+                {actionLoading === "pin" ? "..." : "Unpin"}
+              </button>
+            )}
             {isOwner && (
               <button
                 onClick={handleDeleteCollection}
@@ -311,7 +387,11 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
           </div>
           <div>
             <dt className="text-xs text-zinc-500">Status</dt>
-            <dd className="text-zinc-300">{COLLECTION_STATUS_LABELS[collection.status] || collection.status}</dd>
+            <dd className="text-zinc-300">
+              {COLLECTION_STATUS_LABELS[collection.status] || collection.status}
+              {collection.pinned && <span className="ml-1.5 text-amber-400">· Pinned</span>}
+              {isEphemeral && <span className="ml-1.5 text-yellow-500">· Ephemeral</span>}
+            </dd>
           </div>
           <div>
             <dt className="text-xs text-zinc-500">Items</dt>

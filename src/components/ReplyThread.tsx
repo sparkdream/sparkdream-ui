@@ -9,6 +9,7 @@ import NameOrAddress from "@/components/NameOrAddress";
 import ReplyForm from "./ReplyForm";
 import { useWallet } from "@/contexts/WalletContext";
 import { useCanPin } from "@/hooks/useCanPin";
+import { useCanMakePermanent } from "@/hooks/useCanMakePermanent";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { MsgTypeUrls } from "@/lib/tx";
 
@@ -40,6 +41,7 @@ function ReplyItem({
 }) {
   const { address, connected, signAndBroadcast } = useWallet();
   const canPin = useCanPin(address);
+  const canMakePermanent = useCanMakePermanent(address);
   const [showReplyForm, setShowReplyForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -97,12 +99,14 @@ function ReplyItem({
     }
   };
 
-  const handlePin = async () => {
+  // Pin / Unpin are display-only "feature" markers and only apply to permanent
+  // replies — the chain rejects pinning an ephemeral reply.
+  const handlePin = async (pin: boolean) => {
     setActionLoading(true);
     try {
       await signAndBroadcast([
         {
-          typeUrl: MsgTypeUrls.PinReply,
+          typeUrl: pin ? MsgTypeUrls.PinReply : MsgTypeUrls.UnpinReply,
           // reply id is uint64; pass BigInt so the override's `!== BigInt(0)`
           // check stays sound under strict equality (a Number value would
           // sign "id":"0" for any zero-valued id while the chain omits).
@@ -111,11 +115,32 @@ function ReplyItem({
       ]);
       onReplySubmitted?.();
     } catch (err) {
-      console.error("Pin reply failed:", err);
+      console.error(pin ? "Pin reply failed:" : "Unpin reply failed:", err);
     } finally {
       setActionLoading(false);
     }
   };
+
+  // Promote an ephemeral reply to permanent. Separate from pinning, gated on
+  // the lower make_permanent_min_trust_level.
+  const handleMakePermanent = async () => {
+    setActionLoading(true);
+    try {
+      await signAndBroadcast([
+        {
+          typeUrl: MsgTypeUrls.MakeReplyPermanent,
+          value: { creator: address, id: BigInt(reply.id) },
+        },
+      ]);
+      onReplySubmitted?.();
+    } catch (err) {
+      console.error("Make reply permanent failed:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const isEphemeral = Boolean(reply.expires_at && reply.expires_at !== "0");
 
   return (
     <div className={depth > 0 ? "ml-6 border-l border-zinc-800 pl-4" : ""}>
@@ -206,14 +231,34 @@ function ReplyItem({
               {isHidden ? "Unhide" : "Hide"}
             </button>
           )}
-          {connected && !reply.pinned_by && reply.expires_at && reply.expires_at !== "0" && (
+          {connected && isEphemeral && (
             <button
-              onClick={handlePin}
+              onClick={handleMakePermanent}
+              disabled={actionLoading || canMakePermanent === false}
+              title={canMakePermanent === false ? "Making a reply permanent requires Provisional trust level or higher" : "Keep this ephemeral reply from expiring"}
+              className="text-xs text-emerald-500 transition-colors hover:text-emerald-400 disabled:opacity-50"
+            >
+              Make Permanent
+            </button>
+          )}
+          {connected && !isEphemeral && !reply.pinned_by && (
+            <button
+              onClick={() => handlePin(true)}
               disabled={actionLoading || canPin === false}
-              title={canPin === false ? "Pinning requires Established trust level or higher" : undefined}
+              title={canPin === false ? "Pinning requires Established trust level or higher" : "Feature this reply"}
               className="text-xs text-amber-500 transition-colors hover:text-amber-400 disabled:opacity-50"
             >
               Pin
+            </button>
+          )}
+          {connected && !isEphemeral && reply.pinned_by && (
+            <button
+              onClick={() => handlePin(false)}
+              disabled={actionLoading || canPin === false}
+              title={canPin === false ? "Unpinning requires Established trust level or higher" : undefined}
+              className="text-xs text-zinc-500 transition-colors hover:text-zinc-300 disabled:opacity-50"
+            >
+              Unpin
             </button>
           )}
         </div>

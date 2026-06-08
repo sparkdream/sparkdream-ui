@@ -30,6 +30,11 @@ export interface Collection {
   immutable: boolean;
   conviction_sustained: boolean;
   initiative_id: string;
+  // Display-only "feature" marker set by MsgPinCollection / cleared by
+  // MsgUnpinCollection; requires the collection to already be permanent
+  // (expires_at == 0). Lifecycle promotion is MsgMakeCollectionPermanent
+  // (chain commit 681ff73).
+  pinned: boolean;
 }
 
 export interface KeyValuePair {

@@ -67,8 +67,16 @@ export const MsgTypeUrls = {
   UnhideReply: "/sparkdream.blog.v1.MsgUnhideReply",
   React: "/sparkdream.blog.v1.MsgReact",
   RemoveReaction: "/sparkdream.blog.v1.MsgRemoveReaction",
+  // Pin/Unpin are display-only "feature" markers and require a permanent
+  // target — the chain rejects pinning an ephemeral post (ErrCannotPinEphemeral).
+  // Promoting an ephemeral post to permanent is the separate MakePostPermanent
+  // lifecycle message below (see chain commit e0126a0).
   PinPost: "/sparkdream.blog.v1.MsgPinPost",
+  UnpinPost: "/sparkdream.blog.v1.MsgUnpinPost",
   PinReply: "/sparkdream.blog.v1.MsgPinReply",
+  UnpinReply: "/sparkdream.blog.v1.MsgUnpinReply",
+  MakePostPermanent: "/sparkdream.blog.v1.MsgMakePostPermanent",
+  MakeReplyPermanent: "/sparkdream.blog.v1.MsgMakeReplyPermanent",
 } as const;
 
 // Rep transaction message type URLs
@@ -136,7 +144,12 @@ export const CollectMsgTypeUrls = {
   AppealHide: "/sparkdream.collect.v1.MsgAppealHide",
   EndorseCollection: "/sparkdream.collect.v1.MsgEndorseCollection",
   SetSeekingEndorsement: "/sparkdream.collect.v1.MsgSetSeekingEndorsement",
+  // Pin/Unpin are display-only "feature" markers requiring a permanent target;
+  // promoting an ephemeral collection to permanent is the separate
+  // MakeCollectionPermanent lifecycle message (chain commit 681ff73).
   PinCollection: "/sparkdream.collect.v1.MsgPinCollection",
+  UnpinCollection: "/sparkdream.collect.v1.MsgUnpinCollection",
+  MakeCollectionPermanent: "/sparkdream.collect.v1.MsgMakeCollectionPermanent",
 } as const;
 
 // Name transaction message type URLs
@@ -179,6 +192,16 @@ export const ForumMsgTypeUrls = {
   UnpinPost: "/sparkdream.forum.v1.MsgUnpinPost",
   PinReply: "/sparkdream.forum.v1.MsgPinReply",
   UnpinReply: "/sparkdream.forum.v1.MsgUnpinReply",
+  // Pin/Unpin require a permanent target; promoting an ephemeral post to
+  // permanent is the separate MakePostPermanent lifecycle message (chain
+  // commit 9a3cebc).
+  MakePostPermanent: "/sparkdream.forum.v1.MsgMakePostPermanent",
+  // Post conviction-staking (chain commit 681ff73): an ESTABLISHED+ member
+  // locks DREAM on someone else's post to stream per-tag reputation to its
+  // author. Released after the lock window via the stake id returned in the
+  // tx's `post_conviction_staked` event.
+  StakePostConviction: "/sparkdream.forum.v1.MsgStakePostConviction",
+  ReleasePostConviction: "/sparkdream.forum.v1.MsgReleasePostConviction",
   MarkAcceptedReply: "/sparkdream.forum.v1.MsgMarkAcceptedReply",
   FreezeThread: "/sparkdream.forum.v1.MsgFreezeThread",
   UnarchiveThread: "/sparkdream.forum.v1.MsgUnarchiveThread",

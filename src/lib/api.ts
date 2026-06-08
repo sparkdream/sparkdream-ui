@@ -503,6 +503,41 @@ export async function getLatestBlockHeight(): Promise<string> {
   return res.block.header.height;
 }
 
+interface TxEventAttribute { key: string; value: string }
+interface TxEvent { type: string; attributes: TxEventAttribute[] }
+interface TxResponseEnvelope { tx_response?: { events?: TxEvent[] } }
+
+/**
+ * Fetch a committed tx by hash and return the attributes of the first event
+ * of `eventType` as a flat key→value map (empty if not found). Used to read
+ * a message response carried only in an event — e.g. the forum
+ * `post_conviction_staked` event's `stake_id` / `unlocks_at`, which the
+ * chain exposes through no query endpoint (see PostConvictionControl).
+ */
+export async function getTxEventAttributes(
+  hash: string,
+  eventType: string
+): Promise<Record<string, string>> {
+  const res = await get<TxResponseEnvelope>(`/cosmos/tx/v1beta1/txs/${hash}`);
+  const event = res.tx_response?.events?.find((e) => e.type === eventType);
+  if (!event) return {};
+  // SDK ≥0.45 returns plain-string attribute keys/values over REST; older
+  // chains base64-encode them. This chain is on 0.53 (plain), but decode a
+  // base64 fallback defensively so a proxy quirk can't silently blank the map.
+  // Cosmos event attribute keys are always lowercase snake_case ASCII
+  // (stake_id, post_id, unlocks_at, ...). If the raw key isn't that shape it's
+  // base64 (older REST behavior); decode both key and value.
+  const out: Record<string, string> = {};
+  for (const a of event.attributes || []) {
+    let { key, value } = a;
+    if (key && !/^[a-z0-9_]+$/.test(key)) {
+      try { key = atob(key); value = atob(value); } catch { /* keep raw */ }
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
 // ── Cosmos SDK x/upgrade ───────────────────────────────────────────
 
 // Plan as returned by the upgrade LCD — snake_case, deprecated fields
