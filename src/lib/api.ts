@@ -55,6 +55,7 @@ import type {
   CollectParamsResponse,
 } from "@/types/collect";
 import type {
+  RepMember,
   GetMemberResponse,
   ListMemberResponse,
   MembersByTrustLevelResponse,
@@ -1768,16 +1769,24 @@ export async function getIdentityDreamDenom(): Promise<QueryDreamDenomResponse> 
 // collection — "member" here is the x/rep notion (anyone with a Member
 // record), not council seating, matching how the rest of the app uses
 // `useIsRepMember` / the "ask a member to invite you" notices.
-export async function getAllMemberAddresses(): Promise<Set<string>> {
-  const addresses = new Set<string>();
+// Paginate the full member roster. Each RepMember carries its trust_level, so
+// callers can filter by trust client-side — the members_by_trust_level LCD
+// endpoint is broken (it ignores the level path param and returns a malformed
+// single-member object with no list), so we never rely on it for filtering.
+export async function getAllMembers(): Promise<RepMember[]> {
+  const members: RepMember[] = [];
   let nextKey: string | null = null;
   do {
     const res: ListMemberResponse = await listRepMembers({
       limit: "500",
       ...(nextKey ? { key: nextKey } : {}),
     });
-    for (const m of res.member || []) addresses.add(m.address);
+    for (const m of res.member || []) members.push(m);
     nextKey = res.pagination?.next_key || null;
   } while (nextKey);
-  return addresses;
+  return members;
+}
+
+export async function getAllMemberAddresses(): Promise<Set<string>> {
+  return new Set((await getAllMembers()).map((m) => m.address));
 }

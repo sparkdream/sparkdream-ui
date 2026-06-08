@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Post, ReactionCounts } from "@/types/blog";
 import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
-import { listPosts, getAllMemberAddresses, membersByTrustLevel, listTags, getLatestBlockHeight, getReactionCounts } from "@/lib/api";
+import { listPosts, getAllMembers, listTags, getLatestBlockHeight, getReactionCounts } from "@/lib/api";
 import { TrustLevel } from "@/types/rep";
 import PostRow from "@/components/PostRow";
 import CreatePostForm from "@/components/CreatePostForm";
@@ -33,6 +33,16 @@ const TRUST_LEVELS: { key: string; label: string; cls: string; value: string; ra
   { key: "provisional", label: "Provisional", cls: "trust-prov", value: TrustLevel.PROVISIONAL, rank: 1 },
 ];
 
+// Full enum→rank map (includes NEW=0, which has no filter pill) so a member's
+// trust level resolves to a comparable rank during client-side filtering.
+const TRUST_RANK: Record<string, number> = {
+  [TrustLevel.NEW]: 0,
+  [TrustLevel.PROVISIONAL]: 1,
+  [TrustLevel.ESTABLISHED]: 2,
+  [TrustLevel.TRUSTED]: 3,
+  [TrustLevel.CORE]: 4,
+};
+
 export default function ImaginariumPage() {
   return (
     <Suspense fallback={null}>
@@ -58,9 +68,9 @@ function ImaginariumPageInner() {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const [memberAddresses, setMemberAddresses] = useState<Set<string>>(new Set());
+  const [memberRanks, setMemberRanks] = useState<Map<string, number>>(new Map());
   const [membersLoading, setMembersLoading] = useState(true);
   const [trustFilter, setTrustFilter] = useState<string | null>(null);
-  const [trustAddresses, setTrustAddresses] = useState<Set<string> | null>(null);
 
   const [filter, setFilter] = useState<FilterOption>("members");
   const [sort, setSort] = useState<SortOption>("newest");
@@ -126,37 +136,28 @@ function ImaginariumPageInner() {
   }, [filter, filterRestored]);
 
   useEffect(() => {
-    getAllMemberAddresses()
-      .then(setMemberAddresses)
+    getAllMembers()
+      .then((members) => {
+        setMemberAddresses(new Set(members.map((m) => m.address)));
+        setMemberRanks(new Map(members.map((m) => [m.address, TRUST_RANK[m.trust_level] ?? 0])));
+      })
       .catch(() => {})
       .finally(() => setMembersLoading(false));
   }, []);
 
-  useEffect(() => {
-    if (!trustFilter) {
-      setTrustAddresses(null);
-      return;
-    }
+  // Trust filtering is "selected level and above", computed client-side from the
+  // member roster's trust_level. (The members_by_trust_level LCD endpoint is
+  // broken, so we never query it — see getAllMembers.)
+  const trustAddresses = useMemo(() => {
+    if (!trustFilter) return null;
     const selected = TRUST_LEVELS.find((t) => t.key === trustFilter);
-    if (!selected) return;
-    const levels = TRUST_LEVELS.filter((t) => t.rank >= selected.rank);
-    let cancelled = false;
-    Promise.all(levels.map((l) => membersByTrustLevel(l.value, { limit: "500" })))
-      .then((results) => {
-        if (cancelled) return;
-        const addrs = new Set<string>();
-        for (const res of results) {
-          for (const m of res.members || []) addrs.add(m.address);
-        }
-        setTrustAddresses(addrs);
-      })
-      .catch(() => {
-        if (!cancelled) setTrustAddresses(new Set());
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [trustFilter]);
+    if (!selected) return null;
+    const addrs = new Set<string>();
+    for (const [addr, rank] of memberRanks) {
+      if (rank >= selected.rank) addrs.add(addr);
+    }
+    return addrs;
+  }, [trustFilter, memberRanks]);
 
   const fetchPosts = useCallback(async (paginationKey?: string) => {
     try {

@@ -29,6 +29,17 @@ function formatDream(amount: string): string {
 
 const PAGE_SIZE = "50";
 
+// The members_by_trust_level endpoint parses {trust_level} as a uint64, so it
+// needs the numeric enum value (0-4), not the TRUST_LEVEL_* string the <select>
+// carries.
+const TRUST_LEVEL_NUM: Record<string, number> = {
+  [TrustLevel.NEW]: 0,
+  [TrustLevel.PROVISIONAL]: 1,
+  [TrustLevel.ESTABLISHED]: 2,
+  [TrustLevel.TRUSTED]: 3,
+  [TrustLevel.CORE]: 4,
+};
+
 export default function MemberList() {
   const [members, setMembers] = useState<RepMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,7 +55,7 @@ export default function MemberList() {
       setError(null);
       const res = filterLevel === "all"
         ? await listRepMembers({ limit: PAGE_SIZE })
-        : await membersByTrustLevel(filterLevel, { limit: PAGE_SIZE });
+        : await membersByTrustLevel(String(TRUST_LEVEL_NUM[filterLevel]), { limit: PAGE_SIZE });
       const list = filterLevel === "all"
         ? (res as Awaited<ReturnType<typeof listRepMembers>>).member
         : (res as Awaited<ReturnType<typeof membersByTrustLevel>>).members;
@@ -68,7 +79,7 @@ export default function MemberList() {
       setLoadingMore(true);
       const res = filterLevel === "all"
         ? await listRepMembers({ limit: PAGE_SIZE, key: nextKey })
-        : await membersByTrustLevel(filterLevel, { limit: PAGE_SIZE, key: nextKey });
+        : await membersByTrustLevel(String(TRUST_LEVEL_NUM[filterLevel]), { limit: PAGE_SIZE, key: nextKey });
       const list = filterLevel === "all"
         ? (res as Awaited<ReturnType<typeof listRepMembers>>).member
         : (res as Awaited<ReturnType<typeof membersByTrustLevel>>).members;
