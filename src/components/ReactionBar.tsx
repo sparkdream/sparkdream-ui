@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import type { ReactionCounts } from "@/types/blog";
 import { ReactionType, REACTION_INFO } from "@/types/blog";
-import { getReactionCounts, getUserReaction } from "@/lib/api";
+import { getReactionCounts, getUserReaction, invalidateReactions } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useIsReadOnly } from "@/contexts/ArchiveContext";
 import { useSessionPermits } from "@/hooks/useSessionPermits";
@@ -189,7 +189,8 @@ export default function ReactionBar({ postId, replyId = "0", minReplyTrustLevel 
           },
         ]);
       }
-      // Refresh data after tx
+      // Refresh data after tx (invalidate first so the refetch hits the chain)
+      invalidateReactions(postId, replyId);
       await fetchData();
     } catch (err) {
       console.error("Reaction failed:", err);

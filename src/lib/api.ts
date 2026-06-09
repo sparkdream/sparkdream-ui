@@ -1,6 +1,7 @@
 // REST API client for blog and commons module LCD endpoints.
 
 import { defaults } from "./chain";
+import { cachedFetch, invalidate, invalidateAll } from "./queryCache";
 import type {
   ListPostResponse,
   ShowPostResponse,
@@ -222,6 +223,8 @@ let archiveSource: ArchiveSource | null = null;
 
 export function setArchiveSource(source: ArchiveSource | null): void {
   archiveSource = source;
+  // Never serve snapshot data on live pages or vice versa.
+  invalidateAll();
 }
 
 export function isArchiveModeActive(): boolean {
@@ -266,15 +269,24 @@ async function get<T>(path: string, params?: URLSearchParams): Promise<T> {
 
 // List all posts with pagination
 export async function listPosts(pagination?: PaginationRequest): Promise<ListPostResponse> {
-  return get<ListPostResponse>(
-    "/sparkdream/blog/v1/list_post",
-    paginationParams(pagination)
+  return cachedFetch(
+    `posts|list|${pagination?.limit ?? ""}|${pagination?.reverse ? 1 : 0}|${pagination?.key ?? ""}`,
+    () =>
+      get<ListPostResponse>(
+        "/sparkdream/blog/v1/list_post",
+        paginationParams(pagination)
+      ),
+    { ttl: 30_000, swr: true }
   );
 }
 
 // Get a single post by ID
 export async function getPost(id: string): Promise<ShowPostResponse> {
-  return get<ShowPostResponse>(`/sparkdream/blog/v1/show_post/${id}`);
+  return cachedFetch(
+    `post|${id}|`,
+    () => get<ShowPostResponse>(`/sparkdream/blog/v1/show_post/${id}`),
+    { ttl: 30_000, swr: true }
+  );
 }
 
 // List replies for a post
@@ -282,10 +294,14 @@ export async function listReplies(
   postId: string,
   pagination?: PaginationRequest
 ): Promise<ListRepliesResponse> {
-  const params = paginationParams(pagination);
-  return get<ListRepliesResponse>(
-    `/sparkdream/blog/v1/list_replies/${postId}`,
-    params
+  return cachedFetch(
+    `replies|${postId}|${pagination?.limit ?? ""}|${pagination?.key ?? ""}`,
+    () =>
+      get<ListRepliesResponse>(
+        `/sparkdream/blog/v1/list_replies/${postId}`,
+        paginationParams(pagination)
+      ),
+    { ttl: 30_000, swr: true }
   );
 }
 
@@ -296,9 +312,14 @@ export async function getReactionCounts(
 ): Promise<ReactionCountsResponse> {
   const params = new URLSearchParams();
   if (replyId !== "0") params.set("reply_id", replyId);
-  return get<ReactionCountsResponse>(
-    `/sparkdream/blog/v1/reaction_counts/${postId}`,
-    params.toString() ? params : undefined
+  return cachedFetch(
+    `reactions|${postId}|${replyId}|`,
+    () =>
+      get<ReactionCountsResponse>(
+        `/sparkdream/blog/v1/reaction_counts/${postId}`,
+        params.toString() ? params : undefined
+      ),
+    { ttl: 30_000, swr: true }
   );
 }
 
@@ -310,9 +331,15 @@ export async function getUserReaction(
 ): Promise<UserReactionResponse> {
   const params = new URLSearchParams();
   if (replyId !== "0") params.set("reply_id", replyId);
-  return get<UserReactionResponse>(
-    `/sparkdream/blog/v1/user_reaction/${creator}/${postId}`,
-    params.toString() ? params : undefined
+  // Address last so invalidateReactions() can clear all addresses by prefix.
+  return cachedFetch(
+    `userReaction|${postId}|${replyId}|${creator}`,
+    () =>
+      get<UserReactionResponse>(
+        `/sparkdream/blog/v1/user_reaction/${creator}/${postId}`,
+        params.toString() ? params : undefined
+      ),
+    { ttl: 60_000, swr: true }
   );
 }
 
@@ -321,11 +348,43 @@ export async function listPostsByCreator(
   creator: string,
   pagination?: PaginationRequest
 ): Promise<ListPostsByCreatorResponse> {
-  const params = paginationParams(pagination);
-  return get<ListPostsByCreatorResponse>(
-    `/sparkdream/blog/v1/list_posts_by_creator/${creator}`,
-    params
+  return cachedFetch(
+    `postsByCreator|${creator}|${pagination?.limit ?? ""}|${pagination?.key ?? ""}`,
+    () =>
+      get<ListPostsByCreatorResponse>(
+        `/sparkdream/blog/v1/list_posts_by_creator/${creator}`,
+        paginationParams(pagination)
+      ),
+    { ttl: 30_000, swr: true }
   );
+}
+
+// ---- Cache invalidation for blog/forum mutations ---------------------------
+//
+// Tx handlers call these right after a successful broadcast, before their
+// existing refetch, so the refetch misses the cache and reads the chain.
+
+export function invalidatePostsLists(creator?: string): void {
+  invalidate("posts|list|");
+  invalidate(creator ? `postsByCreator|${creator}|` : "postsByCreator|");
+}
+
+export function invalidatePost(id: string): void {
+  // Trailing delimiter so "post|1|" doesn't also match "post|12|".
+  invalidate(`post|${id}|`);
+}
+
+export function invalidateReplies(postId: string): void {
+  invalidate(`replies|${postId}|`);
+}
+
+export function invalidateReactions(postId: string, replyId: string = "0"): void {
+  invalidate(`reactions|${postId}|${replyId}|`);
+  invalidate(`userReaction|${postId}|${replyId}|`);
+}
+
+export function invalidateTags(): void {
+  invalidate("tags|");
 }
 
 // Get a single reply by ID
@@ -498,11 +557,19 @@ interface LatestBlockResponse {
 }
 
 // Latest block height (decimal string). Falls back to throwing on transport errors.
+// Short blocking TTL: never serves a height older than ~1 block, but collapses
+// bursts (e.g. the Ticker poll and the feed's end-of-feed display).
 export async function getLatestBlockHeight(): Promise<string> {
-  const res = await get<LatestBlockResponse>(
-    "/cosmos/base/tendermint/v1beta1/blocks/latest"
+  return cachedFetch(
+    "blockHeight",
+    async () => {
+      const res = await get<LatestBlockResponse>(
+        "/cosmos/base/tendermint/v1beta1/blocks/latest"
+      );
+      return res.block.header.height;
+    },
+    { ttl: 5_000 }
   );
-  return res.block.header.height;
 }
 
 interface TxEventAttribute { key: string; value: string }
@@ -1241,7 +1308,11 @@ export async function getMemberStanding(member: string): Promise<MemberStandingR
 export async function listTags(
   pagination?: PaginationRequest
 ): Promise<ListTagResponse> {
-  return get<ListTagResponse>("/sparkdream/rep/v1/tag", paginationParams(pagination));
+  return cachedFetch(
+    `tags|${pagination?.limit ?? ""}|${pagination?.key ?? ""}`,
+    () => get<ListTagResponse>("/sparkdream/rep/v1/tag", paginationParams(pagination)),
+    { ttl: 5 * 60_000, swr: true }
+  );
 }
 
 export async function checkTagExists(tagName: string): Promise<TagExistsResponse> {
@@ -1787,17 +1858,24 @@ export async function getIdentityDreamDenom(): Promise<QueryDreamDenomResponse> 
 // endpoint is broken (it ignores the level path param and returns a malformed
 // single-member object with no list), so we never rely on it for filtering.
 export async function getAllMembers(): Promise<RepMember[]> {
-  const members: RepMember[] = [];
-  let nextKey: string | null = null;
-  do {
-    const res: ListMemberResponse = await listRepMembers({
-      limit: "500",
-      ...(nextKey ? { key: nextKey } : {}),
-    });
-    for (const m of res.member || []) members.push(m);
-    nextKey = res.pagination?.next_key || null;
-  } while (nextKey);
-  return members;
+  // Cache the whole pagination walk as one unit; the roster changes rarely.
+  return cachedFetch(
+    "members|all",
+    async () => {
+      const members: RepMember[] = [];
+      let nextKey: string | null = null;
+      do {
+        const res: ListMemberResponse = await listRepMembers({
+          limit: "500",
+          ...(nextKey ? { key: nextKey } : {}),
+        });
+        for (const m of res.member || []) members.push(m);
+        nextKey = res.pagination?.next_key || null;
+      } while (nextKey);
+      return members;
+    },
+    { ttl: 5 * 60_000, swr: true }
+  );
 }
 
 export async function getAllMemberAddresses(): Promise<Set<string>> {

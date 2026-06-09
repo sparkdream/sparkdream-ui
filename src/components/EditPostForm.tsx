@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import { MsgTypeUrls } from "@/lib/tx";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
+import { invalidatePost, invalidatePostsLists } from "@/lib/api";
 import type { Post } from "@/types/blog";
 import { CONTENT_TYPE_INFO } from "@/types/blog";
 import TagPicker from "@/components/contribute/TagPicker";
@@ -62,6 +63,8 @@ export default function EditPostForm({ post }: EditPostFormProps) {
           },
         },
       ]);
+      invalidatePost(post.id);
+      invalidatePostsLists(address!);
       if (tagMsgs.length > 0) refreshTags();
       router.push(`/imaginarium/${post.id}`);
     } catch (err) {

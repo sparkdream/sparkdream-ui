@@ -8,6 +8,7 @@ import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useTrustRank } from "@/hooks/useTrustRank";
 import { useEphemeralTtl, formatTtl } from "@/hooks/useEphemeralTtl";
 import { MsgTypeUrls } from "@/lib/tx";
+import { invalidatePost, invalidatePostsLists, invalidateReplies } from "@/lib/api";
 import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
 import NumberInput from "@/components/NumberInput";
 
@@ -151,6 +152,10 @@ export default function ReplyForm({
           { typeUrl: MsgTypeUrls.CreateReply, value },
         ]);
       }
+      invalidateReplies(postId);
+      invalidatePost(postId);
+      // Feed rows show reply counts, so drop the list pages too.
+      invalidatePostsLists();
       setBody("");
       onSubmitted?.();
     } catch (err) {

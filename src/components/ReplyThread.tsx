@@ -14,6 +14,7 @@ import { useCanPin } from "@/hooks/useCanPin";
 import { useCanMakePermanent } from "@/hooks/useCanMakePermanent";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { MsgTypeUrls } from "@/lib/tx";
+import { invalidatePost, invalidateReplies } from "@/lib/api";
 
 interface ReplyThreadProps {
   replies: Reply[];
@@ -83,6 +84,8 @@ function ReplyItem({
           value: { creator: address, id: BigInt(reply.id) },
         },
       ]);
+      invalidateReplies(postId);
+      invalidatePost(postId);
       onReplySubmitted?.();
     } catch (err) {
       console.error("Delete reply failed:", err);
@@ -103,6 +106,8 @@ function ReplyItem({
           value: { creator: address, id: BigInt(reply.id) },
         },
       ]);
+      invalidateReplies(postId);
+      invalidatePost(postId);
       onReplySubmitted?.();
     } catch (err) {
       console.error("Hide/unhide reply failed:", err);
@@ -125,6 +130,8 @@ function ReplyItem({
           value: { creator: address, id: BigInt(reply.id) },
         },
       ]);
+      invalidateReplies(postId);
+      invalidatePost(postId);
       onReplySubmitted?.();
     } catch (err) {
       console.error(pin ? "Pin reply failed:" : "Unpin reply failed:", err);
@@ -144,6 +151,8 @@ function ReplyItem({
           value: { creator: address, id: BigInt(reply.id) },
         },
       ]);
+      invalidateReplies(postId);
+      invalidatePost(postId);
       onReplySubmitted?.();
     } catch (err) {
       console.error("Make reply permanent failed:", err);

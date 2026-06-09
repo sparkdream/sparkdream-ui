@@ -4,6 +4,7 @@ import { useState } from "react";
 import Modal from "@/components/futarchy/Modal";
 import { useWallet } from "@/contexts/WalletContext";
 import { RepMsgTypeUrls } from "@/lib/tx";
+import { invalidateTags } from "@/lib/api";
 
 interface CreateTagFormProps {
   /** Existing tag names, lowercased, used to block duplicates client-side. */
@@ -40,6 +41,7 @@ export default function CreateTagForm({ existing, onClose, onCreated }: CreateTa
       await signAndBroadcast([
         { typeUrl: RepMsgTypeUrls.CreateTag, value: { creator: address, name: normalized } },
       ]);
+      invalidateTags();
       onCreated?.(normalized);
       onClose();
     } catch (err) {

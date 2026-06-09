@@ -5,7 +5,13 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import type { Post, Reply } from "@/types/blog";
 import { PostStatus } from "@/types/blog";
-import { getPost, listReplies } from "@/lib/api";
+import {
+  getPost,
+  invalidatePost,
+  invalidatePostsLists,
+  invalidateReplies,
+  listReplies,
+} from "@/lib/api";
 import { formatTime, timeAgo } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
 import ReactionBar from "@/components/ReactionBar";
@@ -58,6 +64,15 @@ export default function PostDetailPage() {
     fetchData();
   }, [fetchData]);
 
+  // After a mutation, drop the cached post/replies/feed pages so the refetch
+  // (and the feed on navigation back) reads the chain instead of the cache.
+  const refetchFresh = useCallback(async () => {
+    invalidatePost(id);
+    invalidateReplies(id);
+    invalidatePostsLists(address ?? undefined);
+    await fetchData();
+  }, [id, address, fetchData]);
+
   const handleDelete = async () => {
     if (!confirm("Are you sure you want to delete this dream?")) return;
     setActionLoading(true);
@@ -71,7 +86,7 @@ export default function PostDetailPage() {
           value: { creator: address, id: BigInt(id) },
         },
       ]);
-      await fetchData();
+      await refetchFresh();
     } catch (err) {
       console.error("Delete failed:", err);
     } finally {
@@ -92,7 +107,7 @@ export default function PostDetailPage() {
           value: { creator: address, id: BigInt(id) },
         },
       ]);
-      await fetchData();
+      await refetchFresh();
     } catch (err) {
       console.error("Hide/unhide failed:", err);
     } finally {
@@ -119,7 +134,7 @@ export default function PostDetailPage() {
           },
         },
       ]);
-      await fetchData();
+      await refetchFresh();
     } catch (err) {
       console.error("Toggle replies failed:", err);
     } finally {
@@ -141,7 +156,7 @@ export default function PostDetailPage() {
           value: { creator: address, id: BigInt(id) },
         },
       ]);
-      await fetchData();
+      await refetchFresh();
     } catch (err) {
       console.error(pin ? "Pin failed:" : "Unpin failed:", err);
     } finally {
@@ -160,7 +175,7 @@ export default function PostDetailPage() {
           value: { creator: address, id: BigInt(id) },
         },
       ]);
-      await fetchData();
+      await refetchFresh();
     } catch (err) {
       console.error("Make permanent failed:", err);
     } finally {

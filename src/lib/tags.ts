@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { listTags } from "@/lib/api";
+import { invalidateTags, listTags } from "@/lib/api";
 import { loadRepMember } from "@/lib/repMember";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { TrustLevel } from "@/types/rep";
@@ -47,7 +47,15 @@ export function useTagRegistry(): {
     };
   }, [version]);
 
-  return { tags, loading, refresh: () => setVersion((v) => v + 1) };
+  // refresh() is called after tag-creating txs, so it must bypass the cache.
+  return {
+    tags,
+    loading,
+    refresh: () => {
+      invalidateTags();
+      setVersion((v) => v + 1);
+    },
+  };
 }
 
 /**

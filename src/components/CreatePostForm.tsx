@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import { MsgTypeUrls } from "@/lib/tx";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
-import { getRepParams } from "@/lib/api";
+import { getRepParams, invalidatePostsLists } from "@/lib/api";
 import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
 import NumberInput from "@/components/NumberInput";
 import TagPicker from "@/components/contribute/TagPicker";
@@ -86,6 +86,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
         ...tagMsgs,
         { typeUrl: MsgTypeUrls.CreatePost, value },
       ]);
+      invalidatePostsLists(address!);
       if (tagMsgs.length > 0) refreshTags();
       if (onCreated) onCreated();
       else router.push("/imaginarium");

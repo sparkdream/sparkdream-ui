@@ -3,7 +3,13 @@
 import { useEffect, useState, useCallback } from "react";
 import type { Post, Reply } from "@/types/blog";
 import { PostStatus } from "@/types/blog";
-import { getPost, listReplies } from "@/lib/api";
+import {
+  getPost,
+  invalidatePost,
+  invalidatePostsLists,
+  invalidateReplies,
+  listReplies,
+} from "@/lib/api";
 import { formatTime, timeAgo } from "@/lib/utils";
 import CopyableAddress from "./CopyableAddress";
 import ReactionBar from "./ReactionBar";
@@ -55,6 +61,15 @@ export default function DreamDetail({
     fetchData();
   }, [fetchData]);
 
+  // After a mutation, drop the cached post/replies/feed pages so the refetch
+  // (and the feed on navigation back) reads the chain instead of the cache.
+  const refetchFresh = useCallback(async () => {
+    invalidatePost(postId);
+    invalidateReplies(postId);
+    invalidatePostsLists(address ?? undefined);
+    await fetchData();
+  }, [postId, address, fetchData]);
+
   const handleDelete = async () => {
     if (!confirm("Are you sure you want to delete this dream?")) return;
     setActionLoading(true);
@@ -69,7 +84,7 @@ export default function DreamDetail({
           value: { creator: address, id: BigInt(postId) },
         },
       ]);
-      await fetchData();
+      await refetchFresh();
     } catch (err) {
       console.error("Delete failed:", err);
     } finally {
@@ -91,7 +106,7 @@ export default function DreamDetail({
           value: { creator: address, id: BigInt(postId) },
         },
       ]);
-      await fetchData();
+      await refetchFresh();
     } catch (err) {
       console.error("Hide/unhide failed:", err);
     } finally {
@@ -118,7 +133,7 @@ export default function DreamDetail({
           },
         },
       ]);
-      await fetchData();
+      await refetchFresh();
     } catch (err) {
       console.error("Toggle replies failed:", err);
     } finally {
@@ -141,7 +156,7 @@ export default function DreamDetail({
           value: { creator: address, id: BigInt(postId) },
         },
       ]);
-      await fetchData();
+      await refetchFresh();
     } catch (err) {
       console.error(pin ? "Pin failed:" : "Unpin failed:", err);
     } finally {
@@ -160,7 +175,7 @@ export default function DreamDetail({
           value: { creator: address, id: BigInt(postId) },
         },
       ]);
-      await fetchData();
+      await refetchFresh();
     } catch (err) {
       console.error("Make permanent failed:", err);
     } finally {
