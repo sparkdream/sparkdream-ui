@@ -54,11 +54,19 @@ export default function ImaginariumPage() {
 function ImaginariumPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // URL is the single source of truth for the selected post so a reload keeps
-  // the user on the dream they were reading. `?post=<id>` is restricted to
-  // digit-only ids (post ids are uint64) to avoid open-redirect-ish surfaces.
+  // The URL `?post=<id>` mirrors the open dream so a reload/share/deep-link keeps
+  // the user on it. `?post=<id>` is restricted to digit-only ids (post ids are
+  // uint64) to avoid open-redirect-ish surfaces. We render off local state rather
+  // than `useSearchParams()` directly: a soft `router.push` to the same pathname
+  // (e.g. clicking Back) doesn't always re-fire the hook, which would leave the
+  // detail view stuck open. The click handlers update state synchronously and the
+  // effect below resyncs from the URL for reload/back-forward/deep-link.
   const postParam = searchParams.get("post");
-  const selectedPostId = postParam && /^\d+$/.test(postParam) ? postParam : null;
+  const urlPostId = postParam && /^\d+$/.test(postParam) ? postParam : null;
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(urlPostId);
+  useEffect(() => {
+    setSelectedPostId(urlPostId);
+  }, [urlPostId]);
   const { connected, address, sessionActive, activeSession } = useWallet();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -356,10 +364,14 @@ function ImaginariumPageInner() {
     title: connected ? "MsgCreatePost" : "Connect a wallet to create a dream",
   };
 
-  const handleSelectPost = (p: Post) =>
+  const handleSelectPost = (p: Post) => {
+    setSelectedPostId(p.id);
     router.push(`/imaginarium?post=${p.id}`, { scroll: false });
-  const handleBackFromDetail = () =>
+  };
+  const handleBackFromDetail = () => {
+    setSelectedPostId(null);
     router.push("/imaginarium", { scroll: false });
+  };
 
   const toolbar = !showCreate && !selectedPostId && (
     <ContentToolbar
