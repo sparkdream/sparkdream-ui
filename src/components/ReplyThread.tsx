@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Reply } from "@/types/blog";
+import ActionMenu, { ACTION_ICONS, type ActionMenuItem } from "./ActionMenu";
 import { ReplyStatus } from "@/types/blog";
 import { timeAgo } from "@/lib/utils";
 import ReactionBar from "./ReactionBar";
@@ -148,6 +149,61 @@ function ReplyItem({
 
   const isEphemeral = Boolean(reply.expires_at && reply.expires_at !== "0");
 
+  // Owner / moderator actions shown in the popup menu (icon + label). Reply is
+  // kept top-level (next to reactions), not here. Built as a list so the menu
+  // trigger only renders when at least one action is available.
+  const menuActions: ActionMenuItem[] = [];
+  if (isOwner && !showEditForm) {
+    menuActions.push({
+      key: "edit",
+      label: "Edit",
+      onClick: () => setShowEditForm(true),
+      icon: ACTION_ICONS.edit,
+    });
+    menuActions.push({
+      key: "delete",
+      label: "Delete",
+      onClick: handleDelete,
+      icon: ACTION_ICONS.trash,
+      className: "text-red-400",
+    });
+  }
+  if (isPostOwner && !isOwner) {
+    menuActions.push({
+      key: "hide",
+      label: isHidden ? "Unhide" : "Hide",
+      onClick: handleHideToggle,
+      icon: ACTION_ICONS.eye,
+    });
+  }
+  if (connected && isEphemeral && canMakePermanent === true) {
+    menuActions.push({
+      key: "permanent",
+      label: "Make Permanent",
+      onClick: handleMakePermanent,
+      icon: ACTION_ICONS.lock,
+      className: "text-emerald-400",
+    });
+  }
+  if (connected && !isEphemeral && canPin === true) {
+    menuActions.push(
+      reply.pinned_by
+        ? {
+            key: "unpin",
+            label: "Unpin",
+            onClick: () => handlePin(false),
+            icon: ACTION_ICONS.pin,
+          }
+        : {
+            key: "pin",
+            label: "Pin",
+            onClick: () => handlePin(true),
+            icon: ACTION_ICONS.pin,
+            className: "text-amber-400",
+          }
+    );
+  }
+
   return (
     <div className={depth > 0 ? "ml-6 border-l border-zinc-800 pl-4" : ""}>
       <div className={`py-3 ${isHidden ? "opacity-50" : ""}`}>
@@ -205,67 +261,16 @@ function ReplyItem({
           {connected && depth < 3 && !showEditForm && repliesEnabled && (
             <button
               onClick={() => setShowReplyForm(!showReplyForm)}
-              className="text-xs text-zinc-500 transition-colors hover:text-zinc-300"
+              title="Reply"
+              aria-label="Reply"
+              className={`flex items-center rounded-lg border px-2 py-1 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-300 ${
+                showReplyForm ? "border-zinc-600 bg-zinc-700" : "border-transparent bg-zinc-800"
+              }`}
             >
-              Reply
+              {ACTION_ICONS.reply}
             </button>
           )}
-          {isOwner && !showEditForm && (
-            <>
-              <button
-                onClick={() => setShowEditForm(true)}
-                disabled={actionLoading}
-                className="text-xs text-zinc-500 transition-colors hover:text-zinc-300 disabled:opacity-50"
-              >
-                Edit
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={actionLoading}
-                className="text-xs text-red-500 transition-colors hover:text-red-400 disabled:opacity-50"
-              >
-                Delete
-              </button>
-            </>
-          )}
-          {isPostOwner && !isOwner && (
-            <button
-              onClick={handleHideToggle}
-              disabled={actionLoading}
-              className="text-xs text-zinc-500 transition-colors hover:text-zinc-300 disabled:opacity-50"
-            >
-              {isHidden ? "Unhide" : "Hide"}
-            </button>
-          )}
-          {connected && isEphemeral && canMakePermanent === true && (
-            <button
-              onClick={handleMakePermanent}
-              disabled={actionLoading}
-              title="Keep this ephemeral reply from expiring"
-              className="text-xs text-emerald-500 transition-colors hover:text-emerald-400 disabled:opacity-50"
-            >
-              Make Permanent
-            </button>
-          )}
-          {connected && !isEphemeral && !reply.pinned_by && canPin === true && (
-            <button
-              onClick={() => handlePin(true)}
-              disabled={actionLoading}
-              title="Feature this reply"
-              className="text-xs text-amber-500 transition-colors hover:text-amber-400 disabled:opacity-50"
-            >
-              Pin
-            </button>
-          )}
-          {connected && !isEphemeral && reply.pinned_by && canPin === true && (
-            <button
-              onClick={() => handlePin(false)}
-              disabled={actionLoading}
-              className="text-xs text-zinc-500 transition-colors hover:text-zinc-300 disabled:opacity-50"
-            >
-              Unpin
-            </button>
-          )}
+          <ActionMenu items={menuActions} disabled={actionLoading} />
         </div>
 
         {showReplyForm && (
@@ -326,6 +331,23 @@ export default function ReplyThread({ replies, postId, postCreator, postMinReply
       replyMap.set(parentId, children);
     }
   }
+
+  // Pinned replies float to the top of their sibling group (top-level pins
+  // above the thread, child pins above their siblings but still under their
+  // parent). A reply is pinned when pinned_by is set; pinned_at isn't always
+  // populated by the chain, so it's only a tiebreaker (most recent first).
+  // Otherwise fall back to chain order.
+  const byPinned = (a: Reply, b: Reply) => {
+    const ap = a.pinned_by ? 1 : 0;
+    const bp = b.pinned_by ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+    const at = a.pinned_at ? Date.parse(a.pinned_at) : 0;
+    const bt = b.pinned_at ? Date.parse(b.pinned_at) : 0;
+    if (at !== bt) return bt - at;
+    return Number(a.id) - Number(b.id);
+  };
+  topLevel.sort(byPinned);
+  for (const children of replyMap.values()) children.sort(byPinned);
 
   if (replies.length === 0) {
     if (replyBlocked) return null;

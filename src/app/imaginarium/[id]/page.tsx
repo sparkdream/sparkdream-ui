@@ -9,6 +9,7 @@ import { getPost, listReplies } from "@/lib/api";
 import { formatTime, timeAgo } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
 import ReactionBar from "@/components/ReactionBar";
+import ActionMenu, { ACTION_ICONS, type ActionMenuItem } from "@/components/ActionMenu";
 import ReplyThread from "@/components/ReplyThread";
 import ReplyForm from "@/components/ReplyForm";
 import { useWallet } from "@/contexts/WalletContext";
@@ -195,6 +196,59 @@ export default function PostDetailPage() {
   const isDeleted = post.status === PostStatus.DELETED;
   const isEphemeral = Boolean(post.expires_at && post.expires_at !== "0");
 
+  // Owner / moderator actions, collapsed into the ⋯ overflow menu (matches the
+  // reply action row). Built as a list so the trigger only renders when at
+  // least one action is available.
+  const menuActions: ActionMenuItem[] = [];
+  if (connected && !isDeleted && isEphemeral && canMakePermanent === true) {
+    menuActions.push({
+      key: "permanent",
+      label: "Make Permanent",
+      onClick: handleMakePermanent,
+      icon: ACTION_ICONS.lock,
+      className: "text-emerald-400",
+    });
+  }
+  if (connected && !isDeleted && !isEphemeral && canPin === true) {
+    menuActions.push(
+      post.pinned_by
+        ? {
+            key: "unpin",
+            label: "Unpin",
+            onClick: () => handlePin(false),
+            icon: ACTION_ICONS.pin,
+          }
+        : {
+            key: "pin",
+            label: "Pin",
+            onClick: () => handlePin(true),
+            icon: ACTION_ICONS.pin,
+            className: "text-amber-400",
+          }
+    );
+  }
+  if (isOwner && !isDeleted) {
+    menuActions.push({
+      key: "edit",
+      label: "Edit",
+      href: `/imaginarium/${id}/edit`,
+      icon: ACTION_ICONS.edit,
+    });
+    menuActions.push({
+      key: "hide",
+      label: isHidden ? "Unhide" : "Hide",
+      onClick: handleHide,
+      icon: ACTION_ICONS.eye,
+    });
+    menuActions.push({
+      key: "delete",
+      label: "Delete",
+      onClick: handleDelete,
+      icon: ACTION_ICONS.trash,
+      className: "text-red-400",
+    });
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       {/* Breadcrumb */}
@@ -274,64 +328,9 @@ export default function PostDetailPage() {
         </div>
 
         {/* Actions */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 pt-4">
+        <div className="flex flex-wrap items-center gap-3 border-t border-zinc-800 pt-4">
           <ReactionBar postId={post.id} minReplyTrustLevel={post.min_reply_trust_level} postCreator={post.creator} />
-
-          <div className="flex flex-wrap items-center gap-2">
-            {connected && !isDeleted && isEphemeral && canMakePermanent === true && (
-              <button
-                onClick={handleMakePermanent}
-                disabled={actionLoading}
-                title="Keep this ephemeral dream from expiring"
-                className="rounded px-3 py-1 text-xs text-emerald-500 transition-colors hover:bg-emerald-900/20 hover:text-emerald-400 disabled:opacity-50"
-              >
-                Make Permanent
-              </button>
-            )}
-            {connected && !isDeleted && !isEphemeral && !post.pinned_by && canPin === true && (
-              <button
-                onClick={() => handlePin(true)}
-                disabled={actionLoading}
-                title="Feature this dream"
-                className="rounded px-3 py-1 text-xs text-amber-500 transition-colors hover:bg-amber-900/20 hover:text-amber-400 disabled:opacity-50"
-              >
-                Pin
-              </button>
-            )}
-            {connected && !isDeleted && !isEphemeral && post.pinned_by && canPin === true && (
-              <button
-                onClick={() => handlePin(false)}
-                disabled={actionLoading}
-                className="rounded px-3 py-1 text-xs text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 disabled:opacity-50"
-              >
-                Unpin
-              </button>
-            )}
-            {isOwner && !isDeleted && (
-              <>
-                <Link
-                  href={`/imaginarium/${id}/edit`}
-                  className="rounded px-3 py-1 text-xs text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
-                >
-                  Edit
-                </Link>
-                <button
-                  onClick={handleHide}
-                  disabled={actionLoading}
-                  className="rounded px-3 py-1 text-xs text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 disabled:opacity-50"
-                >
-                  {isHidden ? "Unhide" : "Hide"}
-                </button>
-                <button
-                  onClick={handleDelete}
-                  disabled={actionLoading}
-                  className="rounded px-3 py-1 text-xs text-red-500 transition-colors hover:bg-red-900/20 hover:text-red-400 disabled:opacity-50"
-                >
-                  Delete
-                </button>
-              </>
-            )}
-          </div>
+          <ActionMenu items={menuActions} disabled={actionLoading} />
         </div>
       </article>
 
