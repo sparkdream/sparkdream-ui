@@ -9,6 +9,7 @@ import { listPosts, getAllMembers, listTags, getLatestBlockHeight, getReactionCo
 import { TrustLevel } from "@/types/rep";
 import PostRow from "@/components/PostRow";
 import CreatePostForm from "@/components/CreatePostForm";
+import CreateTagForm from "@/components/CreateTagForm";
 import DreamDetail from "@/components/DreamDetail";
 import {
   ContentPageLayout,
@@ -16,6 +17,9 @@ import {
   SidebarSection,
 } from "@/components/layout/ContentPageLayout";
 import { useWallet } from "@/contexts/WalletContext";
+import { useCanCreateTags } from "@/lib/tags";
+import { useSessionPermits } from "@/hooks/useSessionPermits";
+import { RepMsgTypeUrls } from "@/lib/tx";
 import { timeAgo, formatTime, countToNum } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
 import { useDisplayName } from "@/hooks/useDisplayName";
@@ -93,6 +97,10 @@ function ImaginariumPageInner() {
   const [tagList, setTagList] = useState<string[]>([]);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [tagsExpanded, setTagsExpanded] = useState(false);
+  const [showCreateTag, setShowCreateTag] = useState(false);
+  const canCreateTags = useCanCreateTags(address);
+  const sessionPermits = useSessionPermits();
+  const canCreateTagHere = canCreateTags && sessionPermits(RepMsgTypeUrls.CreateTag);
 
   const [endOfFeedHeight, setEndOfFeedHeight] = useState<string | null>(null);
   useEffect(() => {
@@ -104,7 +112,7 @@ function ImaginariumPageInner() {
     return () => { cancelled = true; };
   }, [nextKey, posts.length]);
 
-  useEffect(() => {
+  const loadTags = useCallback(() => {
     listTags({ limit: "50" })
       .then((res) => {
         const ranked = [...(res.tag || [])].sort((a, b) => {
@@ -116,6 +124,10 @@ function ImaginariumPageInner() {
       })
       .catch(() => setTagList([]));
   }, []);
+
+  useEffect(() => {
+    loadTags();
+  }, [loadTags]);
 
   const TOP_TAGS = 5;
   const visibleTags = useMemo(() => {
@@ -319,7 +331,7 @@ function ImaginariumPageInner() {
         </div>
       </SidebarSection>
 
-      {tagList.length > 0 && (
+      {(tagList.length > 0 || canCreateTagHere) && (
         <SidebarSection
           label="Tags"
           open={tagsOpen}
@@ -348,6 +360,16 @@ function ImaginariumPageInner() {
                 onClick={() => setTagsExpanded((v) => !v)}
               >
                 {tagsExpanded ? "Show less" : `+${hiddenTagCount} more`}
+              </button>
+            )}
+            {canCreateTagHere && (
+              <button
+                type="button"
+                className="sd-pill tag-neutral"
+                title="MsgCreateTag"
+                onClick={() => setShowCreateTag(true)}
+              >
+                + New tag
               </button>
             )}
           </div>
@@ -401,6 +423,17 @@ function ImaginariumPageInner() {
   );
 
   return (
+    <>
+    {showCreateTag && (
+      <CreateTagForm
+        existing={tagList}
+        onClose={() => setShowCreateTag(false)}
+        onCreated={(name) => {
+          setTagList((prev) => (prev.includes(name) ? prev : [...prev, name]));
+          loadTags();
+        }}
+      />
+    )}
     <ContentPageLayout
       title="Imaginarium"
       subtitle="Personal dreams, reflections, and self-published works from members"
@@ -495,6 +528,7 @@ function ImaginariumPageInner() {
         </>
       )}
     </ContentPageLayout>
+    </>
   );
 }
 
