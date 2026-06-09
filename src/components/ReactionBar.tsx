@@ -7,6 +7,7 @@ import { ReactionType, REACTION_INFO } from "@/types/blog";
 import { getReactionCounts, getUserReaction } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useIsReadOnly } from "@/contexts/ArchiveContext";
+import { useSessionPermits } from "@/hooks/useSessionPermits";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useTrustRank } from "@/hooks/useTrustRank";
 import { MsgTypeUrls } from "@/lib/tx";
@@ -43,6 +44,7 @@ function reactionErrorMessage(err: unknown): string {
 
 export default function ReactionBar({ postId, replyId = "0", minReplyTrustLevel = 0, postCreator }: ReactionBarProps) {
   const { address, connected, signAndBroadcast } = useWallet();
+  const permits = useSessionPermits();
   const isReadOnly = useIsReadOnly();
   const isMember = useIsRepMember(address);
   const trustRank = useTrustRank(address);
@@ -62,7 +64,10 @@ export default function ReactionBar({ postId, replyId = "0", minReplyTrustLevel 
     isMember === true &&
     trustRank !== null &&
     trustRank < minReplyTrustLevel;
-  const cannotReact = cannotReactMember || cannotReactTrust;
+  // Also block when an active session key doesn't grant MsgReact — otherwise we
+  // show an add-reaction button the session would reject at broadcast.
+  const cannotReactSession = !permits(MsgTypeUrls.React);
+  const cannotReact = cannotReactMember || cannotReactTrust || cannotReactSession;
   const [counts, setCounts] = useState<ReactionCounts | null>(null);
   const [userReaction, setUserReaction] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

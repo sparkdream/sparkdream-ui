@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Reply } from "@/types/blog";
 import ActionMenu, { ACTION_ICONS, type ActionMenuItem } from "./ActionMenu";
+import { useSessionPermits } from "@/hooks/useSessionPermits";
 import { ReplyStatus } from "@/types/blog";
 import { timeAgo } from "@/lib/utils";
 import ReactionBar from "./ReactionBar";
@@ -35,7 +36,7 @@ function ReplyItem({
   postCreator,
   postMinReplyTrustLevel,
   repliesEnabled = true,
-  childReplies,
+  replyMap,
   onReplySubmitted,
 }: {
   reply: Reply;
@@ -43,10 +44,14 @@ function ReplyItem({
   postCreator?: string;
   postMinReplyTrustLevel?: number;
   repliesEnabled?: boolean;
-  childReplies: Reply[];
+  // parent reply id -> its (pre-sorted) children. Passed down whole so each
+  // item can render its own descendants recursively at any depth.
+  replyMap: Map<string, Reply[]>;
   onReplySubmitted?: () => void;
 }) {
+  const childReplies = replyMap.get(reply.id) || [];
   const { address, connected, signAndBroadcast } = useWallet();
+  const permits = useSessionPermits();
   const canPin = useCanPin(address);
   const canMakePermanent = useCanMakePermanent(address);
   const [showReplyForm, setShowReplyForm] = useState(false);
@@ -150,25 +155,30 @@ function ReplyItem({
   const isEphemeral = Boolean(reply.expires_at && reply.expires_at !== "0");
 
   // Owner / moderator actions shown in the popup menu (icon + label). Reply is
-  // kept top-level (next to reactions), not here. Built as a list so the menu
-  // trigger only renders when at least one action is available.
+  // kept top-level (next to reactions), not here. Each action is also gated on
+  // the active session permitting its message type, so we don't surface a
+  // button that the session key would reject at broadcast.
   const menuActions: ActionMenuItem[] = [];
   if (isOwner && !showEditForm) {
-    menuActions.push({
-      key: "edit",
-      label: "Edit",
-      onClick: () => setShowEditForm(true),
-      icon: ACTION_ICONS.edit,
-    });
-    menuActions.push({
-      key: "delete",
-      label: "Delete",
-      onClick: handleDelete,
-      icon: ACTION_ICONS.trash,
-      className: "text-red-400",
-    });
+    if (permits(MsgTypeUrls.UpdateReply)) {
+      menuActions.push({
+        key: "edit",
+        label: "Edit",
+        onClick: () => setShowEditForm(true),
+        icon: ACTION_ICONS.edit,
+      });
+    }
+    if (permits(MsgTypeUrls.DeleteReply)) {
+      menuActions.push({
+        key: "delete",
+        label: "Delete",
+        onClick: handleDelete,
+        icon: ACTION_ICONS.trash,
+        className: "text-red-400",
+      });
+    }
   }
-  if (isPostOwner && !isOwner) {
+  if (isPostOwner && !isOwner && permits(isHidden ? MsgTypeUrls.UnhideReply : MsgTypeUrls.HideReply)) {
     menuActions.push({
       key: "hide",
       label: isHidden ? "Unhide" : "Hide",
@@ -176,7 +186,7 @@ function ReplyItem({
       icon: ACTION_ICONS.eye,
     });
   }
-  if (connected && isEphemeral && canMakePermanent === true) {
+  if (connected && isEphemeral && canMakePermanent === true && permits(MsgTypeUrls.MakeReplyPermanent)) {
     menuActions.push({
       key: "permanent",
       label: "Make Permanent",
@@ -186,22 +196,22 @@ function ReplyItem({
     });
   }
   if (connected && !isEphemeral && canPin === true) {
-    menuActions.push(
-      reply.pinned_by
-        ? {
-            key: "unpin",
-            label: "Unpin",
-            onClick: () => handlePin(false),
-            icon: ACTION_ICONS.pin,
-          }
-        : {
-            key: "pin",
-            label: "Pin",
-            onClick: () => handlePin(true),
-            icon: ACTION_ICONS.pin,
-            className: "text-amber-400",
-          }
-    );
+    if (reply.pinned_by && permits(MsgTypeUrls.UnpinReply)) {
+      menuActions.push({
+        key: "unpin",
+        label: "Unpin",
+        onClick: () => handlePin(false),
+        icon: ACTION_ICONS.pin,
+      });
+    } else if (!reply.pinned_by && permits(MsgTypeUrls.PinReply)) {
+      menuActions.push({
+        key: "pin",
+        label: "Pin",
+        onClick: () => handlePin(true),
+        icon: ACTION_ICONS.pin,
+        className: "text-amber-400",
+      });
+    }
   }
 
   return (
@@ -258,7 +268,7 @@ function ReplyItem({
 
         <div className="flex items-center gap-3">
           <ReactionBar postId={postId} replyId={reply.id} minReplyTrustLevel={postMinReplyTrustLevel} postCreator={postCreator} />
-          {connected && depth < 3 && !showEditForm && repliesEnabled && (
+          {connected && depth < 3 && !showEditForm && repliesEnabled && permits(MsgTypeUrls.CreateReply) && (
             <button
               onClick={() => setShowReplyForm(!showReplyForm)}
               title="Reply"
@@ -300,7 +310,7 @@ function ReplyItem({
           postCreator={postCreator}
           postMinReplyTrustLevel={postMinReplyTrustLevel}
           repliesEnabled={repliesEnabled}
-          childReplies={[]}
+          replyMap={replyMap}
           onReplySubmitted={onReplySubmitted}
         />
       ))}
@@ -368,7 +378,7 @@ export default function ReplyThread({ replies, postId, postCreator, postMinReply
           postCreator={postCreator}
           postMinReplyTrustLevel={postMinReplyTrustLevel}
           repliesEnabled={repliesEnabled}
-          childReplies={replyMap.get(reply.id) || []}
+          replyMap={replyMap}
           onReplySubmitted={onReplySubmitted}
         />
       ))}

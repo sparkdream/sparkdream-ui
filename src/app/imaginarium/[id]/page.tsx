@@ -10,6 +10,7 @@ import { formatTime, timeAgo } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
 import ReactionBar from "@/components/ReactionBar";
 import ActionMenu, { ACTION_ICONS, type ActionMenuItem } from "@/components/ActionMenu";
+import { useSessionPermits } from "@/hooks/useSessionPermits";
 import ReplyThread from "@/components/ReplyThread";
 import ReplyForm from "@/components/ReplyForm";
 import { useWallet } from "@/contexts/WalletContext";
@@ -21,6 +22,7 @@ export default function PostDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const { address, connected, signAndBroadcast } = useWallet();
+  const permits = useSessionPermits();
   const canPin = useCanPin(address);
   const canMakePermanent = useCanMakePermanent(address);
 
@@ -197,10 +199,11 @@ export default function PostDetailPage() {
   const isEphemeral = Boolean(post.expires_at && post.expires_at !== "0");
 
   // Owner / moderator actions, collapsed into the ⋯ overflow menu (matches the
-  // reply action row). Built as a list so the trigger only renders when at
-  // least one action is available.
+  // reply action row). Each action is also gated on the active session
+  // permitting its message type, so we don't surface a button that the session
+  // key would reject at broadcast.
   const menuActions: ActionMenuItem[] = [];
-  if (connected && !isDeleted && isEphemeral && canMakePermanent === true) {
+  if (connected && !isDeleted && isEphemeral && canMakePermanent === true && permits(MsgTypeUrls.MakePostPermanent)) {
     menuActions.push({
       key: "permanent",
       label: "Make Permanent",
@@ -210,43 +213,49 @@ export default function PostDetailPage() {
     });
   }
   if (connected && !isDeleted && !isEphemeral && canPin === true) {
-    menuActions.push(
-      post.pinned_by
-        ? {
-            key: "unpin",
-            label: "Unpin",
-            onClick: () => handlePin(false),
-            icon: ACTION_ICONS.pin,
-          }
-        : {
-            key: "pin",
-            label: "Pin",
-            onClick: () => handlePin(true),
-            icon: ACTION_ICONS.pin,
-            className: "text-amber-400",
-          }
-    );
+    if (post.pinned_by && permits(MsgTypeUrls.UnpinPost)) {
+      menuActions.push({
+        key: "unpin",
+        label: "Unpin",
+        onClick: () => handlePin(false),
+        icon: ACTION_ICONS.pin,
+      });
+    } else if (!post.pinned_by && permits(MsgTypeUrls.PinPost)) {
+      menuActions.push({
+        key: "pin",
+        label: "Pin",
+        onClick: () => handlePin(true),
+        icon: ACTION_ICONS.pin,
+        className: "text-amber-400",
+      });
+    }
   }
   if (isOwner && !isDeleted) {
-    menuActions.push({
-      key: "edit",
-      label: "Edit",
-      href: `/imaginarium/${id}/edit`,
-      icon: ACTION_ICONS.edit,
-    });
-    menuActions.push({
-      key: "hide",
-      label: isHidden ? "Unhide" : "Hide",
-      onClick: handleHide,
-      icon: ACTION_ICONS.eye,
-    });
-    menuActions.push({
-      key: "delete",
-      label: "Delete",
-      onClick: handleDelete,
-      icon: ACTION_ICONS.trash,
-      className: "text-red-400",
-    });
+    if (permits(MsgTypeUrls.UpdatePost)) {
+      menuActions.push({
+        key: "edit",
+        label: "Edit",
+        href: `/imaginarium/${id}/edit`,
+        icon: ACTION_ICONS.edit,
+      });
+    }
+    if (permits(isHidden ? MsgTypeUrls.UnhidePost : MsgTypeUrls.HidePost)) {
+      menuActions.push({
+        key: "hide",
+        label: isHidden ? "Unhide" : "Hide",
+        onClick: handleHide,
+        icon: ACTION_ICONS.eye,
+      });
+    }
+    if (permits(MsgTypeUrls.DeletePost)) {
+      menuActions.push({
+        key: "delete",
+        label: "Delete",
+        onClick: handleDelete,
+        icon: ACTION_ICONS.trash,
+        className: "text-red-400",
+      });
+    }
   }
 
   return (
