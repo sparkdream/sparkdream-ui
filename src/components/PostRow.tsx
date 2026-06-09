@@ -33,12 +33,16 @@ function initialFor(name: string | null, addr: string): string {
 export default function PostRow({
   post,
   onSelect,
+  onTagClick,
 }: {
   post: Post;
   /** When provided, the row renders as a button that calls this handler
       instead of navigating via Link. Used when the parent page wants to show
       the detail view inline (like Swarm/Wonders). */
   onSelect?: (post: Post) => void;
+  /** When provided, tag chips become clickable and call this with the tag,
+      without triggering the row's navigation/selection. */
+  onTagClick?: (tag: string) => void;
 }) {
   const [counts, setCounts] = useState<ReactionCounts | null>(null);
   const { name } = useDisplayName(post.creator);
@@ -93,6 +97,39 @@ export default function PostRow({
         </div>
         <h3>{post.title}</h3>
         <p className="excerpt">{post.body}</p>
+        {post.tags && post.tags.length > 0 && (
+          <div className="tags">
+            {post.tags.map((t) =>
+              onTagClick ? (
+                <span
+                  key={t}
+                  className="sd-pill tag"
+                  role="button"
+                  tabIndex={0}
+                  style={{ cursor: "pointer" }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onTagClick(t);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onTagClick(t);
+                    }
+                  }}
+                >
+                  #{t}
+                </span>
+              ) : (
+                <span key={t} className="sd-pill tag">
+                  #{t}
+                </span>
+              )
+            )}
+          </div>
+        )}
       </div>
       <div className="stats-col">
         <span className="stat">

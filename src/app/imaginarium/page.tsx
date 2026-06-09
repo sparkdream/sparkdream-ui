@@ -471,7 +471,12 @@ function ImaginariumPageInner() {
             <>
               <div className="sd-post-list">
                 {listPostsData.map((p) => (
-                  <PostRow key={p.id} post={p} onSelect={handleSelectPost} />
+                  <PostRow
+                    key={p.id}
+                    post={p}
+                    onSelect={handleSelectPost}
+                    onTagClick={(t) => setTagFilter((cur) => (cur === t ? null : t))}
+                  />
                 ))}
               </div>
               <div ref={sentinelRef} style={{ height: 1 }} />
