@@ -451,7 +451,14 @@ function ImaginariumPageInner() {
       }
     >
       {selectedPostId ? (
-        <DreamDetail postId={selectedPostId} onBack={handleBackFromDetail} />
+        <DreamDetail
+          postId={selectedPostId}
+          onBack={handleBackFromDetail}
+          onTagClick={(t) => {
+            setTagFilter(t);
+            handleBackFromDetail();
+          }}
+        />
       ) : showCreate ? (
         <CreatePostForm
           onCreated={() => setShowCreate(false)}

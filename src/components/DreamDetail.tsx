@@ -25,9 +25,13 @@ import { MsgTypeUrls } from "@/lib/tx";
 export default function DreamDetail({
   postId,
   onBack,
+  onTagClick,
 }: {
   postId: string;
   onBack: () => void;
+  /** When provided, tag chips become clickable and call this with the tag
+      (e.g. to return to the list filtered by that tag). */
+  onTagClick?: (tag: string) => void;
 }) {
   const { address, connected, signAndBroadcast } = useWallet();
   const permits = useSessionPermits();
@@ -347,6 +351,28 @@ export default function DreamDetail({
             post.body
           )}
         </div>
+
+        {post.tags && post.tags.length > 0 && (
+          <div className="mb-6 flex flex-wrap items-center gap-2">
+            {post.tags.map((t) =>
+              onTagClick ? (
+                <button
+                  key={t}
+                  type="button"
+                  className="sd-pill tag"
+                  style={{ cursor: "pointer" }}
+                  onClick={() => onTagClick(t)}
+                >
+                  #{t}
+                </button>
+              ) : (
+                <span key={t} className="sd-pill tag">
+                  #{t}
+                </span>
+              )
+            )}
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-3 border-t border-zinc-800 pt-4">
           <ReactionBar postId={post.id} minReplyTrustLevel={post.min_reply_trust_level} postCreator={post.creator} />
