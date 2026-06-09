@@ -1,6 +1,6 @@
 {
   "name": "sparkdream-ui",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -18,8 +18,8 @@
     "@cosmjs/proto-signing": "^0.38.1",
     "@cosmjs/stargate": "^0.38.1",
     "@cosmjs/tendermint-rpc": "^0.38.1",
-    "@sparkdreamnft/sparkdreamjs": "^0.0.19",
-    "next": "16.2.3",
+    "@sparkdreamnft/sparkdreamjs": "^0.0.20",
+    "next": "16.2.7",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
@@ -30,7 +30,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.3",
+    "eslint-config-next": "16.2.7",
     "tailwindcss": "^4",
     "tsx": "^4.22.0",
     "typescript": "^5"

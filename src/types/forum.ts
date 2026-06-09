@@ -512,3 +512,22 @@ export interface MemberStandingResponse {
   trust_tier: string;
 }
 
+// A member's DREAM lock backing a post's author. Mirrors the forum
+// PostConvictionStake proto (chain query added in sparkdreamjs 0.0.20).
+export interface PostConvictionStake {
+  id: string;
+  staker: string;
+  post_id: string;
+  amount: string; // uDREAM (math.Int)
+  staked_at: string;
+  unlocks_at: string;
+  accrued_rep_per_tag?: Record<string, string>;
+  last_accrual_at: string;
+  released: boolean;
+}
+
+export interface PostConvictionStakesResponse {
+  stakes: PostConvictionStake[];
+  pagination: Pagination;
+}
+

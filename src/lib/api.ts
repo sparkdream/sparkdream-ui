@@ -134,6 +134,7 @@ import type {
   GetSentinelActivityResponse,
   MemberStandingResponse,
   ListHideRecordsResponse,
+  PostConvictionStakesResponse,
 } from "@/types/forum";
 import type {
   BondedRoleResponse,
@@ -510,10 +511,9 @@ interface TxResponseEnvelope { tx_response?: { events?: TxEvent[] } }
 
 /**
  * Fetch a committed tx by hash and return the attributes of the first event
- * of `eventType` as a flat key→value map (empty if not found). Used to read
- * a message response carried only in an event — e.g. the forum
- * `post_conviction_staked` event's `stake_id` / `unlocks_at`, which the
- * chain exposes through no query endpoint (see PostConvictionControl).
+ * of `eventType` as a flat key→value map (empty if not found). Used to read a
+ * message response carried only in an event — e.g. an id minted by a tx whose
+ * MsgResponse isn't surfaced over REST.
  */
 export async function getTxEventAttributes(
   hash: string,
@@ -974,6 +974,19 @@ export async function listDisputes(
 
 export async function getForumParams(): Promise<ForumParamsResponse> {
   return get<ForumParamsResponse>("/sparkdream/forum/v1/params");
+}
+
+// List a staker's open post-conviction stakes. Chain query added in
+// sparkdreamjs 0.0.20; lets the staker find each stake's id + unlock time for
+// in-app release (formerly mirrored in localStorage, see PostConvictionControl).
+export async function listPostConvictionStakesByStaker(
+  staker: string,
+  pagination?: PaginationRequest
+): Promise<PostConvictionStakesResponse> {
+  return get<PostConvictionStakesResponse>(
+    `/sparkdream/forum/v1/post_conviction_stakes_by_staker/${staker}`,
+    paginationParams(pagination)
+  );
 }
 
 // List all HideRecord rows (one per currently-hidden post). Client filters by

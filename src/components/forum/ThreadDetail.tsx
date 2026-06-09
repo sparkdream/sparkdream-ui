@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import {
   getForumPost,
@@ -10,6 +10,7 @@ import {
   isFollowingThread,
   getBountyByThread,
   listCategories,
+  listPostConvictionStakesByStaker,
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useTrustRank } from "@/hooks/useTrustRank";
@@ -21,7 +22,7 @@ import NameOrAddress from "@/components/NameOrAddress";
 import CreatePostForm from "@/components/forum/CreatePostForm";
 import PostConvictionControl from "@/components/forum/PostConvictionControl";
 import type { Category } from "@/types/commons";
-import type { ForumPost, ThreadMetadata, Bounty } from "@/types/forum";
+import type { ForumPost, ThreadMetadata, Bounty, PostConvictionStake } from "@/types/forum";
 import { PostStatus, BountyStatus } from "@/types/forum";
 
 // Promoting an ephemeral post to permanent is a member action gated on
@@ -56,6 +57,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const [followCount, setFollowCount] = useState<string>("0");
   const [isFollowing, setIsFollowing] = useState(false);
   const [bounty, setBounty] = useState<Bounty | null>(null);
+  const [myStakes, setMyStakes] = useState<PostConvictionStake[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -94,6 +96,15 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
         isFollowingThread(threadId, address)
           .then((r) => setIsFollowing(r.is_following))
           .catch(() => setIsFollowing(false));
+
+        // The viewer's own open conviction stakes, fetched once and passed down
+        // to each post's control (filtered per-post below). Released stakes are
+        // dropped so only releasable/locked positions surface.
+        listPostConvictionStakesByStaker(address, { limit: "200" })
+          .then((r) => setMyStakes((r.stakes || []).filter((s) => !s.released)))
+          .catch(() => setMyStakes([]));
+      } else {
+        setMyStakes([]);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load spark");
@@ -143,6 +154,18 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     isOpsCommitteeMember ||
     isThreadAuthor ||
     (!adminOnlyWrite && (!membersOnlyWrite || isMember !== false));
+
+  // Group the viewer's open stakes by the post they back, so each control gets
+  // only its post's stakes without each one re-querying the chain.
+  const stakesByPost = useMemo(() => {
+    const map = new Map<string, PostConvictionStake[]>();
+    for (const s of myStakes) {
+      const list = map.get(s.post_id);
+      if (list) list.push(s);
+      else map.set(s.post_id, [s]);
+    }
+    return map;
+  }, [myStakes]);
 
   const handleVote = async (postId: string, direction: "up" | "down") => {
     if (!address) return;
@@ -353,7 +376,12 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
           {/* Back the author with a DREAM conviction stake (ESTABLISHED+, not
               the author). The component self-hides when ineligible. */}
           {isActive && (
-            <PostConvictionControl postId={post.post_id} author={post.author} onChanged={fetchData} />
+            <PostConvictionControl
+              postId={post.post_id}
+              author={post.author}
+              stakes={stakesByPost.get(post.post_id) ?? []}
+              onChanged={fetchData}
+            />
           )}
           {/* Promote an ephemeral post to permanent. */}
           {isActive && isEphemeral && (

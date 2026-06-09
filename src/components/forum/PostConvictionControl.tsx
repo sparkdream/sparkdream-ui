@@ -4,40 +4,13 @@ import { useEffect, useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { useTrustRank } from "@/hooks/useTrustRank";
 import { ForumMsgTypeUrls } from "@/lib/tx";
-import { getForumParams, getTxEventAttributes } from "@/lib/api";
+import { getForumParams } from "@/lib/api";
+import type { PostConvictionStake } from "@/types/forum";
 
 // ESTABLISHED trust rank (see useTrustRank): the chain requires ESTABLISHED+
 // to open a post-conviction stake.
 const ESTABLISHED_RANK = 2;
 const UDREAM = 1_000_000;
-
-// The chain exposes no query for PostConvictionStakes, and a release needs the
-// stake id (returned only in the `post_conviction_staked` tx event). We mirror
-// the staker's own stakes in localStorage keyed by address so they can release
-// in-app after the lock window; stakes are always also releasable via the CLI.
-interface StoredStake {
-  stakeId: string;
-  postId: string;
-  amount: string; // uDREAM
-  unlocksAt: number; // unix seconds
-}
-
-function storageKey(address: string): string {
-  return `forum.conviction.${address}`;
-}
-
-function loadStakes(address: string): StoredStake[] {
-  if (typeof window === "undefined") return [];
-  try {
-    return JSON.parse(localStorage.getItem(storageKey(address)) || "[]");
-  } catch {
-    return [];
-  }
-}
-
-function saveStakes(address: string, stakes: StoredStake[]): void {
-  localStorage.setItem(storageKey(address), JSON.stringify(stakes));
-}
 
 function formatDream(udream: string): string {
   if (!udream || udream === "0") return "0";
@@ -47,10 +20,14 @@ function formatDream(udream: string): string {
 interface Props {
   postId: string;
   author: string;
+  // The connected viewer's open (unreleased) stakes on this post, fetched once
+  // by the parent thread via listPostConvictionStakesByStaker. After a stake or
+  // release, onChanged triggers the parent to refetch and flow new stakes down.
+  stakes: PostConvictionStake[];
   onChanged?: () => void;
 }
 
-export default function PostConvictionControl({ postId, author, onChanged }: Props) {
+export default function PostConvictionControl({ postId, author, stakes, onChanged }: Props) {
   const { address, signAndBroadcast } = useWallet();
   const rank = useTrustRank(address);
 
@@ -58,21 +35,8 @@ export default function PostConvictionControl({ postId, author, onChanged }: Pro
   const [amount, setAmount] = useState("");
   const [minStake, setMinStake] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [stakes, setStakes] = useState<StoredStake[]>([]);
   const [nowSec, setNowSec] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
-
-  // Reset to null synchronously when the viewer changes so we never show the
-  // previous account's stakes for a render (mirrors useTrustRank's pattern).
-  const [trackedAddress, setTrackedAddress] = useState(address);
-  if (address !== trackedAddress) {
-    setTrackedAddress(address);
-    setStakes(address ? loadStakes(address) : []);
-  }
-
-  useEffect(() => {
-    setStakes(address ? loadStakes(address) : []);
-  }, [address]);
 
   // A coarse clock for the unlock countdown; release only flips available once
   // a minute, which is plenty for a lock measured in days.
@@ -82,13 +46,11 @@ export default function PostConvictionControl({ postId, author, onChanged }: Pro
     return () => clearInterval(t);
   }, []);
 
-  const postStakes = stakes.filter((s) => s.postId === postId);
-
   // Don't surface anything to the author (they can't stake on their own post)
-  // or to disconnected viewers with nothing stored.
+  // or to disconnected viewers with nothing staked.
   if (!address || address === author) return null;
   const eligible = rank !== null && rank >= ESTABLISHED_RANK;
-  if (!eligible && postStakes.length === 0) {
+  if (!eligible && stakes.length === 0) {
     return (
       <span
         className="text-xs text-zinc-600"
@@ -119,33 +81,12 @@ export default function PostConvictionControl({ postId, author, onChanged }: Pro
     setLoading(true);
     setNotice(null);
     try {
-      const hash = await signAndBroadcast([
+      await signAndBroadcast([
         {
           typeUrl: ForumMsgTypeUrls.StakePostConviction,
           value: { creator: address, postId: BigInt(postId), amount: udream },
         },
       ]);
-      // Recover the stake id + unlock time from the tx event so the staker can
-      // release in-app later (no query endpoint exists for stakes).
-      const attrs = await getTxEventAttributes(hash, "post_conviction_staked").catch(
-        () => ({} as Record<string, string>)
-      );
-      if (attrs.stake_id) {
-        const next = [
-          ...loadStakes(address),
-          {
-            stakeId: attrs.stake_id,
-            postId,
-            amount: attrs.amount || udream,
-            unlocksAt: parseInt(attrs.unlocks_at || "0", 10),
-          },
-        ];
-        saveStakes(address, next);
-        setStakes(next);
-        setNotice(null);
-      } else {
-        setNotice("Stake created, but its id could not be recorded for in-app release. You can still release it via the CLI.");
-      }
       setShowForm(false);
       setAmount("");
       onChanged?.();
@@ -156,7 +97,7 @@ export default function PostConvictionControl({ postId, author, onChanged }: Pro
     }
   };
 
-  const handleRelease = async (stake: StoredStake) => {
+  const handleRelease = async (stake: PostConvictionStake) => {
     if (!address) return;
     setLoading(true);
     setNotice(null);
@@ -164,12 +105,9 @@ export default function PostConvictionControl({ postId, author, onChanged }: Pro
       await signAndBroadcast([
         {
           typeUrl: ForumMsgTypeUrls.ReleasePostConviction,
-          value: { creator: address, stakeId: BigInt(stake.stakeId) },
+          value: { creator: address, stakeId: BigInt(stake.id) },
         },
       ]);
-      const next = loadStakes(address).filter((s) => s.stakeId !== stake.stakeId);
-      saveStakes(address, next);
-      setStakes(next);
       onChanged?.();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Failed to release stake.");
@@ -180,12 +118,13 @@ export default function PostConvictionControl({ postId, author, onChanged }: Pro
 
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
-      {postStakes.map((s) => {
-        const unlocked = s.unlocksAt > 0 && nowSec >= s.unlocksAt;
-        const mins = Math.max(0, Math.ceil((s.unlocksAt - nowSec) / 60));
+      {stakes.map((s) => {
+        const unlocksAt = parseInt(s.unlocks_at || "0", 10);
+        const unlocked = unlocksAt > 0 && nowSec >= unlocksAt;
+        const mins = Math.max(0, Math.ceil((unlocksAt - nowSec) / 60));
         return (
           <button
-            key={s.stakeId}
+            key={s.id}
             onClick={() => handleRelease(s)}
             disabled={loading || !unlocked}
             title={
