@@ -26,6 +26,21 @@ interface ReactionBarProps {
   postCreator?: string;
 }
 
+// The wallet rethrows a failed tx as `Transaction failed: <rawLog>`, where
+// rawLog is the chain's verbose form: "failed to execute message; message
+// index: 0: <addr>: <reason>". Strip the preamble and the leading bech32
+// address so the inline chip shows just the human reason (e.g. "address is not
+// an active member"), falling back to the raw message if it doesn't match.
+function reactionErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const reason = raw
+    .replace(/^Transaction failed:\s*/, "")
+    .replace(/^failed to execute message; message index: \d+:\s*/, "")
+    .replace(/^[a-z0-9]+1[a-z0-9]+:\s*/i, "")
+    .trim();
+  return reason || "Reaction failed";
+}
+
 export default function ReactionBar({ postId, replyId = "0", minReplyTrustLevel = 0, postCreator }: ReactionBarProps) {
   const { address, connected, signAndBroadcast } = useWallet();
   const isReadOnly = useIsReadOnly();
@@ -51,6 +66,7 @@ export default function ReactionBar({ postId, replyId = "0", minReplyTrustLevel 
   const [counts, setCounts] = useState<ReactionCounts | null>(null);
   const [userReaction, setUserReaction] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -130,6 +146,7 @@ export default function ReactionBar({ postId, replyId = "0", minReplyTrustLevel 
   const handleReact = async (reactionType: string) => {
     if (!connected || loading) return;
     setLoading(true);
+    setError(null);
 
     try {
       // post_id / reply_id are uint64. replyId defaults to "0" for reactions
@@ -171,6 +188,7 @@ export default function ReactionBar({ postId, replyId = "0", minReplyTrustLevel 
       await fetchData();
     } catch (err) {
       console.error("Reaction failed:", err);
+      setError(reactionErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -212,7 +230,8 @@ export default function ReactionBar({ postId, replyId = "0", minReplyTrustLevel 
   const present = reactionsView.filter((r) => r.count > 0);
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2">
       {present.map(({ value, info, count }) => {
         const isActive = userReaction === value;
 
@@ -288,6 +307,8 @@ export default function ReactionBar({ postId, replyId = "0", minReplyTrustLevel 
           document.body
         )}
       </div>
+      </div>
+      {error && <p className="text-xs text-red-400">{error}</p>}
     </div>
   );
 }
