@@ -11,6 +11,7 @@ import {
   getBountyByThread,
   listCategories,
   listPostConvictionStakesByStaker,
+  authorBondsByType,
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useTrustRank } from "@/hooks/useTrustRank";
@@ -21,6 +22,7 @@ import { timeAgo } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import CreatePostForm from "@/components/forum/CreatePostForm";
 import PostConvictionControl from "@/components/forum/PostConvictionControl";
+import AuthorBondPanel from "@/components/AuthorBondPanel";
 import type { Category } from "@/types/commons";
 import type { ForumPost, ThreadMetadata, Bounty, PostConvictionStake } from "@/types/forum";
 import { PostStatus, BountyStatus } from "@/types/forum";
@@ -32,6 +34,10 @@ import { PostStatus, BountyStatus } from "@/types/forum";
 // posts (it's a moderation/featuring action), so it's gated on ops-committee
 // membership below rather than trust rank.
 const MAKE_PERMANENT_RANK = 1;
+
+// StakeTargetType numeric value for x/forum author bonds. Forum replies are
+// posts with parent_id set, so posts and replies share this target type.
+const FORUM_AUTHOR_BOND = 8;
 
 function formatAmount(amount: string): string {
   if (!amount || amount === "0") return "0";
@@ -64,6 +70,10 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const [showReplyForm, setShowReplyForm] = useState(false);
   const [replyToId, setReplyToId] = useState<string>(threadId);
   const [category, setCategory] = useState<Category | null>(null);
+  // Post ids in this thread carrying an author bond. Fetched as one indexed
+  // query so we only mount the (self-querying) bond panel under posts that
+  // actually have one, instead of two LCD calls per reply.
+  const [bondedIds, setBondedIds] = useState<Set<string>>(new Set());
 
   const fetchData = useCallback(async () => {
     try {
@@ -84,12 +94,26 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       const metaP = getForumThreadMetadata(threadId).catch(() => null);
       const followP = getThreadFollowCount(threadId).catch(() => null);
       const bountyP = getBountyByThread(threadId).catch(() => null);
+      const bondsP = (async () => {
+        const ids = new Set<string>();
+        let key: string | undefined;
+        do {
+          const res = await authorBondsByType(FORUM_AUTHOR_BOND, {
+            limit: "200",
+            ...(key ? { key } : {}),
+          });
+          for (const b of res.bonds || []) ids.add(b.target_id);
+          key = res.pagination?.next_key || undefined;
+        } while (key);
+        return ids;
+      })().catch(() => new Set<string>());
 
-      const [metaRes, followRes, bountyRes] = await Promise.all([metaP, followP, bountyP]);
+      const [metaRes, followRes, bountyRes, bondIds] = await Promise.all([metaP, followP, bountyP, bondsP]);
 
       if (metaRes) setMetadata(metaRes.thread_metadata);
       if (followRes) setFollowCount(followRes.thread_follow_count?.follower_count || "0");
       if (bountyRes) setBounty(bountyRes.bounty);
+      setBondedIds(bondIds);
 
       // Check if current user follows this thread
       if (address) {
@@ -427,6 +451,17 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
             </button>
           )}
         </div>
+
+        {/* Always mounted on the root (it self-hides when unbonded, matching
+            the blog detail view); replies only when the bond index says one
+            exists, to avoid per-reply queries. */}
+        {(isRoot || bondedIds.has(post.post_id)) && (
+          <AuthorBondPanel
+            postId={post.post_id}
+            targetType={FORUM_AUTHOR_BOND}
+            noun={isRoot ? "spark" : "reply"}
+          />
+        )}
       </div>
     );
   };

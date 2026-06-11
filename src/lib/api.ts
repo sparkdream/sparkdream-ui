@@ -70,6 +70,10 @@ import type {
   GetStakeResponse,
   StakesByStakerResponse,
   PendingStakeRewardsResponse,
+  AuthorBondResponse,
+  AuthorBondsByTypeResponse,
+  ContentChallenge,
+  ContentChallengesByTargetResponse,
   GetInvitationResponse,
   ListInvitationResponse,
   InvitationsByInviterResponse,
@@ -781,6 +785,47 @@ export async function pendingStakeRewards(stakeId: string): Promise<PendingStake
   return get<PendingStakeRewardsResponse>(
     `/sparkdream/rep/v1/stake/${stakeId}/pending_rewards`
   );
+}
+
+// Author bond for one content item. targetType is the numeric StakeTargetType
+// (7=blog, 8=forum, 9=collection author bond). Returns bond_amount "0" when
+// no bond exists.
+export async function getAuthorBond(
+  targetType: number,
+  targetId: string
+): Promise<AuthorBondResponse> {
+  return get<AuthorBondResponse>(
+    `/sparkdream/rep/v1/author_bond/${targetType}/${targetId}`
+  );
+}
+
+// All author bond stakes for a bond target type. Used to mark/filter bonded
+// posts in list views; each Stake carries target_id, amount, and created_at.
+export async function authorBondsByType(
+  targetType: number,
+  pagination?: PaginationRequest
+): Promise<AuthorBondsByTypeResponse> {
+  return get<AuthorBondsByTypeResponse>(
+    `/sparkdream/rep/v1/author_bonds_by_type/${targetType}`,
+    paginationParams(pagination)
+  );
+}
+
+// Active content challenge on a target, or null — the chain answers 404 when
+// no challenge is active for the target.
+export async function contentChallengeByTarget(
+  targetType: number,
+  targetId: string
+): Promise<ContentChallenge | null> {
+  try {
+    const res = await get<ContentChallengesByTargetResponse>(
+      `/sparkdream/rep/v1/content_challenges_by_target/${targetType}/${targetId}`
+    );
+    return res.content_challenge ?? null;
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("API error 404")) return null;
+    throw err;
+  }
 }
 
 export async function getRepInvitation(id: string): Promise<GetInvitationResponse> {

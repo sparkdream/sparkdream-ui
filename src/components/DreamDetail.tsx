@@ -9,6 +9,7 @@ import {
   invalidatePostsLists,
   invalidateReplies,
   listReplies,
+  authorBondsByType,
 } from "@/lib/api";
 import { formatTime, timeAgo } from "@/lib/utils";
 import CopyableAddress from "./CopyableAddress";
@@ -17,6 +18,7 @@ import ActionMenu, { ACTION_ICONS, type ActionMenuItem } from "./ActionMenu";
 import { useSessionPermits } from "@/hooks/useSessionPermits";
 import ReplyThread from "./ReplyThread";
 import ReplyForm from "./ReplyForm";
+import AuthorBondPanel from "./AuthorBondPanel";
 import { useWallet } from "@/contexts/WalletContext";
 import { useCanPin } from "@/hooks/useCanPin";
 import { useCanMakePermanent } from "@/hooks/useCanMakePermanent";
@@ -43,16 +45,34 @@ export default function DreamDetail({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  // Reply ids carrying an author bond (BLOG_REPLY_AUTHOR_BOND, type 10).
+  // One indexed query so the bond panel only mounts under bonded replies.
+  const [bondedReplyIds, setBondedReplyIds] = useState<Set<string>>(new Set());
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const [postRes, repliesRes] = await Promise.all([
+      const bondsP = (async () => {
+        const ids = new Set<string>();
+        let key: string | undefined;
+        do {
+          const res = await authorBondsByType(10, {
+            limit: "200",
+            ...(key ? { key } : {}),
+          });
+          for (const b of res.bonds || []) ids.add(b.target_id);
+          key = res.pagination?.next_key || undefined;
+        } while (key);
+        return ids;
+      })().catch(() => new Set<string>());
+      const [postRes, repliesRes, bondIds] = await Promise.all([
         getPost(postId),
         listReplies(postId, { limit: "100", countTotal: true }),
+        bondsP,
       ]);
       setPost(postRes.post);
       setReplies(repliesRes.replies || []);
+      setBondedReplyIds(bondIds);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load dream");
@@ -378,6 +398,8 @@ export default function DreamDetail({
           <ReactionBar postId={post.id} minReplyTrustLevel={post.min_reply_trust_level} postCreator={post.creator} />
           <ActionMenu items={menuActions} disabled={actionLoading} />
         </div>
+
+        {!isDeleted && <AuthorBondPanel postId={post.id} />}
       </article>
 
       {!isDeleted && (
@@ -422,6 +444,7 @@ export default function DreamDetail({
                 postId={post.id}
                 postCreator={post.creator}
                 postMinReplyTrustLevel={post.min_reply_trust_level}
+                bondedReplyIds={bondedReplyIds}
                 onReplySubmitted={fetchData}
               />
             </>
@@ -437,6 +460,7 @@ export default function DreamDetail({
                   postCreator={post.creator}
                   postMinReplyTrustLevel={post.min_reply_trust_level}
                   repliesEnabled={false}
+                  bondedReplyIds={bondedReplyIds}
                   onReplySubmitted={fetchData}
                 />
               )}

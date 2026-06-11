@@ -100,6 +100,10 @@ export const RepMsgTypeUrls = {
   CreateChallenge: "/sparkdream.rep.v1.MsgCreateChallenge",
   RespondToChallenge: "/sparkdream.rep.v1.MsgRespondToChallenge",
   SubmitJurorVote: "/sparkdream.rep.v1.MsgSubmitJurorVote",
+  // Content challenges against author-bonded posts/replies (distinct from the
+  // member challenge flow above).
+  ChallengeContent: "/sparkdream.rep.v1.MsgChallengeContent",
+  RespondToContentChallenge: "/sparkdream.rep.v1.MsgRespondToContentChallenge",
   CreateTag: "/sparkdream.rep.v1.MsgCreateTag",
   CreateTagBudget: "/sparkdream.rep.v1.MsgCreateTagBudget",
   AwardFromTagBudget: "/sparkdream.rep.v1.MsgAwardFromTagBudget",

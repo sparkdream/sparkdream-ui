@@ -91,6 +91,10 @@ export function parseSparkToUspark(input: string): string | null {
   return result.toString();
 }
 
+// DREAM uses the same 1e6 micro-denomination as SPARK, so user-entered
+// DREAM amounts convert to udream identically.
+export const parseDreamToUdream = parseSparkToUspark;
+
 // Floor a legacy `sdk.DecCoin` amount string (e.g. "1.234567890000000000")
 // to its integer base-denom part. The x/distribution withdraw handler does
 // the same flooring on-chain, so this is what users actually receive.

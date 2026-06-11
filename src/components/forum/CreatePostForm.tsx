@@ -6,7 +6,9 @@ import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useEphemeralTtl, formatTtl } from "@/hooks/useEphemeralTtl";
 import { ForumMsgTypeUrls } from "@/lib/tx";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
+import { parseDreamToUdream } from "@/lib/utils";
 import TagPicker from "@/components/contribute/TagPicker";
+import NumberInput from "@/components/NumberInput";
 
 interface CreatePostFormProps {
   mode: "thread" | "reply";
@@ -31,6 +33,7 @@ export default function CreatePostForm({
 
   const [content, setContent] = useState("");
   const [tags, setTags] = useState<string[]>([]);
+  const [authorBond, setAuthorBond] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
@@ -48,6 +51,13 @@ export default function CreatePostForm({
         tags,
         contentType: 1, // CONTENT_TYPE_STANDARD
       };
+      // Bonds lock the member's DREAM, so gate on confirmed membership like
+      // the blog ReplyForm does (a stale value typed while isMember was
+      // loading must not tank the whole tx).
+      const bondUdream = parseDreamToUdream(authorBond);
+      if (isMember === true && bondUdream && bondUdream !== "0") {
+        value.authorBond = bondUdream;
+      }
       const tagMsgs =
         mode === "thread" ? buildCreateTagMsgs(address, tags, availableTags) : [];
       await signAndBroadcast([
@@ -57,6 +67,7 @@ export default function CreatePostForm({
       if (tagMsgs.length > 0) refreshTags();
       setContent("");
       setTags([]);
+      setAuthorBond("");
       onCreated();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to send spark");
@@ -99,6 +110,25 @@ export default function CreatePostForm({
                 New tags burn a small DREAM fee per tag and are added to the shared registry.
               </p>
             )}
+          </div>
+        )}
+        {isMember === true && (
+          <div>
+            <label htmlFor="forumAuthorBond" className="mb-1 block text-sm text-zinc-400">
+              Author bond (DREAM)
+            </label>
+            <NumberInput
+              id="forumAuthorBond"
+              min="0"
+              value={authorBond}
+              onChange={(e) => setAuthorBond(e.target.value)}
+              placeholder="0"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
+            />
+            <p className="mt-1 text-xs text-zinc-600">
+              Optional DREAM to lock behind this {mode === "thread" ? "spark" : "reply"}. It signals
+              conviction, is slashed if the content is moderated, and makes it challengeable.
+            </p>
           </div>
         )}
         <div className="flex gap-2">

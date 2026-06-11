@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { Post, ReactionCounts } from "@/types/blog";
 import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
-import { timeAgo, countToNum } from "@/lib/utils";
+import { timeAgo, countToNum, formatSpark } from "@/lib/utils";
 import { getReactionCounts } from "@/lib/api";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import CopyableAddress from "@/components/CopyableAddress";
@@ -34,6 +34,7 @@ export default function PostRow({
   post,
   onSelect,
   onTagClick,
+  bondAmount,
 }: {
   post: Post;
   /** When provided, the row renders as a button that calls this handler
@@ -43,6 +44,9 @@ export default function PostRow({
   /** When provided, tag chips become clickable and call this with the tag,
       without triggering the row's navigation/selection. */
   onTagClick?: (tag: string) => void;
+  /** Author bond locked on this post, in micro-DREAM. Renders a bond pill
+      in the row header when set (used by the Bonded feed filter). */
+  bondAmount?: string;
 }) {
   const [counts, setCounts] = useState<ReactionCounts | null>(null);
   const { name } = useDisplayName(post.creator);
@@ -91,6 +95,18 @@ export default function PostRow({
               <span className="sep">·</span>
               <span className="sd-pill" style={{ background: "rgba(244,63,94,0.12)", color: "#fb7185" }}>
                 Hidden
+              </span>
+            </>
+          )}
+          {bondAmount && bondAmount !== "0" && (
+            <>
+              <span className="sep">·</span>
+              <span
+                className="sd-pill"
+                style={{ background: "var(--amber-soft)", color: "var(--amber)" }}
+                title="DREAM locked by the author as a bond on this dream"
+              >
+                {formatSpark(bondAmount)} DREAM bond
               </span>
             </>
           )}

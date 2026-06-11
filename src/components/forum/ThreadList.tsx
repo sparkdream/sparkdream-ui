@@ -5,8 +5,10 @@ import {
   listForumPostsByCategory,
   listForumPosts,
   getUserForumPosts,
+  getForumPost,
+  authorBondsByType,
 } from "@/lib/api";
-import { timeAgo } from "@/lib/utils";
+import { timeAgo, formatSpark } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import { useWallet } from "@/contexts/WalletContext";
 import type { ForumPost } from "@/types/forum";
@@ -29,8 +31,11 @@ function statusBadge(status: string) {
 
 const PAGE_SIZE = "20";
 
+// StakeTargetType numeric value for x/forum author bonds.
+const FORUM_AUTHOR_BOND = 8;
+
 interface ThreadListProps {
-  mode: "category" | "all" | "my-posts" | "top";
+  mode: "category" | "all" | "my-posts" | "top" | "bonded";
   category?: Category | null;
   onSelectThread: (post: ForumPost) => void;
   tagFilter?: string | null;
@@ -45,6 +50,9 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nextKey, setNextKey] = useState<string | null>(null);
+  // Bonded mode: post_id → bonded amount (micro-DREAM), and the chosen order.
+  const [bondAmounts, setBondAmounts] = useState<Map<string, string>>(new Map());
+  const [bondSort, setBondSort] = useState<"date" | "high" | "low">("date");
 
   const fetchThreads = useCallback(async () => {
     try {
@@ -65,6 +73,28 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
         const res = await getUserForumPosts(address, { limit: PAGE_SIZE });
         posts = (res.posts || []).filter((p) => p.status !== PostStatus.DELETED);
         nk = res.pagination?.next_key || null;
+      } else if (mode === "bonded") {
+        // All forum author bonds from the rep index, then the bonded posts
+        // themselves. Replies can carry bonds too; they're listed and the
+        // click handler resolves them to their root thread via root_id.
+        const bonds = [];
+        let key: string | undefined;
+        do {
+          const res = await authorBondsByType(FORUM_AUTHOR_BOND, {
+            limit: "200",
+            ...(key ? { key } : {}),
+          });
+          bonds.push(...(res.bonds || []));
+          key = res.pagination?.next_key || undefined;
+        } while (key);
+        setBondAmounts(new Map(bonds.map((b) => [b.target_id, b.amount])));
+        const fetched = await Promise.all(
+          bonds.map((b) => getForumPost(b.target_id).then((r) => r.post).catch(() => null))
+        );
+        posts = fetched.filter(
+          (p): p is ForumPost => !!p && p.status !== PostStatus.DELETED
+        );
+        nk = null;
       } else if (mode === "top") {
         const res = await listForumPosts({ limit: "50", reverse: true });
         const rootPosts = (res.post || []).filter(
@@ -160,9 +190,20 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
     );
   }
 
-  const visible = tagFilter
+  let visible = tagFilter
     ? threads.filter((p) => (p.tags || []).includes(tagFilter))
     : threads;
+  if (mode === "bonded") {
+    visible = [...visible].sort((a, b) => {
+      if (bondSort === "date") {
+        return parseInt(b.created_at || "0", 10) - parseInt(a.created_at || "0", 10);
+      }
+      const av = BigInt(bondAmounts.get(a.post_id) || "0");
+      const bv = BigInt(bondAmounts.get(b.post_id) || "0");
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return bondSort === "high" ? -cmp : cmp;
+    });
+  }
 
   const title =
     mode === "category" && category
@@ -171,12 +212,26 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
         ? "My sparks"
         : mode === "top"
           ? "Top sparks"
-          : "All sparks";
+          : mode === "bonded"
+            ? "Bonded sparks"
+            : "All sparks";
 
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">{title}</h2>
+        {mode === "bonded" && (
+          <select
+            className="sd-select"
+            value={bondSort}
+            onChange={(e) => setBondSort(e.target.value as "date" | "high" | "low")}
+            title="Order bonded sparks"
+          >
+            <option value="date">By date</option>
+            <option value="high">Highest bond</option>
+            <option value="low">Lowest bond</option>
+          </select>
+        )}
       </div>
 
       {visible.length === 0 ? (
@@ -232,6 +287,15 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
                       )}
                       {post.locked && (
                         <span className="text-red-400">Locked</span>
+                      )}
+                      {bondAmounts.has(post.post_id) && (
+                        <span
+                          className="sd-pill"
+                          style={{ background: "var(--amber-soft)", color: "var(--amber)" }}
+                          title="DREAM locked by the author as a bond"
+                        >
+                          {formatSpark(bondAmounts.get(post.post_id)!)} DREAM bond
+                        </span>
                       )}
                       {post.tags?.length > 0 && (
                         <span className="truncate">{post.tags.slice(0, 3).join(", ")}</span>

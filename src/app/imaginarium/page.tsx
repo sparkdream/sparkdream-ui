@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Post, ReactionCounts } from "@/types/blog";
 import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
-import { listPosts, getAllMembers, listTags, getLatestBlockHeight, getReactionCounts } from "@/lib/api";
-import { TrustLevel } from "@/types/rep";
+import { listPosts, getPost, getAllMembers, listTags, getLatestBlockHeight, getReactionCounts, authorBondsByType } from "@/lib/api";
+import { TrustLevel, type RepStake } from "@/types/rep";
 import PostRow from "@/components/PostRow";
 import CreatePostForm from "@/components/CreatePostForm";
 import CreateTagForm from "@/components/CreateTagForm";
@@ -28,6 +28,10 @@ import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 
 type SortOption = "newest" | "oldest";
 type FilterOption = "my-posts" | "members" | "all";
+type BondSortOption = "date" | "high" | "low";
+
+// StakeTargetType numeric value for x/blog author bonds.
+const BLOG_AUTHOR_BOND = 7;
 
 // Ordered high→low as rendered. `rank` is used for "this level and above" filtering.
 const TRUST_LEVELS: { key: string; label: string; cls: string; value: string; rank: number }[] = [
@@ -86,6 +90,13 @@ function ImaginariumPageInner() {
 
   const [filter, setFilter] = useState<FilterOption>("members");
   const [sort, setSort] = useState<SortOption>("newest");
+  // Bonded feed: restrict the list to posts carrying an author bond. The bond
+  // set comes from rep's AuthorBondsByType index, so it covers all bonded
+  // posts regardless of how many feed pages have been scrolled in.
+  const [bondedOnly, setBondedOnly] = useState(false);
+  const [bondMap, setBondMap] = useState<Map<string, RepStake> | null>(null);
+  const [bondedPosts, setBondedPosts] = useState<Post[] | null>(null);
+  const [bondSort, setBondSort] = useState<BondSortOption>("date");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterRestored, setFilterRestored] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -203,6 +214,45 @@ function ImaginariumPageInner() {
     fetchPosts();
   }, [fetchPosts]);
 
+  // Load the bonded set when the Bonded filter is switched on: all author
+  // bond stakes for blog posts, then the posts themselves (getPost is cached,
+  // and bonds are few relative to posts).
+  useEffect(() => {
+    if (!bondedOnly) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const bonds: RepStake[] = [];
+        let key: string | undefined;
+        do {
+          const res = await authorBondsByType(BLOG_AUTHOR_BOND, {
+            limit: "200",
+            ...(key ? { key } : {}),
+          });
+          bonds.push(...(res.bonds || []));
+          key = res.pagination?.next_key || undefined;
+        } while (key && !cancelled);
+        if (cancelled) return;
+        setBondMap(new Map(bonds.map((b) => [b.target_id, b])));
+        const fetched = await Promise.all(
+          bonds.map((b) => getPost(b.target_id).then((r) => r.post).catch(() => null))
+        );
+        if (cancelled) return;
+        setBondedPosts(
+          fetched.filter((p): p is Post => !!p && p.status !== PostStatus.DELETED)
+        );
+      } catch {
+        if (!cancelled) {
+          setBondMap(new Map());
+          setBondedPosts([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bondedOnly]);
+
   // Infinite scroll
   const nextKeyRef = useRef(nextKey);
   nextKeyRef.current = nextKey;
@@ -224,7 +274,7 @@ function ImaginariumPageInner() {
   }, [fetchPosts]);
 
   const filteredAndSorted = useMemo(() => {
-    let result = posts;
+    let result = bondedOnly ? bondedPosts ?? [] : posts;
     if (filter === "my-posts" && address) {
       result = result.filter((p) => p.creator === address);
     } else if (filter === "members" && memberAddresses.size > 0) {
@@ -246,13 +296,26 @@ function ImaginariumPageInner() {
         return false;
       });
     }
-    if (sort === "oldest") {
+    if (bondedOnly && bondMap && bondSort !== "date") {
+      result = [...result].sort((a, b) => {
+        const av = BigInt(bondMap.get(a.id)?.amount || "0");
+        const bv = BigInt(bondMap.get(b.id)?.amount || "0");
+        const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+        return bondSort === "high" ? -cmp : cmp;
+      });
+    } else if (sort === "oldest") {
       result = [...result].sort(
         (a, b) => parseInt(a.created_at, 10) - parseInt(b.created_at, 10)
       );
+    } else if (bondedOnly) {
+      // The bonded list comes from the bond index (ordered by post id), not
+      // the reverse-paginated feed, so "newest first" needs an explicit sort.
+      result = [...result].sort(
+        (a, b) => parseInt(b.created_at, 10) - parseInt(a.created_at, 10)
+      );
     }
     return result;
-  }, [posts, filter, sort, memberAddresses, address, trustFilter, trustAddresses, tagFilter, searchQuery]);
+  }, [posts, filter, sort, memberAddresses, address, trustFilter, trustAddresses, tagFilter, searchQuery, bondedOnly, bondedPosts, bondMap, bondSort]);
 
   const featured = useMemo(
     () => filteredAndSorted.find((p) => !!p.pinned_by) || null,
@@ -306,6 +369,17 @@ function ImaginariumPageInner() {
             My dreams <span className="badge">{myPostCount}</span>
           </button>
         )}
+        <button
+          type="button"
+          className={`sd-side-item dream-item${bondedOnly ? " active" : ""}`}
+          onClick={() => setBondedOnly((v) => !v)}
+          title="Dreams whose author locked a DREAM bond"
+        >
+          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4z" />
+          </svg>
+          Bonded{bondedOnly && bondMap ? <span className="badge">{bondMap.size}</span> : null}
+        </button>
       </SidebarSection>
 
       <SidebarSection label="Trust level" open={trustOpen} onToggle={() => setTrustOpen(!trustOpen)}>
@@ -418,6 +492,20 @@ function ImaginariumPageInner() {
       searchRef={searchRef}
       sort={sort}
       onSortChange={setSort}
+      extraFilters={
+        bondedOnly ? (
+          <select
+            className="sd-select"
+            value={bondSort}
+            onChange={(e) => setBondSort(e.target.value as BondSortOption)}
+            title="Order bonded dreams"
+          >
+            <option value="date">By date</option>
+            <option value="high">Highest bond</option>
+            <option value="low">Lowest bond</option>
+          </select>
+        ) : null
+      }
       primaryAction={primaryAction}
     />
   );
@@ -497,7 +585,7 @@ function ImaginariumPageInner() {
 
           {featured && <FeaturedPost post={featured} onSelect={handleSelectPost} />}
 
-          {(loading && posts.length === 0) ? (
+          {(loading && posts.length === 0) || (bondedOnly && bondedPosts === null) ? (
             <PostRowSkeleton />
           ) : listPostsData.length === 0 && !featured ? (
             <EmptyState
@@ -516,12 +604,13 @@ function ImaginariumPageInner() {
                     post={p}
                     onSelect={handleSelectPost}
                     onTagClick={(t) => setTagFilter((cur) => (cur === t ? null : t))}
+                    bondAmount={bondMap?.get(p.id)?.amount}
                   />
                 ))}
               </div>
               <div ref={sentinelRef} style={{ height: 1 }} />
               {loading && posts.length > 0 && <PostRowSkeleton />}
-              {!nextKey && posts.length > 0 && (
+              {!bondedOnly && !nextKey && posts.length > 0 && (
                 <div className="sd-load-more">
                   End of feed{endOfFeedHeight ? ` · block ${Number(endOfFeedHeight).toLocaleString("en-US")}` : ""}
                 </div>

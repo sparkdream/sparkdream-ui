@@ -9,6 +9,7 @@ import { useTrustRank } from "@/hooks/useTrustRank";
 import { useEphemeralTtl, formatTtl } from "@/hooks/useEphemeralTtl";
 import { MsgTypeUrls } from "@/lib/tx";
 import { invalidatePost, invalidatePostsLists, invalidateReplies } from "@/lib/api";
+import { parseDreamToUdream } from "@/lib/utils";
 import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
 import NumberInput from "@/components/NumberInput";
 
@@ -145,8 +146,9 @@ export default function ReplyForm({
         // hidden for non-members above, but a stale state value (e.g. typed
         // while isMember was loading, then resolved to false) shouldn't sneak
         // into the broadcast and tank the whole reply tx.
-        if (isMember === true && authorBond && parseInt(authorBond) > 0) {
-          value.authorBond = authorBond;
+        const bondUdream = parseDreamToUdream(authorBond);
+        if (isMember === true && bondUdream && bondUdream !== "0") {
+          value.authorBond = bondUdream;
         }
         await signAndBroadcast([
           { typeUrl: MsgTypeUrls.CreateReply, value },

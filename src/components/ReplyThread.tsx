@@ -15,6 +15,11 @@ import { useCanMakePermanent } from "@/hooks/useCanMakePermanent";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { MsgTypeUrls } from "@/lib/tx";
 import { invalidatePost, invalidateReplies } from "@/lib/api";
+import AuthorBondPanel from "./AuthorBondPanel";
+
+// StakeTargetType numeric value for x/blog reply author bonds (replies have
+// their own id sequence, separate from post bonds at 7).
+const BLOG_REPLY_AUTHOR_BOND = 10;
 
 interface ReplyThreadProps {
   replies: Reply[];
@@ -28,6 +33,9 @@ interface ReplyThreadProps {
   // "Reply" compose affordance is hidden — the parent post has replies
   // disabled, so the chain would reject any new reply.
   repliesEnabled?: boolean;
+  // Reply ids carrying an author bond (BLOG_REPLY_AUTHOR_BOND). The bond
+  // panel is only mounted under these, so unbonded replies cost no queries.
+  bondedReplyIds?: Set<string>;
   onReplySubmitted?: () => void;
 }
 
@@ -38,6 +46,7 @@ function ReplyItem({
   postMinReplyTrustLevel,
   repliesEnabled = true,
   replyMap,
+  bondedReplyIds,
   onReplySubmitted,
 }: {
   reply: Reply;
@@ -48,6 +57,7 @@ function ReplyItem({
   // parent reply id -> its (pre-sorted) children. Passed down whole so each
   // item can render its own descendants recursively at any depth.
   replyMap: Map<string, Reply[]>;
+  bondedReplyIds?: Set<string>;
   onReplySubmitted?: () => void;
 }) {
   const childReplies = replyMap.get(reply.id) || [];
@@ -292,6 +302,14 @@ function ReplyItem({
           <ActionMenu items={menuActions} disabled={actionLoading} />
         </div>
 
+        {bondedReplyIds?.has(reply.id) && (
+          <AuthorBondPanel
+            postId={reply.id}
+            targetType={BLOG_REPLY_AUTHOR_BOND}
+            noun="reply"
+          />
+        )}
+
         {showReplyForm && (
           <div className="mt-3">
             <ReplyForm
@@ -320,6 +338,7 @@ function ReplyItem({
           postMinReplyTrustLevel={postMinReplyTrustLevel}
           repliesEnabled={repliesEnabled}
           replyMap={replyMap}
+          bondedReplyIds={bondedReplyIds}
           onReplySubmitted={onReplySubmitted}
         />
       ))}
@@ -327,7 +346,7 @@ function ReplyItem({
   );
 }
 
-export default function ReplyThread({ replies, postId, postCreator, postMinReplyTrustLevel, repliesEnabled = true, onReplySubmitted }: ReplyThreadProps) {
+export default function ReplyThread({ replies, postId, postCreator, postMinReplyTrustLevel, repliesEnabled = true, bondedReplyIds, onReplySubmitted }: ReplyThreadProps) {
   const { address, connected } = useWallet();
   const isMember = useIsRepMember(address);
   // Same gate ReplyForm uses to swap in the member-only notice. When that
@@ -388,6 +407,7 @@ export default function ReplyThread({ replies, postId, postCreator, postMinReply
           postMinReplyTrustLevel={postMinReplyTrustLevel}
           repliesEnabled={repliesEnabled}
           replyMap={replyMap}
+          bondedReplyIds={bondedReplyIds}
           onReplySubmitted={onReplySubmitted}
         />
       ))}

@@ -31,6 +31,7 @@ type View =
   | "categories"
   | "category-threads"
   | "top-posts"
+  | "bonded"
   | "create"
   | "my-posts"
   | "active-bounties"
@@ -218,6 +219,17 @@ function SwarmPageInner() {
             <path d="M4 21a8 8 0 0 1 16 0" />
           </svg>
           My sparks
+        </button>
+        <button
+          type="button"
+          className={`sd-side-item spark-item${effectiveView === "bonded" ? " active" : ""}`}
+          onClick={() => switchView("bonded")}
+          title="Sparks whose author locked a DREAM bond"
+        >
+          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4z" />
+          </svg>
+          Bonded
         </button>
       </SidebarSection>
 
@@ -432,6 +444,15 @@ function SwarmPageInner() {
         <ThreadList
           key={`top-${listKey}`}
           mode="top"
+          onSelectThread={handleSelectThread}
+          tagFilter={tagFilter}
+          onCreate={connected ? () => switchView("create") : undefined}
+        />
+      )}
+      {effectiveView === "bonded" && (
+        <ThreadList
+          key={`bonded-${listKey}`}
+          mode="bonded"
           onSelectThread={handleSelectThread}
           tagFilter={tagFilter}
           onCreate={connected ? () => switchView("create") : undefined}

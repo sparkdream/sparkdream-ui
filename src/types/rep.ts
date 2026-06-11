@@ -301,6 +301,9 @@ export const StakeTargetType = {
   BLOG_AUTHOR_BOND: "STAKE_TARGET_BLOG_AUTHOR_BOND",
   FORUM_AUTHOR_BOND: "STAKE_TARGET_FORUM_AUTHOR_BOND",
   COLLECTION_AUTHOR_BOND: "STAKE_TARGET_COLLECTION_AUTHOR_BOND",
+  // Blog replies have their own id sequence, so their bonds live in a
+  // separate target namespace from blog post bonds.
+  BLOG_REPLY_AUTHOR_BOND: "STAKE_TARGET_BLOG_REPLY_AUTHOR_BOND",
 } as const;
 
 export const STAKE_TARGET_LABELS: Record<string, string> = {
@@ -314,6 +317,7 @@ export const STAKE_TARGET_LABELS: Record<string, string> = {
   [StakeTargetType.BLOG_AUTHOR_BOND]: "Dream Author Bond",
   [StakeTargetType.FORUM_AUTHOR_BOND]: "Spark Author Bond",
   [StakeTargetType.COLLECTION_AUTHOR_BOND]: "Collection Author Bond",
+  [StakeTargetType.BLOG_REPLY_AUTHOR_BOND]: "Dream Reply Author Bond",
 };
 
 export const TransferPurpose = {
@@ -418,6 +422,56 @@ export interface StakesByStakerResponse {
 
 export interface PendingStakeRewardsResponse {
   pending_rewards: string;
+}
+
+// Author bond on a content item (zero bond_amount means no bond exists —
+// the chain returns a zero response instead of a 404).
+export interface AuthorBondResponse {
+  bond_amount: string;
+  author: string;
+  stake_id: string;
+}
+
+export interface AuthorBondsByTypeResponse {
+  bonds: RepStake[];
+  pagination: Pagination;
+}
+
+export const ContentChallengeStatus = {
+  ACTIVE: "CONTENT_CHALLENGE_STATUS_ACTIVE",
+  IN_JURY_REVIEW: "CONTENT_CHALLENGE_STATUS_IN_JURY_REVIEW",
+  UPHELD: "CONTENT_CHALLENGE_STATUS_UPHELD",
+  REJECTED: "CONTENT_CHALLENGE_STATUS_REJECTED",
+} as const;
+
+export const CONTENT_CHALLENGE_STATUS_LABELS: Record<string, string> = {
+  [ContentChallengeStatus.ACTIVE]: "Awaiting author response",
+  [ContentChallengeStatus.IN_JURY_REVIEW]: "In jury review",
+  [ContentChallengeStatus.UPHELD]: "Upheld",
+  [ContentChallengeStatus.REJECTED]: "Rejected",
+};
+
+export interface ContentChallenge {
+  id: string;
+  target_type: string;
+  target_id: string;
+  challenger: string;
+  reason: string;
+  evidence: string[];
+  staked_dream: string;
+  author: string;
+  status: string;
+  created_at: string; // block height
+  resolved_at: string; // block height, "0" if unresolved
+  response_deadline: string; // block height
+  jury_review_id: string;
+  author_response: string;
+  author_evidence: string[];
+  bond_amount: string;
+}
+
+export interface ContentChallengesByTargetResponse {
+  content_challenge: ContentChallenge;
 }
 
 export interface GetInvitationResponse {

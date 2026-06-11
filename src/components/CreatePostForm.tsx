@@ -6,6 +6,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { MsgTypeUrls } from "@/lib/tx";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import { getRepParams, invalidatePostsLists } from "@/lib/api";
+import { parseDreamToUdream } from "@/lib/utils";
 import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
 import NumberInput from "@/components/NumberInput";
 import TagPicker from "@/components/contribute/TagPicker";
@@ -77,8 +78,9 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
         // BigInt(0) via createBaseMsgCreatePost for the proto round-trip.
         tags,
       };
-      if (authorBond && parseInt(authorBond) > 0) {
-        value.authorBond = authorBond;
+      const bondUdream = parseDreamToUdream(authorBond);
+      if (bondUdream && bondUdream !== "0") {
+        value.authorBond = bondUdream;
       }
 
       const tagMsgs = buildCreateTagMsgs(address!, tags, availableTags);
