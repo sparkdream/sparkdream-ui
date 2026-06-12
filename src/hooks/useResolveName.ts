@@ -32,6 +32,22 @@ async function resolveWithCache(address: string): Promise<string> {
   const promise = (async () => {
     let name = await resolveDirect(address);
     if (!name) {
+      // Fallback: names where this address is the accepted resolver target but
+      // hasn't been set as primary yet. Alphabetical tiebreaker since an
+      // address can be the accepted target of multiple names — stable across
+      // reloads avoids flicker. This runs BEFORE the session-granter fallback:
+      // an accepted target is the address's own identity, whereas being a
+      // session grantee only means someone granted it a key — a real account
+      // (e.g. a bot) can be both, and must not display as its granter.
+      try {
+        const res = await listTargetsForAddress(address);
+        const candidates = (res.names || []).map((n) => n.name).sort();
+        if (candidates.length > 0) name = candidates[0];
+      } catch {
+        // ignore
+      }
+    }
+    if (!name) {
       // Fallback: if the address is a session grantee, resolve the granter's name.
       try {
         const res = await getSessionsByGrantee(address);
@@ -39,19 +55,6 @@ async function resolveWithCache(address: string): Promise<string> {
         if (granter && granter !== address) {
           name = await resolveDirect(granter);
         }
-      } catch {
-        // ignore
-      }
-    }
-    if (!name) {
-      // Fallback: names where this address is the accepted resolver target but
-      // hasn't been set as primary yet. Alphabetical tiebreaker since an
-      // address can be the accepted target of multiple names — stable across
-      // reloads avoids flicker.
-      try {
-        const res = await listTargetsForAddress(address);
-        const candidates = (res.names || []).map((n) => n.name).sort();
-        if (candidates.length > 0) name = candidates[0];
       } catch {
         // ignore
       }

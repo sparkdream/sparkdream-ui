@@ -364,7 +364,6 @@ async function phase2Lists(): Promise<DiscoveredIds> {
 
   await attemptList("locked threads", () => api.getLockedThreads(), "threads" as any);
   await attemptList("forum bounties", () => api.listForumBounties(), "bounty" as any);
-  await attemptList("active forum bounties", () => api.getActiveBounties(), "bounties" as any);
 
   const tagBudgets = await attemptList("tag budgets", () => api.listTagBudgets(), "tag_budget" as any);
   if (tagBudgets) {

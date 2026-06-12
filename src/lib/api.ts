@@ -121,9 +121,7 @@ import type {
   UserPostsResponse,
   GetBountyResponse,
   ListBountyResponse,
-  ActiveBountiesResponse,
   BountyByThreadResponse,
-  UserBountiesResponse,
   GetThreadMetadataResponse,
   ThreadFollowersResponse,
   UserFollowedThreadsResponse,
@@ -1241,27 +1239,12 @@ export async function listForumBounties(
   return get<ListBountyResponse>("/sparkdream/forum/v1/bounty", paginationParams(pagination));
 }
 
-export async function getActiveBounties(
-  pagination?: PaginationRequest
-): Promise<ActiveBountiesResponse> {
-  return get<ActiveBountiesResponse>(
-    "/sparkdream/forum/v1/active_bounties",
-    paginationParams(pagination)
-  );
-}
+// Note: the chain also exposes active_bounties and user_bounties queries, but
+// their responses are flat single records (one bounty_id/thread_id/amount),
+// not lists — use listForumBounties and filter client-side instead.
 
 export async function getBountyByThread(threadId: string): Promise<BountyByThreadResponse> {
   return get<BountyByThreadResponse>(`/sparkdream/forum/v1/bounty_by_thread/${threadId}`);
-}
-
-export async function getUserBounties(
-  user: string,
-  pagination?: PaginationRequest
-): Promise<UserBountiesResponse> {
-  return get<UserBountiesResponse>(
-    `/sparkdream/forum/v1/user_bounties/${user}`,
-    paginationParams(pagination)
-  );
 }
 
 // Tag budgets

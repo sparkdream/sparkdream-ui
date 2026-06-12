@@ -362,18 +362,15 @@ export interface ListBountyResponse {
   pagination: Pagination;
 }
 
-export interface ActiveBountiesResponse {
-  bounties: Bounty[];
-  pagination: Pagination;
-}
-
+// Flat summary, not a Bounty: the chain's QueryBountyByThreadResponse only
+// carries {bounty_id, amount, status (numeric enum), expires_at}. With no
+// bounty on the thread it returns zero values (amount ""). Fetch the full
+// Bounty via getForumBounty(bounty_id) when one exists.
 export interface BountyByThreadResponse {
-  bounty: Bounty;
-}
-
-export interface UserBountiesResponse {
-  bounties: Bounty[];
-  pagination: Pagination;
+  bounty_id: string;
+  amount: string;
+  status: string;
+  expires_at: string;
 }
 
 export interface GetThreadMetadataResponse {

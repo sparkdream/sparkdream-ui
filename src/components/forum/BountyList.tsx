@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { getActiveBounties, getUserBounties } from "@/lib/api";
+import { listForumBounties } from "@/lib/api";
 import { timeAgo, timeRemaining, formatSpark } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import { useWallet } from "@/contexts/WalletContext";
@@ -38,20 +38,23 @@ export default function BountyList({ mode, onSelectThread }: BountyListProps) {
   const [error, setError] = useState<string | null>(null);
   const [nextKey, setNextKey] = useState<string | null>(null);
 
+  // The chain's dedicated active_bounties/user_bounties queries return a
+  // single flat record instead of a list, so both modes read the full bounty
+  // list and filter client-side (status for "active", creator for "my").
+  const matchesMode = useCallback(
+    (b: Bounty) =>
+      mode === "my" ? !!address && b.creator === address : b.status === BountyStatus.ACTIVE,
+    [mode, address]
+  );
+
   const fetchBounties = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      if (mode === "my" && address) {
-        const res = await getUserBounties(address, { limit: PAGE_SIZE });
-        setBounties(res.bounties || []);
-        setNextKey(res.pagination?.next_key || null);
-      } else {
-        const res = await getActiveBounties({ limit: PAGE_SIZE });
-        setBounties(res.bounties || []);
-        setNextKey(res.pagination?.next_key || null);
-      }
+      const res = await listForumBounties({ limit: PAGE_SIZE });
+      setBounties((res.bounty || []).filter(matchesMode));
+      setNextKey(res.pagination?.next_key || null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to load bounties";
       if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
@@ -62,27 +65,21 @@ export default function BountyList({ mode, onSelectThread }: BountyListProps) {
     } finally {
       setLoading(false);
     }
-  }, [mode, address]);
+  }, [matchesMode]);
 
   const loadMore = useCallback(async () => {
     if (!nextKey || loadingMore) return;
     try {
       setLoadingMore(true);
-      if (mode === "my" && address) {
-        const res = await getUserBounties(address, { limit: PAGE_SIZE, key: nextKey });
-        setBounties((prev) => [...prev, ...(res.bounties || [])]);
-        setNextKey(res.pagination?.next_key || null);
-      } else {
-        const res = await getActiveBounties({ limit: PAGE_SIZE, key: nextKey });
-        setBounties((prev) => [...prev, ...(res.bounties || [])]);
-        setNextKey(res.pagination?.next_key || null);
-      }
+      const res = await listForumBounties({ limit: PAGE_SIZE, key: nextKey });
+      setBounties((prev) => [...prev, ...(res.bounty || []).filter(matchesMode)]);
+      setNextKey(res.pagination?.next_key || null);
     } catch (err) {
       console.error("Load more failed:", err);
     } finally {
       setLoadingMore(false);
     }
-  }, [nextKey, loadingMore, mode, address]);
+  }, [nextKey, loadingMore, matchesMode]);
 
   useEffect(() => {
     fetchBounties();

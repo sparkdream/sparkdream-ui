@@ -9,6 +9,7 @@ import {
   getThreadFollowCount,
   isFollowingThread,
   getBountyByThread,
+  getForumBounty,
   getBondedRole,
   listCategories,
   listPostConvictionStakesByStaker,
@@ -120,7 +121,13 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       // Fetch metadata, follow count, bounty in parallel (non-critical)
       const metaP = getForumThreadMetadata(threadId).catch(() => null);
       const followP = getThreadFollowCount(threadId).catch(() => null);
-      const bountyP = getBountyByThread(threadId).catch(() => null);
+      // bounty_by_thread returns a flat {bounty_id, amount, ...} summary
+      // (zero values when the thread has no bounty — amount is the existence
+      // signal since bounty ids start at 0), so chain into the full Bounty
+      // fetch for creator/status/awards.
+      const bountyP = getBountyByThread(threadId)
+        .then((r) => (r.amount ? getForumBounty(r.bounty_id) : null))
+        .catch(() => null);
       const bondsP = (async () => {
         const ids = new Set<string>();
         let key: string | undefined;
@@ -139,7 +146,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
 
       if (metaRes) setMetadata(metaRes.thread_metadata);
       if (followRes) setFollowCount(followRes.thread_follow_count?.follower_count || "0");
-      if (bountyRes) setBounty(bountyRes.bounty);
+      setBounty(bountyRes?.bounty ?? null);
       setBondedIds(bondIds);
 
       // Check if current user follows this thread
