@@ -1899,9 +1899,9 @@ export async function getIdentityDreamDenom(): Promise<QueryDreamDenomResponse> 
 // record), not council seating, matching how the rest of the app uses
 // `useIsRepMember` / the "ask a member to invite you" notices.
 // Paginate the full member roster. Each RepMember carries its trust_level, so
-// callers can filter by trust client-side — the members_by_trust_level LCD
-// endpoint is broken (it ignores the level path param and returns a malformed
-// single-member object with no list), so we never rely on it for filtering.
+// callers can filter by trust client-side. The members_by_trust_level LCD
+// endpoint works but matches one exact level per query; "level and above"
+// filtering would need a query per level, so one cached roster walk is cheaper.
 export async function getAllMembers(): Promise<RepMember[]> {
   // Cache the whole pagination walk as one unit; the roster changes rarely.
   return cachedFetch(

@@ -9,6 +9,7 @@ import {
   getThreadFollowCount,
   isFollowingThread,
   getBountyByThread,
+  getBondedRole,
   listCategories,
   listPostConvictionStakesByStaker,
   authorBondsByType,
@@ -17,6 +18,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useTrustRank } from "@/hooks/useTrustRank";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
+import { useSessionPermits } from "@/hooks/useSessionPermits";
 import { ForumMsgTypeUrls } from "@/lib/tx";
 import { timeAgo } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
@@ -26,6 +28,7 @@ import AuthorBondPanel from "@/components/AuthorBondPanel";
 import type { Category } from "@/types/commons";
 import type { ForumPost, ThreadMetadata, Bounty, PostConvictionStake } from "@/types/forum";
 import { PostStatus, BountyStatus } from "@/types/forum";
+import { RoleType, BondedRoleStatus } from "@/types/rep";
 
 // Promoting an ephemeral post to permanent is a member action gated on
 // make_permanent_min_trust_level (default PROVISIONAL). Pinning a thread,
@@ -38,6 +41,26 @@ const MAKE_PERMANENT_RANK = 1;
 // StakeTargetType numeric value for x/forum author bonds. Forum replies are
 // posts with parent_id set, so posts and replies share this target type.
 const FORUM_AUTHOR_BOND = 8;
+
+// sparkdream.common.v1.ModerationReason values for MsgHidePost.reason_code
+// (the msg field is a uint64, the LCD echoes the enum name on HideRecord).
+// UNSPECIFIED (0) is excluded: a hide must state its reason, and OTHER must
+// say it in reason_text.
+const HIDE_REASONS = [
+  { code: 1, label: "Spam" },
+  { code: 2, label: "Harassment" },
+  { code: 3, label: "Misinformation" },
+  { code: 4, label: "Off-topic" },
+  { code: 5, label: "Low quality" },
+  { code: 6, label: "Inappropriate" },
+  { code: 7, label: "Impersonation" },
+  { code: 8, label: "Policy violation" },
+  { code: 9, label: "Duplicate" },
+  { code: 10, label: "Scam" },
+  { code: 11, label: "Copyright" },
+  { code: 12, label: "Other" },
+] as const;
+const REASON_OTHER = 12;
 
 function formatAmount(amount: string): string {
   if (!amount || amount === "0") return "0";
@@ -55,6 +78,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const rank = useTrustRank(address);
   const isMember = useIsRepMember(address);
   const { isOpsCommitteeMember } = useCommonsCouncil(address);
+  const permits = useSessionPermits();
   const canMakePermanent = rank !== null && rank >= MAKE_PERMANENT_RANK;
 
   const [rootPost, setRootPost] = useState<ForumPost | null>(null);
@@ -74,6 +98,12 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   // query so we only mount the (self-querying) bond panel under posts that
   // actually have one, instead of two LCD calls per reply.
   const [bondedIds, setBondedIds] = useState<Set<string>>(new Set());
+  // Viewer's sentinel bond status (null when not a sentinel). Fetched once
+  // per address rather than per post, so moderation gating costs one LCD call.
+  const [sentinelStatus, setSentinelStatus] = useState<string | null>(null);
+  const [hideFormId, setHideFormId] = useState<string | null>(null);
+  const [hideReason, setHideReason] = useState(0);
+  const [hideReasonText, setHideReasonText] = useState("");
 
   const fetchData = useCallback(async () => {
     try {
@@ -140,6 +170,36 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!address) {
+      setSentinelStatus(null);
+      return;
+    }
+    let cancelled = false;
+    getBondedRole(RoleType.FORUM_SENTINEL, address)
+      .then((res) => {
+        if (!cancelled) setSentinelStatus(res?.bonded_role?.bond_status ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setSentinelStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [address]);
+
+  // Mirrors x/forum MsgHidePost authorization: a bonded sentinel in NORMAL or
+  // RECOVERY (DEMOTED/UNBONDING are refused), or the commons operations
+  // committee via the governance route. Also gated on the active session key
+  // permitting the message type, matching the rest of the action buttons.
+  // Epoch hide limits and cooldowns are still enforced chain-side and surface
+  // as broadcast errors.
+  const canHide =
+    permits(ForumMsgTypeUrls.HidePost) &&
+    (isOpsCommitteeMember ||
+      sentinelStatus === BondedRoleStatus.NORMAL ||
+      sentinelStatus === BondedRoleStatus.RECOVERY);
 
   // The thread's category decides who may post: members_only_write blocks
   // non-members, admin_only_write blocks everyone but the ops committee. We
@@ -242,6 +302,36 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       await fetchData();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Sentinel moderation: hide a spark with a stated reason. The chain reserves
+  // a slash amount from the sentinel's available bond per hide, releasable by
+  // self-correcting via Unhide (in the Sentinel panel) inside the
+  // sentinel_unhide_window.
+  const handleHide = async (postId: string) => {
+    if (!address || !hideReason) return;
+    setActionLoading(`hide-${postId}`);
+    try {
+      await signAndBroadcast([{
+        typeUrl: ForumMsgTypeUrls.HidePost,
+        // post_id/reason_code are uint64; pass BigInt so the amino override's
+        // omit-zero strict-equality check matches the chain's aminojson.
+        value: {
+          creator: address,
+          postId: BigInt(postId),
+          reasonCode: BigInt(hideReason),
+          reasonText: hideReasonText.trim(),
+        },
+      }]);
+      setHideFormId(null);
+      setHideReason(0);
+      setHideReasonText("");
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Hide failed");
     } finally {
       setActionLoading(null);
     }
@@ -441,6 +531,21 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
               {actionLoading === `pin-${post.post_id}` ? "..." : "Unpin"}
             </button>
           )}
+          {/* Sentinel moderation. Authors already have Delete, so don't offer
+              hiding one's own spark. */}
+          {canHide && isActive && !isAuthor && (
+            <button
+              onClick={() => {
+                setHideFormId(hideFormId === post.post_id ? null : post.post_id);
+                setHideReason(0);
+                setHideReasonText("");
+              }}
+              title="Hide this spark (sentinel moderation)"
+              className="text-xs text-red-400 transition-colors hover:text-red-300"
+            >
+              Hide
+            </button>
+          )}
           {isAuthor && (
             <button
               onClick={() => handleDelete(post.post_id)}
@@ -451,6 +556,52 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
             </button>
           )}
         </div>
+
+        {/* Hide reason form. A reason is required, and "Other" must be
+            explained in the free-text field. */}
+        {hideFormId === post.post_id && (
+          <div className="mt-3 space-y-2 rounded-lg border border-red-900/50 bg-red-950/20 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={hideReason}
+                onChange={(e) => setHideReason(parseInt(e.target.value, 10))}
+                className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-2.5 py-1.5 text-xs text-zinc-200 focus:border-zinc-600 focus:outline-none"
+              >
+                <option value={0}>Select a reason...</option>
+                {HIDE_REASONS.map((r) => (
+                  <option key={r.code} value={r.code}>{r.label}</option>
+                ))}
+              </select>
+              <input
+                type="text"
+                value={hideReasonText}
+                onChange={(e) => setHideReasonText(e.target.value)}
+                placeholder={hideReason === REASON_OTHER ? "Reason (required)" : "Details (optional)"}
+                className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-800/50 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
+              />
+              <button
+                onClick={() => handleHide(post.post_id)}
+                disabled={
+                  !hideReason ||
+                  (hideReason === REASON_OTHER && !hideReasonText.trim()) ||
+                  actionLoading === `hide-${post.post_id}`
+                }
+                className="rounded-lg border border-red-800/50 px-3 py-1.5 text-xs text-red-400 transition-colors hover:border-red-700 disabled:opacity-50"
+              >
+                {actionLoading === `hide-${post.post_id}` ? "Hiding..." : "Hide spark"}
+              </button>
+              <button
+                onClick={() => setHideFormId(null)}
+                className="text-xs text-zinc-500 hover:text-zinc-300"
+              >
+                Cancel
+              </button>
+            </div>
+            <p className="text-[10px] text-zinc-500">
+              Hiding commits part of your sentinel bond. You can self-correct from the Sentinel panel while the unhide window is open.
+            </p>
+          </div>
+        )}
 
         {/* Always mounted on the root (it self-hides when unbonded, matching
             the blog detail view); replies only when the bond index says one

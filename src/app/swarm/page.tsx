@@ -4,7 +4,8 @@ import { Suspense, useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
-import { listCategories as fetchForumCategories, listForumPosts, listTags } from "@/lib/api";
+import { listCategories as fetchForumCategories, listForumPosts, listTags, getAllMembers } from "@/lib/api";
+import { TrustLevel } from "@/types/rep";
 import CategoryList from "@/components/forum/CategoryList";
 import ThreadList from "@/components/forum/ThreadList";
 import ThreadDetail from "@/components/forum/ThreadDetail";
@@ -39,12 +40,23 @@ type View =
   | "sentinel"
   | "thread-detail";
 
-const TRUST_LEVELS: { key: string; label: string; cls: string }[] = [
-  { key: "core", label: "Core", cls: "trust-core" },
-  { key: "trusted", label: "Trusted", cls: "trust-trusted" },
-  { key: "established", label: "Established", cls: "trust-est" },
-  { key: "provisional", label: "Provisional", cls: "trust-prov" },
+// Ordered high→low as rendered. `rank` is used for "this level and above" filtering.
+const TRUST_LEVELS: { key: string; label: string; cls: string; value: string; rank: number }[] = [
+  { key: "core", label: "Core", cls: "trust-core", value: TrustLevel.CORE, rank: 4 },
+  { key: "trusted", label: "Trusted", cls: "trust-trusted", value: TrustLevel.TRUSTED, rank: 3 },
+  { key: "established", label: "Established", cls: "trust-est", value: TrustLevel.ESTABLISHED, rank: 2 },
+  { key: "provisional", label: "Provisional", cls: "trust-prov", value: TrustLevel.PROVISIONAL, rank: 1 },
 ];
+
+// Full enum→rank map (includes NEW=0, which has no filter pill) so a member's
+// trust level resolves to a comparable rank during client-side filtering.
+const TRUST_RANK: Record<string, number> = {
+  [TrustLevel.NEW]: 0,
+  [TrustLevel.PROVISIONAL]: 1,
+  [TrustLevel.ESTABLISHED]: 2,
+  [TrustLevel.TRUSTED]: 3,
+  [TrustLevel.CORE]: 4,
+};
 
 export default function SwarmPage() {
   return (
@@ -82,6 +94,8 @@ function SwarmPageInner() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sort, setSort] = useState<"newest" | "oldest">("newest");
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [memberRanks, setMemberRanks] = useState<Map<string, number>>(new Map());
+  const [trustFilter, setTrustFilter] = useState<string | null>(null);
   const [tagsExpanded, setTagsExpanded] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -105,6 +119,29 @@ function SwarmPageInner() {
       })
       .catch(() => setTagList([]));
   }, []);
+
+  // Member roster for the trust-level filter. Trust filtering is "selected
+  // level and above", computed client-side from each member's trust_level
+  // (one cached roster walk instead of one members_by_trust_level query per
+  // level — see getAllMembers).
+  useEffect(() => {
+    getAllMembers()
+      .then((members) => {
+        setMemberRanks(new Map(members.map((m) => [m.address, TRUST_RANK[m.trust_level] ?? 0])));
+      })
+      .catch(() => {});
+  }, []);
+
+  const trustAddresses = useMemo(() => {
+    if (!trustFilter) return null;
+    const selected = TRUST_LEVELS.find((t) => t.key === trustFilter);
+    if (!selected) return null;
+    const addrs = new Set<string>();
+    for (const [addr, rank] of memberRanks) {
+      if (rank >= selected.rank) addrs.add(addr);
+    }
+    return addrs;
+  }, [trustFilter, memberRanks]);
 
   const TOP_TAGS = 5;
   const visibleTags = useMemo(() => {
@@ -283,11 +320,24 @@ function SwarmPageInner() {
         onToggle={() => setTrustOpen(!trustOpen)}
       >
         <div className="sd-side-pills">
-          {TRUST_LEVELS.map((t) => (
-            <button key={t.key} type="button" className={`sd-pill ${t.cls}`}>
-              {t.label}
-            </button>
-          ))}
+          {TRUST_LEVELS.map((t) => {
+            const selectedRank = TRUST_LEVELS.find((x) => x.key === trustFilter)?.rank ?? null;
+            const included = selectedRank !== null && t.rank >= selectedRank;
+            const isSelected = trustFilter === t.key;
+            const dim = selectedRank !== null && !included;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                className={`sd-pill ${t.cls}`}
+                style={{ opacity: dim ? 0.4 : 1, outline: isSelected ? "1px solid currentColor" : "none" }}
+                onClick={() => setTrustFilter(isSelected ? null : t.key)}
+                title={`${t.label} and above`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
         </div>
       </SidebarSection>
 
@@ -396,6 +446,7 @@ function SwarmPageInner() {
           mode="all"
           onSelectThread={handleSelectThread}
           tagFilter={tagFilter}
+          trustAddresses={trustAddresses}
           onCreate={connected ? () => switchView("create") : undefined}
         />
       )}
@@ -437,6 +488,7 @@ function SwarmPageInner() {
             category={selectedCategory}
             onSelectThread={handleSelectThread}
             tagFilter={tagFilter}
+            trustAddresses={trustAddresses}
           />
         </div>
       )}
@@ -446,6 +498,7 @@ function SwarmPageInner() {
           mode="top"
           onSelectThread={handleSelectThread}
           tagFilter={tagFilter}
+          trustAddresses={trustAddresses}
           onCreate={connected ? () => switchView("create") : undefined}
         />
       )}
@@ -455,6 +508,7 @@ function SwarmPageInner() {
           mode="bonded"
           onSelectThread={handleSelectThread}
           tagFilter={tagFilter}
+          trustAddresses={trustAddresses}
           onCreate={connected ? () => switchView("create") : undefined}
         />
       )}
@@ -471,6 +525,7 @@ function SwarmPageInner() {
             mode="my-posts"
             onSelectThread={handleSelectThread}
             tagFilter={tagFilter}
+            trustAddresses={trustAddresses}
             onCreate={() => switchView("create")}
           />
         ) : (

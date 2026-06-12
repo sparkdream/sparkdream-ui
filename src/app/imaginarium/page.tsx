@@ -176,9 +176,9 @@ function ImaginariumPageInner() {
       .finally(() => setMembersLoading(false));
   }, []);
 
-  // Trust filtering is "selected level and above", computed client-side from the
-  // member roster's trust_level. (The members_by_trust_level LCD endpoint is
-  // broken, so we never query it — see getAllMembers.)
+  // Trust filtering is "selected level and above", computed client-side from
+  // the member roster's trust_level (one cached roster walk instead of one
+  // members_by_trust_level query per level — see getAllMembers).
   const trustAddresses = useMemo(() => {
     if (!trustFilter) return null;
     const selected = TRUST_LEVELS.find((t) => t.key === trustFilter);

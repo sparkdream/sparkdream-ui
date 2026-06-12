@@ -39,11 +39,13 @@ interface ThreadListProps {
   category?: Category | null;
   onSelectThread: (post: ForumPost) => void;
   tagFilter?: string | null;
+  /** Authors at or above the selected trust level; null/undefined disables the filter. */
+  trustAddresses?: Set<string> | null;
   /** Optional CTA shown in the empty state to open the new-spark form. */
   onCreate?: () => void;
 }
 
-export default function ThreadList({ mode, category, onSelectThread, tagFilter, onCreate }: ThreadListProps) {
+export default function ThreadList({ mode, category, onSelectThread, tagFilter, trustAddresses, onCreate }: ThreadListProps) {
   const { address } = useWallet();
   const [threads, setThreads] = useState<ForumPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -193,6 +195,9 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
   let visible = tagFilter
     ? threads.filter((p) => (p.tags || []).includes(tagFilter))
     : threads;
+  if (trustAddresses) {
+    visible = visible.filter((p) => trustAddresses.has(p.author));
+  }
   if (mode === "bonded") {
     visible = [...visible].sort((a, b) => {
       if (bondSort === "date") {
@@ -239,7 +244,7 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
           <p className="text-zinc-400">
             {mode === "my-posts" ? "You have no sparks yet" : "No sparks found"}
           </p>
-          {onCreate && !tagFilter && (
+          {onCreate && !tagFilter && !trustAddresses && (
             <button
               type="button"
               onClick={onCreate}
