@@ -2,17 +2,11 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { getActiveBounties, getUserBounties } from "@/lib/api";
-import { timeAgo, timeRemaining } from "@/lib/utils";
+import { timeAgo, timeRemaining, formatSpark } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import { useWallet } from "@/contexts/WalletContext";
 import type { Bounty } from "@/types/forum";
 import { BountyStatus, BOUNTY_STATUS_LABELS } from "@/types/forum";
-
-function formatAmount(amount: string): string {
-  if (!amount || amount === "0") return "0";
-  const n = BigInt(amount);
-  return (n / BigInt(1000000)).toLocaleString();
-}
 
 function bountyStatusBadge(status: string) {
   const colors: Record<string, string> = {
@@ -154,7 +148,7 @@ export default function BountyList({ mode, onSelectThread }: BountyListProps) {
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-sm font-medium text-amber-400">
-                    {formatAmount(b.amount)} DREAM
+                    {formatSpark(b.amount)} SPARK
                   </span>
                   <svg className="h-4 w-4 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />

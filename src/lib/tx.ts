@@ -182,10 +182,15 @@ export const ForumMsgTypeUrls = {
   FlagPost: "/sparkdream.forum.v1.MsgFlagPost",
   FollowThread: "/sparkdream.forum.v1.MsgFollowThread",
   UnfollowThread: "/sparkdream.forum.v1.MsgUnfollowThread",
+  // Bounty lifecycle: the thread author escrows SPARK with CreateBounty,
+  // assigns equal shares (amount / max winners) to replies with
+  // AssignBountyToReply while funds stay in escrow, then AwardBounty pays
+  // out every assigned share and closes the bounty.
   CreateBounty: "/sparkdream.forum.v1.MsgCreateBounty",
   AwardBounty: "/sparkdream.forum.v1.MsgAwardBounty",
   IncreaseBounty: "/sparkdream.forum.v1.MsgIncreaseBounty",
   CancelBounty: "/sparkdream.forum.v1.MsgCancelBounty",
+  AssignBountyToReply: "/sparkdream.forum.v1.MsgAssignBountyToReply",
   HidePost: "/sparkdream.forum.v1.MsgHidePost",
   UnhidePost: "/sparkdream.forum.v1.MsgUnhidePost",
   AppealPost: "/sparkdream.forum.v1.MsgAppealPost",

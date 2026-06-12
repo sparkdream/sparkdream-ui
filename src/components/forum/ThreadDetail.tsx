@@ -20,10 +20,11 @@ import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
 import { useSessionPermits } from "@/hooks/useSessionPermits";
 import { ForumMsgTypeUrls } from "@/lib/tx";
-import { timeAgo } from "@/lib/utils";
+import { timeAgo, formatSpark } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import CreatePostForm from "@/components/forum/CreatePostForm";
 import PostConvictionControl from "@/components/forum/PostConvictionControl";
+import BountyPanel, { MAX_BOUNTY_WINNERS } from "@/components/forum/BountyPanel";
 import AuthorBondPanel from "@/components/AuthorBondPanel";
 import type { Category } from "@/types/commons";
 import type { ForumPost, ThreadMetadata, Bounty, PostConvictionStake } from "@/types/forum";
@@ -62,12 +63,6 @@ const HIDE_REASONS = [
 ] as const;
 const REASON_OTHER = 12;
 
-function formatAmount(amount: string): string {
-  if (!amount || amount === "0") return "0";
-  const n = BigInt(amount);
-  return (n / BigInt(1000000)).toLocaleString();
-}
-
 interface ThreadDetailProps {
   threadId: string;
   onBack: () => void;
@@ -104,6 +99,8 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const [hideFormId, setHideFormId] = useState<string | null>(null);
   const [hideReason, setHideReason] = useState(0);
   const [hideReasonText, setHideReasonText] = useState("");
+  const [bountyAssignId, setBountyAssignId] = useState<string | null>(null);
+  const [bountyReason, setBountyReason] = useState("");
 
   const fetchData = useCallback(async () => {
     try {
@@ -377,6 +374,33 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     }
   };
 
+  // Assign a bounty share to a reply (bounty creator only). Funds stay in
+  // escrow until the creator finalizes with Pay Out in the bounty panel; the
+  // chain computes the share (bounty amount / max winners) and the recipient
+  // (the reply's author).
+  const handleAssignBounty = async (postId: string) => {
+    if (!address) return;
+    setActionLoading(`bounty-assign-${postId}`);
+    try {
+      await signAndBroadcast([{
+        typeUrl: ForumMsgTypeUrls.AssignBountyToReply,
+        value: {
+          creator: address,
+          threadId: BigInt(threadId),
+          replyId: BigInt(postId),
+          reason: bountyReason.trim(),
+        },
+      }]);
+      setBountyAssignId(null);
+      setBountyReason("");
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Bounty award failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleReplyCreated = () => {
     setShowReplyForm(false);
     setReplyToId(threadId);
@@ -415,6 +439,20 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     const isAcceptedReply = metadata?.accepted_reply_id === post.post_id;
     const isEphemeral = Boolean(post.expiration_time && post.expiration_time !== "0");
     const isActive = post.status === PostStatus.ACTIVE;
+    // Bounty creator's per-reply award affordance. Mirrors the chain's
+    // AssignBountyToReply gates: active bounty, creator only, reply not yet
+    // awarded, winner slots left. Awards show on the reply in any status.
+    const bountyAward = bounty?.awards?.find((a) => a.post_id === post.post_id);
+    const canAssignBounty =
+      !isRoot &&
+      isActive &&
+      !!bounty &&
+      bounty.status === BountyStatus.ACTIVE &&
+      !!address &&
+      address === bounty.creator &&
+      !bountyAward &&
+      (bounty.awards?.length || 0) < MAX_BOUNTY_WINNERS &&
+      permits(ForumMsgTypeUrls.AssignBountyToReply);
 
     return (
       <div
@@ -439,6 +477,11 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
           {post.created_at && <span>{timeAgo(post.created_at)}</span>}
           {post.edited && <span className="italic">edited</span>}
           {post.pinned && <span className="text-amber-400">Pinned</span>}
+          {bountyAward && (
+            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-400">
+              Bounty award: {formatSpark(bountyAward.amount)} SPARK
+            </span>
+          )}
           {isEphemeral && <span className="text-yellow-500">Ephemeral</span>}
           {post.status !== PostStatus.ACTIVE && (
             <span className="text-red-400">{post.status.replace("POST_STATUS_", "")}</span>
@@ -531,6 +574,19 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
               {actionLoading === `pin-${post.post_id}` ? "..." : "Unpin"}
             </button>
           )}
+          {/* Assign this reply a bounty share (bounty creator only). */}
+          {canAssignBounty && (
+            <button
+              onClick={() => {
+                setBountyAssignId(bountyAssignId === post.post_id ? null : post.post_id);
+                setBountyReason("");
+              }}
+              title="Assign this reply a share of the bounty"
+              className="text-xs text-amber-400 transition-colors hover:text-amber-300"
+            >
+              Award Bounty
+            </button>
+          )}
           {/* Sentinel moderation. Authors already have Delete, so don't offer
               hiding one's own spark. */}
           {canHide && isActive && !isAuthor && (
@@ -556,6 +612,34 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
             </button>
           )}
         </div>
+
+        {/* Bounty award form: optional reason, recorded on-chain with the
+            award. The share amount is fixed by the chain (bounty / max
+            winners), so only the reason is collected here. */}
+        {bountyAssignId === post.post_id && canAssignBounty && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-800/50 bg-amber-950/20 p-3">
+            <input
+              type="text"
+              value={bountyReason}
+              onChange={(e) => setBountyReason(e.target.value)}
+              placeholder="Reason (optional)"
+              className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-800/50 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
+            />
+            <button
+              onClick={() => handleAssignBounty(post.post_id)}
+              disabled={actionLoading === `bounty-assign-${post.post_id}`}
+              className="rounded-lg border border-amber-700/50 px-3 py-1.5 text-xs text-amber-400 transition-colors hover:border-amber-600 disabled:opacity-50"
+            >
+              {actionLoading === `bounty-assign-${post.post_id}` ? "Signing..." : "Assign award"}
+            </button>
+            <button
+              onClick={() => setBountyAssignId(null)}
+              className="text-xs text-zinc-500 hover:text-zinc-300"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
 
         {/* Hide reason form. A reason is required, and "Other" must be
             explained in the free-text field. */}
@@ -643,22 +727,21 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
           </button>
           <span className="text-xs text-zinc-500">{followCount} follower{followCount !== "1" ? "s" : ""}</span>
         </div>
-        {bounty && bounty.status === BountyStatus.ACTIVE && (
-          <div className="flex items-center gap-1.5 rounded-lg border border-amber-700/50 bg-amber-900/15 px-3 py-1.5">
-            <svg className="h-4 w-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="text-xs font-medium text-amber-400">
-              Bounty: {formatAmount(bounty.amount)} DREAM
-            </span>
-          </div>
-        )}
         {rootPost.locked && (
           <span className="rounded-lg border border-red-800/50 bg-red-900/15 px-3 py-1.5 text-xs text-red-400">
             Locked{rootPost.lock_reason ? `: ${rootPost.lock_reason}` : ""}
           </span>
         )}
       </div>
+
+      {/* Bounty lifecycle: view the active bounty and its assigned awards;
+          create / increase / cancel / pay out for the authorized roles. */}
+      <BountyPanel
+        threadId={threadId}
+        bounty={bounty}
+        isThreadAuthor={isThreadAuthor}
+        onChanged={fetchData}
+      />
 
       {/* Root post */}
       {renderPost(rootPost, true)}

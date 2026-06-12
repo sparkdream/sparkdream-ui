@@ -274,6 +274,7 @@ const MSG_TYPE_LABELS: Record<string, string> = {
   "/sparkdream.forum.v1.MsgAwardBounty": "Award Bounty",
   "/sparkdream.forum.v1.MsgIncreaseBounty": "Increase Bounty",
   "/sparkdream.forum.v1.MsgCancelBounty": "Cancel Bounty",
+  "/sparkdream.forum.v1.MsgAssignBountyToReply": "Assign Bounty Award",
   "/sparkdream.forum.v1.MsgHidePost": "Hide Spark",
   "/sparkdream.forum.v1.MsgUnhidePost": "Unhide Spark",
   "/sparkdream.forum.v1.MsgAppealPost": "Appeal Spark",
