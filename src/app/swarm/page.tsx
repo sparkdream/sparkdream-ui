@@ -69,12 +69,19 @@ export default function SwarmPage() {
 function SwarmPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // URL is the single source of truth for the open thread so a reload keeps
-  // the user on the spark they were reading. `?thread=<id>` is digit-restricted
-  // (root-post ids are uint64); when present it overrides whatever in-memory
-  // `view` was set so the rendered content tracks the URL.
+  // The URL `?thread=<id>` mirrors the open spark so a reload/share/deep-link
+  // keeps the user on it. `?thread=<id>` is digit-restricted (root-post ids are
+  // uint64). We render off local state rather than `useSearchParams()` directly:
+  // a soft `router.push` to the same pathname (e.g. clicking Back) doesn't
+  // always re-fire the hook, which would leave the detail view stuck open. The
+  // click handlers update state synchronously and the effect below resyncs from
+  // the URL for reload/back-forward/deep-link.
   const threadParam = searchParams.get("thread");
   const urlThreadId = threadParam && /^\d+$/.test(threadParam) ? threadParam : null;
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(urlThreadId);
+  useEffect(() => {
+    setSelectedThreadId(urlThreadId);
+  }, [urlThreadId]);
   const { connected, ready, sessionActive, activeSession, address } = useWallet();
   const { isOpsCommitteeMember } = useCommonsCouncil(address);
 
@@ -87,9 +94,8 @@ function SwarmPageInner() {
 
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [listKey, setListKey] = useState(0);
-  // URL overrides in-memory `view` so `?thread=<id>` always renders the detail.
-  const effectiveView: View = urlThreadId ? "thread-detail" : view;
-  const selectedThreadId = urlThreadId;
+  // An open thread overrides in-memory `view` so the detail always renders.
+  const effectiveView: View = selectedThreadId ? "thread-detail" : view;
 
   const [searchQuery, setSearchQuery] = useState("");
   const [sort, setSort] = useState<"newest" | "oldest">("newest");
@@ -168,10 +174,13 @@ function SwarmPageInner() {
   const switchView = (v: View) => {
     setView(v);
     if (v !== "category-threads") setSelectedCategory(null);
-    // `view` is in-memory but `thread` lives in the URL. When switching away
-    // from the detail via the sidebar (instead of the Back button), strip the
-    // URL param so the chosen view actually renders.
-    if (urlThreadId) router.push("/swarm", { scroll: false });
+    // When switching away from the detail via the sidebar (instead of the Back
+    // button), close it synchronously and strip the URL param so the chosen
+    // view actually renders.
+    if (selectedThreadId) {
+      setSelectedThreadId(null);
+      router.push("/swarm", { scroll: false });
+    }
   };
 
   const handleSelectCategory = (cat: Category) => {
@@ -181,14 +190,17 @@ function SwarmPageInner() {
 
   const handleSelectThread = (post: ForumPost) => {
     const rootId = !post.root_id || post.root_id === "0" ? post.post_id : post.root_id;
+    setSelectedThreadId(rootId);
     router.push(`/swarm?thread=${rootId}`, { scroll: false });
   };
 
   const handleSelectThreadById = (threadId: string) => {
+    setSelectedThreadId(threadId);
     router.push(`/swarm?thread=${threadId}`, { scroll: false });
   };
 
   const handleBackFromThread = () => {
+    setSelectedThreadId(null);
     setView(selectedCategory ? "category-threads" : "all-threads");
     router.push("/swarm", { scroll: false });
   };
