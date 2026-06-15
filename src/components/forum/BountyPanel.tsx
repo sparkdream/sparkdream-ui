@@ -10,9 +10,29 @@ import NameOrAddress from "@/components/NameOrAddress";
 import type { Bounty } from "@/types/forum";
 import { BountyStatus } from "@/types/forum";
 
-// Mirrors x/forum DefaultMaxBountyWinners: each AssignBountyToReply hands out
-// a fixed 1/5 share of the escrow, so at most 5 replies can be awarded.
+// Mirrors x/forum DefaultMaxBountyWinners: at most 5 replies can be awarded.
 export const MAX_BOUNTY_WINNERS = 5;
+
+// Split the escrow equally among the assigned awards, mirroring the chain's
+// payout math (x/forum AwardBounty): integer-division share, with the remainder
+// handed out one unit at a time in award order (largest-remainder method). Used
+// to preview each winner's share before the creator finalizes, since the chain
+// leaves BountyAward.amount empty until payout.
+export function provisionalShares(total: string, n: number): bigint[] {
+  if (n <= 0) return [];
+  let amount: bigint;
+  try {
+    amount = BigInt(total || "0");
+  } catch {
+    return [];
+  }
+  const num = BigInt(n);
+  const share = amount / num;
+  const extra = amount % num;
+  const one = BigInt(1);
+  const zero = BigInt(0);
+  return Array.from({ length: n }, (_, i) => share + (BigInt(i) < extra ? one : zero));
+}
 
 // Duration choices for MsgCreateBounty. The chain default is 14 days and the
 // max is 30 (DefaultBountyDuration / DefaultMaxBountyDuration).
@@ -59,6 +79,7 @@ export default function BountyPanel({ threadId, bounty, isThreadAuthor, onChange
   const isSuspended = bounty?.status === BountyStatus.MODERATION_PENDING;
   const isBountyCreator = !!bounty && !!address && address === bounty.creator;
   const awards = bounty?.awards || [];
+  const shares = provisionalShares(bounty?.amount || "0", awards.length);
 
   const broadcast = async (label: string, typeUrl: string, value: Record<string, unknown>) => {
     if (!address) return;
@@ -111,10 +132,11 @@ export default function BountyPanel({ threadId, bounty, isThreadAuthor, onChange
 
   const handlePayOut = () => {
     if (!bounty || awards.length === 0) return;
-    const total = awards.reduce((sum, a) => sum + BigInt(a.amount || "0"), BigInt(0));
+    // The whole escrow is split equally among the assigned replies at payout;
+    // each award's amount is only filled in on-chain once this fires.
     if (
       !confirm(
-        `Pay out ${formatSpark(total)} SPARK to ${awards.length} repl${awards.length === 1 ? "y" : "ies"} and close the bounty? This cannot be undone.`
+        `Pay out ${formatSpark(bounty.amount)} SPARK split equally among ${awards.length} repl${awards.length === 1 ? "y" : "ies"} and close the bounty? This cannot be undone.`
       )
     )
       return;
@@ -246,13 +268,18 @@ export default function BountyPanel({ threadId, bounty, isThreadAuthor, onChange
           <p className="text-[10px] uppercase tracking-wide text-zinc-500">
             Assigned awards ({awards.length}/{MAX_BOUNTY_WINNERS}){isActive ? ", paid when the creator finalizes" : ""}
           </p>
-          {awards.map((a) => (
+          {awards.map((a, i) => {
+            // Awards carry the actual paid amount only after payout; until then
+            // show the provisional equal split of the current escrow.
+            const amount = a.amount && a.amount !== "0" ? a.amount : shares[i]?.toString() ?? "0";
+            return (
             <div key={a.post_id} className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
-              <span className="text-amber-400">{formatSpark(a.amount)} SPARK</span>
+              <span className="text-amber-400">{formatSpark(amount)} SPARK</span>
               <NameOrAddress address={a.recipient} />
               {a.reason && <span className="text-zinc-500">{a.reason}</span>}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

@@ -25,7 +25,7 @@ import { timeAgo, formatSpark } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import CreatePostForm from "@/components/forum/CreatePostForm";
 import PostConvictionControl from "@/components/forum/PostConvictionControl";
-import BountyPanel, { MAX_BOUNTY_WINNERS } from "@/components/forum/BountyPanel";
+import BountyPanel, { MAX_BOUNTY_WINNERS, provisionalShares } from "@/components/forum/BountyPanel";
 import AuthorBondPanel from "@/components/AuthorBondPanel";
 import type { Category } from "@/types/commons";
 import type { ForumPost, ThreadMetadata, Bounty, PostConvictionStake } from "@/types/forum";
@@ -382,9 +382,8 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   };
 
   // Assign a bounty share to a reply (bounty creator only). Funds stay in
-  // escrow until the creator finalizes with Pay Out in the bounty panel; the
-  // chain computes the share (bounty amount / max winners) and the recipient
-  // (the reply's author).
+  // escrow until the creator finalizes with Pay Out in the bounty panel, at
+  // which point the chain splits the escrow equally among all assigned awards.
   const handleAssignBounty = async (postId: string) => {
     if (!address) return;
     setActionLoading(`bounty-assign-${postId}`);
@@ -449,7 +448,15 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     // Bounty creator's per-reply award affordance. Mirrors the chain's
     // AssignBountyToReply gates: active bounty, creator only, reply not yet
     // awarded, winner slots left. Awards show on the reply in any status.
-    const bountyAward = bounty?.awards?.find((a) => a.post_id === post.post_id);
+    const awardIndex = bounty?.awards?.findIndex((a) => a.post_id === post.post_id) ?? -1;
+    const bountyAward = awardIndex >= 0 ? bounty?.awards?.[awardIndex] : undefined;
+    // Awards carry the actual paid amount only after payout; until then show the
+    // provisional equal split of the current escrow (same math the chain uses).
+    const bountyAwardPaid = bounty?.status === BountyStatus.AWARDED;
+    const bountyAwardAmount =
+      bountyAward?.amount && bountyAward.amount !== "0"
+        ? bountyAward.amount
+        : provisionalShares(bounty?.amount || "0", bounty?.awards?.length || 0)[awardIndex]?.toString() ?? "0";
     const canAssignBounty =
       !isRoot &&
       isActive &&
@@ -486,7 +493,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
           {post.pinned && <span className="text-amber-400">Pinned</span>}
           {bountyAward && (
             <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-400">
-              Bounty award: {formatSpark(bountyAward.amount)} SPARK
+              {bountyAwardPaid ? "Bounty award" : "Pending award"}: {formatSpark(bountyAwardAmount)} SPARK
             </span>
           )}
           {isEphemeral && <span className="text-yellow-500">Ephemeral</span>}
@@ -621,8 +628,8 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
         </div>
 
         {/* Bounty award form: optional reason, recorded on-chain with the
-            award. The share amount is fixed by the chain (bounty / max
-            winners), so only the reason is collected here. */}
+            award. The escrow is split equally among all assigned awards at
+            payout, so only the reason is collected here. */}
         {bountyAssignId === post.post_id && canAssignBounty && (
           <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-800/50 bg-amber-950/20 p-3">
             <input
