@@ -216,6 +216,20 @@ export const ForumMsgTypeUrls = {
   UnarchiveThread: "/sparkdream.forum.v1.MsgUnarchiveThread",
 } as const;
 
+// MsgHidePost.authority — which moderation authority the caller invokes.
+// Mirrors the chain's HideAuthority enum (v1.0.16). AUTO resolves to the
+// sentinel path whenever the account holds an eligible (NORMAL/RECOVERY)
+// sentinel bond, else the council path; SENTINEL/COUNCIL force the path and
+// error if the account isn't eligible. Sent as the numeric enum value: the
+// amino converter omits AUTO (0) and emits 1/2 as ints, so gov-hiding is a
+// deliberate, explicit choice rather than an implicit upgrade. See
+// docs/HANDOFF_HIDE_AUTHORITY_DISAMBIGUATION.md in the chain repo.
+export const HideAuthority = {
+  AUTO: 0,
+  SENTINEL: 1,
+  COUNCIL: 2,
+} as const;
+
 // Season transaction message type URLs
 export const SeasonMsgTypeUrls = {
   SetDisplayName: "/sparkdream.season.v1.MsgSetDisplayName",

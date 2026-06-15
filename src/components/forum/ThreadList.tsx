@@ -94,13 +94,17 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
           bonds.map((b) => getForumPost(b.target_id).then((r) => r.post).catch(() => null))
         );
         posts = fetched.filter(
-          (p): p is ForumPost => !!p && p.status !== PostStatus.DELETED
+          (p): p is ForumPost =>
+            !!p && p.status !== PostStatus.DELETED && p.status !== PostStatus.HIDDEN
         );
         nk = null;
       } else if (mode === "top") {
         const res = await listForumPosts({ limit: "50", reverse: true });
         const rootPosts = (res.post || []).filter(
-          (p) => (p.parent_id === "0" || !p.parent_id) && p.status !== PostStatus.DELETED
+          (p) =>
+            (p.parent_id === "0" || !p.parent_id) &&
+            p.status !== PostStatus.DELETED &&
+            p.status !== PostStatus.HIDDEN
         );
         // Sort by net votes descending
         rootPosts.sort((a, b) => {
@@ -112,9 +116,14 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
         nk = null; // client-side sort, no server pagination
       } else {
         const res = await listForumPosts({ limit: PAGE_SIZE, reverse: true });
-        // Filter to root posts only (threads), excluding deleted
+        // Filter to root posts only (threads), excluding deleted and hidden.
+        // Hidden posts stay out of the public "All sparks" feed; moderators see
+        // them via the Sentinel panel and authors via "My sparks".
         posts = (res.post || []).filter(
-          (p) => (p.parent_id === "0" || !p.parent_id) && p.status !== PostStatus.DELETED
+          (p) =>
+            (p.parent_id === "0" || !p.parent_id) &&
+            p.status !== PostStatus.DELETED &&
+            p.status !== PostStatus.HIDDEN
         );
         nk = res.pagination?.next_key || null;
       }

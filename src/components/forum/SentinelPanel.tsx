@@ -239,8 +239,14 @@ export default function SentinelPanel() {
   // past-window (COC override queue). Empty hidden_at or unknown window
   // are treated as "past window" so the COC always has a path to act.
   const nowSec = Math.floor(Date.now() / 1000);
-  const myHides = allHides.filter((r) => r.sentinel === address);
+  const myHides = allHides.filter((r) => r.sentinel !== "" && r.sentinel === address);
   const pastWindowHides = allHides.filter((r) => {
+    // Gov-authority hides (empty sentinel marker) are council-domain from the
+    // moment they're created: there's no sentinel self-correct window for them,
+    // so they belong in the override queue regardless of age. Without this they
+    // never surfaced anywhere in the UI until they happened to age past the
+    // (unrelated) sentinel window.
+    if (r.sentinel === "") return true;
     if (unhideWindow === null) return true;
     const hiddenAt = Number(r.hidden_at);
     if (!Number.isFinite(hiddenAt) || hiddenAt <= 0) return true;
@@ -593,7 +599,11 @@ export default function SentinelPanel() {
                           </span>
                         )}
                         <span className="text-[10px] text-zinc-500">
-                          by <CopyableAddress address={r.sentinel} />
+                          {r.sentinel === "" ? (
+                            "council hide"
+                          ) : (
+                            <>by <CopyableAddress address={r.sentinel} /></>
+                          )}
                         </span>
                       </div>
                       {r.reason_text && (

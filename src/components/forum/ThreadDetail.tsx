@@ -20,7 +20,7 @@ import { useTrustRank } from "@/hooks/useTrustRank";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
 import { useSessionPermits } from "@/hooks/useSessionPermits";
-import { ForumMsgTypeUrls } from "@/lib/tx";
+import { ForumMsgTypeUrls, HideAuthority } from "@/lib/tx";
 import { timeAgo, formatSpark } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import CreatePostForm from "@/components/forum/CreatePostForm";
@@ -100,6 +100,9 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const [hideFormId, setHideFormId] = useState<string | null>(null);
   const [hideReason, setHideReason] = useState(0);
   const [hideReasonText, setHideReasonText] = useState("");
+  // When the account is both sentinel and committee, this opt-in switches the
+  // hide from the default sentinel path to an explicit council hide.
+  const [hideAsCouncil, setHideAsCouncil] = useState(false);
   const [bountyAssignId, setBountyAssignId] = useState<string | null>(null);
   const [bountyReason, setBountyReason] = useState("");
 
@@ -199,11 +202,16 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   // permitting the message type, matching the rest of the action buttons.
   // Epoch hide limits and cooldowns are still enforced chain-side and surface
   // as broadcast errors.
+  const isEligibleSentinel =
+    sentinelStatus === BondedRoleStatus.NORMAL ||
+    sentinelStatus === BondedRoleStatus.RECOVERY;
   const canHide =
     permits(ForumMsgTypeUrls.HidePost) &&
-    (isOpsCommitteeMember ||
-      sentinelStatus === BondedRoleStatus.NORMAL ||
-      sentinelStatus === BondedRoleStatus.RECOVERY);
+    (isOpsCommitteeMember || isEligibleSentinel);
+  // An account that is both an eligible sentinel and a committee member must
+  // choose which authority it acts under. Gov-hiding is opt-in and visible:
+  // the default is the accountable (bonded, appealable) sentinel path.
+  const hideAuthorityIsAmbiguous = isEligibleSentinel && isOpsCommitteeMember;
 
   // The thread's category decides who may post: members_only_write blocks
   // non-members, admin_only_write blocks everyone but the ops committee. We
@@ -318,6 +326,17 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const handleHide = async (postId: string) => {
     if (!address || !hideReason) return;
     setActionLoading(`hide-${postId}`);
+    // Send the authority explicitly so the chain never has to guess: a council
+    // member who is also a sentinel defaults to the sentinel path and only
+    // gov-hides when they opt in. Sentinel-only and council-only accounts get
+    // the one path they're eligible for.
+    const authority = hideAuthorityIsAmbiguous
+      ? hideAsCouncil
+        ? HideAuthority.COUNCIL
+        : HideAuthority.SENTINEL
+      : isEligibleSentinel
+        ? HideAuthority.SENTINEL
+        : HideAuthority.COUNCIL;
     try {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.HidePost,
@@ -328,11 +347,13 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
           postId: BigInt(postId),
           reasonCode: BigInt(hideReason),
           reasonText: hideReasonText.trim(),
+          authority,
         },
       }]);
       setHideFormId(null);
       setHideReason(0);
       setHideReasonText("");
+      setHideAsCouncil(false);
       await fetchData();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Hide failed");
@@ -659,6 +680,51 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
             explained in the free-text field. */}
         {hideFormId === post.post_id && (
           <div className="mt-3 space-y-2 rounded-lg border border-red-900/50 bg-red-950/20 p-3">
+            {/* Make the acting authority explicit and visible. When the account
+                holds both roles, gov-hiding is an opt-in toggle (default:
+                sentinel). Otherwise we label the single path the account is
+                eligible for. Mirrors MsgHidePost.authority on the chain. */}
+            {hideAuthorityIsAmbiguous ? (
+              <div className="space-y-1.5">
+                <label className="flex items-start gap-2 text-[11px] text-zinc-300">
+                  <input
+                    type="radio"
+                    name={`hide-authority-${post.post_id}`}
+                    checked={!hideAsCouncil}
+                    onChange={() => setHideAsCouncil(false)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium text-zinc-200">Hide as sentinel</span>
+                    {" "}— commits your sentinel bond, author can appeal, self-correctable within the unhide window.
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-[11px] text-amber-300/80">
+                  <input
+                    type="radio"
+                    name={`hide-authority-${post.post_id}`}
+                    checked={hideAsCouncil}
+                    onChange={() => setHideAsCouncil(true)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium text-amber-300">Hide as committee</span>
+                    {" "}— council hide: no bond committed, reversal only via a Commons Operations Committee proposal.
+                  </span>
+                </label>
+              </div>
+            ) : isEligibleSentinel ? (
+              <p className="text-[11px] text-zinc-500">
+                Acting as a bonded sentinel. This commits your sentinel bond and can
+                be self-corrected within the unhide window.
+              </p>
+            ) : (
+              <p className="text-[11px] text-amber-300/80">
+                Acting as Commons Operations Committee. Recorded as a council hide:
+                no sentinel bond is committed, and reversal goes through a council
+                proposal rather than the sentinel self-correct window.
+              </p>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               <select
                 value={hideReason}
@@ -689,7 +755,10 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
                 {actionLoading === `hide-${post.post_id}` ? "Hiding..." : "Hide spark"}
               </button>
               <button
-                onClick={() => setHideFormId(null)}
+                onClick={() => {
+                  setHideFormId(null);
+                  setHideAsCouncil(false);
+                }}
                 className="text-xs text-zinc-500 hover:text-zinc-300"
               >
                 Cancel
