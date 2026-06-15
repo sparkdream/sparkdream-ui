@@ -212,6 +212,11 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   // choose which authority it acts under. Gov-hiding is opt-in and visible:
   // the default is the accountable (bonded, appealable) sentinel path.
   const hideAuthorityIsAmbiguous = isEligibleSentinel && isOpsCommitteeMember;
+  // Who may read a hidden post's content. Viewing isn't a tx, so this does not
+  // require the session-key permit (canHide does). Moderators see it to review;
+  // the author sees their own post to appeal it. Everyone else gets a
+  // placeholder so hidden content stays out of public view even by direct link.
+  const canModerate = isOpsCommitteeMember || isEligibleSentinel;
 
   // The thread's category decides who may post: members_only_write blocks
   // non-members, admin_only_write blocks everyone but the ops committee. We
@@ -466,6 +471,10 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     const isAcceptedReply = metadata?.accepted_reply_id === post.post_id;
     const isEphemeral = Boolean(post.expiration_time && post.expiration_time !== "0");
     const isActive = post.status === PostStatus.ACTIVE;
+    // Conceal hidden content from non-author, non-moderator viewers (e.g. a
+    // direct link to a hidden spark). The header still shows the "Hidden" badge.
+    const concealContent =
+      post.status === PostStatus.HIDDEN && !isAuthor && !canModerate;
     // Bounty creator's per-reply award affordance. Mirrors the chain's
     // AssignBountyToReply gates: active bounty, creator only, reply not yet
     // awarded, winner slots left. Awards show on the reply in any status.
@@ -524,12 +533,18 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
         </div>
 
         {/* Post content */}
-        <div className="mt-2 whitespace-pre-wrap text-sm text-zinc-200">
-          {post.content}
-        </div>
+        {concealContent ? (
+          <div className="mt-2 text-sm italic text-zinc-500">
+            This spark was hidden by moderation.
+          </div>
+        ) : (
+          <div className="mt-2 whitespace-pre-wrap text-sm text-zinc-200">
+            {post.content}
+          </div>
+        )}
 
         {/* Tags */}
-        {post.tags?.length > 0 && (
+        {!concealContent && post.tags?.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {post.tags.map((tag) => (
               <span key={tag} className="rounded-full bg-zinc-800 px-2.5 py-0.5 text-xs text-zinc-400">{tag}</span>

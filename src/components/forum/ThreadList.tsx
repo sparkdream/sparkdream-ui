@@ -164,7 +164,10 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
       } else {
         const res = await listForumPosts({ limit: PAGE_SIZE, key: nextKey, reverse: true });
         posts = (res.post || []).filter(
-          (p) => (p.parent_id === "0" || !p.parent_id) && p.status !== PostStatus.DELETED
+          (p) =>
+            (p.parent_id === "0" || !p.parent_id) &&
+            p.status !== PostStatus.DELETED &&
+            p.status !== PostStatus.HIDDEN
         );
         nk = res.pagination?.next_key || null;
       }

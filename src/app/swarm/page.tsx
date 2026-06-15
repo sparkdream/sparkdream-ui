@@ -163,8 +163,14 @@ function SwarmPageInner() {
   useEffect(() => {
     listForumPosts({ limit: "20", reverse: true })
       .then((res) => {
+        // Trending/Active rail cards are public surfaces: exclude hidden posts
+        // (and deleted) the same way the main feed does. Moderators see hidden
+        // posts via the Sentinel panel, not here.
         const roots = (res.post || []).filter(
-          (p) => (p.parent_id === "0" || !p.parent_id) && p.status !== PostStatus.DELETED
+          (p) =>
+            (p.parent_id === "0" || !p.parent_id) &&
+            p.status !== PostStatus.DELETED &&
+            p.status !== PostStatus.HIDDEN
         );
         setRailSparks(roots);
       })
