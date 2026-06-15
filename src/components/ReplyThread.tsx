@@ -79,6 +79,11 @@ function ReplyItem({
   }
 
   const isHidden = reply.status === ReplyStatus.HIDDEN;
+  // Conceal a hidden reply's body from the public. Replies are moderated by the
+  // post owner (the Hide action below is gated on isPostOwner), so the post
+  // owner still reads it to moderate and the reply's author still sees their own
+  // to know it was hidden. Everyone else gets a placeholder.
+  const concealBody = isHidden && !isOwner && !isPostOwner;
   const depth = reply.depth || 0;
 
   const handleDelete = async () => {
@@ -279,6 +284,10 @@ function ReplyItem({
               }}
             />
           </div>
+        ) : concealBody ? (
+          <p className="mb-2 text-sm italic leading-relaxed text-zinc-500">
+            This reply was hidden by moderation.
+          </p>
         ) : (
           <p className="mb-2 text-sm leading-relaxed text-zinc-300 whitespace-pre-wrap">
             {reply.body}

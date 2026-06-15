@@ -199,7 +199,11 @@ function ImaginariumPageInner() {
         reverse: true,
         ...(paginationKey ? { key: paginationKey } : {}),
       });
-      const active = (res.post || []).filter((p) => p.status !== PostStatus.DELETED);
+      // Public feed: exclude deleted and moderation-hidden dreams. Authors find
+      // their own hidden dreams under "My posts".
+      const active = (res.post || []).filter(
+        (p) => p.status !== PostStatus.DELETED && p.status !== PostStatus.HIDDEN
+      );
       setPosts((prev) => (paginationKey ? [...prev, ...active] : active));
       setNextKey(res.pagination?.next_key || null);
       setError(null);
@@ -239,7 +243,10 @@ function ImaginariumPageInner() {
         );
         if (cancelled) return;
         setBondedPosts(
-          fetched.filter((p): p is Post => !!p && p.status !== PostStatus.DELETED)
+          fetched.filter(
+            (p): p is Post =>
+              !!p && p.status !== PostStatus.DELETED && p.status !== PostStatus.HIDDEN
+          )
         );
       } catch {
         if (!cancelled) {

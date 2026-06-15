@@ -211,6 +211,9 @@ export default function PostDetailPage() {
   const isOwner = connected && address === post.creator;
   const isHidden = post.status === PostStatus.HIDDEN;
   const isDeleted = post.status === PostStatus.DELETED;
+  // Conceal a hidden dream's title and body from the public (e.g. a direct
+  // link). Blog posts are moderated by their author, so the owner still sees it.
+  const concealPost = isHidden && !isOwner;
   const isEphemeral = Boolean(post.expires_at && post.expires_at !== "0");
 
   // Owner / moderator actions, collapsed into the ⋯ overflow menu (matches the
@@ -342,10 +345,14 @@ export default function PostDetailPage() {
         </div>
 
         {/* Title & Body */}
-        <h1 className="mb-4 text-2xl font-bold text-white">{post.title}</h1>
+        <h1 className="mb-4 text-2xl font-bold text-white">
+          {concealPost ? "Hidden dream" : post.title}
+        </h1>
         <div className="mb-6 whitespace-pre-wrap text-zinc-300 leading-relaxed">
           {isDeleted ? (
             <p className="italic text-zinc-600">[This dream has been deleted]</p>
+          ) : concealPost ? (
+            <p className="italic text-zinc-500">This dream was hidden by moderation.</p>
           ) : (
             post.body
           )}
