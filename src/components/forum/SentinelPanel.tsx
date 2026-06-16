@@ -14,7 +14,7 @@ import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { ForumMsgTypeUrls, RepMsgTypeUrls } from "@/lib/tx";
 import CopyableAddress from "@/components/CopyableAddress";
-import type { HideRecord, SentinelActivity } from "@/types/forum";
+import type { ForumParams, HideRecord, SentinelActivity } from "@/types/forum";
 import {
   RoleType,
   BondedRoleStatus,
@@ -45,6 +45,22 @@ function formatCooldownRemaining(completionUnix: string): string {
   const minutes = Math.floor((remaining % 3600) / 60);
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
+}
+
+// Sentinel moderation params use "0 = unset → compile-time default" semantics
+// (chain commit ca0508c) so existing chains keep today's behavior with no
+// migration. These resolvers mirror that, flagging the default so the UI can
+// label it. The defaults must match the chain's constants.
+function intWithDefault(raw: string | undefined, def: number): { value: number; isDefault: boolean } {
+  const n = raw ? parseInt(raw, 10) : 0;
+  if (Number.isFinite(n) && n > 0) return { value: n, isDefault: false };
+  return { value: def, isDefault: true };
+}
+
+// DREAM-denominated (uDREAM math.Int string); default given in whole DREAM.
+function dreamWithDefault(raw: string | undefined, defDream: number): { display: string; isDefault: boolean } {
+  if (raw && raw !== "0") return { display: formatAmount(raw), isDefault: false };
+  return { display: defDream.toLocaleString(), isDefault: true };
 }
 
 function accuracyRate(activity: SentinelActivity | null): string {
@@ -81,6 +97,7 @@ export default function SentinelPanel() {
   // (`HideRecordsBySentinel`, `HideRecordsByExpiry`).
   const [allHides, setAllHides] = useState<HideRecord[]>([]);
   const [unhideWindow, setUnhideWindow] = useState<number | null>(null);
+  const [forumParams, setForumParams] = useState<ForumParams | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -119,6 +136,7 @@ export default function SentinelPanel() {
       // Most-recent first so actionable rows surface at the top.
       hides.sort((a, b) => Number(BigInt(b.hidden_at) - BigInt(a.hidden_at)));
       setAllHides(hides);
+      setForumParams(paramsRes?.params ?? null);
       const winRaw = paramsRes?.params?.sentinel_unhide_window;
       let win: number | null = null;
       if (typeof winRaw === "string") {
@@ -436,6 +454,61 @@ export default function SentinelPanel() {
               )}
             </div>
           </div>
+
+          {/* Moderation limits (chain commit ca0508c). Per-epoch rate caps and
+              per-action slash are Operations-Committee tunable; lock floors are
+              governance-only. A param of 0 means unset → the chain default,
+              flagged here so a sentinel knows whether it was tuned. */}
+          {forumParams && (() => {
+            const hides = intWithDefault(forumParams.max_hides_per_epoch, 50);
+            const locks = intWithDefault(forumParams.max_sentinel_locks_per_epoch, 5);
+            const moves = intWithDefault(forumParams.max_sentinel_moves_per_epoch, 10);
+            const slash = dreamWithDefault(forumParams.sentinel_slash_amount, 100);
+            const lockMult = intWithDefault(forumParams.lock_bond_multiplier, 4);
+            const lockBacking = dreamWithDefault(forumParams.lock_backing_amount, 20000);
+            const lockTier = intWithDefault(forumParams.lock_min_rep_tier, 4);
+            const def = (isDefault: boolean) =>
+              isDefault ? <span className="text-zinc-600"> (default)</span> : null;
+            return (
+              <div className="sd-hull-tile rounded-xl p-5">
+                <h3 className="text-sm font-semibold text-zinc-300">Moderation limits</h3>
+                <p className="mt-0.5 text-[11px] text-zinc-500">
+                  Per-day action caps and the per-action bond slash, plus the
+                  thread-lock eligibility floor. Enforced chain-side.
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-3">
+                  <div>
+                    <p className="text-zinc-500">Hides / day</p>
+                    <p className="text-zinc-200">{hides.value.toLocaleString()}{def(hides.isDefault)}</p>
+                  </div>
+                  <div>
+                    <p className="text-zinc-500">Locks / day</p>
+                    <p className="text-zinc-200">{locks.value.toLocaleString()}{def(locks.isDefault)}</p>
+                  </div>
+                  <div>
+                    <p className="text-zinc-500">Moves / day</p>
+                    <p className="text-zinc-200">{moves.value.toLocaleString()}{def(moves.isDefault)}</p>
+                  </div>
+                  <div>
+                    <p className="text-zinc-500">Slash / overturn</p>
+                    <p className="text-amber-400">{slash.display} DREAM{def(slash.isDefault)}</p>
+                  </div>
+                  <div>
+                    <p className="text-zinc-500">Lock bond</p>
+                    <p className="text-zinc-200">{lockMult.value}&times; min bond{def(lockMult.isDefault)}</p>
+                  </div>
+                  <div>
+                    <p className="text-zinc-500">Lock backing</p>
+                    <p className="text-zinc-200">{lockBacking.display} DREAM{def(lockBacking.isDefault)}</p>
+                  </div>
+                  <div>
+                    <p className="text-zinc-500">Lock rep tier</p>
+                    <p className="text-zinc-200">{lockTier.value}{def(lockTier.isDefault)}</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Activity stats */}
           {activity && (

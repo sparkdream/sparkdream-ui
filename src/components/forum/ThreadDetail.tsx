@@ -20,7 +20,7 @@ import { useTrustRank } from "@/hooks/useTrustRank";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
 import { useSessionPermits } from "@/hooks/useSessionPermits";
-import { ForumMsgTypeUrls, HideAuthority } from "@/lib/tx";
+import { ForumMsgTypeUrls, ModerationAuthority } from "@/lib/tx";
 import { timeAgo, formatSpark } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import CreatePostForm from "@/components/forum/CreatePostForm";
@@ -100,6 +100,15 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const [hideFormId, setHideFormId] = useState<string | null>(null);
   const [hideReason, setHideReason] = useState(0);
   const [hideReasonText, setHideReasonText] = useState("");
+  // Thread lock / move moderator forms (root only).
+  const [allCategories, setAllCategories] = useState<Category[]>([]);
+  const [lockFormOpen, setLockFormOpen] = useState(false);
+  const [lockReason, setLockReason] = useState("");
+  const [lockAsCouncil, setLockAsCouncil] = useState(false);
+  const [moveFormOpen, setMoveFormOpen] = useState(false);
+  const [moveCategoryId, setMoveCategoryId] = useState("");
+  const [moveReason, setMoveReason] = useState("");
+  const [moveAsCouncil, setMoveAsCouncil] = useState(false);
   // When the account is both sentinel and committee, this opt-in switches the
   // hide from the default sentinel path to an explicit council hide.
   const [hideAsCouncil, setHideAsCouncil] = useState(false);
@@ -212,11 +221,28 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   // choose which authority it acts under. Gov-hiding is opt-in and visible:
   // the default is the accountable (bonded, appealable) sentinel path.
   const hideAuthorityIsAmbiguous = isEligibleSentinel && isOpsCommitteeMember;
+  // Lock and move carry the same sentinel-vs-council authority field as hide
+  // (chain commit ca0508c). The disambiguation trigger is identical: only an
+  // account holding both roles has a choice to make. The chain's per-action
+  // eligibility (lock bond/rep floor, reserved-tag block on move) is still
+  // enforced server-side and surfaces as a broadcast error.
+  const moderationAuthorityIsAmbiguous = hideAuthorityIsAmbiguous;
   // Who may read a hidden post's content. Viewing isn't a tx, so this does not
   // require the session-key permit (canHide does). Moderators see it to review;
   // the author sees their own post to appeal it. Everyone else gets a
   // placeholder so hidden content stays out of public view even by direct link.
   const canModerate = isOpsCommitteeMember || isEligibleSentinel;
+  // Thread lock / move / unlock authority mirrors the chain: the ops committee
+  // or an eligible sentinel. Finer chain rules (lock rep-tier + 2x bond, move
+  // reason + reserved-tag block, per-epoch limits and cooldowns) are enforced
+  // chain-side and surface as broadcast errors. Unlock is additionally gated to
+  // the sentinel who placed the lock (the ops committee can always unlock).
+  const canLockThread =
+    permits(ForumMsgTypeUrls.LockThread) && (isOpsCommitteeMember || isEligibleSentinel);
+  const canMoveThread =
+    permits(ForumMsgTypeUrls.MoveThread) && (isOpsCommitteeMember || isEligibleSentinel);
+  const canUnlockThread =
+    permits(ForumMsgTypeUrls.UnlockThread) && (isOpsCommitteeMember || isEligibleSentinel);
 
   // The thread's category decides who may post: members_only_write blocks
   // non-members, admin_only_write blocks everyone but the ops committee. We
@@ -233,10 +259,15 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     listCategories({ limit: "200" })
       .then((res) => {
         if (cancelled) return;
-        setCategory((res.category || []).find((c) => c.category_id === categoryId) || null);
+        const cats = res.category || [];
+        setAllCategories(cats);
+        setCategory(cats.find((c) => c.category_id === categoryId) || null);
       })
       .catch(() => {
-        if (!cancelled) setCategory(null);
+        if (!cancelled) {
+          setCategory(null);
+          setAllCategories([]);
+        }
       });
     return () => {
       cancelled = true;
@@ -337,11 +368,11 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     // the one path they're eligible for.
     const authority = hideAuthorityIsAmbiguous
       ? hideAsCouncil
-        ? HideAuthority.COUNCIL
-        : HideAuthority.SENTINEL
+        ? ModerationAuthority.COUNCIL
+        : ModerationAuthority.SENTINEL
       : isEligibleSentinel
-        ? HideAuthority.SENTINEL
-        : HideAuthority.COUNCIL;
+        ? ModerationAuthority.SENTINEL
+        : ModerationAuthority.COUNCIL;
     try {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.HidePost,
@@ -362,6 +393,93 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       await fetchData();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Hide failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Lock a thread (root only) so no new replies can be posted. Reason is
+  // optional. rootId is the root post's id.
+  const handleLock = async (rootId: string) => {
+    if (!address) return;
+    setActionLoading(`lock-${rootId}`);
+    try {
+      await signAndBroadcast([{
+        typeUrl: ForumMsgTypeUrls.LockThread,
+        // root_id is uint64; BigInt keeps the amino override's omit-zero check sound.
+        // authority disambiguates sentinel-vs-council exactly like hide (chain
+        // commit ca0508c): default to the accountable sentinel path, council
+        // only when the dual-role account opts in.
+        value: {
+          creator: address,
+          rootId: BigInt(rootId),
+          reason: lockReason.trim(),
+          authority: moderationAuthorityIsAmbiguous
+            ? lockAsCouncil
+              ? ModerationAuthority.COUNCIL
+              : ModerationAuthority.SENTINEL
+            : isEligibleSentinel
+              ? ModerationAuthority.SENTINEL
+              : ModerationAuthority.COUNCIL,
+        },
+      }]);
+      setLockFormOpen(false);
+      setLockReason("");
+      setLockAsCouncil(false);
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Lock failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleUnlock = async (rootId: string) => {
+    if (!address) return;
+    setActionLoading(`unlock-${rootId}`);
+    try {
+      await signAndBroadcast([{
+        typeUrl: ForumMsgTypeUrls.UnlockThread,
+        value: { creator: address, rootId: BigInt(rootId) },
+      }]);
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Unlock failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Move a thread to another category. The chain requires a reason and rejects
+  // moving a thread that carries a reserved tag.
+  const handleMove = async (rootId: string) => {
+    if (!address || !moveCategoryId || !moveReason.trim()) return;
+    setActionLoading(`move-${rootId}`);
+    try {
+      await signAndBroadcast([{
+        typeUrl: ForumMsgTypeUrls.MoveThread,
+        // root_id / new_category_id are uint64; BigInt for the omit-zero check.
+        value: {
+          creator: address,
+          rootId: BigInt(rootId),
+          newCategoryId: BigInt(moveCategoryId),
+          reason: moveReason.trim(),
+          authority: moderationAuthorityIsAmbiguous
+            ? moveAsCouncil
+              ? ModerationAuthority.COUNCIL
+              : ModerationAuthority.SENTINEL
+            : isEligibleSentinel
+              ? ModerationAuthority.SENTINEL
+              : ModerationAuthority.COUNCIL,
+        },
+      }]);
+      setMoveFormOpen(false);
+      setMoveCategoryId("");
+      setMoveReason("");
+      setMoveAsCouncil(false);
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Move failed");
     } finally {
       setActionLoading(null);
     }
@@ -624,6 +742,43 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
               {actionLoading === `pin-${post.post_id}` ? "..." : "Unpin"}
             </button>
           )}
+          {/* Thread lock / unlock / move (root only). Available to the ops
+              committee and eligible sentinels; the chain enforces the finer
+              bond / rep-tier / reason rules. */}
+          {isRoot && isActive && !post.locked && canLockThread && (
+            <button
+              onClick={() => { setLockFormOpen((v) => !v); setLockReason(""); setLockAsCouncil(false); }}
+              title="Lock this thread to stop new replies"
+              className="text-xs text-orange-400 transition-colors hover:text-orange-300"
+            >
+              Lock
+            </button>
+          )}
+          {isRoot && post.locked && canUnlockThread &&
+            (isOpsCommitteeMember || post.locked_by === address) && (
+            <button
+              onClick={() => handleUnlock(post.post_id)}
+              disabled={actionLoading === `unlock-${post.post_id}`}
+              title="Unlock this thread"
+              className="text-xs text-orange-400 transition-colors hover:text-orange-300 disabled:opacity-50"
+            >
+              {actionLoading === `unlock-${post.post_id}` ? "..." : "Unlock"}
+            </button>
+          )}
+          {isRoot && isActive && canMoveThread && (
+            <button
+              onClick={() => {
+                setMoveFormOpen((v) => !v);
+                setMoveReason("");
+                setMoveCategoryId("");
+                setMoveAsCouncil(false);
+              }}
+              title="Move this thread to another category"
+              className="text-xs text-indigo-400 transition-colors hover:text-indigo-300"
+            >
+              Move
+            </button>
+          )}
           {/* Assign this reply a bounty share (bounty creator only). */}
           {canAssignBounty && (
             <button
@@ -781,6 +936,146 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
             </div>
             <p className="text-[10px] text-zinc-500">
               Hiding commits part of your sentinel bond. You can self-correct from the Sentinel panel while the unhide window is open.
+            </p>
+          </div>
+        )}
+
+        {/* Lock form (root only). Reason is optional. */}
+        {isRoot && lockFormOpen && (
+          <div className="mt-3 space-y-2 rounded-lg border border-orange-900/50 bg-orange-950/20 p-3">
+            {/* Dual-role accounts choose the acting authority, same as hide. */}
+            {moderationAuthorityIsAmbiguous && (
+              <div className="space-y-1.5">
+                <label className="flex items-start gap-2 text-[11px] text-zinc-300">
+                  <input
+                    type="radio"
+                    name={`lock-authority-${post.post_id}`}
+                    checked={!lockAsCouncil}
+                    onChange={() => setLockAsCouncil(false)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium text-zinc-200">Lock as sentinel</span>
+                    {" "}— commits your sentinel bond, the author can appeal, and you can unlock within the appeal window.
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-[11px] text-amber-300/80">
+                  <input
+                    type="radio"
+                    name={`lock-authority-${post.post_id}`}
+                    checked={lockAsCouncil}
+                    onChange={() => setLockAsCouncil(true)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium text-amber-300">Lock as committee</span>
+                    {" "}— council lock: no bond committed, reversal only via a Commons Operations Committee proposal.
+                  </span>
+                </label>
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={lockReason}
+                onChange={(e) => setLockReason(e.target.value)}
+                placeholder="Reason (optional)"
+                className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-800/50 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
+              />
+              <button
+                onClick={() => handleLock(post.post_id)}
+                disabled={actionLoading === `lock-${post.post_id}`}
+                className="rounded-lg border border-orange-800/50 px-3 py-1.5 text-xs text-orange-400 transition-colors hover:border-orange-700 disabled:opacity-50"
+              >
+                {actionLoading === `lock-${post.post_id}` ? "Locking..." : "Lock thread"}
+              </button>
+              <button
+                onClick={() => setLockFormOpen(false)}
+                className="text-xs text-zinc-500 hover:text-zinc-300"
+              >
+                Cancel
+              </button>
+            </div>
+            <p className="text-[10px] text-zinc-500">
+              Locking stops new replies. Sentinels need the lock rep tier and a higher bond; you can unlock within the appeal window.
+            </p>
+          </div>
+        )}
+
+        {/* Move form (root only). Reason and a destination category required. */}
+        {isRoot && moveFormOpen && (
+          <div className="mt-3 space-y-2 rounded-lg border border-indigo-900/50 bg-indigo-950/20 p-3">
+            {/* Dual-role accounts choose the acting authority, same as hide. */}
+            {moderationAuthorityIsAmbiguous && (
+              <div className="space-y-1.5">
+                <label className="flex items-start gap-2 text-[11px] text-zinc-300">
+                  <input
+                    type="radio"
+                    name={`move-authority-${post.post_id}`}
+                    checked={!moveAsCouncil}
+                    onChange={() => setMoveAsCouncil(false)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium text-zinc-200">Move as sentinel</span>
+                    {" "}— commits your sentinel bond and the author can appeal.
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-[11px] text-amber-300/80">
+                  <input
+                    type="radio"
+                    name={`move-authority-${post.post_id}`}
+                    checked={moveAsCouncil}
+                    onChange={() => setMoveAsCouncil(true)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium text-amber-300">Move as committee</span>
+                    {" "}— council move: no bond committed, reversal only via a Commons Operations Committee proposal.
+                  </span>
+                </label>
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={moveCategoryId}
+                onChange={(e) => setMoveCategoryId(e.target.value)}
+                className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-2.5 py-1.5 text-xs text-zinc-200 focus:border-zinc-600 focus:outline-none"
+              >
+                <option value="">Move to category...</option>
+                {allCategories
+                  .filter((c) => c.category_id !== post.category_id)
+                  .map((c) => (
+                    <option key={c.category_id} value={c.category_id}>{c.title}</option>
+                  ))}
+              </select>
+              <input
+                type="text"
+                value={moveReason}
+                onChange={(e) => setMoveReason(e.target.value)}
+                placeholder="Reason (required)"
+                className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-800/50 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
+              />
+              <button
+                onClick={() => handleMove(post.post_id)}
+                disabled={
+                  !moveCategoryId ||
+                  !moveReason.trim() ||
+                  actionLoading === `move-${post.post_id}`
+                }
+                className="rounded-lg border border-indigo-700/50 px-3 py-1.5 text-xs text-indigo-400 transition-colors hover:border-indigo-600 disabled:opacity-50"
+              >
+                {actionLoading === `move-${post.post_id}` ? "Moving..." : "Move thread"}
+              </button>
+              <button
+                onClick={() => setMoveFormOpen(false)}
+                className="text-xs text-zinc-500 hover:text-zinc-300"
+              >
+                Cancel
+              </button>
+            </div>
+            <p className="text-[10px] text-zinc-500">
+              Threads carrying a reserved tag can&apos;t be moved by sentinels.
             </p>
           </div>
         )}

@@ -316,6 +316,16 @@ const MODULES: Record<string, ModuleDef> = {
       { group: "Post Conviction", key: "postConvictionStreamRatePerBlock", apiKey: "post_conviction_stream_rate_per_block", label: "Post Conviction Stream Rate / Block", kind: "dec" },
       { group: "Post Conviction", key: "maxForumRepPerTagPerEpoch", apiKey: "max_forum_rep_per_tag_per_epoch", label: "Max Forum Rep / Tag / Epoch", kind: "dec" },
       { group: "Post Conviction", key: "postConvictionStakerSlashBps", apiKey: "post_conviction_staker_slash_bps", label: "Post Conviction Staker Slash (bps)", kind: "bigint", hint: "100 = 1%" },
+      // Sentinel moderation rate caps + per-action slash (chain commit ca0508c).
+      // 0 means "unset" → the chain uses the compile-time default shown in the hint.
+      { group: "Sentinel Moderation", key: "maxHidesPerEpoch", apiKey: "max_hides_per_epoch", label: "Max Hides / Epoch", kind: "bigint", hint: "Sentinel hides per address per UTC day. 0 = default (50)" },
+      { group: "Sentinel Moderation", key: "maxSentinelLocksPerEpoch", apiKey: "max_sentinel_locks_per_epoch", label: "Max Sentinel Locks / Epoch", kind: "bigint", hint: "0 = default (5)" },
+      { group: "Sentinel Moderation", key: "maxSentinelMovesPerEpoch", apiKey: "max_sentinel_moves_per_epoch", label: "Max Sentinel Moves / Epoch", kind: "bigint", hint: "0 = default (10)" },
+      { group: "Sentinel Moderation", key: "sentinelSlashAmount", apiKey: "sentinel_slash_amount", label: "Sentinel Slash Amount", kind: "dream", hint: "DREAM reserved-then-slashed per overturned action. 0 = default (100 DREAM)" },
+      // Thread-lock eligibility floors (governance-only; derived from base bond).
+      { group: "Sentinel Moderation", key: "lockBondMultiplier", apiKey: "lock_bond_multiplier", label: "Lock Bond Multiplier", kind: "bigint", hint: "Lock needs this many × Min Sentinel Bond. >= 1. 0 = default (4)" },
+      { group: "Sentinel Moderation", key: "lockBackingAmount", apiKey: "lock_backing_amount", label: "Lock Backing Amount", kind: "dream", hint: "Min DREAM balance to lock a thread. 0 = default (20000 DREAM)" },
+      { group: "Sentinel Moderation", key: "lockMinRepTier", apiKey: "lock_min_rep_tier", label: "Lock Min Rep Tier", kind: "bigint", hint: "Min rep tier to lock. [Min Sentinel Rep Tier, 5]. 0 = default (4)" },
     ],
   },
   futarchy: {

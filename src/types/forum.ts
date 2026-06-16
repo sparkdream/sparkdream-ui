@@ -474,6 +474,19 @@ export interface ForumParams {
   // is how long the lock is held before MsgReleasePostConviction is allowed.
   min_post_conviction_stake: string;
   post_conviction_lock_seconds: string;
+  // Sentinel moderation rate caps + per-action slash (chain commit ca0508c).
+  // Operations-Committee tunable. A stored "0" means unset → the chain falls
+  // back to its compile-time default (shown in parens), so existing chains keep
+  // today's behavior with no migration.
+  max_hides_per_epoch: string; // 0 → default 50
+  max_sentinel_locks_per_epoch: string; // 0 → default 5
+  max_sentinel_moves_per_epoch: string; // 0 → default 10
+  sentinel_slash_amount: string; // uDREAM math.Int; 0 → default 100 DREAM
+  // Thread-lock eligibility floors (governance-only; derived from the base
+  // sentinel bond so lock can never be weaker than the base bond). 0 → default.
+  lock_bond_multiplier: string; // multiple of min_sentinel_bond; 0 → default 4
+  lock_backing_amount: string; // uDREAM math.Int; 0 → default 20000 DREAM
+  lock_min_rep_tier: string; // 0 → default 4
 }
 
 export interface ForumParamsResponse {
