@@ -285,6 +285,7 @@ const MSG_TYPE_LABELS: Record<string, string> = {
   "/sparkdream.forum.v1.MsgUnpinPost": "Unpin Spark",
   "/sparkdream.forum.v1.MsgPinReply": "Pin Reply",
   "/sparkdream.forum.v1.MsgUnpinReply": "Unpin Reply",
+  "/sparkdream.forum.v1.MsgDisputePin": "Dispute Pin",
   "/sparkdream.forum.v1.MsgMakePostPermanent": "Make Spark Permanent",
   "/sparkdream.forum.v1.MsgStakePostConviction": "Back Author (Conviction Stake)",
   "/sparkdream.forum.v1.MsgReleasePostConviction": "Release Conviction Stake",

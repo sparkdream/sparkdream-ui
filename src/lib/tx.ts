@@ -201,6 +201,7 @@ export const ForumMsgTypeUrls = {
   UnpinPost: "/sparkdream.forum.v1.MsgUnpinPost",
   PinReply: "/sparkdream.forum.v1.MsgPinReply",
   UnpinReply: "/sparkdream.forum.v1.MsgUnpinReply",
+  DisputePin: "/sparkdream.forum.v1.MsgDisputePin",
   // Pin/Unpin require a permanent target; promoting an ephemeral post to
   // permanent is the separate MakePostPermanent lifecycle message (chain
   // commit 9a3cebc).

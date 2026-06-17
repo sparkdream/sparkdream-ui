@@ -114,6 +114,9 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const [hideAsCouncil, setHideAsCouncil] = useState(false);
   const [bountyAssignId, setBountyAssignId] = useState<string | null>(null);
   const [bountyReason, setBountyReason] = useState("");
+  // Thread author's pin-dispute form, keyed by the pinned reply's post id.
+  const [disputeFormId, setDisputeFormId] = useState<string | null>(null);
+  const [disputeReason, setDisputeReason] = useState("");
 
   const fetchData = useCallback(async () => {
     try {
@@ -551,6 +554,36 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     }
   };
 
+  // Dispute a sentinel's reply pin (thread author only). Opens a jury appeal
+  // through the moderation-appeal path: an upheld dispute releases the
+  // sentinel's committed bond and keeps the pin, an overturned one slashes the
+  // bond and unpins the reply. threadId is the root post id; replyId is the
+  // pinned reply. The chain rejects disputing governance pins and re-disputes.
+  const handleDisputePin = async (replyId: string) => {
+    if (!address || !disputeReason.trim()) return;
+    setActionLoading(`dispute-${replyId}`);
+    try {
+      await signAndBroadcast([{
+        typeUrl: ForumMsgTypeUrls.DisputePin,
+        // thread_id / reply_id are uint64; BigInt keeps the amino omit-zero
+        // strict-equality check aligned with the chain's aminojson.
+        value: {
+          creator: address,
+          threadId: BigInt(threadId),
+          replyId: BigInt(replyId),
+          reason: disputeReason.trim(),
+        },
+      }]);
+      setDisputeFormId(null);
+      setDisputeReason("");
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Dispute failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleReplyCreated = () => {
     setShowReplyForm(false);
     setReplyToId(threadId);
@@ -589,6 +622,21 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     const isAcceptedReply = metadata?.accepted_reply_id === post.post_id;
     const isEphemeral = Boolean(post.expiration_time && post.expiration_time !== "0");
     const isActive = post.status === PostStatus.ACTIVE;
+    // Pinned-reply state (replies only; root pins use post.pinned). Drives the
+    // "Pinned"/"Pin disputed" badges and the thread author's dispute affordance.
+    const pinnedRecord = !isRoot
+      ? metadata?.pinned_records?.find((r) => r.post_id === post.post_id)
+      : undefined;
+    // Only sentinel pins are disputable, only by the thread (root) author, and
+    // only once — mirrors MsgDisputePin's gates on the chain.
+    const canDisputePin =
+      !!pinnedRecord &&
+      pinnedRecord.is_sentinel_pin &&
+      !pinnedRecord.disputed &&
+      isActive &&
+      !!address &&
+      address === rootPost.author &&
+      permits(ForumMsgTypeUrls.DisputePin);
     // Conceal hidden content from non-author, non-moderator viewers (e.g. a
     // direct link to a hidden spark). The header still shows the "Hidden" badge.
     const concealContent =
@@ -620,7 +668,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       <div
         key={post.post_id}
         className={`sd-hull-tile rounded-xl p-4 ${
-          isAcceptedReply ? "!border-emerald-700/50" : ""
+          isAcceptedReply ? "border-emerald-700/50!" : ""
         }`}
         style={{ marginLeft: `${indent * 24}px` }}
       >
@@ -639,6 +687,11 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
           {post.created_at && <span>{timeAgo(post.created_at)}</span>}
           {post.edited && <span className="italic">edited</span>}
           {post.pinned && <span className="text-amber-400">Pinned</span>}
+          {pinnedRecord && (
+            <span className={pinnedRecord.disputed ? "text-orange-400" : "text-amber-400"}>
+              {pinnedRecord.disputed ? "Pin disputed" : "Pinned"}
+            </span>
+          )}
           {bountyAward && (
             <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-400">
               {bountyAwardPaid ? "Bounty award" : "Pending award"}: {formatSpark(bountyAwardAmount)} SPARK
@@ -807,6 +860,20 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
               Hide
             </button>
           )}
+          {/* Thread author can dispute a sentinel's pin of a reply in their
+              thread. Opens a jury appeal; the chain handles bond/unpin. */}
+          {canDisputePin && (
+            <button
+              onClick={() => {
+                setDisputeFormId(disputeFormId === post.post_id ? null : post.post_id);
+                setDisputeReason("");
+              }}
+              title="Dispute this sentinel pin (thread author)"
+              className="text-xs text-orange-400 transition-colors hover:text-orange-300"
+            >
+              Dispute pin
+            </button>
+          )}
           {isAuthor && (
             <button
               onClick={() => handleDelete(post.post_id)}
@@ -843,6 +910,41 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
             >
               Cancel
             </button>
+          </div>
+        )}
+
+        {/* Pin dispute form (thread author). A reason is required and is
+            recorded with the appeal for the jury to review. */}
+        {disputeFormId === post.post_id && canDisputePin && (
+          <div className="mt-3 space-y-2 rounded-lg border border-orange-900/50 bg-orange-950/20 p-3">
+            <p className="text-[11px] text-zinc-400">
+              Disputing opens a jury appeal of this sentinel pin. If the jury
+              sides with you the pin is removed and the sentinel&apos;s bond is
+              slashed. If it is upheld, the pin stays and the sentinel&apos;s
+              bond is released.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={disputeReason}
+                onChange={(e) => setDisputeReason(e.target.value)}
+                placeholder="Why is this pin inappropriate? (required)"
+                className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-800/50 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
+              />
+              <button
+                onClick={() => handleDisputePin(post.post_id)}
+                disabled={!disputeReason.trim() || actionLoading === `dispute-${post.post_id}`}
+                className="rounded-lg border border-orange-800/50 px-3 py-1.5 text-xs text-orange-400 transition-colors hover:border-orange-700 disabled:opacity-50"
+              >
+                {actionLoading === `dispute-${post.post_id}` ? "Submitting..." : "Submit dispute"}
+              </button>
+              <button
+                onClick={() => { setDisputeFormId(null); setDisputeReason(""); }}
+                className="text-xs text-zinc-500 hover:text-zinc-300"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         )}
 

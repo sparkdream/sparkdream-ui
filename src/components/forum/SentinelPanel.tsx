@@ -540,12 +540,12 @@ export default function SentinelPanel() {
                   <p className="text-zinc-200">{activity.total_pins}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-zinc-500">Proposals</p>
-                  <p className="text-zinc-200">{activity.total_proposals}</p>
+                  <p className="text-xs text-zinc-500">Pins Upheld</p>
+                  <p className="text-emerald-400">{activity.upheld_pins}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-zinc-500">Confirmed</p>
-                  <p className="text-emerald-400">{activity.confirmed_proposals}</p>
+                  <p className="text-xs text-zinc-500">Pins Overturned</p>
+                  <p className="text-red-400">{activity.overturned_pins}</p>
                 </div>
                 <div>
                   <p className="text-xs text-zinc-500">Pending Hides</p>

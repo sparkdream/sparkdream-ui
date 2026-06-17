@@ -55,6 +55,9 @@ export interface PinnedReplyRecord {
   is_sentinel_pin: boolean;
   disputed: boolean;
   initiative_id: string;
+  // Sentinel slash bond reserved at pin time; released on an upheld dispute,
+  // slashed on an overturned one. Empty for governance pins (no bond).
+  committed_amount: string;
 }
 
 export interface ThreadFollow {
@@ -109,6 +112,10 @@ export interface HideRecord {
   committed_amount: string;
   reason_code: string;
   reason_text: string;
+  author_bond_amount: string;
+  // Set true when an appeal is filed against this hide, so an unappealed hide
+  // that expires can be counted once into unchallenged_hides.
+  appealed: boolean;
 }
 
 export interface ListHideRecordsResponse {
@@ -128,6 +135,8 @@ export interface ThreadLockRecord {
   lock_reason: string;
   appeal_pending: boolean;
   initiative_id: string;
+  // Sentinel slash bond reserved at lock time; released/slashed on appeal.
+  committed_amount: string;
 }
 
 export interface ThreadMoveRecord {
@@ -141,6 +150,8 @@ export interface ThreadMoveRecord {
   move_reason: string;
   appeal_pending: boolean;
   initiative_id: string;
+  // Sentinel slash bond reserved at move time; released/slashed on appeal.
+  committed_amount: string;
 }
 
 // Forum-specific sentinel counters. Bond, bond status, registration, and
@@ -171,10 +182,6 @@ export interface SentinelActivity {
   upheld_pins: string;
   overturned_pins: string;
   epoch_pins: string;
-  total_proposals: string;
-  confirmed_proposals: string;
-  rejected_proposals: string;
-  epoch_curations: string;
 }
 
 export interface MemberReport {
@@ -277,6 +284,8 @@ export const GovActionType = {
   FORUM_PAUSE: "GOV_ACTION_TYPE_FORUM_PAUSE",
   THREAD_LOCK: "GOV_ACTION_TYPE_THREAD_LOCK",
   THREAD_MOVE: "GOV_ACTION_TYPE_THREAD_MOVE",
+  REPLY_PIN: "GOV_ACTION_TYPE_REPLY_PIN",
+  POST_HIDE: "GOV_ACTION_TYPE_POST_HIDE",
 } as const;
 
 export const GOV_ACTION_TYPE_LABELS: Record<string, string> = {
@@ -287,6 +296,8 @@ export const GOV_ACTION_TYPE_LABELS: Record<string, string> = {
   [GovActionType.FORUM_PAUSE]: "Swarm Pause",
   [GovActionType.THREAD_LOCK]: "Thread Lock",
   [GovActionType.THREAD_MOVE]: "Thread Move",
+  [GovActionType.REPLY_PIN]: "Reply Pin",
+  [GovActionType.POST_HIDE]: "Spark Hide",
 };
 
 export const GovAppealStatus = {
