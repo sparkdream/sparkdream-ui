@@ -117,6 +117,10 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   // Thread author's pin-dispute form, keyed by the pinned reply's post id.
   const [disputeFormId, setDisputeFormId] = useState<string | null>(null);
   const [disputeReason, setDisputeReason] = useState("");
+  // Thread author's reject-proposal form (open when set to the proposed reply's
+  // post id). A reason is recorded with the rejection.
+  const [rejectFormOpen, setRejectFormOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
 
   const fetchData = useCallback(async () => {
     try {
@@ -584,6 +588,69 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     }
   };
 
+  // Accepted-reply curation (chain commit c8be748, sparkdreamjs 0.0.25). One
+  // message, two outcomes by who signs: the thread author accepts the reply
+  // immediately; an eligible sentinel records a pending proposal that the author
+  // confirms/rejects or that auto-confirms after accept_proposal_timeout.
+  const handleMarkAccepted = async (replyId: string, asProposal: boolean) => {
+    if (!address) return;
+    setActionLoading(`accept-${replyId}`);
+    try {
+      await signAndBroadcast([{
+        typeUrl: ForumMsgTypeUrls.MarkAcceptedReply,
+        // thread_id / reply_id are uint64; BigInt keeps the amino omit-zero
+        // strict-equality check aligned with the chain's aminojson.
+        value: {
+          creator: address,
+          threadId: BigInt(threadId),
+          replyId: BigInt(replyId),
+        },
+      }]);
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : asProposal ? "Proposal failed" : "Accept failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Thread author confirms the pending sentinel proposal, promoting the proposed
+  // reply to the accepted answer and crediting the proposing sentinel.
+  const handleConfirmProposed = async () => {
+    if (!address) return;
+    setActionLoading("confirm-proposal");
+    try {
+      await signAndBroadcast([{
+        typeUrl: ForumMsgTypeUrls.ConfirmProposedReply,
+        value: { creator: address, threadId: BigInt(threadId) },
+      }]);
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Confirm failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Thread author rejects the pending sentinel proposal. A reason is recorded.
+  const handleRejectProposed = async () => {
+    if (!address || !rejectReason.trim()) return;
+    setActionLoading("reject-proposal");
+    try {
+      await signAndBroadcast([{
+        typeUrl: ForumMsgTypeUrls.RejectProposedReply,
+        value: { creator: address, threadId: BigInt(threadId), reason: rejectReason.trim() },
+      }]);
+      setRejectFormOpen(false);
+      setRejectReason("");
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Reject failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleReplyCreated = () => {
     setShowReplyForm(false);
     setReplyToId(threadId);
@@ -620,6 +687,11 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     const depth = parseInt(post.depth || "0", 10);
     const indent = isRoot ? 0 : Math.min(depth - 1, 3);
     const isAcceptedReply = metadata?.accepted_reply_id === post.post_id;
+    // Pending sentinel accepted-reply proposal (sparkdreamjs 0.0.25). 0/empty
+    // means no proposal is in flight.
+    const proposedReplyId = metadata?.proposed_reply_id;
+    const hasPendingProposal = !!proposedReplyId && proposedReplyId !== "0";
+    const isProposedReply = hasPendingProposal && proposedReplyId === post.post_id;
     const isEphemeral = Boolean(post.expiration_time && post.expiration_time !== "0");
     const isActive = post.status === PostStatus.ACTIVE;
     // Pinned-reply state (replies only; root pins use post.pinned). Drives the
@@ -637,6 +709,32 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       !!address &&
       address === rootPost.author &&
       permits(ForumMsgTypeUrls.DisputePin);
+    // Accepted-reply curation affordances (replies only). The thread author may
+    // accept any active reply directly; an eligible sentinel on someone else's
+    // thread may propose one. Both go through MsgMarkAcceptedReply — neither is
+    // offered while a proposal is already pending or once a reply is accepted.
+    const canAcceptReply =
+      !isRoot &&
+      isActive &&
+      !isAcceptedReply &&
+      !hasPendingProposal &&
+      address === rootPost.author &&
+      permits(ForumMsgTypeUrls.MarkAcceptedReply);
+    const canProposeReply =
+      !isRoot &&
+      isActive &&
+      !isAcceptedReply &&
+      !hasPendingProposal &&
+      !isAuthor &&
+      address !== rootPost.author &&
+      isEligibleSentinel &&
+      permits(ForumMsgTypeUrls.MarkAcceptedReply);
+    // Thread author resolves a pending proposal on this reply (confirm/reject).
+    const canResolveProposal =
+      isProposedReply &&
+      isActive &&
+      address === rootPost.author &&
+      permits(ForumMsgTypeUrls.ConfirmProposedReply);
     // Conceal hidden content from non-author, non-moderator viewers (e.g. a
     // direct link to a hidden spark). The header still shows the "Hidden" badge.
     const concealContent =
@@ -678,6 +776,22 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             Accepted Answer
+          </div>
+        )}
+        {/* A sentinel has proposed this reply as the accepted answer; the thread
+            author can confirm or reject it, or it auto-confirms after the
+            timeout. */}
+        {isProposedReply && (
+          <div className="mb-2 flex flex-wrap items-center gap-1.5 text-xs font-medium text-amber-400">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Proposed answer
+            {metadata?.proposed_by && (
+              <span className="font-normal text-zinc-500">
+                by <NameOrAddress address={metadata.proposed_by} />
+              </span>
+            )}
           </div>
         )}
 
@@ -845,6 +959,49 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
               Award Bounty
             </button>
           )}
+          {/* Thread author accepts a reply as the answer (immediate). */}
+          {canAcceptReply && (
+            <button
+              onClick={() => handleMarkAccepted(post.post_id, false)}
+              disabled={actionLoading === `accept-${post.post_id}`}
+              title="Mark this reply as the accepted answer"
+              className="text-xs text-emerald-400 transition-colors hover:text-emerald-300 disabled:opacity-50"
+            >
+              {actionLoading === `accept-${post.post_id}` ? "..." : "Accept answer"}
+            </button>
+          )}
+          {/* Eligible sentinel proposes a reply as the answer on another
+              member's thread; the author confirms/rejects or it auto-confirms. */}
+          {canProposeReply && (
+            <button
+              onClick={() => handleMarkAccepted(post.post_id, true)}
+              disabled={actionLoading === `accept-${post.post_id}`}
+              title="Propose this reply as the accepted answer (sentinel curation)"
+              className="text-xs text-amber-400 transition-colors hover:text-amber-300 disabled:opacity-50"
+            >
+              {actionLoading === `accept-${post.post_id}` ? "..." : "Propose answer"}
+            </button>
+          )}
+          {/* Thread author resolves a sentinel's pending proposal. */}
+          {canResolveProposal && (
+            <>
+              <button
+                onClick={handleConfirmProposed}
+                disabled={actionLoading === "confirm-proposal"}
+                title="Confirm this proposed answer"
+                className="text-xs text-emerald-400 transition-colors hover:text-emerald-300 disabled:opacity-50"
+              >
+                {actionLoading === "confirm-proposal" ? "..." : "Confirm answer"}
+              </button>
+              <button
+                onClick={() => { setRejectFormOpen((v) => !v); setRejectReason(""); }}
+                title="Reject this proposed answer"
+                className="text-xs text-orange-400 transition-colors hover:text-orange-300"
+              >
+                Reject
+              </button>
+            </>
+          )}
           {/* Sentinel moderation. Authors already have Delete, so don't offer
               hiding one's own spark. */}
           {canHide && isActive && !isAuthor && (
@@ -940,6 +1097,39 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
               </button>
               <button
                 onClick={() => { setDisputeFormId(null); setDisputeReason(""); }}
+                className="text-xs text-zinc-500 hover:text-zinc-300"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Reject-proposal form (thread author). A reason is recorded with the
+            rejection for the proposing sentinel. */}
+        {rejectFormOpen && canResolveProposal && (
+          <div className="mt-3 space-y-2 rounded-lg border border-orange-900/50 bg-orange-950/20 p-3">
+            <p className="text-[11px] text-zinc-400">
+              Rejecting dismisses this sentinel&apos;s proposed answer. You can
+              still accept a different reply yourself.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Why reject this proposal? (required)"
+                className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-800/50 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
+              />
+              <button
+                onClick={handleRejectProposed}
+                disabled={!rejectReason.trim() || actionLoading === "reject-proposal"}
+                className="rounded-lg border border-orange-800/50 px-3 py-1.5 text-xs text-orange-400 transition-colors hover:border-orange-700 disabled:opacity-50"
+              >
+                {actionLoading === "reject-proposal" ? "Submitting..." : "Submit rejection"}
+              </button>
+              <button
+                onClick={() => { setRejectFormOpen(false); setRejectReason(""); }}
                 className="text-xs text-zinc-500 hover:text-zinc-300"
               >
                 Cancel

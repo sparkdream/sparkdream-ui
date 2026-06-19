@@ -212,7 +212,14 @@ export const ForumMsgTypeUrls = {
   // tx's `post_conviction_staked` event.
   StakePostConviction: "/sparkdream.forum.v1.MsgStakePostConviction",
   ReleasePostConviction: "/sparkdream.forum.v1.MsgReleasePostConviction",
+  // Accepted-reply curation (chain commit c8be748, sparkdreamjs 0.0.25). The
+  // thread author calling MarkAcceptedReply on their own thread accepts
+  // directly; a sentinel calling it on someone else's thread records a pending
+  // proposal that the author confirms or rejects (or it auto-confirms after the
+  // accept_proposal_timeout). thread_id is the root post id, reply_id the reply.
   MarkAcceptedReply: "/sparkdream.forum.v1.MsgMarkAcceptedReply",
+  ConfirmProposedReply: "/sparkdream.forum.v1.MsgConfirmProposedReply",
+  RejectProposedReply: "/sparkdream.forum.v1.MsgRejectProposedReply",
   FreezeThread: "/sparkdream.forum.v1.MsgFreezeThread",
   UnarchiveThread: "/sparkdream.forum.v1.MsgUnarchiveThread",
 } as const;

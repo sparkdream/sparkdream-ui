@@ -41,9 +41,22 @@ export interface ThreadMetadata {
   accepted_reply_id: string;
   accepted_by: string;
   accepted_at: string;
+  // Pending sentinel accepted-reply proposal (chain commit c8be748,
+  // sparkdreamjs 0.0.25). A sentinel calling MsgMarkAcceptedReply on someone
+  // else's thread records a proposal here instead of accepting directly; the
+  // thread author confirms (MsgConfirmProposedReply), rejects
+  // (MsgRejectProposedReply), or it auto-confirms after accept_proposal_timeout.
+  // 0 / empty when no proposal is pending.
   proposed_reply_id: string;
   proposed_by: string;
   proposed_at: string;
+  // Set once the EndBlocker has granted the one-time inactivity extension to a
+  // pending proposal; the next timeout auto-confirms regardless. Cleared when
+  // the proposal resolves.
+  proposal_extended: boolean;
+  // Exact ProposalAutoConfirmQueue key (unix seconds) the pending proposal is
+  // enqueued under. 0 = no pending proposal.
+  proposal_fire_at: string;
   pinned_reply_ids: string[];
   pinned_records: PinnedReplyRecord[];
 }
@@ -182,6 +195,30 @@ export interface SentinelActivity {
   upheld_pins: string;
   overturned_pins: string;
   epoch_pins: string;
+  // Curation-proposal tracking (chain commit c8be748, sparkdreamjs 0.0.25). A
+  // sentinel may propose a reply as a thread's accepted answer; the author
+  // confirms/rejects or it auto-confirms. epoch_curations counts confirmed
+  // proposals in the current reward epoch (incremented on confirm, not propose,
+  // so it can't be farmed by spamming unconfirmed proposals).
+  total_proposals: string;
+  confirmed_proposals: string;
+  rejected_proposals: string;
+  epoch_curations: string;
+  // Rolling-window accuracy ring (chain commit 00552f4). Slot e % ringSize
+  // holds reward-epoch e's resolved-appeal tally; x/rep computes reward accuracy
+  // over the last sentinel_accuracy_window_epochs slots. The lifetime
+  // upheld_*/overturned_* counters above are retained for display/audit only and
+  // are no longer used for reward accuracy. Empty on pre-0.0.25 records.
+  accuracy_window?: AccuracyEpochBucket[];
+}
+
+// One reward-epoch's resolved-appeal tally for a sentinel, stored in the
+// fixed-size accuracy_window ring on SentinelActivity. upheld/overturned sum
+// the resolved hide/lock/move appeals for that epoch.
+export interface AccuracyEpochBucket {
+  epoch: string;
+  upheld: string;
+  overturned: string;
 }
 
 export interface MemberReport {
@@ -498,6 +535,15 @@ export interface ForumParams {
   lock_bond_multiplier: string; // multiple of min_sentinel_bond; 0 → default 4
   lock_backing_amount: string; // uDREAM math.Int; 0 → default 20000 DREAM
   lock_min_rep_tier: string; // 0 → default 4
+  // Sentinel accepted-reply curation config (chain commit c8be748,
+  // sparkdreamjs 0.0.25). Operations-Committee tunable. Unlike the rate caps
+  // above these are read directly (no "0 → compile-time default" fallback):
+  // curation_dream_reward is a bare uDREAM math.Int string minted to the
+  // proposing sentinel when their proposal is confirmed (<= 0 disables the
+  // reward); accept_proposal_timeout is the seconds after which a pending
+  // proposal auto-confirms if the author hasn't acted (must be positive).
+  curation_dream_reward: string;
+  accept_proposal_timeout: string;
 }
 
 export interface ForumParamsResponse {

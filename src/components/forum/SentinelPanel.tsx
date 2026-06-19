@@ -6,6 +6,8 @@ import {
   getBondedRole,
   getBondedRoleConfig,
   getForumParams,
+  getRepParams,
+  getLatestBlockHeight,
   getSentinelActivity,
   listHideRecords,
 } from "@/lib/api";
@@ -63,14 +65,68 @@ function dreamWithDefault(raw: string | undefined, defDream: number): { display:
   return { display: defDream.toLocaleString(), isDefault: true };
 }
 
-function accuracyRate(activity: SentinelActivity | null): string {
-  if (!activity) return "—";
-  const upheld = BigInt(activity.upheld_hides || "0");
-  const overturned = BigInt(activity.overturned_hides || "0");
-  const total = upheld + overturned;
-  if (total === BigInt(0)) return "—";
-  const pct = (upheld * BigInt(10000)) / total;
-  return `${(Number(pct) / 100).toFixed(1)}%`;
+// Read a uint64 rep param (LCD returns them as decimal strings), falling back
+// to the chain's compile-time default when unset/0.
+function numParam(params: Record<string, unknown> | null, key: string, def: number): number {
+  const raw = params?.[key];
+  const n = typeof raw === "string" ? parseInt(raw, 10) : typeof raw === "number" ? raw : NaN;
+  return Number.isFinite(n) && n > 0 ? n : def;
+}
+
+// Reward accuracy over the rolling window x/rep actually uses to gate and size
+// sentinel rewards (chain commit 00552f4): upheld / decided summed over the last
+// `window` reward epochs ending at the current reward epoch (inclusive). Mirrors
+// keeper.GetSentinelWindowedAccuracy — ring slots stamped outside that range
+// (stale entries, or epochs older than the window) are ignored, so a sentinel
+// who stops resolving appeals ages out to zero decided rather than coasting on a
+// good lifetime record. The lifetime upheld_*/overturned_* counters are no
+// longer used for reward accuracy.
+function windowedAccuracy(
+  activity: SentinelActivity | null,
+  currentEpoch: number,
+  window: number,
+): { upheld: number; overturned: number; total: number; rate: number | null } {
+  const empty = { upheld: 0, overturned: 0, total: 0, rate: null };
+  if (!activity?.accuracy_window || window <= 0) return empty;
+  const lo = currentEpoch + 1 > window ? currentEpoch - window + 1 : 0;
+  let up = 0;
+  let ov = 0;
+  for (const b of activity.accuracy_window) {
+    const e = parseInt(b.epoch, 10);
+    if (!Number.isFinite(e) || e < lo || e > currentEpoch) continue;
+    up += parseInt(b.upheld || "0", 10) || 0;
+    ov += parseInt(b.overturned || "0", 10) || 0;
+  }
+  const total = up + ov;
+  return { upheld: up, overturned: ov, total, rate: total > 0 ? up / total : null };
+}
+
+// Per-epoch breakdown of the same window, oldest → newest, with empty epochs
+// (no resolved appeals) kept in place so the gaps that drag down a windowed
+// rate are visible. One entry per epoch in [currentEpoch - window + 1,
+// currentEpoch]; never more than `window` entries.
+function accuracySeries(
+  activity: SentinelActivity | null,
+  currentEpoch: number,
+  window: number,
+): { epoch: number; upheld: number; overturned: number; total: number }[] {
+  if (!activity?.accuracy_window || window <= 0 || currentEpoch < 0) return [];
+  const lo = currentEpoch + 1 > window ? currentEpoch - window + 1 : 0;
+  const byEpoch = new Map<number, { upheld: number; overturned: number }>();
+  for (const b of activity.accuracy_window) {
+    const e = parseInt(b.epoch, 10);
+    if (!Number.isFinite(e) || e < lo || e > currentEpoch) continue;
+    byEpoch.set(e, {
+      upheld: parseInt(b.upheld || "0", 10) || 0,
+      overturned: parseInt(b.overturned || "0", 10) || 0,
+    });
+  }
+  const out: { epoch: number; upheld: number; overturned: number; total: number }[] = [];
+  for (let e = lo; e <= currentEpoch; e++) {
+    const v = byEpoch.get(e) ?? { upheld: 0, overturned: 0 };
+    out.push({ epoch: e, upheld: v.upheld, overturned: v.overturned, total: v.upheld + v.overturned });
+  }
+  return out;
 }
 
 export default function SentinelPanel() {
@@ -99,6 +155,11 @@ export default function SentinelPanel() {
   const [unhideWindow, setUnhideWindow] = useState<number | null>(null);
   const [forumParams, setForumParams] = useState<ForumParams | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Rep params + chain height drive the reward-accuracy window: the reference
+  // reward epoch is height / sentinel_reward_epoch_blocks (NOT the forum epoch),
+  // and the window length / min sample come from rep params.
+  const [repParams, setRepParams] = useState<Record<string, unknown> | null>(null);
+  const [blockHeight, setBlockHeight] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!address) return;
@@ -128,10 +189,14 @@ export default function SentinelPanel() {
       // the sentinel's "My recent hides" view and the COC "Override queue"
       // view derive from this data, and a connected user can be a COC member
       // without being a sentinel.
-      const [hidesRes, paramsRes] = await Promise.all([
+      const [hidesRes, paramsRes, repParamsRes, heightRes] = await Promise.all([
         listHideRecords({ limit: "200" }).catch(() => null),
         getForumParams().catch(() => null),
+        getRepParams().catch(() => null),
+        getLatestBlockHeight().catch(() => null),
       ]);
+      setRepParams(repParamsRes?.params ?? null);
+      setBlockHeight(heightRes ?? null);
       const hides = [...(hidesRes?.hide_record ?? [])];
       // Most-recent first so actionable rows surface at the top.
       hides.sort((a, b) => Number(BigInt(b.hidden_at) - BigInt(a.hidden_at)));
@@ -246,6 +311,16 @@ export default function SentinelPanel() {
       </div>
     );
   }
+
+  // Reward-accuracy window inputs. epochBlocks/window/minAppeals fall back to the
+  // chain defaults when rep params are unavailable; the reference reward epoch
+  // needs the live height, so accuracy reads "—" until height resolves.
+  const epochBlocks = numParam(repParams, "sentinel_reward_epoch_blocks", 14400);
+  const accuracyWindowEpochs = numParam(repParams, "sentinel_accuracy_window_epochs", 6);
+  const minAppeals = numParam(repParams, "min_appeals_for_accuracy", 10);
+  const currentEpoch = blockHeight ? Math.floor(parseInt(blockHeight, 10) / epochBlocks) : null;
+  const winAcc = windowedAccuracy(activity, currentEpoch ?? 0, accuracyWindowEpochs);
+  const belowSample = winAcc.total > 0 && winAcc.total < minAppeals;
 
   const currentBond = bond?.current_bond ?? "0";
   const totalCommitted = bond?.total_committed_bond ?? "0";
@@ -373,8 +448,23 @@ export default function SentinelPanel() {
                 <p className="font-medium text-zinc-200">{formatAmount(availableBond)} DREAM</p>
               </div>
               <div>
-                <p className="text-xs text-zinc-500">Accuracy</p>
-                <p className="font-medium text-zinc-200">{accuracyRate(activity)}</p>
+                <p className="text-xs text-zinc-500">Reward Accuracy</p>
+                <p className="font-medium text-zinc-200">
+                  {currentEpoch === null
+                    ? "—"
+                    : winAcc.rate !== null
+                      ? `${(winAcc.rate * 100).toFixed(1)}%`
+                      : "—"}
+                </p>
+                <p className={`text-[10px] ${belowSample ? "text-amber-500" : "text-zinc-600"}`}>
+                  {currentEpoch === null
+                    ? "loading…"
+                    : winAcc.total === 0
+                      ? `no decided appeals in last ${accuracyWindowEpochs} epochs`
+                      : `${winAcc.total} decided / last ${accuracyWindowEpochs} epochs${
+                          belowSample ? ` · need ${minAppeals}` : ""
+                        }`}
+                </p>
               </div>
             </div>
 
@@ -410,6 +500,51 @@ export default function SentinelPanel() {
                 )}
               </div>
             )}
+
+            {/* Per-epoch breakdown of the reward-accuracy window. Each bar is one
+                reward epoch (oldest → now); green is upheld, red overturned, bar
+                height scales with the decided count, and empty epochs show as a
+                bare track so an inactivity gap is visible at a glance. */}
+            {currentEpoch !== null && (() => {
+              const series = accuracySeries(activity, currentEpoch, accuracyWindowEpochs);
+              if (!series.some((s) => s.total > 0)) return null;
+              const maxTotal = Math.max(1, ...series.map((s) => s.total));
+              const BAR_PX = 32;
+              return (
+                <div className="mt-3 border-t border-zinc-800/60 pt-3">
+                  <div className="flex items-baseline justify-between">
+                    <p className="text-[11px] font-medium text-zinc-400">Accuracy by epoch</p>
+                    <p className="text-[10px] text-zinc-600">upheld vs overturned, oldest → now</p>
+                  </div>
+                  <div className="mt-2 flex items-end gap-1.5">
+                    {series.map((s) => {
+                      const h = s.total > 0 ? Math.max(4, Math.round((s.total / maxTotal) * BAR_PX)) : 0;
+                      const upH = s.total > 0 ? Math.round(h * (s.upheld / s.total)) : 0;
+                      const ovH = h - upH;
+                      const isNow = s.epoch === currentEpoch;
+                      return (
+                        <div
+                          key={s.epoch}
+                          className="flex flex-1 flex-col items-center gap-1"
+                          title={`Epoch ${s.epoch}: ${s.upheld} upheld, ${s.overturned} overturned`}
+                        >
+                          <div
+                            className="flex w-full max-w-[28px] flex-col justify-end overflow-hidden rounded-sm bg-zinc-800/40"
+                            style={{ height: `${BAR_PX}px` }}
+                          >
+                            {ovH > 0 && <div className="w-full bg-red-500/70" style={{ height: `${ovH}px` }} />}
+                            {upH > 0 && <div className="w-full bg-emerald-500/70" style={{ height: `${upH}px` }} />}
+                          </div>
+                          <span className={`text-[9px] ${isNow ? "text-zinc-300" : "text-zinc-600"}`}>
+                            {isNow ? "now" : `-${currentEpoch - s.epoch}`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="mt-4 flex gap-2">
               {!showBondForm ? (
@@ -505,6 +640,24 @@ export default function SentinelPanel() {
                     <p className="text-zinc-500">Lock rep tier</p>
                     <p className="text-zinc-200">{lockTier.value}{def(lockTier.isDefault)}</p>
                   </div>
+                  {/* Accepted-reply curation config (chain commit c8be748). Read
+                      directly: a non-positive reward disables it. */}
+                  <div>
+                    <p className="text-zinc-500">Curation reward</p>
+                    <p className="text-amber-400">
+                      {forumParams.curation_dream_reward && forumParams.curation_dream_reward !== "0"
+                        ? `${formatAmount(forumParams.curation_dream_reward)} DREAM`
+                        : "disabled"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-zinc-500">Proposal timeout</p>
+                    <p className="text-zinc-200">
+                      {forumParams.accept_proposal_timeout && forumParams.accept_proposal_timeout !== "0"
+                        ? formatDuration(parseInt(forumParams.accept_proposal_timeout, 10))
+                        : "—"}
+                    </p>
+                  </div>
                 </div>
               </div>
             );
@@ -550,6 +703,21 @@ export default function SentinelPanel() {
                 <div>
                   <p className="text-xs text-zinc-500">Pending Hides</p>
                   <p className="text-zinc-200">{activity.pending_hide_count}</p>
+                </div>
+                {/* Accepted-reply curation (chain commit c8be748). Proposals a
+                    sentinel made on other members' threads, and how many the
+                    authors confirmed. epoch_curations feeds the reward score. */}
+                <div>
+                  <p className="text-xs text-zinc-500">Curation Proposals</p>
+                  <p className="text-zinc-200">{activity.total_proposals ?? "0"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-zinc-500">Confirmed</p>
+                  <p className="text-emerald-400">{activity.confirmed_proposals ?? "0"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-zinc-500">Rejected</p>
+                  <p className="text-red-400">{activity.rejected_proposals ?? "0"}</p>
                 </div>
               </div>
             </div>
