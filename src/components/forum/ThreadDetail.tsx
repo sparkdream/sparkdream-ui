@@ -11,6 +11,7 @@ import {
   getBountyByThread,
   getForumBounty,
   getBondedRole,
+  getForumParams,
   listCategories,
   listPostConvictionStakesByStaker,
   authorBondsByType,
@@ -31,6 +32,7 @@ import type { Category } from "@/types/commons";
 import type { ForumPost, ThreadMetadata, Bounty, PostConvictionStake } from "@/types/forum";
 import { PostStatus, BountyStatus } from "@/types/forum";
 import { RoleType, BondedRoleStatus } from "@/types/rep";
+import type { BondedRole } from "@/types/rep";
 
 // Promoting an ephemeral post to permanent is a member action gated on
 // make_permanent_min_trust_level (default PROVISIONAL). Pinning a thread,
@@ -96,7 +98,10 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const [bondedIds, setBondedIds] = useState<Set<string>>(new Set());
   // Viewer's sentinel bond status (null when not a sentinel). Fetched once
   // per address rather than per post, so moderation gating costs one LCD call.
-  const [sentinelStatus, setSentinelStatus] = useState<string | null>(null);
+  const [sentinelBond, setSentinelBond] = useState<BondedRole | null>(null);
+  // min_sentinel_bond (uDREAM) gates whether an UNBONDING sentinel's staying
+  // bond still qualifies it to moderate (chain commit d4507ca).
+  const [minSentinelBond, setMinSentinelBond] = useState<string | null>(null);
   const [hideFormId, setHideFormId] = useState<string | null>(null);
   const [hideReason, setHideReason] = useState(0);
   const [hideReasonText, setHideReasonText] = useState("");
@@ -196,31 +201,60 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
 
   useEffect(() => {
     if (!address) {
-      setSentinelStatus(null);
+      setSentinelBond(null);
       return;
     }
     let cancelled = false;
     getBondedRole(RoleType.FORUM_SENTINEL, address)
       .then((res) => {
-        if (!cancelled) setSentinelStatus(res?.bonded_role?.bond_status ?? null);
+        if (!cancelled) setSentinelBond(res?.bonded_role ?? null);
       })
       .catch(() => {
-        if (!cancelled) setSentinelStatus(null);
+        if (!cancelled) setSentinelBond(null);
       });
     return () => {
       cancelled = true;
     };
   }, [address]);
 
-  // Mirrors x/forum MsgHidePost authorization: a bonded sentinel in NORMAL or
-  // RECOVERY (DEMOTED/UNBONDING are refused), or the commons operations
-  // committee via the governance route. Also gated on the active session key
-  // permitting the message type, matching the rest of the action buttons.
-  // Epoch hide limits and cooldowns are still enforced chain-side and surface
-  // as broadcast errors.
-  const isEligibleSentinel =
-    sentinelStatus === BondedRoleStatus.NORMAL ||
-    sentinelStatus === BondedRoleStatus.RECOVERY;
+  // min_sentinel_bond is needed to evaluate an UNBONDING sentinel's staying
+  // bond; it's a chain param, so fetch it once.
+  useEffect(() => {
+    let cancelled = false;
+    getForumParams()
+      .then((res) => {
+        if (!cancelled) setMinSentinelBond(res?.params?.min_sentinel_bond ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setMinSentinelBond(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Mirrors x/forum's eligibleSentinel helper (chain commit d4507ca): a bonded
+  // sentinel in NORMAL or RECOVERY is eligible outright; an UNBONDING sentinel
+  // stays eligible while its staying bond (current_bond - pending_unbond_amount)
+  // remains at or above min_sentinel_bond — the withdrawing portion is treated
+  // as already gone. DEMOTED is never eligible. Also gated on the active session
+  // key permitting the message type. Epoch limits, cooldowns, and the per-action
+  // bond/rep floors are still enforced chain-side and surface as broadcast errors.
+  const isEligibleSentinel = useMemo(() => {
+    const status = sentinelBond?.bond_status;
+    if (status === BondedRoleStatus.NORMAL || status === BondedRoleStatus.RECOVERY) {
+      return true;
+    }
+    if (status === BondedRoleStatus.UNBONDING && minSentinelBond) {
+      try {
+        const staying = BigInt(sentinelBond?.current_bond || "0") - BigInt(sentinelBond?.pending_unbond_amount || "0");
+        return staying >= BigInt(minSentinelBond);
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }, [sentinelBond, minSentinelBond]);
   const canHide =
     permits(ForumMsgTypeUrls.HidePost) &&
     (isOpsCommitteeMember || isEligibleSentinel);
