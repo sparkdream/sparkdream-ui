@@ -128,6 +128,7 @@ import type {
   IsFollowingThreadResponse,
   ThreadFollowCountResponse,
   GetPostFlagResponse,
+  AllPostFlagResponse,
   FlagReviewQueueResponse,
   ForumStatusResponse,
   ForumParamsResponse,
@@ -1273,6 +1274,18 @@ export async function getTagBudgetAwards(
 
 export async function getPostFlags(postId: string): Promise<GetPostFlagResponse> {
   return get<GetPostFlagResponse>(`/sparkdream/forum/v1/post_flags/${postId}`);
+}
+
+// Every PostFlag record on the chain, paged. Used by the "Flagged" feed to
+// surface posts the community has reported (the flag_review_queue endpoint is a
+// single-post stub, so we list all flags and resolve each to its post).
+export async function listPostFlags(
+  pagination?: PaginationRequest
+): Promise<AllPostFlagResponse> {
+  return get<AllPostFlagResponse>(
+    "/sparkdream/forum/v1/post_flag",
+    paginationParams(pagination)
+  );
 }
 
 export async function getFlagReviewQueue(

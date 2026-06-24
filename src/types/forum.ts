@@ -457,8 +457,21 @@ export interface GetPostFlagResponse {
   post_flag: PostFlag;
 }
 
+// ListPostFlag (/sparkdream/forum/v1/post_flag): every PostFlag record, paged.
+// This is the source for the "Flagged" feed — the flag_review_queue endpoint
+// below only reports a single post (chain stub), so we list all flags here and
+// resolve each to its post client-side.
+export interface AllPostFlagResponse {
+  post_flag: PostFlag[];
+  pagination: Pagination;
+}
+
+// NOTE: the chain's FlagReviewQueue query is currently a stub that returns just
+// the first post in the review queue (post_id + total_weight), not a list of
+// posts. Shape mirrors QueryFlagReviewQueueResponse; unused by the UI today.
 export interface FlagReviewQueueResponse {
-  posts: ForumPost[];
+  post_id: string;
+  total_weight: string;
   pagination: Pagination;
 }
 

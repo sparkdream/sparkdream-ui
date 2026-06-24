@@ -10,8 +10,6 @@ import {
   isFollowingThread,
   getBountyByThread,
   getForumBounty,
-  getBondedRole,
-  getForumParams,
   listCategories,
   listPostConvictionStakesByStaker,
   authorBondsByType,
@@ -21,6 +19,7 @@ import { useTrustRank } from "@/hooks/useTrustRank";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
 import { useSessionPermits } from "@/hooks/useSessionPermits";
+import { useIsEligibleSentinel } from "@/hooks/useIsEligibleSentinel";
 import { ForumMsgTypeUrls, ModerationAuthority } from "@/lib/tx";
 import { timeAgo, formatSpark } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
@@ -31,8 +30,6 @@ import AuthorBondPanel from "@/components/AuthorBondPanel";
 import type { Category } from "@/types/commons";
 import type { ForumPost, ThreadMetadata, Bounty, PostConvictionStake } from "@/types/forum";
 import { PostStatus, BountyStatus } from "@/types/forum";
-import { RoleType, BondedRoleStatus } from "@/types/rep";
-import type { BondedRole } from "@/types/rep";
 
 // Promoting an ephemeral post to permanent is a member action gated on
 // make_permanent_min_trust_level (default PROVISIONAL). Pinning a thread,
@@ -46,11 +43,12 @@ const MAKE_PERMANENT_RANK = 1;
 // posts with parent_id set, so posts and replies share this target type.
 const FORUM_AUTHOR_BOND = 8;
 
-// sparkdream.common.v1.ModerationReason values for MsgHidePost.reason_code
-// (the msg field is a uint64, the LCD echoes the enum name on HideRecord).
-// UNSPECIFIED (0) is excluded: a hide must state its reason, and OTHER must
-// say it in reason_text.
-const HIDE_REASONS = [
+// sparkdream.common.v1.ModerationReason values, shared by MsgHidePost
+// (reason_code) and MsgFlagPost (category) — both are uint64 fields over the
+// same enum, and the LCD echoes the enum name on the resulting record.
+// UNSPECIFIED (0) is excluded: a hide/flag must state its reason, and OTHER
+// must say it in the free-text field.
+const MODERATION_REASONS = [
   { code: 1, label: "Spam" },
   { code: 2, label: "Harassment" },
   { code: 3, label: "Misinformation" },
@@ -96,15 +94,14 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   // query so we only mount the (self-querying) bond panel under posts that
   // actually have one, instead of two LCD calls per reply.
   const [bondedIds, setBondedIds] = useState<Set<string>>(new Set());
-  // Viewer's sentinel bond status (null when not a sentinel). Fetched once
-  // per address rather than per post, so moderation gating costs one LCD call.
-  const [sentinelBond, setSentinelBond] = useState<BondedRole | null>(null);
-  // min_sentinel_bond (uDREAM) gates whether an UNBONDING sentinel's staying
-  // bond still qualifies it to moderate (chain commit d4507ca).
-  const [minSentinelBond, setMinSentinelBond] = useState<string | null>(null);
   const [hideFormId, setHideFormId] = useState<string | null>(null);
   const [hideReason, setHideReason] = useState(0);
   const [hideReasonText, setHideReasonText] = useState("");
+  // Community flag form. Any member can flag a spark for moderator review; the
+  // chain accrues weighted flags and queues the post once the threshold is hit.
+  const [flagFormId, setFlagFormId] = useState<string | null>(null);
+  const [flagCategory, setFlagCategory] = useState(0);
+  const [flagReasonText, setFlagReasonText] = useState("");
   // Thread lock / move moderator forms (root only).
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [lockFormOpen, setLockFormOpen] = useState(false);
@@ -199,62 +196,10 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     fetchData();
   }, [fetchData]);
 
-  useEffect(() => {
-    if (!address) {
-      setSentinelBond(null);
-      return;
-    }
-    let cancelled = false;
-    getBondedRole(RoleType.FORUM_SENTINEL, address)
-      .then((res) => {
-        if (!cancelled) setSentinelBond(res?.bonded_role ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) setSentinelBond(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [address]);
-
-  // min_sentinel_bond is needed to evaluate an UNBONDING sentinel's staying
-  // bond; it's a chain param, so fetch it once.
-  useEffect(() => {
-    let cancelled = false;
-    getForumParams()
-      .then((res) => {
-        if (!cancelled) setMinSentinelBond(res?.params?.min_sentinel_bond ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) setMinSentinelBond(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Mirrors x/forum's eligibleSentinel helper (chain commit d4507ca): a bonded
-  // sentinel in NORMAL or RECOVERY is eligible outright; an UNBONDING sentinel
-  // stays eligible while its staying bond (current_bond - pending_unbond_amount)
-  // remains at or above min_sentinel_bond — the withdrawing portion is treated
-  // as already gone. DEMOTED is never eligible. Also gated on the active session
-  // key permitting the message type. Epoch limits, cooldowns, and the per-action
-  // bond/rep floors are still enforced chain-side and surface as broadcast errors.
-  const isEligibleSentinel = useMemo(() => {
-    const status = sentinelBond?.bond_status;
-    if (status === BondedRoleStatus.NORMAL || status === BondedRoleStatus.RECOVERY) {
-      return true;
-    }
-    if (status === BondedRoleStatus.UNBONDING && minSentinelBond) {
-      try {
-        const staying = BigInt(sentinelBond?.current_bond || "0") - BigInt(sentinelBond?.pending_unbond_amount || "0");
-        return staying >= BigInt(minSentinelBond);
-      } catch {
-        return false;
-      }
-    }
-    return false;
-  }, [sentinelBond, minSentinelBond]);
+  // Whether the viewer is a forum sentinel currently eligible to moderate.
+  // Eligibility is also gated per action on the session-key permit (canHide
+  // etc.); the chain enforces epoch limits, cooldowns, and bond/rep floors.
+  const isEligibleSentinel = useIsEligibleSentinel(address);
   const canHide =
     permits(ForumMsgTypeUrls.HidePost) &&
     (isOpsCommitteeMember || isEligibleSentinel);
@@ -434,6 +379,38 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       await fetchData();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Hide failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Community flag: any member reports a spark for moderator review with a
+  // stated reason. The chain accrues weighted flags per post (members weigh
+  // more than non-members, who also pay flag_spam_tax) and moves the post into
+  // the sentinel review queue once total weight crosses flag_review_threshold.
+  // Self-correctable concerns (rate limit, already-flagged, max flaggers)
+  // surface as broadcast errors rather than being pre-checked here.
+  const handleFlag = async (postId: string) => {
+    if (!address || !flagCategory) return;
+    setActionLoading(`flag-${postId}`);
+    try {
+      await signAndBroadcast([{
+        typeUrl: ForumMsgTypeUrls.FlagPost,
+        // post_id/category are uint64; pass BigInt so the amino override's
+        // omit-zero strict-equality check matches the chain's aminojson.
+        value: {
+          creator: address,
+          postId: BigInt(postId),
+          category: BigInt(flagCategory),
+          reason: flagReasonText.trim(),
+        },
+      }]);
+      setFlagFormId(null);
+      setFlagCategory(0);
+      setFlagReasonText("");
+      alert("Flag submitted for moderator review.");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Flag failed");
     } finally {
       setActionLoading(null);
     }
@@ -1140,6 +1117,22 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
               </button>
             </>
           )}
+          {/* Community flag: report a spark for moderator review. Offered to any
+              signed-in member except the author (who would Delete instead) on an
+              active post. The chain enforces rate limits and de-dup. */}
+          {isActive && !isAuthor && !!address && permits(ForumMsgTypeUrls.FlagPost) && (
+            <button
+              onClick={() => {
+                setFlagFormId(flagFormId === post.post_id ? null : post.post_id);
+                setFlagCategory(0);
+                setFlagReasonText("");
+              }}
+              title="Flag this spark for moderator review"
+              className="text-xs text-zinc-400 transition-colors hover:text-orange-400"
+            >
+              Flag
+            </button>
+          )}
           {/* Sentinel moderation. Authors already have Delete, so don't offer
               hiding one's own spark. */}
           {canHide && isActive && !isAuthor && (
@@ -1276,6 +1269,55 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
           </div>
         )}
 
+        {/* Flag reason form. A reason is required, and "Other" must be
+            explained in the free-text field. Mirrors the hide form but is a
+            community report (no bond, no authority choice). */}
+        {flagFormId === post.post_id && (
+          <div className="mt-3 space-y-2 rounded-lg border border-orange-900/50 bg-orange-950/20 p-3">
+            <p className="text-[11px] text-zinc-400">
+              Flagging sends this spark to the moderator review queue. Repeated or
+              false flags are rate-limited, and non-members pay a small spam tax
+              per flag.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={flagCategory}
+                onChange={(e) => setFlagCategory(parseInt(e.target.value, 10))}
+                className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-2.5 py-1.5 text-xs text-zinc-200 focus:border-zinc-600 focus:outline-none"
+              >
+                <option value={0}>Select a reason...</option>
+                {MODERATION_REASONS.map((r) => (
+                  <option key={r.code} value={r.code}>{r.label}</option>
+                ))}
+              </select>
+              <input
+                type="text"
+                value={flagReasonText}
+                onChange={(e) => setFlagReasonText(e.target.value)}
+                placeholder={flagCategory === REASON_OTHER ? "Reason (required)" : "Details (optional)"}
+                className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-800/50 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
+              />
+              <button
+                onClick={() => handleFlag(post.post_id)}
+                disabled={
+                  !flagCategory ||
+                  (flagCategory === REASON_OTHER && !flagReasonText.trim()) ||
+                  actionLoading === `flag-${post.post_id}`
+                }
+                className="rounded-lg border border-orange-800/50 px-3 py-1.5 text-xs text-orange-400 transition-colors hover:border-orange-700 disabled:opacity-50"
+              >
+                {actionLoading === `flag-${post.post_id}` ? "Flagging..." : "Submit flag"}
+              </button>
+              <button
+                onClick={() => { setFlagFormId(null); setFlagCategory(0); setFlagReasonText(""); }}
+                className="text-xs text-zinc-500 hover:text-zinc-300"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Hide reason form. A reason is required, and "Other" must be
             explained in the free-text field. */}
         {hideFormId === post.post_id && (
@@ -1332,7 +1374,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
                 className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-2.5 py-1.5 text-xs text-zinc-200 focus:border-zinc-600 focus:outline-none"
               >
                 <option value={0}>Select a reason...</option>
-                {HIDE_REASONS.map((r) => (
+                {MODERATION_REASONS.map((r) => (
                   <option key={r.code} value={r.code}>{r.label}</option>
                 ))}
               </select>

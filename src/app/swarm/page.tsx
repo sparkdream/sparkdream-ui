@@ -23,6 +23,7 @@ import { useDisplayName } from "@/hooks/useDisplayName";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
+import { useIsEligibleSentinel } from "@/hooks/useIsEligibleSentinel";
 import { PostStatus } from "@/types/forum";
 import type { ForumPost } from "@/types/forum";
 import type { Category } from "@/types/commons";
@@ -33,6 +34,7 @@ type View =
   | "category-threads"
   | "top-posts"
   | "bonded"
+  | "flagged"
   | "create"
   | "my-posts"
   | "active-bounties"
@@ -84,6 +86,11 @@ function SwarmPageInner() {
   }, [urlThreadId]);
   const { connected, ready, sessionActive, activeSession, address } = useWallet();
   const { isOpsCommitteeMember } = useCommonsCouncil(address);
+  // The Flagged feed surfaces community-reported sparks; it's a moderation tool,
+  // so it's visible only to those who can act on it — eligible forum sentinels
+  // and the Commons Operations Committee.
+  const isEligibleSentinel = useIsEligibleSentinel(address);
+  const canModerate = isEligibleSentinel || isOpsCommitteeMember;
 
   const [view, setView] = useState<View>("all-threads");
   const [discussionsOpen, setDiscussionsOpen] = useLocalStorageBoolean("swarm-discussions-open", true);
@@ -286,6 +293,19 @@ function SwarmPageInner() {
           </svg>
           Bonded
         </button>
+        {canModerate && (
+          <button
+            type="button"
+            className={`sd-side-item spark-item${effectiveView === "flagged" ? " active" : ""}`}
+            onClick={() => switchView("flagged")}
+            title="Sparks the community flagged for moderator review"
+          >
+            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M4 21V4m0 0l8 2 8-2v10l-8 2-8-2" />
+            </svg>
+            Flagged
+          </button>
+        )}
       </SidebarSection>
 
       <SidebarSection
@@ -529,6 +549,19 @@ function SwarmPageInner() {
           trustAddresses={trustAddresses}
           onCreate={connected ? () => switchView("create") : undefined}
         />
+      )}
+      {effectiveView === "flagged" && (
+        canModerate ? (
+          <ThreadList
+            key={`flagged-${listKey}`}
+            mode="flagged"
+            onSelectThread={handleSelectThread}
+            tagFilter={tagFilter}
+            trustAddresses={trustAddresses}
+          />
+        ) : (
+          <ConnectPrompt message="The flagged feed is available to forum sentinels and the operations committee." />
+        )
       )}
       {effectiveView === "create" && (
         <CreateThreadView

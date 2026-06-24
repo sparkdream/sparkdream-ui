@@ -7,11 +7,12 @@ import {
   getUserForumPosts,
   getForumPost,
   authorBondsByType,
+  listPostFlags,
 } from "@/lib/api";
 import { timeAgo, formatSpark } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import { useWallet } from "@/contexts/WalletContext";
-import type { ForumPost } from "@/types/forum";
+import type { ForumPost, PostFlag } from "@/types/forum";
 import { PostStatus, PostStatusValue, POST_STATUS_LABELS } from "@/types/forum";
 import type { Category } from "@/types/commons";
 
@@ -35,7 +36,7 @@ const PAGE_SIZE = "20";
 const FORUM_AUTHOR_BOND = 8;
 
 interface ThreadListProps {
-  mode: "category" | "all" | "my-posts" | "top" | "bonded";
+  mode: "category" | "all" | "my-posts" | "top" | "bonded" | "flagged";
   category?: Category | null;
   onSelectThread: (post: ForumPost) => void;
   tagFilter?: string | null;
@@ -55,6 +56,9 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
   // Bonded mode: post_id → bonded amount (micro-DREAM), and the chosen order.
   const [bondAmounts, setBondAmounts] = useState<Map<string, string>>(new Map());
   const [bondSort, setBondSort] = useState<"date" | "high" | "low">("date");
+  // Flagged mode: post_id → its flag record, and the chosen order.
+  const [flagInfo, setFlagInfo] = useState<Map<string, PostFlag>>(new Map());
+  const [flagSort, setFlagSort] = useState<"weight" | "date">("weight");
 
   const fetchThreads = useCallback(async () => {
     try {
@@ -92,6 +96,27 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
         setBondAmounts(new Map(bonds.map((b) => [b.target_id, b.amount])));
         const fetched = await Promise.all(
           bonds.map((b) => getForumPost(b.target_id).then((r) => r.post).catch(() => null))
+        );
+        posts = fetched.filter(
+          (p): p is ForumPost =>
+            !!p && p.status !== PostStatus.DELETED && p.status !== PostStatus.HIDDEN
+        );
+        nk = null;
+      } else if (mode === "flagged") {
+        // Every flag record from the chain, then the flagged posts themselves.
+        // Replies can be flagged too; the click handler resolves them to their
+        // root thread via root_id. Already-hidden/deleted posts are dropped:
+        // the feed is the queue of still-actionable reports.
+        const flags: PostFlag[] = [];
+        let key: string | undefined;
+        do {
+          const res = await listPostFlags({ limit: "200", ...(key ? { key } : {}) });
+          flags.push(...(res.post_flag || []));
+          key = res.pagination?.next_key || undefined;
+        } while (key);
+        setFlagInfo(new Map(flags.map((f) => [f.post_id, f])));
+        const fetched = await Promise.all(
+          flags.map((f) => getForumPost(f.post_id).then((r) => r.post).catch(() => null))
         );
         posts = fetched.filter(
           (p): p is ForumPost =>
@@ -221,6 +246,22 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
       return bondSort === "high" ? -cmp : cmp;
     });
   }
+  if (mode === "flagged") {
+    visible = [...visible].sort((a, b) => {
+      if (flagSort === "date") {
+        const at = parseInt(flagInfo.get(a.post_id)?.last_flag_at || "0", 10);
+        const bt = parseInt(flagInfo.get(b.post_id)?.last_flag_at || "0", 10);
+        return bt - at;
+      }
+      // Weight desc, with posts already in the review queue surfaced first.
+      const aq = flagInfo.get(a.post_id)?.in_review_queue ? 1 : 0;
+      const bq = flagInfo.get(b.post_id)?.in_review_queue ? 1 : 0;
+      if (aq !== bq) return bq - aq;
+      const aw = BigInt(flagInfo.get(a.post_id)?.total_weight || "0");
+      const bw = BigInt(flagInfo.get(b.post_id)?.total_weight || "0");
+      return aw < bw ? 1 : aw > bw ? -1 : 0;
+    });
+  }
 
   const title =
     mode === "category" && category
@@ -231,7 +272,9 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
           ? "Top sparks"
           : mode === "bonded"
             ? "Bonded sparks"
-            : "All sparks";
+            : mode === "flagged"
+              ? "Flagged sparks"
+              : "All sparks";
 
   return (
     <div>
@@ -249,12 +292,27 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
             <option value="low">Lowest bond</option>
           </select>
         )}
+        {mode === "flagged" && (
+          <select
+            className="sd-select"
+            value={flagSort}
+            onChange={(e) => setFlagSort(e.target.value as "weight" | "date")}
+            title="Order flagged sparks"
+          >
+            <option value="weight">Most flagged</option>
+            <option value="date">Recently flagged</option>
+          </select>
+        )}
       </div>
 
       {visible.length === 0 ? (
         <div className="sd-hull-tile rounded-xl p-12 text-center">
           <p className="text-zinc-400">
-            {mode === "my-posts" ? "You have no sparks yet" : "No sparks found"}
+            {mode === "my-posts"
+              ? "You have no sparks yet"
+              : mode === "flagged"
+                ? "No flagged sparks"
+                : "No sparks found"}
           </p>
           {onCreate && !tagFilter && !trustAddresses && (
             <button
@@ -314,6 +372,25 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
                           {formatSpark(bondAmounts.get(post.post_id)!)} DREAM bond
                         </span>
                       )}
+                      {flagInfo.has(post.post_id) && (() => {
+                        const f = flagInfo.get(post.post_id)!;
+                        const count = f.flaggers?.length ?? 0;
+                        return (
+                          <>
+                            <span
+                              className="text-red-400"
+                              title={`Flag weight ${f.total_weight} from ${count} ${count === 1 ? "flagger" : "flaggers"}`}
+                            >
+                              {count} {count === 1 ? "flag" : "flags"}
+                            </span>
+                            {f.in_review_queue && (
+                              <span className="text-orange-400" title="Reached the review threshold">
+                                In review
+                              </span>
+                            )}
+                          </>
+                        );
+                      })()}
                       {post.tags?.length > 0 && (
                         <span className="truncate">{post.tags.slice(0, 3).join(", ")}</span>
                       )}
