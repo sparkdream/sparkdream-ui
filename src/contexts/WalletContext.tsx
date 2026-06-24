@@ -257,6 +257,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         "/sparkdream.collect.v1.MsgUnpinCollection": { aminoType: "sparkdream/x/collect/MsgUnpinCollection", toAmino: CollectUnpinCollection.toAmino, fromAmino: CollectUnpinCollection.fromAmino },
       };
 
+      // Same gap for the 0.0.26 additions: the registry + proto codecs ship
+      // MsgSetThreadProposalsLock (forum) and MsgCancelUnbondRole (rep) but the
+      // generated AminoConverter maps still omit them. Neither has repeated
+      // fields (MsgCancelUnbondRole's role_type is an enum the converter emits
+      // as a plain int, matching the chain's aminojson), so delegating to the
+      // telescope toAmino/fromAmino statics is safe.
+      const { MsgSetThreadProposalsLock: ForumSetThreadProposalsLock } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/forum/v1/tx");
+      const { MsgCancelUnbondRole: RepCancelUnbondRole } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
+      const latestMsgAmino = {
+        "/sparkdream.forum.v1.MsgSetThreadProposalsLock": { aminoType: "sparkdream/x/forum/MsgSetThreadProposalsLock", toAmino: ForumSetThreadProposalsLock.toAmino, fromAmino: ForumSetThreadProposalsLock.fromAmino },
+        "/sparkdream.rep.v1.MsgCancelUnbondRole": { aminoType: "sparkdream/x/rep/MsgCancelUnbondRole", toAmino: RepCancelUnbondRole.toAmino, fromAmino: RepCancelUnbondRole.fromAmino },
+      };
+
       // Telescope's auto-generated amino converters don't recursively decode
       // `repeated google.protobuf.Any` fields, so MsgSubmitProposal /
       // MsgSubmitAnonymousProposal / MsgExecSession need the registry + the
@@ -404,7 +417,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         },
       };
 
-      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...pinSeparationAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
+      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...pinSeparationAmino, ...latestMsgAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
       // Cast: cosmjs's `lookupType` returns `GeneratedType` (union of TsProto +
       // Pbjs); the override only ever encounters TsProto types here.
       configureNestedAminoConverter({ registry: registry as unknown as Parameters<typeof configureNestedAminoConverter>[0]["registry"], aminoTypes });

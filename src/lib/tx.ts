@@ -115,6 +115,10 @@ export const RepMsgTypeUrls = {
   // numeric RoleType value (see types/rep.ts).
   BondRole: "/sparkdream.rep.v1.MsgBondRole",
   UnbondRole: "/sparkdream.rep.v1.MsgUnbondRole",
+  // Cancel (reduce) an in-flight unbond, returning the cancelled amount to
+  // active bond without waiting out the cooldown (chain commit d4507ca,
+  // sparkdreamjs 0.0.26). amount must be <= the role's pending_unbond_amount.
+  CancelUnbondRole: "/sparkdream.rep.v1.MsgCancelUnbondRole",
 } as const;
 
 // Collect transaction message type URLs
@@ -220,6 +224,10 @@ export const ForumMsgTypeUrls = {
   MarkAcceptedReply: "/sparkdream.forum.v1.MsgMarkAcceptedReply",
   ConfirmProposedReply: "/sparkdream.forum.v1.MsgConfirmProposedReply",
   RejectProposedReply: "/sparkdream.forum.v1.MsgRejectProposedReply",
+  // Thread author closes/reopens their thread to sentinel accepted-reply
+  // proposals (chain commit b991fc9, sparkdreamjs 0.0.26). `locked: true` makes
+  // proposeAcceptedReply error with ErrThreadProposalsLocked. Author-only.
+  SetThreadProposalsLock: "/sparkdream.forum.v1.MsgSetThreadProposalsLock",
   FreezeThread: "/sparkdream.forum.v1.MsgFreezeThread",
   UnarchiveThread: "/sparkdream.forum.v1.MsgUnarchiveThread",
 } as const;

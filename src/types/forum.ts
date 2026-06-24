@@ -59,6 +59,11 @@ export interface ThreadMetadata {
   proposal_fire_at: string;
   pinned_reply_ids: string[];
   pinned_records: PinnedReplyRecord[];
+  // When true, the thread author has closed the thread to sentinel
+  // accepted-reply proposals (chain commit b991fc9, sparkdreamjs 0.0.26): a
+  // sentinel's MsgMarkAcceptedReply on this thread is rejected with
+  // ErrThreadProposalsLocked. Toggled by the author via MsgSetThreadProposalsLock.
+  proposals_locked: boolean;
 }
 
 export interface PinnedReplyRecord {
@@ -544,6 +549,12 @@ export interface ForumParams {
   // proposal auto-confirms if the author hasn't acted (must be positive).
   curation_dream_reward: string;
   accept_proposal_timeout: string;
+  // Caps how many accepted-reply proposals a single sentinel may make on a
+  // given thread, counting confirmed and rejected alike (chain commit b991fc9,
+  // sparkdreamjs 0.0.26). Once a sentinel hits the cap on a thread it can never
+  // propose there again, disarming the re-propose harassment loop. Per-sentinel,
+  // not thread-global. 0 disables the cap. Defaults to 2.
+  max_accept_proposals_per_sentinel_per_thread: number;
 }
 
 export interface ForumParamsResponse {

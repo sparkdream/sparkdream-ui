@@ -326,6 +326,12 @@ const MODULES: Record<string, ModuleDef> = {
       { group: "Sentinel Moderation", key: "lockBondMultiplier", apiKey: "lock_bond_multiplier", label: "Lock Bond Multiplier", kind: "bigint", hint: "Lock needs this many × Min Sentinel Bond. >= 1. 0 = default (4)" },
       { group: "Sentinel Moderation", key: "lockBackingAmount", apiKey: "lock_backing_amount", label: "Lock Backing Amount", kind: "dream", hint: "Min DREAM balance to lock a thread. 0 = default (20000 DREAM)" },
       { group: "Sentinel Moderation", key: "lockMinRepTier", apiKey: "lock_min_rep_tier", label: "Lock Min Rep Tier", kind: "bigint", hint: "Min rep tier to lock. [Min Sentinel Rep Tier, 5]. 0 = default (4)" },
+      // Accepted-reply curation config (chain commits c8be748, b991fc9). Read
+      // directly (no "0 → compile-time default"): reward/timeout must be set,
+      // the per-thread cap of 0 means "no cap".
+      { group: "Accepted-Reply Curation", key: "curationDreamReward", apiKey: "curation_dream_reward", label: "Curation Reward", kind: "dream", hint: "DREAM minted to a sentinel when their accepted-reply proposal is confirmed. <= 0 disables the reward" },
+      { group: "Accepted-Reply Curation", key: "acceptProposalTimeout", apiKey: "accept_proposal_timeout", label: "Accept Proposal Timeout (seconds)", kind: "bigint", hint: "Seconds before a pending sentinel proposal auto-confirms if the author doesn't act. Must be positive (default 48h)" },
+      { group: "Accepted-Reply Curation", key: "maxAcceptProposalsPerSentinelPerThread", apiKey: "max_accept_proposals_per_sentinel_per_thread", label: "Max Proposals / Sentinel / Thread", kind: "number", hint: "Caps accepted-reply proposals one sentinel may make on a thread (confirmed + rejected). 0 = no cap (default 2)" },
     ],
   },
   futarchy: {

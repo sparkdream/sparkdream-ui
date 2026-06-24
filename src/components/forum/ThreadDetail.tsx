@@ -614,6 +614,52 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     }
   };
 
+  // Thread author clears the accepted reply (chain commit b991fc9). Same message
+  // with reply_id 0; the author's direct choice supersedes any pending proposal.
+  const handleClearAccepted = async () => {
+    if (!address) return;
+    setActionLoading("clear-accepted");
+    try {
+      await signAndBroadcast([{
+        typeUrl: ForumMsgTypeUrls.MarkAcceptedReply,
+        value: {
+          creator: address,
+          threadId: BigInt(threadId),
+          replyId: BigInt(0),
+        },
+      }]);
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Clear failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Thread author opens/closes the thread to sentinel accepted-reply proposals
+  // (chain commit b991fc9, sparkdreamjs 0.0.26). Locking lets the author close a
+  // discussion thread (or one with no good answer) to curation without being
+  // forced into an irreversible acceptance.
+  const handleSetProposalsLock = async (locked: boolean) => {
+    if (!address) return;
+    setActionLoading("proposals-lock");
+    try {
+      await signAndBroadcast([{
+        typeUrl: ForumMsgTypeUrls.SetThreadProposalsLock,
+        value: {
+          creator: address,
+          threadId: BigInt(threadId),
+          locked,
+        },
+      }]);
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to update curation lock");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Thread author confirms the pending sentinel proposal, promoting the proposed
   // reply to the accepted answer and crediting the proposing sentinel.
   const handleConfirmProposed = async () => {
@@ -692,6 +738,9 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     const proposedReplyId = metadata?.proposed_reply_id;
     const hasPendingProposal = !!proposedReplyId && proposedReplyId !== "0";
     const isProposedReply = hasPendingProposal && proposedReplyId === post.post_id;
+    // Author has closed the thread to sentinel accepted-reply proposals
+    // (chain commit b991fc9, sparkdreamjs 0.0.26).
+    const proposalsLocked = !!metadata?.proposals_locked;
     const isEphemeral = Boolean(post.expiration_time && post.expiration_time !== "0");
     const isActive = post.status === PostStatus.ACTIVE;
     // Pinned-reply state (replies only; root pins use post.pinned). Drives the
@@ -710,21 +759,31 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       address === rootPost.author &&
       permits(ForumMsgTypeUrls.DisputePin);
     // Accepted-reply curation affordances (replies only). The thread author may
-    // accept any active reply directly; an eligible sentinel on someone else's
-    // thread may propose one. Both go through MsgMarkAcceptedReply — neither is
-    // offered while a proposal is already pending or once a reply is accepted.
+    // accept any active reply directly, change to a different one, or clear the
+    // current pick — their direct choice supersedes any pending sentinel
+    // proposal (chain commit b991fc9), so Accept stays offered even while a
+    // proposal is in flight. It's only suppressed on the reply that is already
+    // accepted (re-accepting it is a no-op error); that reply gets Clear instead.
     const canAcceptReply =
       !isRoot &&
       isActive &&
       !isAcceptedReply &&
-      !hasPendingProposal &&
       address === rootPost.author &&
       permits(ForumMsgTypeUrls.MarkAcceptedReply);
+    const canClearAccepted =
+      !isRoot &&
+      isAcceptedReply &&
+      address === rootPost.author &&
+      permits(ForumMsgTypeUrls.MarkAcceptedReply);
+    // An eligible sentinel on someone else's thread may propose a reply, unless
+    // the author has closed the thread to curation (proposals_locked) — the
+    // chain rejects a locked-thread proposal with ErrThreadProposalsLocked.
     const canProposeReply =
       !isRoot &&
       isActive &&
       !isAcceptedReply &&
       !hasPendingProposal &&
+      !proposalsLocked &&
       !isAuthor &&
       address !== rootPost.author &&
       isEligibleSentinel &&
@@ -776,6 +835,15 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             Accepted Answer
+          </div>
+        )}
+        {/* Thread author has closed this thread to sentinel answer proposals. */}
+        {isRoot && proposalsLocked && (
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+            </svg>
+            Curation closed
           </div>
         )}
         {/* A sentinel has proposed this reply as the accepted answer; the thread
@@ -946,6 +1014,25 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
               Move
             </button>
           )}
+          {/* Thread author opens/closes the thread to sentinel accepted-reply
+              proposals (chain commit b991fc9). Only meaningful while no reply is
+              accepted; once one is, curation is moot. */}
+          {isRoot && isActive && address === rootPost.author &&
+            (!metadata?.accepted_reply_id || metadata.accepted_reply_id === "0") &&
+            permits(ForumMsgTypeUrls.SetThreadProposalsLock) && (
+            <button
+              onClick={() => handleSetProposalsLock(!metadata?.proposals_locked)}
+              disabled={actionLoading === "proposals-lock"}
+              title={metadata?.proposals_locked
+                ? "Reopen this thread to sentinel answer proposals"
+                : "Close this thread to sentinel answer proposals"}
+              className="text-xs text-zinc-400 transition-colors hover:text-zinc-200 disabled:opacity-50"
+            >
+              {actionLoading === "proposals-lock"
+                ? "..."
+                : metadata?.proposals_locked ? "Reopen curation" : "Close curation"}
+            </button>
+          )}
           {/* Assign this reply a bounty share (bounty creator only). */}
           {canAssignBounty && (
             <button
@@ -964,10 +1051,27 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
             <button
               onClick={() => handleMarkAccepted(post.post_id, false)}
               disabled={actionLoading === `accept-${post.post_id}`}
-              title="Mark this reply as the accepted answer"
+              title={metadata?.accepted_reply_id && metadata.accepted_reply_id !== "0"
+                ? "Make this the accepted answer instead"
+                : "Mark this reply as the accepted answer"}
               className="text-xs text-emerald-400 transition-colors hover:text-emerald-300 disabled:opacity-50"
             >
-              {actionLoading === `accept-${post.post_id}` ? "..." : "Accept answer"}
+              {actionLoading === `accept-${post.post_id}`
+                ? "..."
+                : metadata?.accepted_reply_id && metadata.accepted_reply_id !== "0"
+                  ? "Accept instead"
+                  : "Accept answer"}
+            </button>
+          )}
+          {/* Thread author clears the accepted answer (chain commit b991fc9). */}
+          {canClearAccepted && (
+            <button
+              onClick={handleClearAccepted}
+              disabled={actionLoading === "clear-accepted"}
+              title="Remove the accepted-answer mark from this reply"
+              className="text-xs text-zinc-400 transition-colors hover:text-zinc-200 disabled:opacity-50"
+            >
+              {actionLoading === "clear-accepted" ? "..." : "Clear accepted"}
             </button>
           )}
           {/* Eligible sentinel proposes a reply as the answer on another

@@ -294,6 +294,31 @@ export default function SentinelPanel() {
     }
   };
 
+  // Cancel (reduce) an in-flight unbond, returning the cancelled DREAM to active
+  // bond without waiting out the cooldown (chain commit d4507ca, sparkdreamjs
+  // 0.0.26). The pending amount was never unlocked — pending is only an earmark
+  // — so cancelling restores authority immediately. Cancels the full pending
+  // amount; the amount field is the cap.
+  const handleCancelUnbond = async () => {
+    if (!address || !bond?.pending_unbond_amount || bond.pending_unbond_amount === "0") return;
+    setActionLoading("cancel-unbond");
+    try {
+      await signAndBroadcast([{
+        typeUrl: RepMsgTypeUrls.CancelUnbondRole,
+        value: {
+          creator: address,
+          roleType: SENTINEL_ROLE,
+          amount: bond.pending_unbond_amount,
+        },
+      }]);
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Cancel unbond failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -417,14 +442,30 @@ export default function SentinelPanel() {
         <>
           {/* Bond overview */}
           <div className="sd-hull-tile rounded-xl p-5">
-            {/* Per chain commit 6d7e7ce, MsgUnbondRole now queues a withdrawal
-                that stays slashable until unbond_completion_time and flips
-                bond_status to UNBONDING. The owning module refuses authority
-                during that window. Surface both the chip and the cooldown
-                here so sentinels aren't surprised when their actions bounce. */}
+            {/* MsgUnbondRole queues a withdrawal that stays slashable until
+                unbond_completion_time and flips bond_status to UNBONDING.
+                Unbonding is now incremental and reversible (chain commit
+                d4507ca, sparkdreamjs 0.0.26): the pending amount is only an
+                earmark, so moderation authority continues as long as the
+                staying bond still covers the minimum, and the in-flight unbond
+                can be topped up, grown, or cancelled before the cooldown
+                matures. Surface the chip, the cooldown, and a cancel action. */}
             {bondStatus === BondedRoleStatus.UNBONDING && bond?.unbond_completion_time && (
-              <div className="mb-3 rounded-lg border border-amber-800/50 bg-amber-900/15 px-3 py-2 text-xs text-amber-300">
-                Unbond in progress. <b>{formatAmount(bond.pending_unbond_amount || "0")} DREAM</b> stays locked + slashable for {formatCooldownRemaining(bond.unbond_completion_time) || "—"}. Sentinel actions are refused until cooldown matures.
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-800/50 bg-amber-900/15 px-3 py-2 text-xs text-amber-300">
+                <span>
+                  Unbond in progress. <b>{formatAmount(bond.pending_unbond_amount || "0")} DREAM</b> stays locked + slashable for {formatCooldownRemaining(bond.unbond_completion_time) || "—"}. You keep acting as a sentinel while your staying bond covers the minimum.
+                </span>
+                {bond.pending_unbond_amount && bond.pending_unbond_amount !== "0" && (
+                  <button
+                    type="button"
+                    onClick={handleCancelUnbond}
+                    disabled={!!actionLoading}
+                    title="Return the pending amount to active bond without waiting out the cooldown"
+                    className="shrink-0 rounded-md border border-amber-700/60 px-2.5 py-1 font-medium text-amber-200 hover:bg-amber-900/30 disabled:opacity-50"
+                  >
+                    {actionLoading === "cancel-unbond" ? "Cancelling..." : "Cancel unbond"}
+                  </button>
+                )}
               </div>
             )}
             <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
@@ -656,6 +697,17 @@ export default function SentinelPanel() {
                       {forumParams.accept_proposal_timeout && forumParams.accept_proposal_timeout !== "0"
                         ? formatDuration(parseInt(forumParams.accept_proposal_timeout, 10))
                         : "—"}
+                    </p>
+                  </div>
+                  {/* Per-sentinel-per-thread proposal cap (chain commit b991fc9):
+                      once a sentinel hits it on a thread it can never propose
+                      there again. 0 disables the cap. */}
+                  <div>
+                    <p className="text-zinc-500">Proposals / thread</p>
+                    <p className="text-zinc-200">
+                      {Number(forumParams.max_accept_proposals_per_sentinel_per_thread) > 0
+                        ? Number(forumParams.max_accept_proposals_per_sentinel_per_thread).toLocaleString()
+                        : "unlimited"}
                     </p>
                   </div>
                 </div>
