@@ -36,6 +36,7 @@ import {
   CollaboratorRole,
   ReferenceType,
   CollectionStatus,
+  ItemStatus,
   CurationVerdict,
   CURATION_VERDICT_LABELS,
   FlagTargetType,
@@ -152,6 +153,12 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     (isOwner || myRole === CollaboratorRole.EDITOR || isAdminCollab);
   // Owner or ADMIN collaborator may add/remove/retitle collaborators.
   const canManageCollabs = !isImmutable && (isOwner || isAdminCollab);
+  // Hidden items are suppressed for the public; sentinels, curators, and the
+  // owner still see them (badged) so they can review, hide, or appeal.
+  const canSeeHidden = isSentinel || isCurator || isOwner;
+  const visibleItems = canSeeHidden
+    ? items
+    : items.filter((item) => item.status !== ItemStatus.HIDDEN);
 
   const fetchData = useCallback(async () => {
     try {
@@ -659,6 +666,35 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     );
   }
 
+  // A hidden collection's contents are concealed from the public on direct
+  // navigation, mirroring how Swarm conceals a hidden spark's body: the shell
+  // (name, owner, status) still renders, but the description and items are
+  // replaced by a moderation notice. Those who can act on it -- the owner (to
+  // appeal) and sentinels/curators (to review) -- still see everything.
+  if (collection.status === CollectionStatus.HIDDEN && !canSeeHidden) {
+    return (
+      <div>
+        <button onClick={onBack} className="mb-4 flex items-center gap-1 text-sm text-zinc-400 transition-colors hover:text-zinc-200">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+          </svg>
+          Back
+        </button>
+        <div className="sd-hull-tile rounded-xl p-5">
+          <h2 className="text-xl font-bold text-white">{collection.name || `Collection #${collection.id}`}</h2>
+          <div className="mt-1 flex items-center gap-2 text-xs text-zinc-500">
+            <span className="rounded-full bg-red-500/15 px-2 py-0.5 font-medium text-red-400">Hidden</span>
+            <span>Owner</span>
+            <CopyableAddress address={collection.owner} nested />
+          </div>
+          <p className="mt-4 text-sm italic text-zinc-500">
+            This collection was hidden by moderation.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* Back button */}
@@ -870,7 +906,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
             }`}
           >
             {t}
-            {t === "items" && ` (${items.length})`}
+            {t === "items" && ` (${visibleItems.length})`}
             {t === "collaborators" && ` (${collaborators.length})`}
           </button>
         ))}
@@ -1030,13 +1066,13 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
               </div>
             )}
 
-            {items.length === 0 ? (
+            {visibleItems.length === 0 ? (
               <div className="sd-hull-tile rounded-xl p-8 text-center">
                 <p className="text-zinc-400">No items in this collection</p>
               </div>
             ) : (
               <div className="space-y-2">
-                {items.map((item) => (
+                {visibleItems.map((item) => (
                   <div key={item.id} className="sd-hull-tile rounded-xl">
                     <button
                       onClick={() => setExpandedItem(expandedItem === item.id ? null : item.id)}
@@ -1059,7 +1095,14 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                           </div>
                         )}
                         <div className="min-w-0">
-                          <span className="block truncate text-sm font-medium text-zinc-200">{item.title || `Item #${item.id}`}</span>
+                          <span className="block truncate text-sm font-medium text-zinc-200">
+                            {item.status === ItemStatus.HIDDEN && (
+                              <span className="mr-1.5 rounded-full bg-red-900/40 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-red-400">
+                                Hidden
+                              </span>
+                            )}
+                            {item.title || `Item #${item.id}`}
+                          </span>
                           {item.description && (
                             <span className="block truncate text-xs text-zinc-500">{item.description}</span>
                           )}

@@ -171,6 +171,12 @@ export default function CollectionList({ mode, onSelect, filterType = "all", tag
   if (tagFilter) {
     filtered = filtered.filter((c) => (c.tags || []).includes(tagFilter));
   }
+  // Hidden collections are suppressed from public browsing. "My" mode lists the
+  // caller's own collections, where the owner is allowed to see their hidden
+  // ones (chain returns them); the detail page badges the status.
+  if (mode !== "my") {
+    filtered = filtered.filter((c) => c.status !== CollectionStatus.HIDDEN);
+  }
 
   // Pinned collections are a display-only feature marker; surface them
   // prominently at the top of the list, like pinned posts in Imaginarium.

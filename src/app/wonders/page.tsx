@@ -9,7 +9,7 @@ import CollectionDetail from "@/components/collections/CollectionDetail";
 import CreateCollectionForm from "@/components/collections/CreateCollectionForm";
 import CuratorList from "@/components/collections/CuratorList";
 import CuratorPanel from "@/components/collections/CuratorPanel";
-import CollectionModerationPanel from "@/components/collections/CollectionModerationPanel";
+import CollectionSentinelPanel from "@/components/collections/CollectionSentinelPanel";
 import {
   ContentPageLayout,
   ContentToolbar,
@@ -20,7 +20,6 @@ import CopyableAddress from "@/components/CopyableAddress";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
-import { useIsEligibleSentinel } from "@/hooks/useIsEligibleSentinel";
 import { CollectionStatus, CollectionType } from "@/types/collect";
 import type { Collection } from "@/types/collect";
 
@@ -30,17 +29,17 @@ type View =
   | "browse"
   | "curators"
   | "become-curator"
-  | "moderation"
+  | "sentinel"
   | "detail";
 
 export default function WondersPage() {
-  const { connected, ready, sessionActive, activeSession, address } = useWallet();
-  const canModerate = useIsEligibleSentinel(address);
+  const { connected, ready, sessionActive, activeSession } = useWallet();
 
   const [view, setView] = useState<View>("browse");
   const [browseOpen, setBrowseOpen] = useLocalStorageBoolean("collections-browse-open", true);
   const [myOpen, setMyOpen] = useLocalStorageBoolean("collections-my-open", true);
   const [curationOpen, setCurationOpen] = useLocalStorageBoolean("collections-curation-open", true);
+  const [moderationOpen, setModerationOpen] = useLocalStorageBoolean("collections-moderation-open", true);
   const [tagsOpen, setTagsOpen] = useLocalStorageBoolean("collections-tags-open", true);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
 
@@ -156,21 +155,26 @@ export default function WondersPage() {
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
             <path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
           </svg>
-          Become a curator
+          Curator
         </button>
-        {canModerate && (
-          <button
-            type="button"
-            className={`sd-side-item${view === "moderation" ? " active" : ""}`}
-            onClick={() => switchView("moderation")}
-            title="Hide flagged collection content"
-          >
-            <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4z" />
-            </svg>
-            Moderation
-          </button>
-        )}
+      </SidebarSection>
+
+      <SidebarSection
+        label="Moderation"
+        open={moderationOpen}
+        onToggle={() => setModerationOpen(!moderationOpen)}
+      >
+        <button
+          type="button"
+          className={`sd-side-item${view === "sentinel" ? " active" : ""}`}
+          onClick={() => switchView("sentinel")}
+          title="Bond to become a sentinel and act on flagged collection content"
+        >
+          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+          </svg>
+          Sentinel
+        </button>
       </SidebarSection>
 
       <SidebarSection
@@ -227,7 +231,7 @@ export default function WondersPage() {
   };
 
   const showToolbar =
-    view !== "detail" && view !== "create" && view !== "become-curator" && view !== "moderation";
+    view !== "detail" && view !== "create" && view !== "become-curator" && view !== "sentinel";
 
   const toolbar = showToolbar ? (
     <ContentToolbar
@@ -336,11 +340,11 @@ export default function WondersPage() {
           <ConnectPrompt message="Connect your wallet to register as a curator." />
         )
       )}
-      {view === "moderation" && (
+      {view === "sentinel" && (
         connected ? (
-          <CollectionModerationPanel onViewCollection={handleSelectCollectionById} />
+          <CollectionSentinelPanel onViewCollection={handleSelectCollectionById} />
         ) : (
-          <ConnectPrompt message="Connect your wallet to moderate collections." />
+          <ConnectPrompt message="Connect your wallet to become a sentinel and moderate collections." />
         )
       )}
       {view === "detail" && selectedCollectionId && (

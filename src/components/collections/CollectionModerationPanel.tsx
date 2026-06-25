@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import Link from "next/link";
 import {
   listCollectionFlaggedContent,
   listCollectionHideRecordsByTarget,
@@ -148,10 +147,8 @@ export default function CollectionModerationPanel({ onViewCollection }: Props) {
 
       {!isEligible && (
         <div className="sd-hull-tile rounded-xl p-5 text-sm text-zinc-400">
-          Hiding flagged collection content requires an eligible forum sentinel bond. Manage your
-          sentinel bond on the{" "}
-          <Link href="/swarm" className="text-indigo-400 underline hover:text-indigo-300">Swarm</Link>{" "}
-          moderation panel. You can still review the flagged queue below.
+          Hiding flagged collection content requires an eligible sentinel bond. Bond to become a
+          sentinel using the card above. You can still review the flagged queue below.
         </div>
       )}
 
