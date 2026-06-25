@@ -562,6 +562,11 @@ function MobileMenu({
 
         <div className="sd-mobile-body">
           <div className="sd-mobile-section">
+            <div className="sd-mobile-heading">{PUBLISH_GROUP.label}</div>
+            {PUBLISH_GROUP.items.map(renderLeaf)}
+          </div>
+
+          <div className="sd-mobile-section">
             {PRIMARY_LINKS.map((l) => (
               <Link
                 key={l.href}
@@ -572,11 +577,6 @@ function MobileMenu({
                 <span className="label">{l.label}</span>
               </Link>
             ))}
-          </div>
-
-          <div className="sd-mobile-section">
-            <div className="sd-mobile-heading">{PUBLISH_GROUP.label}</div>
-            {PUBLISH_GROUP.items.map(renderLeaf)}
           </div>
 
           <div className="sd-mobile-section">
