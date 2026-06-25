@@ -40,6 +40,65 @@ function statusBadge(status: string) {
   );
 }
 
+function CollectionCard({
+  c,
+  mode,
+  onSelect,
+  featured = false,
+}: {
+  c: Collection;
+  mode: "public" | "my";
+  onSelect: (collection: Collection) => void;
+  featured?: boolean;
+}) {
+  return (
+    <button
+      onClick={() => onSelect(c)}
+      className={
+        featured
+          ? "sd-hull-tile interactive w-full rounded-xl border border-purple-500/40 bg-purple-500/4 px-4 py-4 text-left shadow-[0_0_24px_-12px_rgba(168,85,247,0.6)]"
+          : "sd-hull-tile interactive w-full rounded-xl px-4 py-3 text-left"
+      }
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          {featured && (
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-purple-300">
+              <span>◆ Pinned</span>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <span className={`truncate font-medium text-zinc-100${featured ? " text-base" : ""}`}>
+              {c.name || `Collection #${c.id}`}
+            </span>
+            {typeBadge(c.type)}
+            {statusBadge(c.status)}
+          </div>
+          {c.description && (
+            <p className={`mt-1 text-sm text-zinc-400${featured ? "" : " truncate"}`}>{c.description}</p>
+          )}
+          <div className="mt-2 flex items-center gap-4 text-xs text-zinc-500">
+            <span>{c.item_count} item{c.item_count !== 1 ? "s" : ""}</span>
+            {mode !== "my" && <NameOrAddress address={c.owner} />}
+            {c.created_at && <span><BlockTime height={c.created_at} relative /></span>}
+            {c.tags?.length > 0 && (
+              <span className="truncate">{c.tags.slice(0, 3).join(", ")}</span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-xs text-zinc-500">
+          {(c.upvote_count > 0 || c.downvote_count > 0) && (
+            <span>{c.upvote_count - c.downvote_count >= 0 ? "+" : ""}{c.upvote_count - c.downvote_count}</span>
+          )}
+          <svg className="h-4 w-4 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+          </svg>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 const PAGE_SIZE = "20";
 
 interface CollectionListProps {
@@ -113,6 +172,11 @@ export default function CollectionList({ mode, onSelect, filterType = "all", tag
     filtered = filtered.filter((c) => (c.tags || []).includes(tagFilter));
   }
 
+  // Pinned collections are a display-only feature marker; surface them
+  // prominently at the top of the list, like pinned posts in Imaginarium.
+  const featured = filtered.filter((c) => c.pinned);
+  const rest = filtered.filter((c) => !c.pinned);
+
   if (loading) {
     return (
       <div className="space-y-3">
@@ -159,41 +223,15 @@ export default function CollectionList({ mode, onSelect, filterType = "all", tag
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => onSelect(c)}
-              className="sd-hull-tile interactive w-full rounded-xl px-4 py-3 text-left"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate font-medium text-zinc-100">{c.name || `Collection #${c.id}`}</span>
-                    {typeBadge(c.type)}
-                    {statusBadge(c.status)}
-                  </div>
-                  {c.description && (
-                    <p className="mt-1 truncate text-sm text-zinc-400">{c.description}</p>
-                  )}
-                  <div className="mt-2 flex items-center gap-4 text-xs text-zinc-500">
-                    <span>{c.item_count} item{c.item_count !== 1 ? "s" : ""}</span>
-                    {mode !== "my" && <NameOrAddress address={c.owner} />}
-                    {c.created_at && <span><BlockTime height={c.created_at} relative /></span>}
-                    {c.tags?.length > 0 && (
-                      <span className="truncate">{c.tags.slice(0, 3).join(", ")}</span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-zinc-500">
-                  {(c.upvote_count > 0 || c.downvote_count > 0) && (
-                    <span>{c.upvote_count - c.downvote_count >= 0 ? "+" : ""}{c.upvote_count - c.downvote_count}</span>
-                  )}
-                  <svg className="h-4 w-4 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                  </svg>
-                </div>
-              </div>
-            </button>
+          {featured.length > 0 && (
+            <div className="mb-3 space-y-2">
+              {featured.map((c) => (
+                <CollectionCard key={c.id} c={c} mode={mode} onSelect={onSelect} featured />
+              ))}
+            </div>
+          )}
+          {rest.map((c) => (
+            <CollectionCard key={c.id} c={c} mode={mode} onSelect={onSelect} />
           ))}
           {nextKey && (
             <button
