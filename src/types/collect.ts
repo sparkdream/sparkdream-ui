@@ -231,6 +231,111 @@ export const CURATION_VERDICT_LABELS: Record<string, string> = {
   [CurationVerdict.DOWN]: "Down",
 };
 
+// FlagTargetType identifies whether a moderation action targets a whole
+// collection or a single item. Numeric values match the on-chain enum and are
+// what the Msg* and Query URL templates expect (1 = collection, 2 = item).
+export const FlagTargetType = {
+  COLLECTION: 1,
+  ITEM: 2,
+} as const;
+
+export type FlagTargetTypeValue = typeof FlagTargetType[keyof typeof FlagTargetType];
+
+// String form returned by the LCD for FlagRecord.reason / HideRecord.reason_code
+// and accepted on the URL templates for the by-target queries.
+export const FLAG_TARGET_TYPE_NAMES: Record<number, string> = {
+  [FlagTargetType.COLLECTION]: "FLAG_TARGET_TYPE_COLLECTION",
+  [FlagTargetType.ITEM]: "FLAG_TARGET_TYPE_ITEM",
+};
+
+// sparkdream.common.v1.ModerationReason — shared by x/forum and x/collect.
+// The picker passes the int value so the proto encoder + amino sigverify never
+// see the enum-string (same int32-enum-as-string trap as referenceType).
+export const ModerationReason = {
+  UNSPECIFIED: 0,
+  SPAM: 1,
+  HARASSMENT: 2,
+  MISINFORMATION: 3,
+  OFF_TOPIC: 4,
+  LOW_QUALITY: 5,
+  INAPPROPRIATE: 6,
+  IMPERSONATION: 7,
+  POLICY_VIOLATION: 8,
+  DUPLICATE: 9,
+  SCAM: 10,
+  COPYRIGHT: 11,
+  OTHER: 12,
+} as const;
+
+export type ModerationReasonValue = typeof ModerationReason[keyof typeof ModerationReason];
+
+// Ordered for the reason <select>; value is the int the chain expects.
+export const MODERATION_REASONS: { value: number; label: string }[] = [
+  { value: ModerationReason.SPAM, label: "Spam" },
+  { value: ModerationReason.HARASSMENT, label: "Harassment" },
+  { value: ModerationReason.MISINFORMATION, label: "Misinformation" },
+  { value: ModerationReason.OFF_TOPIC, label: "Off topic" },
+  { value: ModerationReason.LOW_QUALITY, label: "Low quality" },
+  { value: ModerationReason.INAPPROPRIATE, label: "Inappropriate" },
+  { value: ModerationReason.IMPERSONATION, label: "Impersonation" },
+  { value: ModerationReason.POLICY_VIOLATION, label: "Policy violation" },
+  { value: ModerationReason.DUPLICATE, label: "Duplicate" },
+  { value: ModerationReason.SCAM, label: "Scam" },
+  { value: ModerationReason.COPYRIGHT, label: "Copyright" },
+  { value: ModerationReason.OTHER, label: "Other" },
+];
+
+// Map the LCD's enum-string reason back to a human label for display.
+export const MODERATION_REASON_LABELS: Record<string, string> = {
+  MODERATION_REASON_SPAM: "Spam",
+  MODERATION_REASON_HARASSMENT: "Harassment",
+  MODERATION_REASON_MISINFORMATION: "Misinformation",
+  MODERATION_REASON_OFF_TOPIC: "Off topic",
+  MODERATION_REASON_LOW_QUALITY: "Low quality",
+  MODERATION_REASON_INAPPROPRIATE: "Inappropriate",
+  MODERATION_REASON_IMPERSONATION: "Impersonation",
+  MODERATION_REASON_POLICY_VIOLATION: "Policy violation",
+  MODERATION_REASON_DUPLICATE: "Duplicate",
+  MODERATION_REASON_SCAM: "Scam",
+  MODERATION_REASON_COPYRIGHT: "Copyright",
+  MODERATION_REASON_OTHER: "Other",
+};
+
+// A single member's flag on a piece of content (sparkdream.common.v1.FlagRecord).
+export interface FlagRecord {
+  flagger: string;
+  reason: string;
+  reason_text: string;
+  flagged_at: string;
+  weight: string;
+}
+
+// Aggregated flags on one collection or item (collect CollectionFlag).
+export interface CollectionFlag {
+  target_id: string;
+  target_type: string;
+  flag_records: FlagRecord[];
+  total_weight: string;
+  first_flag_at: string;
+  last_flag_at: string;
+  in_review_queue: boolean;
+}
+
+// A sentinel's hide action on collection content + its appeal status.
+export interface HideRecord {
+  id: string;
+  target_id: string;
+  target_type: string;
+  sentinel: string;
+  hidden_at: string;
+  committed_amount: string;
+  reason_code: string;
+  reason_text: string;
+  appeal_deadline: string;
+  appealed: boolean;
+  resolved: boolean;
+}
+
 // API response types
 
 export interface Pagination {
@@ -271,6 +376,26 @@ export interface GetCurationSummaryResponse {
 export interface ListCurationReviewsResponse {
   reviews: CurationReview[];
   pagination: Pagination;
+}
+
+// CurationReviewsByCurator shares the response shape with CurationReviews.
+export type ListCurationReviewsByCuratorResponse = ListCurationReviewsResponse;
+
+export interface GetCollectionFlagResponse {
+  collection_flag: CollectionFlag;
+}
+
+export interface ListFlaggedContentResponse {
+  collection_flags: CollectionFlag[];
+  pagination: Pagination;
+}
+
+export interface GetHideRecordResponse {
+  hide_record: HideRecord;
+}
+
+export interface ListHideRecordsByTargetResponse {
+  hide_records: HideRecord[];
 }
 
 export interface GetSponsorshipRequestResponse {

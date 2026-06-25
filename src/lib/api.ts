@@ -49,11 +49,16 @@ import type {
   GetCuratorActivityResponse,
   GetCurationSummaryResponse,
   ListCurationReviewsResponse,
+  ListCurationReviewsByCuratorResponse,
   GetSponsorshipRequestResponse,
   ListSponsorshipRequestsResponse,
   GetEndorsementResponse,
   CollectionConvictionResponse,
   CollectParamsResponse,
+  GetCollectionFlagResponse,
+  ListFlaggedContentResponse,
+  GetHideRecordResponse,
+  ListHideRecordsByTargetResponse,
 } from "@/types/collect";
 import type {
   RepMember,
@@ -1024,6 +1029,57 @@ export async function getCollectionConviction(
 
 export async function getCollectParams(): Promise<CollectParamsResponse> {
   return get<CollectParamsResponse>("/sparkdream/collect/v1/params");
+}
+
+// Reviews authored by one curator across all collections. Backs the "My
+// reviews" list in the curator dashboard.
+export async function listCurationReviewsByCurator(
+  curator: string,
+  pagination?: PaginationRequest
+): Promise<ListCurationReviewsByCuratorResponse> {
+  return get<ListCurationReviewsByCuratorResponse>(
+    `/sparkdream/collect/v1/curation_reviews_by_curator/${curator}`,
+    paginationParams(pagination)
+  );
+}
+
+// Aggregated flags on one collection (target_type 1) or item (2). target_type
+// is the numeric FlagTargetType value the URL template expects.
+export async function getCollectionContentFlag(
+  targetId: string,
+  targetType: number
+): Promise<GetCollectionFlagResponse> {
+  return get<GetCollectionFlagResponse>(
+    `/sparkdream/collect/v1/content_flag/${targetId}/${targetType}`
+  );
+}
+
+// All content currently in the collect flag-review queue — the sentinel
+// moderation feed for collections (mirrors the forum flagged feed).
+export async function listCollectionFlaggedContent(
+  pagination?: PaginationRequest
+): Promise<ListFlaggedContentResponse> {
+  return get<ListFlaggedContentResponse>(
+    "/sparkdream/collect/v1/flagged_content",
+    paginationParams(pagination)
+  );
+}
+
+export async function getCollectionHideRecord(
+  id: string
+): Promise<GetHideRecordResponse> {
+  return get<GetHideRecordResponse>(`/sparkdream/collect/v1/hide_record/${id}`);
+}
+
+// Hide records on a given collection/item, used to surface an active hide (and
+// its appeal status) on the content itself.
+export async function listCollectionHideRecordsByTarget(
+  targetId: string,
+  targetType: number
+): Promise<ListHideRecordsByTargetResponse> {
+  return get<ListHideRecordsByTargetResponse>(
+    `/sparkdream/collect/v1/hide_records_by_target/${targetId}/${targetType}`
+  );
 }
 
 // ── Name module ───────────────────────────────────────────────────

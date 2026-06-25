@@ -7,10 +7,14 @@ import {
   listCollectionItems,
   getCollaborators,
   getCurationSummary,
+  listCurationReviews,
+  listCollectionHideRecordsByTarget,
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useTrustRank } from "@/hooks/useTrustRank";
+import { useIsEligibleCurator } from "@/hooks/useIsEligibleCurator";
+import { useIsEligibleSentinel } from "@/hooks/useIsEligibleSentinel";
 import { CollectMsgTypeUrls } from "@/lib/tx";
 import { timeAgo, formatTime } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
@@ -19,8 +23,10 @@ import type {
   CollectionItem,
   Collaborator,
   CurationSummary,
+  CurationReview,
+  HideRecord,
 } from "@/types/collect";
-import { referenceTypeFromJSON, collaboratorRoleFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/types";
+import { referenceTypeFromJSON, collaboratorRoleFromJSON, curationVerdictFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/types";
 import {
   COLLECTION_TYPE_LABELS,
   COLLECTION_STATUS_LABELS,
@@ -30,6 +36,11 @@ import {
   CollaboratorRole,
   ReferenceType,
   CollectionStatus,
+  CurationVerdict,
+  CURATION_VERDICT_LABELS,
+  FlagTargetType,
+  MODERATION_REASONS,
+  MODERATION_REASON_LABELS,
 } from "@/types/collect";
 
 interface CollectionDetailProps {
@@ -55,6 +66,8 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const { address, signAndBroadcast } = useWallet();
   const isMember = useIsRepMember(address);
   const cannotUpvote = address ? isMember === false : false;
+  const isCurator = useIsEligibleCurator(address);
+  const isSentinel = useIsEligibleSentinel(address);
   const rank = useTrustRank(address);
   // Default trust gates (chain enforces the real param). Pin: collect
   // pin_min_trust_level default ESTABLISHED. Make permanent:
@@ -66,11 +79,32 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const [items, setItems] = useState<CollectionItem[]>([]);
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [curation, setCuration] = useState<CurationSummary | null>(null);
+  const [reviews, setReviews] = useState<CurationReview[]>([]);
+  // Active hide record on the collection itself (target_type COLLECTION), if any.
+  const [hideRecord, setHideRecord] = useState<HideRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"items" | "collaborators" | "curation">("items");
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Curator review form (curation tab).
+  const [showRateForm, setShowRateForm] = useState(false);
+  const [rateVerdict, setRateVerdict] = useState<string>(CurationVerdict.UP);
+  const [rateTags, setRateTags] = useState("");
+  const [rateComment, setRateComment] = useState("");
+
+  // Challenge form, keyed by the review being challenged.
+  const [challengeReviewId, setChallengeReviewId] = useState<string | null>(null);
+  const [challengeReason, setChallengeReason] = useState("");
+
+  // Flag / hide reason form. `flagTarget` is `${type}:${id}` of the open form;
+  // `flagMode` selects whether the submit flags (member) or hides (sentinel).
+  const [flagTarget, setFlagTarget] = useState<string | null>(null);
+  const [flagMode, setFlagMode] = useState<"flag" | "hide">("flag");
+  const [flagReason, setFlagReason] = useState<number>(MODERATION_REASONS[0].value);
+  const [flagReasonText, setFlagReasonText] = useState("");
 
   // Add item form
   const [showAddItem, setShowAddItem] = useState(false);
@@ -104,6 +138,20 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const isOwner = collection?.owner === address;
   const isEphemeral = Boolean(collection?.expires_at && collection.expires_at !== "0");
   const isCollectionActive = collection?.status === CollectionStatus.ACTIVE;
+  const isImmutable = Boolean(collection?.immutable);
+
+  // The caller's own collaborator record (if any) drives write/manage gating,
+  // mirroring x/collect's HasWriteAccess / IsOwnerOrAdmin helpers.
+  const myCollab = collaborators.find((c) => c.address === address);
+  const myRole = isOwner ? "owner" : myCollab?.role;
+  const isAdminCollab = myRole === CollaboratorRole.ADMIN;
+  // Owner or EDITOR/ADMIN collaborator may add/remove items (chain also
+  // requires non-owner editors to be x/rep members — surfaced via cannotUpvote).
+  const canWrite =
+    !isImmutable &&
+    (isOwner || myRole === CollaboratorRole.EDITOR || isAdminCollab);
+  // Owner or ADMIN collaborator may add/remove/retitle collaborators.
+  const canManageCollabs = !isImmutable && (isOwner || isAdminCollab);
 
   const fetchData = useCallback(async () => {
     try {
@@ -121,6 +169,14 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
       getCurationSummary(collectionId)
         .then((r) => setCuration(r.summary))
         .catch(() => setCuration(null));
+
+      listCurationReviews(collectionId, { limit: "50", reverse: true })
+        .then((r) => setReviews(r.reviews || []))
+        .catch(() => setReviews([]));
+
+      listCollectionHideRecordsByTarget(collectionId, FlagTargetType.COLLECTION)
+        .then((r) => setHideRecord((r.hide_records || []).find((h) => !h.resolved) ?? null))
+        .catch(() => setHideRecord(null));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load collection");
     } finally {
@@ -282,6 +338,30 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     }
   };
 
+  // Promote/demote a collaborator (MsgUpdateCollaboratorRole). Only the owner
+  // may grant or revoke ADMIN; admins can manage EDITOR roles among non-admins.
+  const handleUpdateCollaboratorRole = async (collabAddress: string, role: string) => {
+    if (!address) return;
+    setActionLoading(`role-${collabAddress}`);
+    setActionError(null);
+    try {
+      await signAndBroadcast([{
+        typeUrl: CollectMsgTypeUrls.UpdateCollaboratorRole,
+        value: {
+          creator: address,
+          collectionId: BigInt(collectionId),
+          address: collabAddress,
+          role: collaboratorRoleFromJSON(role),
+        },
+      }]);
+      await fetchData();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to update role");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleRemoveCollaborator = async (collabAddress: string) => {
     if (!address) return;
     setActionLoading(`remove-collab-${collabAddress}`);
@@ -368,6 +448,193 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     }
   };
 
+  const handleDownvote = async () => {
+    if (!address) return;
+    setActionLoading("downvote");
+    try {
+      await signAndBroadcast([{
+        typeUrl: CollectMsgTypeUrls.DownvoteContent,
+        value: { creator: address, targetId: BigInt(collectionId), targetType: FlagTargetType.COLLECTION },
+      }]);
+      await fetchData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to downvote");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Submit a curator verdict (MsgRateCollection). Gated chain-side on a bonded
+  // ROLE_TYPE_COLLECT_CURATOR in NORMAL/RECOVERY, min trust, min bonded age, and
+  // the collection being ACTIVE with community feedback enabled.
+  const handleRate = async () => {
+    if (!address) return;
+    setActionLoading("rate");
+    setActionError(null);
+    try {
+      const tags = rateTags
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+      await signAndBroadcast([{
+        typeUrl: CollectMsgTypeUrls.RateCollection,
+        value: {
+          creator: address,
+          collectionId: BigInt(collectionId),
+          // CurationVerdict is an int32 enum; convert from the enum-string the
+          // form holds so amino sigverify sees the same int the chain rebuilds.
+          verdict: curationVerdictFromJSON(rateVerdict),
+          tags,
+          comment: rateComment.trim(),
+        },
+      }]);
+      setShowRateForm(false);
+      setRateTags("");
+      setRateComment("");
+      await fetchData();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to submit review");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Challenge a curator's review (MsgChallengeReview). Locks challenge_deposit
+  // DREAM; open to any member except the review's own curator.
+  const handleChallenge = async (reviewId: string) => {
+    if (!address || !challengeReason.trim()) return;
+    setActionLoading(`challenge-${reviewId}`);
+    setActionError(null);
+    try {
+      await signAndBroadcast([{
+        typeUrl: CollectMsgTypeUrls.ChallengeReview,
+        value: { creator: address, reviewId: BigInt(reviewId), reason: challengeReason.trim() },
+      }]);
+      setChallengeReviewId(null);
+      setChallengeReason("");
+      await fetchData();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to challenge review");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Flag (member) or hide (sentinel) a collection or item. targetType is the
+  // numeric FlagTargetType; reason fields carry the int enum + free text.
+  const submitFlagOrHide = async (targetId: string, targetType: number) => {
+    if (!address) return;
+    const key = `${flagMode}-${targetType}:${targetId}`;
+    setActionLoading(key);
+    setActionError(null);
+    try {
+      if (flagMode === "flag") {
+        await signAndBroadcast([{
+          typeUrl: CollectMsgTypeUrls.FlagContent,
+          value: {
+            creator: address,
+            targetId: BigInt(targetId),
+            targetType,
+            reason: flagReason,
+            reasonText: flagReasonText.trim(),
+          },
+        }]);
+      } else {
+        await signAndBroadcast([{
+          typeUrl: CollectMsgTypeUrls.HideContent,
+          value: {
+            creator: address,
+            targetId: BigInt(targetId),
+            targetType,
+            reasonCode: flagReason,
+            reasonText: flagReasonText.trim(),
+          },
+        }]);
+      }
+      setFlagTarget(null);
+      setFlagReasonText("");
+      await fetchData();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Owner/adder appeals a sentinel hide (MsgAppealHide). Escrows appeal_fee.
+  const handleAppeal = async (hideRecordId: string) => {
+    if (!address) return;
+    setActionLoading("appeal");
+    setActionError(null);
+    try {
+      await signAndBroadcast([{
+        typeUrl: CollectMsgTypeUrls.AppealHide,
+        value: { creator: address, hideRecordId: BigInt(hideRecordId) },
+      }]);
+      await fetchData();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to appeal");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Shared flag/hide reason form, rendered inline for collection or item rows.
+  const openFlagForm = (targetType: number, targetId: string, mode: "flag" | "hide") => {
+    setFlagMode(mode);
+    setFlagReason(MODERATION_REASONS[0].value);
+    setFlagReasonText("");
+    setFlagTarget(`${targetType}:${targetId}`);
+  };
+
+  const renderFlagForm = (targetType: number, targetId: string) => {
+    if (flagTarget !== `${targetType}:${targetId}`) return null;
+    const key = `${flagMode}-${targetType}:${targetId}`;
+    return (
+      <div className="mt-3 space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+        <p className="text-xs font-medium text-zinc-400">
+          {flagMode === "flag" ? "Flag for moderator review" : "Hide content"}
+        </p>
+        <select
+          value={flagReason}
+          onChange={(e) => setFlagReason(Number(e.target.value))}
+          className="sd-select"
+        >
+          {MODERATION_REASONS.map((r) => (
+            <option key={r.value} value={r.value}>{r.label}</option>
+          ))}
+        </select>
+        <input
+          value={flagReasonText}
+          onChange={(e) => setFlagReasonText(e.target.value)}
+          placeholder="Reason detail (optional)"
+          className={refFieldCls}
+        />
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => submitFlagOrHide(targetId, targetType)}
+            disabled={actionLoading === key}
+            className={`rounded-lg border px-3 py-1.5 text-xs transition-colors disabled:opacity-50 ${
+              flagMode === "hide"
+                ? "border-red-800/50 text-red-400 hover:border-red-700 hover:bg-red-900/20"
+                : "border-amber-700/50 text-amber-400 hover:bg-amber-900/20"
+            }`}
+          >
+            {actionLoading === key ? "..." : flagMode === "flag" ? "Submit flag" : "Confirm hide"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setFlagTarget(null)}
+            className="text-xs text-zinc-500 hover:text-zinc-300"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -420,6 +687,34 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
             >
               {actionLoading === "upvote" ? "..." : `+${collection.upvote_count || 0}`}
             </button>
+            <button
+              onClick={handleDownvote}
+              disabled={actionLoading === "downvote" || cannotUpvote}
+              title={cannotUpvote ? "Only existing members can downvote" : "Downvoting costs DREAM"}
+              className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-red-400 disabled:opacity-50"
+            >
+              {actionLoading === "downvote" ? "..." : `-${collection.downvote_count || 0}`}
+            </button>
+            {!isOwner && !cannotUpvote && (
+              <button
+                onClick={() => openFlagForm(FlagTargetType.COLLECTION, collection.id, "flag")}
+                disabled={!!actionLoading}
+                title="Flag this collection for moderator review"
+                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-amber-700/60 hover:text-amber-400 disabled:opacity-50"
+              >
+                Flag
+              </button>
+            )}
+            {isSentinel && !hideRecord && isCollectionActive && (
+              <button
+                onClick={() => openFlagForm(FlagTargetType.COLLECTION, collection.id, "hide")}
+                disabled={!!actionLoading}
+                title="Hide this collection (forum sentinel)"
+                className="rounded-lg border border-red-800/50 px-3 py-1.5 text-xs text-red-400 transition-colors hover:border-red-700 hover:bg-red-900/20 disabled:opacity-50"
+              >
+                Hide
+              </button>
+            )}
             {isCollectionActive && isEphemeral && (
               <button
                 onClick={handleMakePermanent}
@@ -527,6 +822,39 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
             </div>
           </div>
         )}
+
+        {hideRecord && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-800/50 bg-red-900/15 px-3 py-2 text-xs text-red-300">
+            <span>
+              Hidden by a sentinel
+              {hideRecord.reason_code && (
+                <> for {MODERATION_REASON_LABELS[hideRecord.reason_code] || hideRecord.reason_code}</>
+              )}
+              {hideRecord.reason_text ? `: ${hideRecord.reason_text}` : "."}
+              {hideRecord.appealed && <span className="ml-1 text-amber-300">Appeal pending.</span>}
+            </span>
+            {isOwner && !hideRecord.appealed && (
+              <button
+                onClick={() => handleAppeal(hideRecord.id)}
+                disabled={actionLoading === "appeal"}
+                title="Appeal this hide (escrows the appeal fee)"
+                className="shrink-0 rounded-md border border-red-700/60 px-2.5 py-1 font-medium text-red-200 hover:bg-red-900/30 disabled:opacity-50"
+              >
+                {actionLoading === "appeal" ? "Appealing…" : "Appeal"}
+              </button>
+            )}
+          </div>
+        )}
+
+        {flagTarget === `${FlagTargetType.COLLECTION}:${collection.id}` &&
+          renderFlagForm(FlagTargetType.COLLECTION, collection.id)}
+
+        {actionError && (
+          <div className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-400">
+            <span className="break-all">{actionError}</span>
+            <button onClick={() => setActionError(null)} className="shrink-0 text-red-300 hover:text-red-100" aria-label="Dismiss">✕</button>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -553,7 +881,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         {/* Items tab */}
         {tab === "items" && (
           <div>
-            {isOwner && (
+            {canWrite && (
               <div className="mb-4">
                 {!showAddItem ? (
                   <button
@@ -798,8 +1126,8 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                             ))}
                           </div>
                         )}
-                        {isOwner && (
-                          <div className="mt-3 border-t border-zinc-800 pt-3">
+                        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-3">
+                          {canWrite && (
                             <button
                               onClick={() => handleRemoveItem(item.id)}
                               disabled={actionLoading === `remove-${item.id}`}
@@ -807,8 +1135,27 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                             >
                               {actionLoading === `remove-${item.id}` ? "Removing..." : "Remove item"}
                             </button>
-                          </div>
-                        )}
+                          )}
+                          {!isOwner && !cannotUpvote && (
+                            <button
+                              onClick={() => openFlagForm(FlagTargetType.ITEM, item.id, "flag")}
+                              disabled={!!actionLoading}
+                              className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-amber-700/60 hover:text-amber-400 disabled:opacity-50"
+                            >
+                              Flag
+                            </button>
+                          )}
+                          {isSentinel && (
+                            <button
+                              onClick={() => openFlagForm(FlagTargetType.ITEM, item.id, "hide")}
+                              disabled={!!actionLoading}
+                              className="rounded-lg border border-red-800/50 px-3 py-1.5 text-xs text-red-400 transition-colors hover:border-red-700 hover:bg-red-900/20 disabled:opacity-50"
+                            >
+                              Hide
+                            </button>
+                          )}
+                        </div>
+                        {renderFlagForm(FlagTargetType.ITEM, item.id)}
                       </div>
                     )}
                   </div>
@@ -821,7 +1168,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         {/* Collaborators tab */}
         {tab === "collaborators" && (
           <div>
-            {isOwner && (
+            {canManageCollabs && (
               <div className="mb-4">
                 {!showAddCollab ? (
                   <button
@@ -855,7 +1202,10 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                         className="sd-select"
                       >
                         <option value={CollaboratorRole.EDITOR}>Editor</option>
-                        <option value={CollaboratorRole.ADMIN}>Admin</option>
+                        {/* Only the owner may grant ADMIN (chain ErrAdminOnlyOwner). */}
+                        <option value={CollaboratorRole.ADMIN} disabled={!isOwner}>
+                          Admin{!isOwner ? " (owner only)" : ""}
+                        </option>
                       </select>
                       <button
                         onClick={handleAddCollaborator}
@@ -876,30 +1226,58 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
               </div>
             ) : (
               <div className="space-y-2">
-                {collaborators.map((c) => (
-                  <div key={c.address} className="flex items-center justify-between sd-hull-tile rounded-xl px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <CopyableAddress className="font-mono text-sm text-zinc-300" address={c.address} />
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        c.role === CollaboratorRole.ADMIN ? "bg-amber-500/15 text-amber-400" : "bg-blue-500/15 text-blue-400"
-                      }`}>
-                        {COLLABORATOR_ROLE_LABELS[c.role] || c.role}
-                      </span>
+                {collaborators.map((c) => {
+                  const isSelf = c.address === address;
+                  const targetIsAdmin = c.role === CollaboratorRole.ADMIN;
+                  // Owner removes anyone; ADMIN removes non-admins; anyone may
+                  // self-remove (mirrors RemoveCollaborator gating).
+                  const canRemove = isSelf || isOwner || (isAdminCollab && !targetIsAdmin);
+                  // Owner edits any role; ADMIN edits non-admin collaborators'
+                  // roles. The ADMIN option itself stays owner-only.
+                  const canEditRole =
+                    canManageCollabs && !isSelf && (isOwner || !targetIsAdmin);
+                  const busy = actionLoading === `remove-collab-${c.address}` || actionLoading === `role-${c.address}`;
+                  return (
+                    <div key={c.address} className="flex flex-wrap items-center justify-between gap-2 sd-hull-tile rounded-xl px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <CopyableAddress className="font-mono text-sm text-zinc-300" address={c.address} resolveName />
+                        {canEditRole ? (
+                          <select
+                            value={c.role}
+                            onChange={(e) => handleUpdateCollaboratorRole(c.address, e.target.value)}
+                            disabled={busy}
+                            className="sd-select !py-1 text-xs"
+                            title="Change collaborator role"
+                          >
+                            <option value={CollaboratorRole.EDITOR}>Editor</option>
+                            <option value={CollaboratorRole.ADMIN} disabled={!isOwner}>
+                              Admin{!isOwner ? " (owner only)" : ""}
+                            </option>
+                          </select>
+                        ) : (
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                            targetIsAdmin ? "bg-amber-500/15 text-amber-400" : "bg-blue-500/15 text-blue-400"
+                          }`}>
+                            {COLLABORATOR_ROLE_LABELS[c.role] || c.role}
+                          </span>
+                        )}
+                        {isSelf && <span className="text-[10px] text-zinc-500">you</span>}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {c.added_at && <span className="text-xs text-zinc-500">{timeAgo(c.added_at)}</span>}
+                        {canRemove && (
+                          <button
+                            onClick={() => handleRemoveCollaborator(c.address)}
+                            disabled={busy}
+                            className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+                          >
+                            {actionLoading === `remove-collab-${c.address}` ? "..." : isSelf ? "Leave" : "Remove"}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      {c.added_at && <span className="text-xs text-zinc-500">{timeAgo(c.added_at)}</span>}
-                      {isOwner && (
-                        <button
-                          onClick={() => handleRemoveCollaborator(c.address)}
-                          disabled={actionLoading === `remove-collab-${c.address}`}
-                          className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
-                        >
-                          {actionLoading === `remove-collab-${c.address}` ? "..." : "Remove"}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -907,7 +1285,82 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
 
         {/* Curation tab */}
         {tab === "curation" && (
-          <div>
+          <div className="space-y-4">
+            {/* Curator review form — chain gates on a bonded curator role,
+                min trust/age, and the collection being active with community
+                feedback enabled; we surface the action to eligible curators and
+                let the broadcast carry the precise error otherwise. */}
+            {isCurator && isCollectionActive && (
+              <div className="sd-hull-tile rounded-xl p-4">
+                {!showRateForm ? (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-zinc-300">Submit a curation verdict on this collection.</p>
+                    <button onClick={() => setShowRateForm(true)} className="sd-btn-crystal px-4 py-2">
+                      Rate collection
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-white">Curation review</h3>
+                      <button type="button" onClick={() => setShowRateForm(false)} className="sd-btn sd-btn-secondary">Cancel</button>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setRateVerdict(CurationVerdict.UP)}
+                        className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                          rateVerdict === CurationVerdict.UP
+                            ? "border-emerald-600 bg-emerald-900/20 text-emerald-300"
+                            : "border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                        }`}
+                      >
+                        Up
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRateVerdict(CurationVerdict.DOWN)}
+                        className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                          rateVerdict === CurationVerdict.DOWN
+                            ? "border-red-600 bg-red-900/20 text-red-300"
+                            : "border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                        }`}
+                      >
+                        Down
+                      </button>
+                    </div>
+                    <input
+                      value={rateTags}
+                      onChange={(e) => setRateTags(e.target.value)}
+                      placeholder="Tags (comma separated, optional)"
+                      className={refFieldCls}
+                    />
+                    <textarea
+                      value={rateComment}
+                      onChange={(e) => setRateComment(e.target.value)}
+                      placeholder="Comment (optional)"
+                      rows={2}
+                      className={refFieldCls}
+                    />
+                    <button
+                      onClick={handleRate}
+                      disabled={actionLoading === "rate"}
+                      className="sd-btn-crystal w-full px-4 py-2.5"
+                    >
+                      {actionLoading === "rate" ? "Submitting..." : "Submit review"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {actionError && tab === "curation" && (
+              <div className="flex items-start justify-between gap-3 rounded-lg border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-400">
+                <span className="break-all">{actionError}</span>
+                <button onClick={() => setActionError(null)} className="shrink-0 text-red-300 hover:text-red-100" aria-label="Dismiss">✕</button>
+              </div>
+            )}
+
             {curation ? (
               <div className="sd-hull-tile rounded-xl p-5">
                 <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
@@ -942,6 +1395,78 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
             ) : (
               <div className="sd-hull-tile rounded-xl p-8 text-center">
                 <p className="text-zinc-400">No curation data yet</p>
+              </div>
+            )}
+
+            {/* Individual curator reviews. Any member (except the review's own
+                curator) can challenge one, locking a DREAM deposit. */}
+            {reviews.length > 0 && (
+              <div className="sd-hull-tile rounded-xl p-5">
+                <h3 className="mb-3 text-sm font-semibold text-zinc-300">Reviews</h3>
+                <ul className="space-y-2">
+                  {reviews.map((r) => {
+                    const ownReview = r.curator === address;
+                    return (
+                      <li key={r.id} className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2 text-sm">
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                r.verdict === CurationVerdict.UP
+                                  ? "bg-emerald-500/15 text-emerald-400"
+                                  : "bg-red-500/15 text-red-400"
+                              }`}>
+                                {CURATION_VERDICT_LABELS[r.verdict] || r.verdict}
+                              </span>
+                              <CopyableAddress className="font-mono text-xs text-zinc-400" address={r.curator} nested resolveName />
+                              {r.challenged && (
+                                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+                                  {r.overturned ? "Overturned" : "Challenged"}
+                                </span>
+                              )}
+                            </div>
+                            {r.comment && <p className="mt-0.5 text-xs text-zinc-400">{r.comment}</p>}
+                            {r.tags?.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {r.tags.map((t) => (
+                                  <span key={t} className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">{t}</span>
+                                ))}
+                              </div>
+                            )}
+                            {r.created_at && <p className="mt-0.5 text-[10px] text-zinc-600">{timeAgo(r.created_at)}</p>}
+                          </div>
+                          {!ownReview && !r.challenged && !cannotUpvote && (
+                            <button
+                              type="button"
+                              onClick={() => setChallengeReviewId(challengeReviewId === r.id ? null : r.id)}
+                              className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-amber-700/60 hover:text-amber-400"
+                            >
+                              {challengeReviewId === r.id ? "Cancel" : "Challenge"}
+                            </button>
+                          )}
+                        </div>
+                        {challengeReviewId === r.id && (
+                          <div className="mt-2 space-y-2 border-t border-zinc-800 pt-2">
+                            <input
+                              value={challengeReason}
+                              onChange={(e) => setChallengeReason(e.target.value)}
+                              placeholder="Why is this review wrong?"
+                              className={refFieldCls}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleChallenge(r.id)}
+                              disabled={!challengeReason.trim() || actionLoading === `challenge-${r.id}`}
+                              className="rounded-lg border border-amber-700/50 px-3 py-1.5 text-xs text-amber-400 transition-colors hover:bg-amber-900/20 disabled:opacity-50"
+                            >
+                              {actionLoading === `challenge-${r.id}` ? "Challenging…" : "Submit challenge (locks deposit)"}
+                            </button>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             )}
           </div>
