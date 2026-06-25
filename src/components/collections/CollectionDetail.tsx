@@ -16,7 +16,7 @@ import { useTrustRank } from "@/hooks/useTrustRank";
 import { useIsEligibleCurator } from "@/hooks/useIsEligibleCurator";
 import { useIsEligibleSentinel } from "@/hooks/useIsEligibleSentinel";
 import { CollectMsgTypeUrls } from "@/lib/tx";
-import { timeAgo, formatTime } from "@/lib/utils";
+import BlockTime from "@/components/BlockTime";
 import CopyableAddress from "@/components/CopyableAddress";
 import type {
   Collection,
@@ -789,7 +789,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
           {collection.created_at && (
             <div>
               <dt className="text-xs text-zinc-500">Created</dt>
-              <dd className="text-zinc-300">{formatTime(collection.created_at)}</dd>
+              <dd className="text-zinc-300"><BlockTime height={collection.created_at} /></dd>
             </div>
           )}
           {collection.sponsored_by && (
@@ -1093,7 +1093,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                           {item.added_at && (
                             <div>
                               <dt className="text-xs text-zinc-500">Added</dt>
-                              <dd className="text-zinc-300">{timeAgo(item.added_at)}</dd>
+                              <dd className="text-zinc-300"><BlockTime height={item.added_at} relative /></dd>
                             </div>
                           )}
                           <div>
@@ -1264,7 +1264,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                         {isSelf && <span className="text-[10px] text-zinc-500">you</span>}
                       </div>
                       <div className="flex items-center gap-3">
-                        {c.added_at && <span className="text-xs text-zinc-500">{timeAgo(c.added_at)}</span>}
+                        {c.added_at && <span className="text-xs text-zinc-500"><BlockTime height={c.added_at} relative /></span>}
                         {canRemove && (
                           <button
                             onClick={() => handleRemoveCollaborator(c.address)}
@@ -1375,7 +1375,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                   {curation.last_reviewed_at && (
                     <div>
                       <p className="text-xs text-zinc-500">Last review</p>
-                      <p className="text-zinc-300">{timeAgo(curation.last_reviewed_at)}</p>
+                      <p className="text-zinc-300"><BlockTime height={curation.last_reviewed_at} relative /></p>
                     </div>
                   )}
                 </div>
@@ -1433,7 +1433,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                                 ))}
                               </div>
                             )}
-                            {r.created_at && <p className="mt-0.5 text-[10px] text-zinc-600">{timeAgo(r.created_at)}</p>}
+                            {r.created_at && <p className="mt-0.5 text-[10px] text-zinc-600"><BlockTime height={r.created_at} relative /></p>}
                           </div>
                           {!ownReview && !r.challenged && !cannotUpvote && (
                             <button

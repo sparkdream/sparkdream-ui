@@ -560,8 +560,32 @@ interface LatestBlockResponse {
   block: {
     header: {
       height: string;
+      time?: string;
     };
   };
+}
+
+// Resolve a block height to its committed wall-clock time (RFC 3339 string).
+// The collect module stores created_at/updated_at as block HEIGHTS, not unix
+// timestamps, so callers that want a human date must look up the block's
+// header time. Blocks are immutable, so cache effectively forever. Returns ""
+// for height 0/empty (unset) or on any transport error.
+export async function getBlockTime(height: string): Promise<string> {
+  if (!height || height === "0") return "";
+  return cachedFetch(
+    `blockTime|${height}`,
+    async () => {
+      try {
+        const res = await get<LatestBlockResponse>(
+          `/cosmos/base/tendermint/v1beta1/blocks/${height}`
+        );
+        return res.block.header.time ?? "";
+      } catch {
+        return "";
+      }
+    },
+    { ttl: 86_400_000 }
+  );
 }
 
 // Latest block height (decimal string). Falls back to throwing on transport errors.

@@ -6,7 +6,6 @@ import { useArchive } from "@/contexts/ArchiveContext";
 import { getCollection, listCollectionItems, getCollaborators } from "@/lib/api";
 import type { Collection, CollectionItem, Collaborator } from "@/types/collect";
 import CopyableAddress from "@/components/CopyableAddress";
-import { formatTime } from "@/lib/utils";
 import { ArchiveSectionShell, LoadError } from "../../_components";
 
 export default function ArchiveCollectionDetail({
@@ -69,9 +68,11 @@ export default function ArchiveCollectionDetail({
             <span>type: {collection.type}</span>
             <span>visibility: {collection.visibility}</span>
             <span>owner: <CopyableAddress address={collection.owner} /></span>
-            {collection.created_at && <span>created: {formatTime(collection.created_at)}</span>}
-            {collection.updated_at && collection.updated_at !== collection.created_at && (
-              <span>updated: {formatTime(collection.updated_at)}</span>
+            {collection.created_at && collection.created_at !== "0" && (
+              <span>created: block {collection.created_at}</span>
+            )}
+            {collection.updated_at && collection.updated_at !== "0" && collection.updated_at !== collection.created_at && (
+              <span>updated: block {collection.updated_at}</span>
             )}
           </div>
 

@@ -10,8 +10,8 @@ import {
 import { useWallet } from "@/contexts/WalletContext";
 import { useIsEligibleSentinel } from "@/hooks/useIsEligibleSentinel";
 import { CollectMsgTypeUrls } from "@/lib/tx";
-import { timeAgo } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
+import BlockTime from "@/components/BlockTime";
 import {
   FlagTargetType,
   MODERATION_REASONS,
@@ -216,7 +216,7 @@ export default function CollectionModerationPanel({ onViewCollection }: Props) {
                       </div>
                     )}
                     <p className="mt-1 text-[10px] text-zinc-600">
-                      First flagged {timeAgo(f.first_flag_at)} · last {timeAgo(f.last_flag_at)}
+                      First flagged <BlockTime height={f.first_flag_at} relative /> · last <BlockTime height={f.last_flag_at} relative />
                       {f.flag_records?.[0]?.flagger && (
                         <> · by <CopyableAddress address={f.flag_records[0].flagger} nested /></>
                       )}

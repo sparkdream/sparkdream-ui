@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { listBondedRolesByType, getCuratorActivity } from "@/lib/api";
-import { formatTime } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
+import BlockTime from "@/components/BlockTime";
 import {
   RoleType,
   BondedRoleStatus,
@@ -179,7 +179,7 @@ export default function CuratorList() {
                       {c.registered_at && (
                         <div>
                           <dt className="text-xs text-zinc-500">Registered</dt>
-                          <dd className="text-zinc-300">{formatTime(c.registered_at)}</dd>
+                          <dd className="text-zinc-300"><BlockTime height={c.registered_at} /></dd>
                         </div>
                       )}
                     </dl>

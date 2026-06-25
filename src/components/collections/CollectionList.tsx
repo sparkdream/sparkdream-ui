@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { listPublicCollections, getCollectionsByOwner } from "@/lib/api";
-import { timeAgo } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
+import BlockTime from "@/components/BlockTime";
 import type { Collection } from "@/types/collect";
 import {
   COLLECTION_TYPE_LABELS,
@@ -178,7 +178,7 @@ export default function CollectionList({ mode, onSelect, filterType = "all", tag
                   <div className="mt-2 flex items-center gap-4 text-xs text-zinc-500">
                     <span>{c.item_count} item{c.item_count !== 1 ? "s" : ""}</span>
                     {mode !== "my" && <NameOrAddress address={c.owner} />}
-                    {c.created_at && <span>{timeAgo(c.created_at)}</span>}
+                    {c.created_at && <span><BlockTime height={c.created_at} relative /></span>}
                     {c.tags?.length > 0 && (
                       <span className="truncate">{c.tags.slice(0, 3).join(", ")}</span>
                     )}

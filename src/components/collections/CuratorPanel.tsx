@@ -12,7 +12,7 @@ import {
 import { useWallet } from "@/contexts/WalletContext";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { RepMsgTypeUrls } from "@/lib/tx";
-import { timeAgo } from "@/lib/utils";
+import BlockTime from "@/components/BlockTime";
 import NumberInput from "@/components/NumberInput";
 import {
   RoleType,
@@ -454,7 +454,7 @@ export default function CuratorPanel() {
                       )}
                     </div>
                     {r.created_at && (
-                      <span className="shrink-0 text-[10px] text-zinc-600">{timeAgo(r.created_at)}</span>
+                      <span className="shrink-0 text-[10px] text-zinc-600"><BlockTime height={r.created_at} relative /></span>
                     )}
                   </li>
                 ))}
