@@ -79,11 +79,27 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const [newItemImageUri, setNewItemImageUri] = useState("");
   const [newItemRefType, setNewItemRefType] = useState<string>(ReferenceType.LINK);
   const [newItemLinkUri, setNewItemLinkUri] = useState("");
+  // NFT reference
+  const [newItemNftChainId, setNewItemNftChainId] = useState("");
+  const [newItemNftContract, setNewItemNftContract] = useState("");
+  const [newItemNftTokenId, setNewItemNftTokenId] = useState("");
+  const [newItemNftStandard, setNewItemNftStandard] = useState("");
+  const [newItemNftTokenUri, setNewItemNftTokenUri] = useState("");
+  // On-chain reference
+  const [newItemOnChainModule, setNewItemOnChainModule] = useState("");
+  const [newItemOnChainEntityType, setNewItemOnChainEntityType] = useState("");
+  const [newItemOnChainEntityId, setNewItemOnChainEntityId] = useState("");
+  // Custom reference
+  const [newItemCustomLabel, setNewItemCustomLabel] = useState("");
+  const [newItemCustomValue, setNewItemCustomValue] = useState("");
 
   // Add collaborator form
   const [showAddCollab, setShowAddCollab] = useState(false);
   const [newCollabAddress, setNewCollabAddress] = useState("");
   const [newCollabRole, setNewCollabRole] = useState<string>(CollaboratorRole.EDITOR);
+
+  const refFieldCls =
+    "w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none";
 
   const isOwner = collection?.owner === address;
   const isEphemeral = Boolean(collection?.expires_at && collection.expires_at !== "0");
@@ -116,8 +132,52 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     fetchData();
   }, [fetchData]);
 
+  // The chain requires the reference object matching the selected type to be
+  // present (ErrInvalidReference / "reference type/data mismatch" otherwise),
+  // so we require each type's identifying fields before allowing submit.
+  const isRefReady = () => {
+    switch (newItemRefType) {
+      case ReferenceType.LINK:
+        return newItemLinkUri.trim() !== "";
+      case ReferenceType.NFT:
+        return (
+          newItemNftChainId.trim() !== "" &&
+          newItemNftContract.trim() !== "" &&
+          newItemNftTokenId.trim() !== ""
+        );
+      case ReferenceType.ON_CHAIN:
+        return (
+          newItemOnChainModule.trim() !== "" &&
+          newItemOnChainEntityType.trim() !== "" &&
+          newItemOnChainEntityId.trim() !== ""
+        );
+      case ReferenceType.CUSTOM:
+        return newItemCustomLabel.trim() !== "" && newItemCustomValue.trim() !== "";
+      default:
+        return false;
+    }
+  };
+
+  const resetItemForm = () => {
+    setNewItemTitle("");
+    setNewItemDesc("");
+    setNewItemImageUri("");
+    setNewItemRefType(ReferenceType.LINK);
+    setNewItemLinkUri("");
+    setNewItemNftChainId("");
+    setNewItemNftContract("");
+    setNewItemNftTokenId("");
+    setNewItemNftStandard("");
+    setNewItemNftTokenUri("");
+    setNewItemOnChainModule("");
+    setNewItemOnChainEntityType("");
+    setNewItemOnChainEntityId("");
+    setNewItemCustomLabel("");
+    setNewItemCustomValue("");
+  };
+
   const handleAddItem = async () => {
-    if (!address || !newItemTitle.trim()) return;
+    if (!address || !newItemTitle.trim() || !isRefReady()) return;
     setActionLoading("add-item");
     try {
       const value: Record<string, unknown> = {
@@ -137,14 +197,40 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         // int mismatch (same pattern as ProjectList.tsx).
         referenceType: referenceTypeFromJSON(newItemRefType),
       };
-      if (newItemRefType === ReferenceType.LINK && newItemLinkUri.trim()) {
-        value.link = { uri: newItemLinkUri.trim(), contentHash: "", contentType: "" };
+      // Attach the reference payload matching the selected type. The proto
+      // message fields are camelCase in the generated registry (nft, link,
+      // onChain, custom); empty optional strings are dropped by amino
+      // omitempty on both signer and verifier, so they stay sigverify-safe.
+      switch (newItemRefType) {
+        case ReferenceType.LINK:
+          value.link = { uri: newItemLinkUri.trim(), contentHash: "", contentType: "" };
+          break;
+        case ReferenceType.NFT:
+          value.nft = {
+            chainId: newItemNftChainId.trim(),
+            contractAddress: newItemNftContract.trim(),
+            tokenId: newItemNftTokenId.trim(),
+            tokenStandard: newItemNftStandard.trim(),
+            tokenUri: newItemNftTokenUri.trim(),
+          };
+          break;
+        case ReferenceType.ON_CHAIN:
+          value.onChain = {
+            module: newItemOnChainModule.trim(),
+            entityType: newItemOnChainEntityType.trim(),
+            entityId: newItemOnChainEntityId.trim(),
+          };
+          break;
+        case ReferenceType.CUSTOM:
+          value.custom = {
+            typeLabel: newItemCustomLabel.trim(),
+            value: newItemCustomValue.trim(),
+            extra: [],
+          };
+          break;
       }
       await signAndBroadcast([{ typeUrl: CollectMsgTypeUrls.AddItem, value }]);
-      setNewItemTitle("");
-      setNewItemDesc("");
-      setNewItemImageUri("");
-      setNewItemLinkUri("");
+      resetItemForm();
       setShowAddItem(false);
       await fetchData();
     } catch (err) {
@@ -499,7 +585,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                         placeholder="Image URI (optional)"
                         className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
                       />
-                      <div className="flex items-center gap-3">
+                      <div className="space-y-3">
                         <select
                           value={newItemRefType}
                           onChange={(e) => setNewItemRefType(e.target.value)}
@@ -515,20 +601,95 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                             value={newItemLinkUri}
                             onChange={(e) => setNewItemLinkUri(e.target.value)}
                             placeholder="Link URL"
-                            className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
+                            className={refFieldCls}
                           />
+                        )}
+                        {newItemRefType === ReferenceType.NFT && (
+                          <>
+                            <input
+                              value={newItemNftChainId}
+                              onChange={(e) => setNewItemNftChainId(e.target.value)}
+                              placeholder="Chain ID (e.g. eip155:1)"
+                              className={refFieldCls}
+                            />
+                            <input
+                              value={newItemNftContract}
+                              onChange={(e) => setNewItemNftContract(e.target.value)}
+                              placeholder="Contract address"
+                              className={refFieldCls}
+                            />
+                            <input
+                              value={newItemNftTokenId}
+                              onChange={(e) => setNewItemNftTokenId(e.target.value)}
+                              placeholder="Token ID"
+                              className={refFieldCls}
+                            />
+                            <input
+                              value={newItemNftStandard}
+                              onChange={(e) => setNewItemNftStandard(e.target.value)}
+                              placeholder="Token standard (optional, e.g. ERC721)"
+                              className={refFieldCls}
+                            />
+                            <input
+                              value={newItemNftTokenUri}
+                              onChange={(e) => setNewItemNftTokenUri(e.target.value)}
+                              placeholder="Token URI (optional)"
+                              className={refFieldCls}
+                            />
+                          </>
+                        )}
+                        {newItemRefType === ReferenceType.ON_CHAIN && (
+                          <>
+                            <input
+                              value={newItemOnChainModule}
+                              onChange={(e) => setNewItemOnChainModule(e.target.value)}
+                              placeholder="Module (e.g. blog)"
+                              className={refFieldCls}
+                            />
+                            <input
+                              value={newItemOnChainEntityType}
+                              onChange={(e) => setNewItemOnChainEntityType(e.target.value)}
+                              placeholder="Entity type (e.g. post)"
+                              className={refFieldCls}
+                            />
+                            <input
+                              value={newItemOnChainEntityId}
+                              onChange={(e) => setNewItemOnChainEntityId(e.target.value)}
+                              placeholder="Entity ID"
+                              className={refFieldCls}
+                            />
+                          </>
+                        )}
+                        {newItemRefType === ReferenceType.CUSTOM && (
+                          <>
+                            <input
+                              value={newItemCustomLabel}
+                              onChange={(e) => setNewItemCustomLabel(e.target.value)}
+                              placeholder="Type label"
+                              className={refFieldCls}
+                            />
+                            <input
+                              value={newItemCustomValue}
+                              onChange={(e) => setNewItemCustomValue(e.target.value)}
+                              placeholder="Value"
+                              className={refFieldCls}
+                            />
+                          </>
                         )}
                       </div>
                       <div className="flex gap-2">
                         <button
                           onClick={handleAddItem}
-                          disabled={!newItemTitle.trim() || actionLoading === "add-item"}
+                          disabled={!newItemTitle.trim() || !isRefReady() || actionLoading === "add-item"}
                           className="sd-btn-crystal px-4 py-2"
                         >
                           {actionLoading === "add-item" ? "Adding..." : "Add"}
                         </button>
                         <button
-                          onClick={() => setShowAddItem(false)}
+                          onClick={() => {
+                            resetItemForm();
+                            setShowAddItem(false);
+                          }}
                           className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-400 transition-colors hover:text-zinc-200"
                         >
                           Cancel
