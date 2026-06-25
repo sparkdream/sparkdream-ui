@@ -58,7 +58,7 @@ export default function NameLookup() {
 
   return (
     <div>
-      <h2 className="mb-4 text-lg font-semibold text-white">Name Lookup</h2>
+      <h2 className="mb-4 text-lg font-semibold text-white">Name lookup</h2>
 
       {/* Mode toggle */}
       <div className="mb-4 flex gap-1 rounded-lg border border-zinc-800 bg-zinc-900/50 p-1">
@@ -138,7 +138,7 @@ export default function NameLookup() {
               <p className="mt-0.5 font-mono text-sm text-zinc-300">{query.trim()}</p>
             </div>
             <div>
-              <span className="text-xs font-medium uppercase text-zinc-500">Primary Name</span>
+              <span className="text-xs font-medium uppercase text-zinc-500">Primary name</span>
               <p className="mt-0.5 text-sm font-medium text-white">{reverseName}</p>
             </div>
           </div>

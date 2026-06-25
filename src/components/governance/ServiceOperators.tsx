@@ -116,7 +116,7 @@ export default function ServiceOperators() {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-white">Service Operators</h2>
+        <h2 className="text-lg font-semibold text-white">Service operators</h2>
         <p className="mt-1 text-sm text-zinc-500">
           SPARK-bonded off-chain operators. Each operator is hired by an
           x/commons Group (the controller) and escrows SPARK per service type.
@@ -186,7 +186,7 @@ export default function ServiceOperators() {
             <thead className="bg-zinc-900/50 text-left text-xs text-zinc-500">
               <tr>
                 <th className="px-3 py-2 font-medium">Operator</th>
-                <th className="px-3 py-2 font-medium">Service Type</th>
+                <th className="px-3 py-2 font-medium">Service type</th>
                 <th className="px-3 py-2 font-medium text-right">Bond (SPARK)</th>
                 <th className="px-3 py-2 font-medium">Controller</th>
                 <th className="px-3 py-2 font-medium">Status</th>

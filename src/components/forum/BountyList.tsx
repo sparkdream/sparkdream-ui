@@ -107,7 +107,7 @@ export default function BountyList({ mode, onSelectThread }: BountyListProps) {
   return (
     <div>
       <h2 className="mb-4 text-lg font-semibold text-white">
-        {mode === "my" ? "My Bounties" : "Active Bounties"}
+        {mode === "my" ? "My bounties" : "Active bounties"}
       </h2>
 
       {bounties.length === 0 ? (
@@ -160,7 +160,7 @@ export default function BountyList({ mode, onSelectThread }: BountyListProps) {
               disabled={loadingMore}
               className="mt-3 w-full rounded-lg border border-zinc-800 py-2 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-50"
             >
-              {loadingMore ? "Loading..." : "Load More"}
+              {loadingMore ? "Loading..." : "Load more"}
             </button>
           )}
         </div>

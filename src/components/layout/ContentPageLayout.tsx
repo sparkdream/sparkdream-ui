@@ -132,6 +132,21 @@ export function ContentToolbar({
 // window/localStorage/Keplr), so the server renders the unconnected version
 // while the client's first paint may already have the connected version,
 // producing a hydration mismatch. Defer the prop-driven version until after
+// Small embers that rise off the New spark button's lava lake (spark variant
+// only). Movement mirrors the background SparkField — rise with a zigzag sway —
+// but scaled to button height. Authored (not random) so SSR/client match.
+const BTN_SPARKS = [
+  { left: 18, size: 4, dur: 2.6, delay: 0.0, sway: 3 },
+  { left: 30, size: 3, dur: 3.2, delay: 1.1, sway: 4 },
+  { left: 40, size: 5, dur: 2.4, delay: 2.0, sway: 2 },
+  { left: 50, size: 3, dur: 3.6, delay: 0.6, sway: 4 },
+  { left: 58, size: 4, dur: 2.8, delay: 1.7, sway: 3 },
+  { left: 68, size: 3, dur: 3.0, delay: 2.6, sway: 5 },
+  { left: 76, size: 5, dur: 2.5, delay: 0.9, sway: 3 },
+  { left: 85, size: 3, dur: 3.4, delay: 1.9, sway: 4 },
+  { left: 24, size: 3, dur: 2.9, delay: 3.0, sway: 4 },
+] as const;
+
 // hydration: render disabled-with-no-tooltip on first paint (matching SSR),
 // then swap in the real values via a post-mount effect. `suppressHydration
 // Warning` covers a residual React 19 diff that reports `disabled` as
@@ -158,6 +173,24 @@ function PrimaryActionButton({ action }: { action: PrimaryAction }) {
               : "sd-btn-primary"
       }`}
     >
+      {action.variant === "spark" && (
+        <span className="sd-btn-sparks" aria-hidden="true">
+          {BTN_SPARKS.map((s, i) => (
+            <span
+              key={i}
+              className="sd-btn-spark-bit"
+              style={{
+                left: `${s.left}%`,
+                width: `${s.size}px`,
+                height: `${s.size}px`,
+                animationDuration: `${s.dur}s`,
+                animationDelay: `-${s.delay}s`,
+                ["--bspark-sway" as string]: `${s.sway}px`,
+              }}
+            />
+          ))}
+        </span>
+      )}
       {action.variant === "spark" ? (
         <svg
           className="flame"

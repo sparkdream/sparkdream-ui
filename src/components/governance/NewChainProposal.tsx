@@ -23,12 +23,12 @@ const CHAIN_PROPOSAL_TYPES: {
   label: string;
   description: string;
 }[] = [
-  { value: "general", label: "General Vote", description: "Signaling proposal — no executable action" },
-  { value: "parameter-change", label: "Parameter Change", description: "Update a module's parameters" },
-  { value: "council-election", label: "Council Election", description: "Renew a council term with new membership" },
-  { value: "software-upgrade", label: "Software Upgrade", description: "Schedule a chain binary upgrade" },
-  { value: "cancel-upgrade", label: "Cancel Upgrade", description: "Abort a pending software upgrade" },
-  { value: "register-council", label: "Register Council", description: "Create a new council/committee" },
+  { value: "general", label: "General vote", description: "Signaling proposal — no executable action" },
+  { value: "parameter-change", label: "Parameter change", description: "Update a module's parameters" },
+  { value: "council-election", label: "Council election", description: "Renew a council term with new membership" },
+  { value: "software-upgrade", label: "Software upgrade", description: "Schedule a chain binary upgrade" },
+  { value: "cancel-upgrade", label: "Cancel upgrade", description: "Abort a pending software upgrade" },
+  { value: "register-council", label: "Register council", description: "Create a new council/committee" },
 ];
 
 interface NewChainProposalProps {
@@ -437,13 +437,13 @@ export default function NewChainProposal({
       className="space-y-5 rounded-xl sd-hull-tile p-5"
     >
       <h3 className="text-lg font-semibold text-white">
-        New Chain Proposal
+        New chain proposal
       </h3>
 
       {/* Proposal type selector */}
       <div>
         <label className="mb-1.5 block text-sm font-medium text-zinc-300">
-          Proposal Type
+          Proposal type
         </label>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {CHAIN_PROPOSAL_TYPES.map((pt) => (
@@ -494,7 +494,7 @@ export default function NewChainProposal({
         </div>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-zinc-300">
-            Initial Deposit ({config.displayDenom})
+            Initial deposit ({config.displayDenom})
           </label>
           <NumberInput
             step="any"
@@ -555,7 +555,7 @@ export default function NewChainProposal({
       {type === "council-election" && (
         <div className="space-y-3 rounded-lg border border-zinc-700/50 bg-zinc-800/20 p-4">
           <h4 className="text-sm font-medium text-zinc-300">
-            Council Election
+            Council election
           </h4>
           <div>
             <label className="mb-1 block text-xs font-medium text-zinc-400">
@@ -592,11 +592,11 @@ export default function NewChainProposal({
       {type === "software-upgrade" && (
         <div className="space-y-3 rounded-lg border border-zinc-700/50 bg-zinc-800/20 p-4">
           <h4 className="text-sm font-medium text-zinc-300">
-            Software Upgrade
+            Software upgrade
           </h4>
           <div>
             <label className="mb-1 block text-xs font-medium text-zinc-400">
-              Upgrade Name
+              Upgrade name
             </label>
             <input
               type="text"
@@ -608,7 +608,7 @@ export default function NewChainProposal({
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-zinc-400">
-              Upgrade Height
+              Upgrade height
             </label>
             <NumberInput
               min="1"
@@ -640,7 +640,7 @@ export default function NewChainProposal({
           but it'd be a guaranteed no-op). */}
       {type === "cancel-upgrade" && (
         <div className="space-y-2 rounded-lg border border-zinc-700/50 bg-zinc-800/20 p-4 text-xs text-zinc-400">
-          <h4 className="text-sm font-medium text-zinc-300">Cancel Upgrade</h4>
+          <h4 className="text-sm font-medium text-zinc-300">Cancel upgrade</h4>
           {pendingPlanLoading && <p>Looking up the pending upgrade…</p>}
           {pendingPlanError && (
             <p className="text-amber-400">
@@ -675,12 +675,12 @@ export default function NewChainProposal({
       {type === "register-council" && (
         <div className="space-y-3 rounded-lg border border-zinc-700/50 bg-zinc-800/20 p-4">
           <h4 className="text-sm font-medium text-zinc-300">
-            Register New Council
+            Register new council
           </h4>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-400">
-                Council Name
+                Council name
               </label>
               <input
                 type="text"
@@ -719,7 +719,7 @@ export default function NewChainProposal({
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-400">
-                Policy Type
+                Policy type
               </label>
               <select
                 value={councilPolicyType}
@@ -732,7 +732,7 @@ export default function NewChainProposal({
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-400">
-                Vote Threshold
+                Vote threshold
               </label>
               <input
                 type="text"
@@ -748,7 +748,7 @@ export default function NewChainProposal({
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-400">
-                Voting Period (hrs)
+                Voting period (hrs)
               </label>
               <NumberInput
                 value={councilVotingPeriod}
@@ -758,7 +758,7 @@ export default function NewChainProposal({
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-400">
-                Min Exec Period (hrs)
+                Min exec period (hrs)
               </label>
               <NumberInput
                 value={councilMinExecPeriod}
@@ -768,7 +768,7 @@ export default function NewChainProposal({
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-400">
-                Min Members
+                Min members
               </label>
               <NumberInput
                 min="1"
@@ -779,7 +779,7 @@ export default function NewChainProposal({
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-400">
-                Max Members
+                Max members
               </label>
               <NumberInput
                 min="1"
@@ -790,7 +790,7 @@ export default function NewChainProposal({
             </div>
             <div className="col-span-2 sm:col-span-3">
               <label className="mb-1 block text-xs font-medium text-zinc-400">
-                Term Duration (days)
+                Term duration (days)
               </label>
               <NumberInput
                 value={councilTermDuration}
@@ -819,7 +819,7 @@ export default function NewChainProposal({
           }
           className="sd-btn sd-btn-primary"
         >
-          {submitting ? "Submitting..." : "Submit Proposal"}
+          {submitting ? "Submitting..." : "Submit proposal"}
         </button>
         <button
           type="button"

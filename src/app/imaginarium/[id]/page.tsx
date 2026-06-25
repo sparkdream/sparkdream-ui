@@ -224,7 +224,7 @@ export default function PostDetailPage() {
   if (connected && !isDeleted && isEphemeral && canMakePermanent === true && permits(MsgTypeUrls.MakePostPermanent)) {
     menuActions.push({
       key: "permanent",
-      label: "Make Permanent",
+      label: "Make permanent",
       onClick: handleMakePermanent,
       icon: ACTION_ICONS.lock,
       className: "text-emerald-400",
@@ -319,7 +319,7 @@ export default function PostDetailPage() {
           )}
           {post.conviction_sustained && (
             <span className="rounded bg-green-900/30 px-2 py-0.5 text-xs text-green-400">
-              Conviction Sustained
+              Conviction sustained
             </span>
           )}
           {post.initiative_id && post.initiative_id !== "0" && (

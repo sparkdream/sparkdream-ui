@@ -190,7 +190,7 @@ export default function BountyPanel({ threadId, bounty, isThreadAuthor, onChange
             onClick={() => { setForm("create"); setAmountInput(""); }}
             className="rounded-lg border border-amber-700/50 px-3 py-1.5 text-xs text-amber-400 transition-colors hover:border-amber-600 hover:bg-amber-900/15"
           >
-            Add Bounty
+            Add bounty
           </button>
         ) : (
           <div className="rounded-xl border border-amber-700/50 bg-amber-900/10 p-3">
@@ -198,7 +198,7 @@ export default function BountyPanel({ threadId, bounty, isThreadAuthor, onChange
               Escrow SPARK as a bounty on this thread. You can assign up to {MAX_BOUNTY_WINNERS} replies an
               equal share, then pay them out before the bounty expires.
             </p>
-            {amountForm("Create Bounty", handleCreate)}
+            {amountForm("Create bounty", handleCreate)}
           </div>
         )}
       </div>
@@ -237,7 +237,7 @@ export default function BountyPanel({ threadId, bounty, isThreadAuthor, onChange
                 title="Pay all assigned awards and close the bounty"
                 className="rounded-lg border border-amber-700/50 px-3 py-1.5 text-xs text-amber-400 transition-colors hover:border-amber-600 disabled:opacity-50"
               >
-                {busy === "award" ? "Signing..." : "Pay Out Awards"}
+                {busy === "award" ? "Signing..." : "Pay out awards"}
               </button>
             )}
             {permits(ForumMsgTypeUrls.IncreaseBounty) && (
@@ -254,14 +254,14 @@ export default function BountyPanel({ threadId, bounty, isThreadAuthor, onChange
                 disabled={!!busy}
                 className="text-xs text-red-400 transition-colors hover:text-red-300 disabled:opacity-50"
               >
-                {busy === "cancel" ? "..." : "Cancel Bounty"}
+                {busy === "cancel" ? "..." : "Cancel bounty"}
               </button>
             )}
           </div>
         )}
       </div>
 
-      {form === "increase" && amountForm("Increase Bounty", handleIncrease)}
+      {form === "increase" && amountForm("Increase bounty", handleIncrease)}
 
       {awards.length > 0 && (
         <div className="mt-3 space-y-1 border-t border-amber-800/30 pt-2">

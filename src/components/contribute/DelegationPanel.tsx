@@ -261,7 +261,7 @@ export default function DelegationPanel() {
           >
             {claimTx.buttonLabel(
               claimableRewards.length === 0
-                ? "Claim Rewards"
+                ? "Claim rewards"
                 : `Claim ${formatSpark(totalRewards)} ${config.displayDenom}`,
             )}
           </button>

@@ -60,6 +60,11 @@
   --crystal-lo:    #D6249A;
   --crystal-soft:  rgba(255, 79, 184, 0.14);
   --crystal-ring:  rgba(255, 79, 184, 0.45);
+  /* Orchid accent — the pink↔purple midpoint of the collection CTA gradient.
+     Used for page highlights (sidebar collection icon, trending hover) so the
+     accents read as the same blended hue as the New collection button. */
+  --crystal-accent:    #d27be4;
+  --crystal-accent-hi: #e49bf2;
 
   --blue:          #60a5fa;
   --blue-soft:     rgba(96, 165, 250, 0.12);
@@ -266,6 +271,80 @@ input[type="number"] {
 }
 @media (prefers-reduced-motion: reduce) {
   .sd-nebula-field { display: none; }
+}
+
+/* ========== Jewel field (Wonders glinty jewel box) ==========
+   Two layers behind the page: faint crystal-hued glow pools drift slowly (the
+   velvet depth of an open jewel box), and tiny faceted glints twinkle on top
+   (light catching cut gems). Crystal palette — pink / magenta / violet. Both
+   use `screen` blend so they only add light. Disabled under reduced-motion. */
+.sd-jewel-field {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+/* Soft ambient crystal pools — like the nebula but cooler and very faint. */
+.sd-jewel-glow {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(var(--sd-jewel-color, 255, 79, 184), 0.5) 0%,
+    rgba(var(--sd-jewel-color, 255, 79, 184), 0.22) 38%,
+    rgba(var(--sd-jewel-color, 255, 79, 184), 0) 70%
+  );
+  filter: blur(54px);
+  mix-blend-mode: screen;
+  opacity: 0;
+  will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
+  animation: sd-jewel-drift var(--sd-jewel-dur, 90s) ease-in-out infinite alternate;
+  animation-delay: var(--sd-jewel-delay, 0s);
+}
+@keyframes sd-jewel-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: calc(var(--sd-jewel-peak, 0.14) * 0.7);
+  }
+  50% {
+    transform: translate3d(calc(var(--sd-jewel-dx, 0px) * 0.5), calc(var(--sd-jewel-dy, 0px) * 0.5), 0) scale(1.1);
+    opacity: var(--sd-jewel-peak, 0.14);
+  }
+  100% {
+    transform: translate3d(var(--sd-jewel-dx, 0px), var(--sd-jewel-dy, 0px), 0) scale(0.96);
+    opacity: calc(var(--sd-jewel-peak, 0.14) * 0.8);
+  }
+}
+/* Facet glints — small 4-point sparkles that flash briefly then rest, each on
+   a staggered cycle so collectively they read as scattered random twinkles. */
+.sd-jewel-glint {
+  position: absolute;
+  width: var(--sd-glint-size, 16px);
+  height: var(--sd-glint-size, 16px);
+  background: radial-gradient(
+    circle,
+    #fff 0%,
+    rgba(var(--sd-glint-tint, 255, 180, 225), 0.95) 42%,
+    rgba(var(--sd-glint-tint, 255, 180, 225), 0) 74%
+  );
+  /* concave 4-point sparkle silhouette */
+  clip-path: polygon(50% 0%, 58% 42%, 100% 50%, 58% 58%, 50% 100%, 42% 58%, 0% 50%, 42% 42%);
+  mix-blend-mode: screen;
+  opacity: 0;
+  transform: scale(0.3) rotate(0deg);
+  will-change: transform, opacity;
+  animation: sd-jewel-twinkle var(--sd-glint-dur, 7s) ease-in-out infinite;
+  animation-delay: var(--sd-glint-delay, 0s);
+}
+@keyframes sd-jewel-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.3) rotate(0deg); }
+  6%       { opacity: var(--sd-glint-peak, 0.9); transform: scale(1) rotate(12deg); }
+  14%      { opacity: 0; transform: scale(0.5) rotate(22deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sd-jewel-field { display: none; }
 }
 
 /* ========== Spark field (ambient background particles) ==========
@@ -676,8 +755,12 @@ body > * { position: relative; z-index: 1; }
    arrowhead / thrust motion). */
 .sd-btn-spark {
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0) 45%),
-    linear-gradient(135deg, var(--ember) 0%, var(--ember-lo) 100%);
+    /* top sheen */
+    linear-gradient(180deg, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0.05) 38%, rgba(255,255,255,0) 56%),
+    /* molten foot — deepens toward the base like glowing coal */
+    linear-gradient(0deg, rgba(120,28,0,0.5) 0%, rgba(120,28,0,0) 34%),
+    /* hot diagonal body */
+    linear-gradient(150deg, var(--ember-hi) 0%, var(--ember) 46%, var(--ember-lo) 100%);
   color: #fff;
   /* polygon fallback for browsers without shape() */
   clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
@@ -698,16 +781,17 @@ body > * { position: relative; z-index: 1; }
     close
   );
   filter:
-    drop-shadow(0 4px 10px rgba(255, 122, 46, 0.4))
-    drop-shadow(0 0 14px rgba(255, 161, 92, 0.35));
+    drop-shadow(0 4px 10px rgba(255, 122, 46, 0.48))
+    drop-shadow(0 0 16px rgba(255, 161, 92, 0.45));
 }
 .sd-btn-spark:hover {
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 45%),
-    linear-gradient(135deg, var(--ember-hi) 0%, var(--ember) 100%);
+    linear-gradient(180deg, rgba(255,255,255,0.4) 0%, rgba(255,255,255,0.07) 38%, rgba(255,255,255,0) 56%),
+    linear-gradient(0deg, rgba(120,28,0,0.45) 0%, rgba(120,28,0,0) 34%),
+    linear-gradient(150deg, var(--ember-hi) 0%, var(--ember) 40%, var(--ember) 100%);
   filter:
-    drop-shadow(0 6px 14px rgba(255, 122, 46, 0.55))
-    drop-shadow(0 0 20px rgba(255, 161, 92, 0.55));
+    drop-shadow(0 6px 16px rgba(255, 122, 46, 0.62))
+    drop-shadow(0 0 24px rgba(255, 161, 92, 0.6));
 }
 .sd-btn-spark .flame { animation: sd-flame-flicker 2.4s ease-in-out infinite; }
 @keyframes sd-flame-flicker {
@@ -727,8 +811,12 @@ body > * { position: relative; z-index: 1; }
    Pair with the vision/dome glyph. Vertices rounded via shape() arcs. */
 .sd-btn-dream {
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0) 45%),
-    linear-gradient(135deg, var(--gold) 0%, var(--gold-lo) 100%);
+    /* faint violet dawn at the top edge, melting into a white sheen */
+    linear-gradient(180deg, rgba(173,140,255,0.26) 0%, rgba(255,255,255,0.12) 26%, rgba(255,255,255,0) 56%),
+    /* gentle foot shade for depth */
+    linear-gradient(0deg, rgba(120,80,0,0.32) 0%, rgba(120,80,0,0) 36%),
+    /* luminous gold body */
+    linear-gradient(150deg, var(--gold-hi) 0%, var(--gold) 48%, var(--gold-lo) 100%);
   color: #1a1405;
   /* polygon fallback for browsers without shape() */
   clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 100%, 8px 100%);
@@ -747,16 +835,19 @@ body > * { position: relative; z-index: 1; }
   padding-left: 20px;
   padding-right: 20px;
   filter:
-    drop-shadow(0 4px 10px rgba(245, 197, 66, 0.4))
-    drop-shadow(0 0 14px rgba(255, 222, 122, 0.35));
+    drop-shadow(0 4px 12px rgba(245, 197, 66, 0.45))
+    drop-shadow(0 0 18px rgba(255, 222, 122, 0.48))
+    drop-shadow(0 0 24px rgba(150, 120, 255, 0.12));
 }
 .sd-btn-dream:hover {
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 45%),
-    linear-gradient(135deg, var(--gold-hi) 0%, var(--gold) 100%);
+    linear-gradient(180deg, rgba(184,153,255,0.34) 0%, rgba(255,255,255,0.16) 26%, rgba(255,255,255,0) 56%),
+    linear-gradient(0deg, rgba(120,80,0,0.28) 0%, rgba(120,80,0,0) 36%),
+    linear-gradient(150deg, var(--gold-hi) 0%, var(--gold) 44%, var(--gold) 100%);
   filter:
-    drop-shadow(0 6px 14px rgba(245, 197, 66, 0.55))
-    drop-shadow(0 0 20px rgba(255, 222, 122, 0.55));
+    drop-shadow(0 6px 16px rgba(245, 197, 66, 0.58))
+    drop-shadow(0 0 26px rgba(255, 222, 122, 0.62))
+    drop-shadow(0 0 34px rgba(150, 120, 255, 0.18));
 }
 .sd-btn-dream .telescope { animation: sd-telescope-pulse 3.2s ease-in-out infinite; transform-origin: 60% 60%; }
 @keyframes sd-telescope-pulse {
@@ -770,58 +861,134 @@ body > * { position: relative; z-index: 1; }
 .sd-side-item.dream-item:hover .ic { color: var(--gold); opacity: 1; }
 .sd-side-item.dream-item.active .ic { color: inherit; opacity: 0.9; }
 
-/* Collection — long octagon (all four corners cut, specimen slide / crystal
-   prism). Vertices rounded via shape() arcs. */
+/* Collection — glossy 8px-radius slab. Lit-from-above gradient with a top
+   sheen, an inset depth shadow at the foot, a light rim, and a soft crystal
+   glow (box-shadow, since there's no clip-path to fight). */
 .sd-btn-collection {
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 45%),
-    linear-gradient(135deg, var(--crystal) 0%, var(--crystal-lo) 100%);
+    linear-gradient(180deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.06) 42%, rgba(255,255,255,0) 62%),
+    linear-gradient(150deg, #b06af0 0%, #d957cf 40%, var(--crystal) 78%, var(--crystal-lo) 100%);
   color: #fff;
-  /* polygon fallback for browsers without shape() */
-  clip-path: polygon(
-    10px 0, calc(100% - 10px) 0,
-    100% 10px, 100% calc(100% - 10px),
-    calc(100% - 10px) 100%, 10px 100%,
-    0 calc(100% - 10px), 0 10px
-  );
-  clip-path: shape(
-    from 12px 0,
-    line to calc(100% - 12px) 0,
-    curve to calc(100% - 9px) 1px with calc(100% - 10px) 0,
-    line to calc(100% - 1px) 9px,
-    curve to 100% 12px with 100% 10px,
-    line to 100% calc(100% - 12px),
-    curve to calc(100% - 1px) calc(100% - 9px) with 100% calc(100% - 10px),
-    line to calc(100% - 9px) calc(100% - 1px),
-    curve to calc(100% - 12px) 100% with calc(100% - 10px) 100%,
-    line to 12px 100%,
-    curve to 9px calc(100% - 1px) with 10px 100%,
-    line to 1px calc(100% - 9px),
-    curve to 0 calc(100% - 12px) with 0 calc(100% - 10px),
-    line to 0 12px,
-    curve to 1px 9px with 0 10px,
-    line to 9px 1px,
-    curve to 12px 0 with 10px 0,
-    close
-  );
+  border-radius: 8px;
   padding-left: 20px;
   padding-right: 20px;
-  filter:
-    drop-shadow(0 4px 10px rgba(255, 79, 184, 0.4))
-    drop-shadow(0 0 14px rgba(255, 133, 208, 0.38));
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.55) inset,            /* top sheen line */
+    0 -9px 16px -10px rgba(74, 0, 51, 0.55) inset,   /* foot depth */
+    0 0 0 1px rgba(255,255,255,0.16) inset,          /* light rim */
+    0 5px 16px -6px var(--crystal-ring),             /* lift glow */
+    0 0 18px -2px rgba(255, 133, 208, 0.4);          /* halo */
 }
 .sd-btn-collection:hover {
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0) 45%),
-    linear-gradient(135deg, var(--crystal-hi) 0%, var(--crystal) 100%);
-  filter:
-    drop-shadow(0 6px 14px rgba(255, 79, 184, 0.55))
-    drop-shadow(0 0 20px rgba(255, 133, 208, 0.55));
+    linear-gradient(180deg, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.08) 42%, rgba(255,255,255,0) 62%),
+    linear-gradient(150deg, #bd7bf5 0%, #e463d6 40%, var(--crystal-hi) 78%, var(--crystal) 100%);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.6) inset,
+    0 -9px 16px -10px rgba(74, 0, 51, 0.5) inset,
+    0 0 0 1px rgba(255,255,255,0.22) inset,
+    0 7px 20px -6px var(--crystal-ring),
+    0 0 24px -2px rgba(255, 133, 208, 0.55);
+}
+
+/* ---------- Signature CTA ambient animations ----------
+   One subtle, purpose-matched motion per entity, painted by a ::after overlay.
+   pointer-events: none, and they pause under prefers-reduced-motion / disabled.
+   The spark/dream glows sit at their button's bottom/top edge (inside the
+   bounds) so they actually show; only the collection glint uses screen blend.
+   The spark/dream overlays are clipped to each button's clip-path silhouette;
+   the collection overlay is clipped by overflow:hidden on the rounded slab. */
+.sd-btn-spark,
+.sd-btn-dream { position: relative; }
+.sd-btn-collection { position: relative; overflow: hidden; }
+
+.sd-btn-spark::after,
+.sd-btn-dream::after,
+.sd-btn-collection::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Dream — a soft white "street lamp" pool at the top edge, breathing. */
+.sd-btn-dream::after {
+  background: radial-gradient(62% 105% at 50% 0%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.32) 34%, rgba(255,255,255,0) 68%);
+  animation: sd-lamp-breathe 3.6s ease-in-out infinite;
+}
+@keyframes sd-lamp-breathe {
+  0%, 100% { opacity: 0.3; }
+  50%      { opacity: 0.92; }
+}
+
+/* Spark — molten lava lake pooled along the bottom edge: wide and flat (the
+   horizontal radius runs past both sides so it stays even across the width
+   instead of doming in the centre). Glows in place — opacity only, no scale,
+   so the button silhouette never appears to shift. */
+.sd-btn-spark::after {
+  background: radial-gradient(155% 62% at 50% 100%, rgba(255,238,150,0.92) 0%, rgba(255,150,50,0.5) 32%, rgba(255,110,30,0) 64%);
+  animation: sd-lava-churn 6.6s ease-in-out infinite;
+}
+@keyframes sd-lava-churn {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1;   }
+}
+/* Embers rising off the spark button's lava lake. Movement mirrors the
+   background SparkField (rise + zigzag sway), scaled to button height; clipped
+   to the arrowhead silhouette by the button's clip-path. */
+.sd-btn-sparks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sd-btn-spark-bit {
+  position: absolute;
+  bottom: 2px;
+  border-radius: 999px;
+  background: radial-gradient(circle, #fff8ec 0%, var(--ember-hi) 38%, var(--ember) 62%, rgba(255,122,46,0) 78%);
+  box-shadow: 0 0 6px 1px rgba(255, 161, 92, 0.65);
+  opacity: 0;
+  will-change: transform, opacity;
+  animation-name: sd-btn-spark-rise;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@keyframes sd-btn-spark-rise {
+  0%   { transform: translate3d(0, 0, 0) scale(0.7);                          opacity: 0; }
+  12%  { opacity: var(--bspark-peak, 1); }
+  45%  { transform: translate3d(var(--bspark-sway, 3px), -15px, 0) scale(1.05); }
+  72%  { transform: translate3d(calc(var(--bspark-sway, 3px) * -1), -25px, 0) scale(0.95); opacity: calc(var(--bspark-peak, 1) * 0.7); }
+  90%  { opacity: calc(var(--bspark-peak, 1) * 0.3); }
+  100% { transform: translate3d(0, -34px, 0) scale(0.5);                      opacity: 0; }
+}
+.sd-btn:disabled .sd-btn-spark-bit { animation: none; opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .sd-btn-spark-bit { animation: none; opacity: 0; }
+}
+
+/* Collection — a glass-case glint sweeping left to right, then a long pause. */
+.sd-btn-collection::after {
+  background: linear-gradient(100deg, transparent 38%, rgba(255,255,255,0.55) 50%, transparent 62%);
+  transform: translateX(-160%) skewX(-18deg);
+  mix-blend-mode: screen;
+  animation: sd-glass-sweep 5.5s ease-in-out infinite;
+}
+@keyframes sd-glass-sweep {
+  0%        { transform: translateX(-160%) skewX(-18deg); }
+  16%, 100% { transform: translateX(160%) skewX(-18deg); }
+}
+
+/* Stop the ambient motion when the CTA is disabled, and for reduced-motion. */
+.sd-btn:disabled::after { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .sd-btn-spark::after,
+  .sd-btn-dream::after,
+  .sd-btn-collection::after { animation: none; }
 }
 
 /* Collection-nature hint for sidebar items. Crystal tint, mirrors spark/dream. */
-.sd-side-item.collection-item .ic { color: var(--crystal-hi); opacity: 0.85; }
-.sd-side-item.collection-item:hover .ic { color: var(--crystal); opacity: 1; }
+.sd-side-item.collection-item .ic { color: var(--crystal-accent); opacity: 0.85; }
+.sd-side-item.collection-item:hover .ic { color: var(--crystal-accent-hi); opacity: 1; }
 .sd-side-item.collection-item.active .ic { color: inherit; opacity: 0.9; }
 
 /* Secondary entity-tinted buttons (Reply, Send, Submit) — rectangular solid
@@ -840,7 +1007,7 @@ body > * { position: relative; z-index: 1; }
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background .15s, filter .2s, opacity .15s;
+  transition: background .15s, filter .2s, box-shadow .2s, opacity .15s;
 }
 .sd-btn-ember:disabled,
 .sd-btn-gold:disabled,
@@ -848,32 +1015,84 @@ body > * { position: relative; z-index: 1; }
   opacity: 0.5;
   cursor: not-allowed;
 }
+/* Ember form-submits (Send spark / reply) — glossy molten shading echoing the
+   New spark CTA. Rectangular, so they get the real inset rim + depth. */
 .sd-btn-ember {
-  background: linear-gradient(135deg, var(--ember), var(--ember-lo));
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.06) 42%, rgba(255,255,255,0) 62%),
+    linear-gradient(150deg, var(--ember-hi) 0%, var(--ember) 52%, var(--ember-lo) 100%);
   color: #fff;
-  filter: drop-shadow(0 0 10px rgba(255, 161, 92, 0.22));
+  border-radius: 8px;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.5) inset,
+    0 -9px 16px -10px rgba(90, 20, 0, 0.55) inset,
+    0 0 0 1px rgba(255,255,255,0.14) inset,
+    0 5px 16px -6px var(--ember-ring),
+    0 0 18px -2px rgba(255, 161, 92, 0.4);
 }
 .sd-btn-ember:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--ember-hi), var(--ember));
-  filter: drop-shadow(0 0 14px rgba(255, 161, 92, 0.4));
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.08) 42%, rgba(255,255,255,0) 62%),
+    linear-gradient(150deg, var(--ember-hi) 0%, var(--ember) 46%, var(--ember) 100%);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.55) inset,
+    0 -9px 16px -10px rgba(90, 20, 0, 0.5) inset,
+    0 0 0 1px rgba(255,255,255,0.2) inset,
+    0 7px 20px -6px var(--ember-ring),
+    0 0 24px -2px rgba(255, 161, 92, 0.55);
 }
+/* Gold form-submits (Send spark in CreatePostForm / tag submits) — glossy gold
+   dawn shading echoing the New dream CTA. */
 .sd-btn-gold {
-  background: linear-gradient(135deg, var(--gold), var(--gold-lo));
+  background:
+    linear-gradient(180deg, rgba(173,140,255,0.22) 0%, rgba(255,255,255,0.1) 28%, rgba(255,255,255,0) 62%),
+    linear-gradient(150deg, var(--gold-hi) 0%, var(--gold) 52%, var(--gold-lo) 100%);
   color: #1a1405;
-  filter: drop-shadow(0 0 10px rgba(255, 222, 122, 0.22));
+  border-radius: 8px;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.6) inset,
+    0 -9px 16px -10px rgba(90, 60, 0, 0.4) inset,
+    0 0 0 1px rgba(255,255,255,0.22) inset,
+    0 5px 16px -6px var(--gold-ring),
+    0 0 18px -2px rgba(255, 222, 122, 0.42);
 }
 .sd-btn-gold:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--gold-hi), var(--gold));
-  filter: drop-shadow(0 0 14px rgba(255, 222, 122, 0.4));
+  background:
+    linear-gradient(180deg, rgba(184,153,255,0.3) 0%, rgba(255,255,255,0.13) 28%, rgba(255,255,255,0) 62%),
+    linear-gradient(150deg, var(--gold-hi) 0%, var(--gold) 46%, var(--gold) 100%);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.7) inset,
+    0 -9px 16px -10px rgba(90, 60, 0, 0.35) inset,
+    0 0 0 1px rgba(255,255,255,0.3) inset,
+    0 7px 20px -6px var(--gold-ring),
+    0 0 24px -2px rgba(255, 222, 122, 0.58);
 }
+/* Crystal form-submits (Create collection / Add / Send) share the glossy
+   purple→pink shading of the New collection CTA so every collection action
+   reads as one family. Padding comes from per-button utility classes. */
 .sd-btn-crystal {
-  background: linear-gradient(135deg, var(--crystal), var(--crystal-lo));
-  color: #04212a;
-  filter: drop-shadow(0 0 10px rgba(103, 232, 249, 0.22));
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.06) 42%, rgba(255,255,255,0) 62%),
+    linear-gradient(150deg, #b06af0 0%, #d957cf 40%, var(--crystal) 78%, var(--crystal-lo) 100%);
+  color: #fff;
+  border-radius: 8px;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.55) inset,
+    0 -9px 16px -10px rgba(74, 0, 51, 0.55) inset,
+    0 0 0 1px rgba(255,255,255,0.16) inset,
+    0 5px 16px -6px var(--crystal-ring),
+    0 0 18px -2px rgba(255, 133, 208, 0.4);
 }
 .sd-btn-crystal:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--crystal-hi), var(--crystal));
-  filter: drop-shadow(0 0 14px rgba(103, 232, 249, 0.4));
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.08) 42%, rgba(255,255,255,0) 62%),
+    linear-gradient(150deg, #bd7bf5 0%, #e463d6 40%, var(--crystal-hi) 78%, var(--crystal) 100%);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.6) inset,
+    0 -9px 16px -10px rgba(74, 0, 51, 0.5) inset,
+    0 0 0 1px rgba(255,255,255,0.22) inset,
+    0 7px 20px -6px var(--crystal-ring),
+    0 0 24px -2px rgba(255, 133, 208, 0.55);
 }
 
 /* ========== Segmented ========== */
@@ -1497,7 +1716,7 @@ body > * { position: relative; z-index: 1; }
 .sd-trend-row:hover .title { color: var(--trend-hover, var(--violet-hi)); }
 .sd-rail-card.sparks { --trend-hover: var(--ember-hi); }
 .sd-rail-card.dreams { --trend-hover: var(--gold-hi); }
-.sd-rail-card.collections { --trend-hover: var(--crystal-hi); }
+.sd-rail-card.collections { --trend-hover: var(--crystal-accent-hi); }
 .sd-trend-row .num {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 11px;

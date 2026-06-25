@@ -297,7 +297,7 @@ export default function ProjectList() {
             }
             className="sd-btn sd-btn-primary"
           >
-            Propose Project
+            Propose project
           </button>
         )}
       </div>
@@ -314,7 +314,7 @@ export default function ProjectList() {
 
       {showForm && canPropose && (
         <div className="mb-4 rounded-xl sd-hull-tile p-4">
-          <h3 className="mb-3 text-sm font-semibold text-zinc-200">New Project Proposal</h3>
+          <h3 className="mb-3 text-sm font-semibold text-zinc-200">New project proposal</h3>
 
           {createError && (
             <div className="mb-3 rounded-lg border border-red-800 bg-red-900/20 px-3 py-2 text-sm text-red-400">
@@ -542,7 +542,7 @@ export default function ProjectList() {
                       <dd className="text-zinc-300">{formatDream(p.spent_budget)} DREAM</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-zinc-500">SPARK Approved</dt>
+                      <dt className="text-xs text-zinc-500">SPARK approved</dt>
                       <dd className="text-zinc-300">{formatDream(p.approved_spark)}</dd>
                     </div>
                   </dl>
@@ -563,7 +563,7 @@ export default function ProjectList() {
               disabled={loadingMore}
               className="mt-3 w-full rounded-lg border border-zinc-800 py-2 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-50"
             >
-              {loadingMore ? "Loading..." : "Load More"}
+              {loadingMore ? "Loading..." : "Load more"}
             </button>
           )}
         </div>

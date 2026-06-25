@@ -128,7 +128,7 @@ export default function CommunityProposals({
             onClick={() => setShowNewProposal(true)}
             className="sd-btn sd-btn-primary"
           >
-            New Proposal
+            New proposal
           </button>
         )}
       </div>

@@ -213,7 +213,7 @@ function ReplyItem({
   if (connected && isEphemeral && canMakePermanent === true && permits(MsgTypeUrls.MakeReplyPermanent)) {
     menuActions.push({
       key: "permanent",
-      label: "Make Permanent",
+      label: "Make permanent",
       onClick: handleMakePermanent,
       icon: ACTION_ICONS.lock,
       className: "text-emerald-400",

@@ -21,14 +21,14 @@ export type ProposalType =
   | "unhide-post";
 
 const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string }[] = [
-  { value: "general", label: "General Vote", description: "Signaling vote with no executable action" },
-  { value: "treasury-spend", label: "Treasury Spend", description: "Propose sending funds from the council treasury" },
-  { value: "invite", label: "Invite Member", description: "Propose adding a new council member" },
-  { value: "remove", label: "Remove Member", description: "Propose removing a council member" },
-  { value: "update-config", label: "Update Config", description: "Propose changing a child committee's settings" },
-  { value: "create-category", label: "Create Swarm Category", description: "Propose creating a new Swarm category" },
-  { value: "delete-category", label: "Delete Swarm Category", description: "Propose removing an empty Swarm category" },
-  { value: "unhide-post", label: "Unhide Swarm Post", description: "Council override of a sentinel hide past the self-correct window" },
+  { value: "general", label: "General vote", description: "Signaling vote with no executable action" },
+  { value: "treasury-spend", label: "Treasury spend", description: "Propose sending funds from the council treasury" },
+  { value: "invite", label: "Invite member", description: "Propose adding a new council member" },
+  { value: "remove", label: "Remove member", description: "Propose removing a council member" },
+  { value: "update-config", label: "Update config", description: "Propose changing a child committee's settings" },
+  { value: "create-category", label: "Create Swarm category", description: "Propose creating a new Swarm category" },
+  { value: "delete-category", label: "Delete Swarm category", description: "Propose removing an empty Swarm category" },
+  { value: "unhide-post", label: "Unhide Swarm post", description: "Council override of a sentinel hide past the self-correct window" },
 ];
 
 // Inner message types each proposal kind would broadcast — used to filter the
@@ -433,12 +433,12 @@ export default function NewCommunityProposal({
       onSubmit={handleSubmit}
       className="space-y-5 rounded-xl sd-hull-tile p-5"
     >
-      <h3 className="text-lg font-semibold text-white">New Proposal</h3>
+      <h3 className="text-lg font-semibold text-white">New proposal</h3>
 
       {/* Proposal type selector */}
       <div>
         <label className="mb-1.5 block text-sm font-medium text-zinc-300">
-          Proposal Type
+          Proposal type
         </label>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {visibleProposalTypes.map((pt) => (
@@ -463,7 +463,7 @@ export default function NewCommunityProposal({
       {electoralFor && (type === "invite" || type === "remove") && (
         <div>
           <label className="mb-1.5 block text-sm font-medium text-zinc-300">
-            Target Group
+            Target group
           </label>
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -487,7 +487,7 @@ export default function NewCommunityProposal({
                   : "border-zinc-700 bg-zinc-800/30 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300"
               }`}
             >
-              <div className="font-medium">This Committee</div>
+              <div className="font-medium">This committee</div>
               <div className="mt-0.5 text-xs text-zinc-500">Manage own members</div>
             </button>
           </div>
@@ -499,7 +499,7 @@ export default function NewCommunityProposal({
         <div className="space-y-3">
           <div>
             <label className="mb-1.5 block text-sm font-medium text-zinc-300">
-              Address to Invite
+              Address to invite
             </label>
             <input
               type="text"
@@ -511,7 +511,7 @@ export default function NewCommunityProposal({
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-zinc-300">
-              Voting Weight
+              Voting weight
             </label>
             <NumberInput
               min="1"
@@ -526,7 +526,7 @@ export default function NewCommunityProposal({
       {type === "remove" && (
         <div>
           <label className="mb-1.5 block text-sm font-medium text-zinc-300">
-            Member to Remove
+            Member to remove
           </label>
           <select
             value={removeAddress}
@@ -550,7 +550,7 @@ export default function NewCommunityProposal({
         <div className="space-y-3">
           <div>
             <label className="mb-1.5 block text-sm font-medium text-zinc-300">
-              Recipient Address
+              Recipient address
             </label>
             <input
               type="text"
@@ -586,7 +586,7 @@ export default function NewCommunityProposal({
         <div className="space-y-3">
           <div>
             <label className="mb-1.5 block text-sm font-medium text-zinc-300">
-              Target Committee
+              Target committee
             </label>
             <select
               value={configTargetGroup}
@@ -604,7 +604,7 @@ export default function NewCommunityProposal({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-400">
-                Vote Threshold
+                Vote threshold
               </label>
               <input
                 type="text"
@@ -616,7 +616,7 @@ export default function NewCommunityProposal({
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-400">
-                Policy Type
+                Policy type
               </label>
               <select
                 value={configPolicyType}
@@ -630,7 +630,7 @@ export default function NewCommunityProposal({
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-400">
-                Voting Period (hours)
+                Voting period (hours)
               </label>
               <NumberInput
                 value={configVotingPeriod}
@@ -641,7 +641,7 @@ export default function NewCommunityProposal({
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-400">
-                Min Execution Period (hours)
+                Min execution period (hours)
               </label>
               <NumberInput
                 value={configMinExecPeriod}
@@ -652,7 +652,7 @@ export default function NewCommunityProposal({
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-400">
-                Min Members
+                Min members
               </label>
               <NumberInput
                 min="1"
@@ -663,7 +663,7 @@ export default function NewCommunityProposal({
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-400">
-                Max Members
+                Max members
               </label>
               <NumberInput
                 min="1"
@@ -674,7 +674,7 @@ export default function NewCommunityProposal({
             </div>
             <div className="sm:col-span-2">
               <label className="mb-1 block text-xs font-medium text-zinc-400">
-                Term Duration (days)
+                Term duration (days)
               </label>
               <NumberInput
                 value={configTermDuration}
@@ -691,7 +691,7 @@ export default function NewCommunityProposal({
         <div className="space-y-3">
           <div>
             <label className="mb-1.5 block text-sm font-medium text-zinc-300">
-              Category Title
+              Category title
             </label>
             <input
               type="text"
@@ -794,7 +794,7 @@ export default function NewCommunityProposal({
       {/* Metadata / description — hide when update-config has no children */}
       {!(type === "update-config" && childGroups.length === 0) && <div>
         <label className="mb-1.5 block text-sm font-medium text-zinc-300">
-          {type === "general" ? "Description" : "Proposal Note (optional)"}
+          {type === "general" ? "Description" : "Proposal note (optional)"}
         </label>
         <textarea
           value={metadata}
@@ -831,7 +831,7 @@ export default function NewCommunityProposal({
           }
           className="sd-btn sd-btn-primary"
         >
-          {submitting ? "Submitting..." : "Submit Proposal"}
+          {submitting ? "Submitting..." : "Submit proposal"}
         </button>
         <button
           type="button"

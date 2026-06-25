@@ -427,7 +427,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                 title={canMakePermanent ? "Preserve this collection so it no longer expires (burns its deposit)" : "Requires Provisional trust level or higher"}
                 className="rounded-lg border border-emerald-700/50 px-3 py-1.5 text-xs text-emerald-400 transition-colors hover:bg-emerald-900/20 disabled:opacity-50"
               >
-                {actionLoading === "permanent" ? "..." : "Make Permanent"}
+                {actionLoading === "permanent" ? "..." : "Make permanent"}
               </button>
             )}
             {isCollectionActive && !isEphemeral && !collection.pinned && (
@@ -560,11 +560,23 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                     onClick={() => setShowAddItem(true)}
                     className="sd-btn-crystal px-4 py-2"
                   >
-                    Add Item
+                    Add item
                   </button>
                 ) : (
                   <div className="sd-hull-tile rounded-xl p-4">
-                    <h3 className="mb-3 text-sm font-semibold text-white">Add Item</h3>
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-white">Add item</h3>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          resetItemForm();
+                          setShowAddItem(false);
+                        }}
+                        className="sd-btn sd-btn-secondary"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                     <div className="space-y-3">
                       <input
                         value={newItemTitle}
@@ -677,24 +689,13 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                           </>
                         )}
                       </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={handleAddItem}
-                          disabled={!newItemTitle.trim() || !isRefReady() || actionLoading === "add-item"}
-                          className="sd-btn-crystal px-4 py-2"
-                        >
-                          {actionLoading === "add-item" ? "Adding..." : "Add"}
-                        </button>
-                        <button
-                          onClick={() => {
-                            resetItemForm();
-                            setShowAddItem(false);
-                          }}
-                          className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-400 transition-colors hover:text-zinc-200"
-                        >
-                          Cancel
-                        </button>
-                      </div>
+                      <button
+                        onClick={handleAddItem}
+                        disabled={!newItemTitle.trim() || !isRefReady() || actionLoading === "add-item"}
+                        className="sd-btn-crystal w-full px-4 py-2.5"
+                      >
+                        {actionLoading === "add-item" ? "Adding..." : "Add"}
+                      </button>
                     </div>
                   </div>
                 )}
@@ -804,7 +805,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                               disabled={actionLoading === `remove-${item.id}`}
                               className="rounded-lg border border-red-800/50 px-3 py-1.5 text-xs text-red-400 transition-colors hover:border-red-700 hover:bg-red-900/20 disabled:opacity-50"
                             >
-                              {actionLoading === `remove-${item.id}` ? "Removing..." : "Remove Item"}
+                              {actionLoading === `remove-${item.id}` ? "Removing..." : "Remove item"}
                             </button>
                           </div>
                         )}
@@ -827,11 +828,20 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                     onClick={() => setShowAddCollab(true)}
                     className="sd-btn-crystal px-4 py-2"
                   >
-                    Add Collaborator
+                    Add collaborator
                   </button>
                 ) : (
                   <div className="sd-hull-tile rounded-xl p-4">
-                    <h3 className="mb-3 text-sm font-semibold text-white">Add Collaborator</h3>
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-white">Add collaborator</h3>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddCollab(false)}
+                        className="sd-btn sd-btn-secondary"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                     <div className="space-y-3">
                       <input
                         value={newCollabAddress}
@@ -847,21 +857,13 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                         <option value={CollaboratorRole.EDITOR}>Editor</option>
                         <option value={CollaboratorRole.ADMIN}>Admin</option>
                       </select>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={handleAddCollaborator}
-                          disabled={!newCollabAddress.trim() || actionLoading === "add-collab"}
-                          className="sd-btn-crystal px-4 py-2"
-                        >
-                          {actionLoading === "add-collab" ? "Adding..." : "Add"}
-                        </button>
-                        <button
-                          onClick={() => setShowAddCollab(false)}
-                          className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-400 transition-colors hover:text-zinc-200"
-                        >
-                          Cancel
-                        </button>
-                      </div>
+                      <button
+                        onClick={handleAddCollaborator}
+                        disabled={!newCollabAddress.trim() || actionLoading === "add-collab"}
+                        className="sd-btn-crystal w-full px-4 py-2.5"
+                      >
+                        {actionLoading === "add-collab" ? "Adding..." : "Add"}
+                      </button>
                     </div>
                   </div>
                 )}
@@ -910,23 +912,23 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
               <div className="sd-hull-tile rounded-xl p-5">
                 <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
                   <div>
-                    <p className="text-xs text-zinc-500">Up Reviews</p>
+                    <p className="text-xs text-zinc-500">Up reviews</p>
                     <p className="text-lg font-semibold text-emerald-400">{curation.up_count}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-zinc-500">Down Reviews</p>
+                    <p className="text-xs text-zinc-500">Down reviews</p>
                     <p className="text-lg font-semibold text-red-400">{curation.down_count}</p>
                   </div>
                   {curation.last_reviewed_at && (
                     <div>
-                      <p className="text-xs text-zinc-500">Last Review</p>
+                      <p className="text-xs text-zinc-500">Last review</p>
                       <p className="text-zinc-300">{timeAgo(curation.last_reviewed_at)}</p>
                     </div>
                   )}
                 </div>
                 {curation.top_tags?.length > 0 && (
                   <div className="mt-3 border-t border-zinc-800 pt-3">
-                    <p className="text-xs font-medium text-zinc-500">Top Tags</p>
+                    <p className="text-xs font-medium text-zinc-500">Top tags</p>
                     <div className="mt-1.5 flex flex-wrap gap-2">
                       {curation.top_tags.map((t) => (
                         <span key={t.tag} className="rounded-full bg-indigo-500/10 px-2.5 py-0.5 text-xs text-indigo-400">

@@ -217,7 +217,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
       {/* Pending invitations for me */}
       {pendingForMe.length > 0 && (
         <div>
-          <h2 className="mb-3 text-lg font-semibold text-white">Pending Invitations</h2>
+          <h2 className="mb-3 text-lg font-semibold text-white">Pending invitations</h2>
           <div className="space-y-2">
             {pendingForMe.map((inv) => (
               <div key={inv.id} className="flex items-center justify-between rounded-xl border border-yellow-800/50 bg-yellow-900/10 px-4 py-3">
@@ -247,14 +247,14 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
       {/* Invite form & sent invitations */}
       <div>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">Send Invitations</h2>
+          <h2 className="text-lg font-semibold text-white">Send invitations</h2>
           {canInvite && !showForm && (
             <button
               type="button"
               onClick={() => setShowForm(true)}
               className="sd-btn sd-btn-primary"
             >
-              Invite Member
+              Invite member
             </button>
           )}
         </div>
@@ -267,7 +267,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
 
         {showForm && canInvite && (
           <div className="mb-4 rounded-xl sd-hull-tile p-4">
-            <h3 className="mb-3 text-sm font-semibold text-zinc-200">New Invitation</h3>
+            <h3 className="mb-3 text-sm font-semibold text-zinc-200">New invitation</h3>
             <div className="space-y-3">
               <input
                 type="text"
@@ -325,7 +325,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
                   disabled={submitting || !formInvitee.trim() || !formStake || parseFloat(formStake) <= 0 || isNaN(parseFloat(formStake))}
                   className="sd-btn sd-btn-primary"
                 >
-                  {submitting ? "Sending..." : "Send Invitation"}
+                  {submitting ? "Sending..." : "Send invitation"}
                 </button>
                 <button
                   type="button"
@@ -372,7 +372,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
                 disabled={loadingMore}
                 className="mt-3 w-full rounded-lg border border-zinc-800 py-2 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-50"
               >
-                {loadingMore ? "Loading..." : "Load More"}
+                {loadingMore ? "Loading..." : "Load more"}
               </button>
             )}
           </div>

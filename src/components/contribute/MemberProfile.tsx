@@ -122,11 +122,11 @@ export default function MemberProfile() {
             <p className="mt-0.5 text-lg font-semibold text-white">{formatDream(member.staked_dream)}</p>
           </div>
           <div>
-            <p className="text-xs text-zinc-500">Lifetime Earned</p>
+            <p className="text-xs text-zinc-500">Lifetime earned</p>
             <p className="mt-0.5 text-lg font-semibold text-zinc-300">{formatDream(member.lifetime_earned)}</p>
           </div>
           <div>
-            <p className="text-xs text-zinc-500">Invitation Credits</p>
+            <p className="text-xs text-zinc-500">Invitation credits</p>
             <p className="mt-0.5 text-lg font-semibold text-zinc-300">{member.invitation_credits}</p>
           </div>
         </div>
@@ -134,7 +134,7 @@ export default function MemberProfile() {
 
       {/* Reputation scores */}
       <div className="rounded-xl sd-hull-tile p-5">
-        <h3 className="text-sm font-semibold text-zinc-200">Reputation Scores</h3>
+        <h3 className="text-sm font-semibold text-zinc-200">Reputation scores</h3>
         {repTags.length === 0 ? (
           <p className="mt-3 text-sm text-zinc-500">No reputation scores yet</p>
         ) : (
@@ -164,15 +164,15 @@ export default function MemberProfile() {
             </div>
           )}
           <div className="flex justify-between">
-            <dt className="text-zinc-500">Completed Initiatives</dt>
+            <dt className="text-zinc-500">Completed initiatives</dt>
             <dd className="text-zinc-300">{member.completed_initiatives_count}</dd>
           </div>
           <div className="flex justify-between">
-            <dt className="text-zinc-500">Completed Interims</dt>
+            <dt className="text-zinc-500">Completed interims</dt>
             <dd className="text-zinc-300">{member.completed_interims_count}</dd>
           </div>
           <div className="flex justify-between">
-            <dt className="text-zinc-500">Season Joined</dt>
+            <dt className="text-zinc-500">Season joined</dt>
             <dd className="text-zinc-300">{member.joined_season}</dd>
           </div>
         </dl>

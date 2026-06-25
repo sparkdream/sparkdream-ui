@@ -178,7 +178,7 @@ export default function DisputeList() {
                 disabled={submitting || !disputeName.trim()}
                 className="sd-btn sd-btn-primary"
               >
-                {submitting ? "Filing..." : "File Dispute"}
+                {submitting ? "Filing..." : "File dispute"}
               </button>
               <button
                 type="button"
@@ -281,7 +281,7 @@ export default function DisputeList() {
                         disabled={submitting}
                         className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-amber-500 disabled:opacity-50"
                       >
-                        {submitting ? "Contesting..." : "Contest Dispute"}
+                        {submitting ? "Contesting..." : "Contest dispute"}
                       </button>
                     </div>
                   </div>

@@ -111,7 +111,7 @@ export default function CreateCollectionForm({ onCreated, onCancel }: CreateColl
         </div>
 
         <div>
-          <label className="mb-1 block text-sm text-zinc-400">Cover Image URI</label>
+          <label className="mb-1 block text-sm text-zinc-400">Cover image URI</label>
           <input
             value={coverUri}
             onChange={(e) => setCoverUri(e.target.value)}

@@ -845,7 +845,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            Accepted Answer
+            Accepted answer
           </div>
         )}
         {/* Thread author has closed this thread to sentinel answer proposals. */}
@@ -962,7 +962,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
               title={canMakePermanent ? "Keep this ephemeral spark from expiring" : "Requires Provisional trust level or higher"}
               className="text-xs text-emerald-400 transition-colors hover:text-emerald-300 disabled:opacity-50"
             >
-              {actionLoading === `permanent-${post.post_id}` ? "..." : "Make Permanent"}
+              {actionLoading === `permanent-${post.post_id}` ? "..." : "Make permanent"}
             </button>
           )}
           {/* Feature (pin) a permanent thread, or remove the marker. Forum
@@ -1054,7 +1054,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
               title="Assign this reply a share of the bounty"
               className="text-xs text-amber-400 transition-colors hover:text-amber-300"
             >
-              Award Bounty
+              Award bounty
             </button>
           )}
           {/* Thread author accepts a reply as the answer (immediate). */}

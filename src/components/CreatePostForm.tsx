@@ -126,7 +126,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
 
       <div>
         <label htmlFor="contentType" className="mb-1.5 block text-sm font-medium text-zinc-300">
-          Content Type
+          Content type
         </label>
         <select
           id="contentType"
@@ -188,7 +188,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
         <div className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
           <div>
             <label htmlFor="minReplyTrustLevel" className="mb-1.5 block text-sm font-medium text-zinc-300">
-              Minimum Reply Trust Level
+              Minimum reply trust level
             </label>
             <select
               id="minReplyTrustLevel"
@@ -201,7 +201,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
               <option value={1}>1 (Basic)</option>
               <option value={2}>2 (Established)</option>
               <option value={3}>3 (Trusted)</option>
-              <option value={4}>4 (Highly Trusted)</option>
+              <option value={4}>4 (Highly trusted)</option>
             </select>
             <p className="mt-1 text-xs text-zinc-600">
               Minimum trust level required to reply to this dream
@@ -210,7 +210,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
 
           <div>
             <label htmlFor="authorBond" className="mb-1.5 block text-sm font-medium text-zinc-300">
-              Author Bond (DREAM)
+              Author bond (DREAM)
             </label>
             <NumberInput
               id="authorBond"

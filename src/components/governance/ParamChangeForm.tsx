@@ -972,7 +972,7 @@ export default function ParamChangeForm({ onMessage }: ParamChangeFormProps) {
 
   return (
     <div className="space-y-3 rounded-lg border border-zinc-700/50 bg-zinc-800/20 p-4">
-      <h4 className="text-sm font-medium text-zinc-300">Parameter Change</h4>
+      <h4 className="text-sm font-medium text-zinc-300">Parameter change</h4>
 
       {/* Module selector */}
       <div>

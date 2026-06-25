@@ -122,7 +122,7 @@ export default function ChainProposals() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-white">Chain Proposals</h2>
+        <h2 className="text-lg font-semibold text-white">Chain proposals</h2>
         {!showNewProposal && (
           <button
             type="button"
@@ -131,7 +131,7 @@ export default function ChainProposals() {
             title={connected ? "MsgSubmitProposal" : "Connect a wallet to submit a chain proposal"}
             className="sd-btn sd-btn-primary"
           >
-            New Proposal
+            New proposal
           </button>
         )}
       </div>
@@ -624,7 +624,7 @@ function GovProposalCard({
                 { opt: GovVoteOptionNum.YES, label: "Yes", style: "border-green-700/50 text-green-400 hover:border-green-500 hover:bg-green-900/20" },
                 { opt: GovVoteOptionNum.NO, label: "No", style: "border-red-700/50 text-red-400 hover:border-red-500 hover:bg-red-900/20" },
                 { opt: GovVoteOptionNum.ABSTAIN, label: "Abstain", style: "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300" },
-                { opt: GovVoteOptionNum.NO_WITH_VETO, label: "No with Veto", style: "border-orange-700/50 text-orange-400 hover:border-orange-500 hover:bg-orange-900/20" },
+                { opt: GovVoteOptionNum.NO_WITH_VETO, label: "No with veto", style: "border-orange-700/50 text-orange-400 hover:border-orange-500 hover:bg-orange-900/20" },
               ].map(({ opt, label, style }) => (
                 <button
                   key={opt}

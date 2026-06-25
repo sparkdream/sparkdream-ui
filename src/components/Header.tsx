@@ -456,7 +456,7 @@ export default function Header() {
                 <path d="M18 12a2 2 0 0 0 0 4h4v-4z" />
               </svg>
               <span className="sd-connect-label">
-                {connecting ? "Connecting..." : "Connect Wallet"}
+                {connecting ? "Connecting..." : "Connect wallet"}
               </span>
             </button>
           )}
@@ -625,7 +625,7 @@ function MobileMenu({
               className="sd-btn sd-btn-primary"
               style={{ width: "100%", justifyContent: "center" }}
             >
-              {connecting ? "Connecting..." : "Connect Wallet"}
+              {connecting ? "Connecting..." : "Connect wallet"}
             </button>
           )}
         </div>

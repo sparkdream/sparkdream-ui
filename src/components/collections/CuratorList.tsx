@@ -112,7 +112,7 @@ export default function CuratorList() {
 
   return (
     <div>
-      <h2 className="mb-4 text-lg font-semibold text-white">Bonded Curators</h2>
+      <h2 className="mb-4 text-lg font-semibold text-white">Bonded curators</h2>
 
       {curators.length === 0 ? (
         <div className="sd-hull-tile rounded-xl p-12 text-center">
@@ -153,7 +153,7 @@ export default function CuratorList() {
                   <div className="border-t border-zinc-800 px-4 py-3">
                     <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
                       <div>
-                        <dt className="text-xs text-zinc-500">Current Bond</dt>
+                        <dt className="text-xs text-zinc-500">Current bond</dt>
                         <dd className="text-zinc-300">{formatBond(c.current_bond)}</dd>
                       </div>
                       <div>
@@ -165,7 +165,7 @@ export default function CuratorList() {
                         <dd className="text-amber-400">{formatBond(c.cumulative_rewards)}</dd>
                       </div>
                       <div>
-                        <dt className="text-xs text-zinc-500">Total Reviews</dt>
+                        <dt className="text-xs text-zinc-500">Total reviews</dt>
                         <dd className="text-zinc-300">{act?.total_reviews ?? "—"}</dd>
                       </div>
                       <div>
@@ -194,7 +194,7 @@ export default function CuratorList() {
               disabled={loadingMore}
               className="mt-3 w-full rounded-lg border border-zinc-800 py-2 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-50"
             >
-              {loadingMore ? "Loading..." : "Load More"}
+              {loadingMore ? "Loading..." : "Load more"}
             </button>
           )}
         </div>

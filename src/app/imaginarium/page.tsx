@@ -653,7 +653,7 @@ function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => v
       <div className="art">
         <div className="glyph">
           <div className="frame">
-            <b>◆ Pinned · Council Memo</b>
+            <b>◆ Pinned · Council memo</b>
             <span className="hash">{formatTime(post.created_at)}</span>
           </div>
         </div>

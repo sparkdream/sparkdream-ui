@@ -75,12 +75,12 @@ export default function CategoryList({ onSelectCategory }: CategoryListProps) {
                     <span className="font-medium text-zinc-100">{cat.title}</span>
                     {cat.members_only_write && (
                       <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-400">
-                        Members Only
+                        Members only
                       </span>
                     )}
                     {cat.admin_only_write && (
                       <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-400">
-                        Admin Only
+                        Admin only
                       </span>
                     )}
                   </div>

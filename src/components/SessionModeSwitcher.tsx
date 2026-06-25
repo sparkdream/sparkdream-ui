@@ -41,7 +41,7 @@ export default function SessionModeSwitcher() {
               onClick={() => setOpen(!open)}
               className="sd-session-keys-btn rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-300"
             >
-              Session Keys ({availableSessions.length})
+              Session keys ({availableSessions.length})
             </button>
           )}
           <button
@@ -59,7 +59,7 @@ export default function SessionModeSwitcher() {
       {open && (
         <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-xl border border-zinc-700 bg-zinc-900 p-3 shadow-xl">
           <div className="mb-2 text-xs font-medium text-zinc-400">
-            Available Sessions
+            Available sessions
           </div>
           <div className="max-h-48 space-y-1.5 overflow-y-auto">
             {availableSessions.map((session) => {
@@ -102,7 +102,7 @@ export default function SessionModeSwitcher() {
               }}
               className="mt-2 w-full rounded-lg border border-zinc-700 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
             >
-              Deactivate Session Mode
+              Deactivate session mode
             </button>
           )}
         </div>

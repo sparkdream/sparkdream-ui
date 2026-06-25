@@ -73,10 +73,10 @@ function ReputationPageInner() {
   }
 
   const viewLabels: Record<View, string> = {
-    profile: "My Account / Profile",
-    staking: "My Account / Staking",
-    delegate: "My Account / Delegate",
-    invitations: "My Account / Invitations",
+    profile: "My account / Profile",
+    staking: "My account / Staking",
+    delegate: "My account / Delegate",
+    invitations: "My account / Invitations",
     members: "Explore / Members",
     projects: "Explore / Projects",
     initiatives: "Explore / Initiatives",
@@ -90,7 +90,7 @@ function ReputationPageInner() {
           onClick={() => setAccountOpen(!accountOpen)}
           className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold text-zinc-200 transition-colors hover:bg-zinc-800/50"
         >
-          <span>My Account</span>
+          <span>My account</span>
           <svg
             className={`h-4 w-4 text-zinc-500 transition-transform ${accountOpen ? "rotate-0" : "-rotate-90"}`}
             fill="none"

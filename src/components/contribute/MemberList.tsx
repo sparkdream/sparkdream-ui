@@ -126,7 +126,7 @@ export default function MemberList() {
           onChange={(e) => setFilterLevel(e.target.value)}
           className="sd-select"
         >
-          <option value="all">All Trust Levels</option>
+          <option value="all">All trust levels</option>
           <option value={TrustLevel.CORE}>Core</option>
           <option value={TrustLevel.TRUSTED}>Trusted</option>
           <option value={TrustLevel.ESTABLISHED}>Established</option>
@@ -178,11 +178,11 @@ export default function MemberList() {
                       <dd className="text-zinc-300">{formatDream(m.staked_dream)} DREAM</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-zinc-500">Lifetime Earned</dt>
+                      <dt className="text-xs text-zinc-500">Lifetime earned</dt>
                       <dd className="text-zinc-300">{formatDream(m.lifetime_earned)}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-zinc-500">Invitation Credits</dt>
+                      <dt className="text-xs text-zinc-500">Invitation credits</dt>
                       <dd className="text-zinc-300">{m.invitation_credits}</dd>
                     </div>
                     <div>

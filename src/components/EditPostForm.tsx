@@ -101,7 +101,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
 
       <div>
         <label htmlFor="contentType" className="mb-1.5 block text-sm font-medium text-zinc-300">
-          Content Type
+          Content type
         </label>
         <select
           id="contentType"
@@ -149,7 +149,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
       <div className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
         <div className="flex items-center justify-between">
           <label htmlFor="repliesEnabled" className="text-sm font-medium text-zinc-300">
-            Replies Enabled
+            Replies enabled
           </label>
           <button
             type="button"
@@ -169,7 +169,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
 
         <div>
           <label htmlFor="minReplyTrustLevel" className="mb-1.5 block text-sm font-medium text-zinc-300">
-            Minimum Reply Trust Level
+            Minimum reply trust level
           </label>
           <select
             id="minReplyTrustLevel"
@@ -182,7 +182,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
             <option value={1}>1 (Basic)</option>
             <option value={2}>2 (Established)</option>
             <option value={3}>3 (Trusted)</option>
-            <option value={4}>4 (Highly Trusted)</option>
+            <option value={4}>4 (Highly trusted)</option>
           </select>
         </div>
       </div>
@@ -199,7 +199,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
           disabled={submitting || !title.trim() || !body.trim()}
           className="sd-btn sd-btn-primary"
         >
-          {submitting ? "Saving..." : "Save Changes"}
+          {submitting ? "Saving..." : "Save changes"}
         </button>
         <button
           type="button"

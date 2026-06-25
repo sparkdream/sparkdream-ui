@@ -201,7 +201,7 @@ export default function CollectionList({ mode, onSelect, filterType = "all", tag
               disabled={loadingMore}
               className="mt-3 w-full rounded-lg border border-zinc-800 py-2 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-50"
             >
-              {loadingMore ? "Loading..." : "Load More"}
+              {loadingMore ? "Loading..." : "Load more"}
             </button>
           )}
         </div>

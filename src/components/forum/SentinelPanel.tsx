@@ -374,7 +374,7 @@ export default function SentinelPanel() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-white">Sentinel Status</h2>
+      <h2 className="text-lg font-semibold text-white">Sentinel status</h2>
 
       {!isSentinel && (
         <div className="sd-hull-tile rounded-xl p-6">
@@ -481,7 +481,7 @@ export default function SentinelPanel() {
                 </p>
               </div>
               <div>
-                <p className="text-xs text-zinc-500">Current Bond</p>
+                <p className="text-xs text-zinc-500">Current bond</p>
                 <p className="font-medium text-zinc-200">{formatAmount(currentBond)} DREAM</p>
               </div>
               <div>
@@ -489,7 +489,7 @@ export default function SentinelPanel() {
                 <p className="font-medium text-zinc-200">{formatAmount(availableBond)} DREAM</p>
               </div>
               <div>
-                <p className="text-xs text-zinc-500">Reward Accuracy</p>
+                <p className="text-xs text-zinc-500">Reward accuracy</p>
                 <p className="font-medium text-zinc-200">
                   {currentEpoch === null
                     ? "—"
@@ -593,7 +593,7 @@ export default function SentinelPanel() {
                   onClick={() => setShowBondForm(true)}
                   className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
                 >
-                  Bond / Unbond
+                  Bond / unbond
                 </button>
               ) : (
                 <div className="flex w-full items-center gap-2">
@@ -721,7 +721,7 @@ export default function SentinelPanel() {
               <h3 className="mb-3 text-sm font-semibold text-zinc-300">Activity</h3>
               <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                 <div>
-                  <p className="text-xs text-zinc-500">Total Hides</p>
+                  <p className="text-xs text-zinc-500">Total hides</p>
                   <p className="text-zinc-200">{activity.total_hides}</p>
                 </div>
                 <div>
@@ -733,34 +733,34 @@ export default function SentinelPanel() {
                   <p className="text-red-400">{activity.overturned_hides}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-zinc-500">Total Locks</p>
+                  <p className="text-xs text-zinc-500">Total locks</p>
                   <p className="text-zinc-200">{activity.total_locks}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-zinc-500">Total Moves</p>
+                  <p className="text-xs text-zinc-500">Total moves</p>
                   <p className="text-zinc-200">{activity.total_moves}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-zinc-500">Total Pins</p>
+                  <p className="text-xs text-zinc-500">Total pins</p>
                   <p className="text-zinc-200">{activity.total_pins}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-zinc-500">Pins Upheld</p>
+                  <p className="text-xs text-zinc-500">Pins upheld</p>
                   <p className="text-emerald-400">{activity.upheld_pins}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-zinc-500">Pins Overturned</p>
+                  <p className="text-xs text-zinc-500">Pins overturned</p>
                   <p className="text-red-400">{activity.overturned_pins}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-zinc-500">Pending Hides</p>
+                  <p className="text-xs text-zinc-500">Pending hides</p>
                   <p className="text-zinc-200">{activity.pending_hide_count}</p>
                 </div>
                 {/* Accepted-reply curation (chain commit c8be748). Proposals a
                     sentinel made on other members' threads, and how many the
                     authors confirmed. epoch_curations feeds the reward score. */}
                 <div>
-                  <p className="text-xs text-zinc-500">Curation Proposals</p>
+                  <p className="text-xs text-zinc-500">Curation proposals</p>
                   <p className="text-zinc-200">{activity.total_proposals ?? "0"}</p>
                 </div>
                 <div>

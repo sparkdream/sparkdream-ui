@@ -276,7 +276,7 @@ export default function InitiativeList() {
   const tabs: { key: Tab; label: string }[] = [
     { key: "all", label: "All" },
     { key: "available", label: "Available" },
-    { key: "mine", label: "My Assignments" },
+    { key: "mine", label: "My assignments" },
   ];
 
   if (initialLoad) {
@@ -321,7 +321,7 @@ export default function InitiativeList() {
             }
             className="sd-btn sd-btn-primary"
           >
-            Create Initiative
+            Create initiative
           </button>
         )}
       </div>
@@ -338,7 +338,7 @@ export default function InitiativeList() {
 
       {showForm && canCreate && (
         <div className="mb-4 rounded-xl sd-hull-tile p-4">
-          <h3 className="mb-3 text-sm font-semibold text-zinc-200">New Initiative</h3>
+          <h3 className="mb-3 text-sm font-semibold text-zinc-200">New initiative</h3>
           <div className="space-y-3">
             {createError && (
               <div className="rounded-lg border border-red-800 bg-red-900/20 px-3 py-2 text-sm text-red-400">
@@ -421,7 +421,7 @@ export default function InitiativeList() {
                 disabled={submitting || !formTitle.trim() || !formProjectId}
                 className="sd-btn sd-btn-primary"
               >
-                {submitting ? "Creating..." : "Create Initiative"}
+                {submitting ? "Creating..." : "Create initiative"}
               </button>
               <button
                 type="button"
@@ -538,7 +538,7 @@ export default function InitiativeList() {
                         }
                         className="sd-btn sd-btn-primary"
                       >
-                        {actionLoading === `assign-${ini.id}` ? "Assigning..." : "Assign to Me"}
+                        {actionLoading === `assign-${ini.id}` ? "Assigning..." : "Assign to me"}
                       </button>
                     )}
                     {ini.status === InitiativeStatus.ASSIGNED && ini.assignee === address && (
@@ -561,7 +561,7 @@ export default function InitiativeList() {
               disabled={loadingMore}
               className="mt-3 w-full rounded-lg border border-zinc-800 py-2 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-50"
             >
-              {loadingMore ? "Loading..." : "Load More"}
+              {loadingMore ? "Loading..." : "Load more"}
             </button>
           )}
         </div>

@@ -127,7 +127,7 @@ export default function WondersPage() {
       </SidebarSection>
 
       <SidebarSection
-        label="My Collections"
+        label="My collections"
         open={myOpen}
         onToggle={() => setMyOpen(!myOpen)}
       >

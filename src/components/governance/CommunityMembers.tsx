@@ -30,7 +30,7 @@ export default function CommunityMembers({ group, members }: CommunityMembersPro
             href="/contribute?view=invitations"
             className="sd-btn sd-btn-primary"
           >
-            Invite Member
+            Invite member
           </Link>
         )}
       </div>

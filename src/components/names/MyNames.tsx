@@ -266,14 +266,14 @@ export default function MyNames() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-white">My Names</h2>
+        <h2 className="text-lg font-semibold text-white">My names</h2>
         {names.length < maxNames && !showRegister && (
           <button
             type="button"
             onClick={() => setShowRegister(true)}
             className="sd-btn sd-btn-primary"
           >
-            Register Name
+            Register name
           </button>
         )}
       </div>
@@ -479,7 +479,7 @@ export default function MyNames() {
                       onClick={() => handleSetPrimary(nr.name)}
                       className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-white"
                     >
-                      Set Primary
+                      Set primary
                     </button>
                   )}
                   <button

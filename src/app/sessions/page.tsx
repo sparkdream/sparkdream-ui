@@ -243,7 +243,7 @@ export default function SessionsPage() {
       <div className="sd-page">
         <header className="sd-page-header">
           <span className="crumb">System</span>
-          <h1>Session Keys</h1>
+          <h1>Session keys</h1>
           <p>Delegate message signing to another address</p>
         </header>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
@@ -257,7 +257,7 @@ export default function SessionsPage() {
     <div className="sd-page">
       <header className="sd-page-header">
         <span className="crumb">System</span>
-        <h1>Session Keys</h1>
+        <h1>Session keys</h1>
         <p>Delegate message signing to another address</p>
         {!showCreate && (
           <button
@@ -273,7 +273,7 @@ export default function SessionsPage() {
             className="sd-btn sd-btn-primary w-fit"
             style={{ marginLeft: "auto" }}
           >
-            New Session
+            New session
           </button>
         )}
       </header>
@@ -284,11 +284,11 @@ export default function SessionsPage() {
           onSubmit={handleCreate}
           className="mb-8 space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-5"
         >
-          <h2 className="text-lg font-semibold text-white">Create Session Key</h2>
+          <h2 className="text-lg font-semibold text-white">Create session key</h2>
 
           <div>
             <label htmlFor="grantee" className="mb-1.5 block text-sm font-medium text-zinc-300">
-              Grantee Address
+              Grantee address
             </label>
             <input
               id="grantee"
@@ -306,7 +306,7 @@ export default function SessionsPage() {
           <div>
             <div className="mb-1.5 flex items-center justify-between">
               <label className="text-sm font-medium text-zinc-300">
-                Allowed Message Types
+                Allowed message types
               </label>
               <button
                 type="button"
@@ -346,7 +346,7 @@ export default function SessionsPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <label htmlFor="spendAmount" className="mb-1.5 block text-sm font-medium text-zinc-300">
-                Spend Limit ({DISPLAY_DENOM})
+                Spend limit ({DISPLAY_DENOM})
               </label>
               <NumberInput
                 id="spendAmount"
@@ -379,7 +379,7 @@ export default function SessionsPage() {
             </div>
             <div>
               <label htmlFor="maxExecCount" className="mb-1.5 block text-sm font-medium text-zinc-300">
-                Max Executions
+                Max executions
               </label>
               <NumberInput
                 id="maxExecCount"
@@ -408,7 +408,7 @@ export default function SessionsPage() {
               disabled={creating || !grantee.trim() || selectedMsgTypes.length === 0}
               className="sd-btn sd-btn-primary"
             >
-              {creating ? "Creating..." : "Create Session"}
+              {creating ? "Creating..." : "Create session"}
             </button>
             <button
               type="button"
