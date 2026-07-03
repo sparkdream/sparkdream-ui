@@ -178,10 +178,10 @@ export default function CollectionList({ mode, onSelect, filterType = "all", tag
     filtered = filtered.filter((c) => c.status !== CollectionStatus.HIDDEN);
   }
 
-  // Pinned collections are a display-only feature marker; surface them
-  // prominently at the top of the list, like pinned posts in Imaginarium.
-  const featured = filtered.filter((c) => c.pinned);
-  const rest = filtered.filter((c) => !c.pinned);
+  // The chain returns pinned collections first for paginated queries, so we
+  // render in the order received rather than reordering client-side (which
+  // could only ever pin-to-top within the already-loaded window). Pinned
+  // collections still get the prominent "featured" card treatment inline.
 
   if (loading) {
     return (
@@ -229,15 +229,8 @@ export default function CollectionList({ mode, onSelect, filterType = "all", tag
         </div>
       ) : (
         <div className="space-y-2">
-          {featured.length > 0 && (
-            <div className="mb-3 space-y-2">
-              {featured.map((c) => (
-                <CollectionCard key={c.id} c={c} mode={mode} onSelect={onSelect} featured />
-              ))}
-            </div>
-          )}
-          {rest.map((c) => (
-            <CollectionCard key={c.id} c={c} mode={mode} onSelect={onSelect} />
+          {filtered.map((c) => (
+            <CollectionCard key={c.id} c={c} mode={mode} onSelect={onSelect} featured={c.pinned} />
           ))}
           {nextKey && (
             <button
