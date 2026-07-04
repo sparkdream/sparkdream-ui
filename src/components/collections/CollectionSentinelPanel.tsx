@@ -14,7 +14,7 @@ import {
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
-import { RepMsgTypeUrls } from "@/lib/tx";
+import { CollectMsgTypeUrls, RepMsgTypeUrls } from "@/lib/tx";
 import NumberInput from "@/components/NumberInput";
 import BlockTime from "@/components/BlockTime";
 import CollectionModerationPanel from "@/components/collections/CollectionModerationPanel";
@@ -35,10 +35,12 @@ interface Props {
   onViewCollection?: (collectionId: string) => void;
 }
 
-// The forum sentinel bond (ROLE_TYPE_FORUM_SENTINEL) is the same bond that
-// gates collection moderation: there is no separate "collection sentinel", so
-// becoming a sentinel here also unlocks Swarm moderation, and vice versa.
-const SENTINEL_ROLE = RoleType.FORUM_SENTINEL;
+// One content sentinel corps (ROLE_TYPE_CONTENT_SENTINEL, renamed from
+// FORUM_SENTINEL in chain commit 4ad8e38) spans forum and collect: the same
+// bond and shared x/rep accountability record gate moderation here and on
+// Swarm, so becoming a sentinel here also unlocks Swarm moderation, and vice
+// versa.
+const SENTINEL_ROLE = RoleType.CONTENT_SENTINEL;
 
 function formatAmount(amount: string): string {
   if (!amount || amount === "0") return "0";
@@ -287,6 +289,26 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
     }
   };
 
+  // Sentinel self-correct (MsgUnhideContent, chain commit 4ad8e38): the hiding
+  // sentinel reverses its own hide inside params.sentinel_unhide_window_blocks,
+  // before an appeal is filed. Restores the author's slashed bond + rep; the
+  // committed sentinel bond stays reserved until the original appeal_deadline.
+  const handleUnhide = async (hideRecordId: string) => {
+    if (!address) return;
+    setActionLoading(`unhide-${hideRecordId}`);
+    try {
+      await signAndBroadcast([{
+        typeUrl: CollectMsgTypeUrls.UnhideContent,
+        value: { creator: address, hideRecordId: BigInt(hideRecordId) },
+      }]);
+      await fetchModeration();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Unhide failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   if (!connected) return null;
 
   const bondStatus = bond?.bond_status ?? "";
@@ -297,6 +319,10 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
     : "0";
 
   const myHides = hideEntries.filter((e) => e.record.sentinel === address);
+
+  // Self-correct window in blocks (collect timestamps are heights, unlike
+  // forum's seconds-denominated sentinel_unhide_window).
+  const unhideWindow = numParam(collectParams, "sentinel_unhide_window_blocks");
 
   return (
     <div className="space-y-4">
@@ -443,9 +469,11 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
               </div>
             )}
             <p className="mt-3 border-t border-zinc-800/60 pt-3 text-xs text-zinc-500">
-              Reward accuracy and forum hide self-correction live on the{" "}
+              Reward accuracy lives on the{" "}
               <Link href="/swarm" className="text-indigo-400 underline hover:text-indigo-300">Swarm</Link>{" "}
-              moderation panel. Here you act on flagged collection content below.
+              moderation panel and counts your hides here too, since one sentinel
+              bond covers both surfaces. Here you act on flagged collection
+              content below.
             </p>
             <div className="mt-4 flex gap-2">
               {!showBondForm ? (
@@ -502,11 +530,15 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
             const appealFee = dreamParam(collectParams, "appeal_fee");
             const appealDeadline = numParam(collectParams, "appeal_deadline_blocks");
             const appealCooldown = numParam(collectParams, "appeal_cooldown_blocks");
+            // New moderation throttles from chain commit 4ad8e38 (0.0.27).
+            const maxHides = numParam(collectParams, "max_hides_per_sentinel_per_day");
             const rows: { label: string; value: string; amber?: boolean }[] = [];
             if (threshold !== null) rows.push({ label: "Flags to enter queue", value: threshold.toLocaleString() });
             if (maxFlags !== null) rows.push({ label: "Flags / day", value: maxFlags.toLocaleString() });
+            if (maxHides !== null) rows.push({ label: "Hides / day", value: maxHides.toLocaleString() });
             if (commit !== null) rows.push({ label: "Commit / hide", value: `${commit} DREAM`, amber: true });
             if (hideExpiry !== null) rows.push({ label: "Hide expiry", value: `${hideExpiry.toLocaleString()} blocks` });
+            if (unhideWindow !== null) rows.push({ label: "Self-correct window", value: `${unhideWindow.toLocaleString()} blocks` });
             if (appealFee !== null) rows.push({ label: "Appeal fee", value: `${appealFee} DREAM`, amber: true });
             if (appealDeadline !== null) rows.push({ label: "Appeal deadline", value: `${appealDeadline.toLocaleString()} blocks` });
             if (appealCooldown !== null) rows.push({ label: "Appeal cooldown", value: `${appealCooldown.toLocaleString()} blocks` });
@@ -530,15 +562,18 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
             );
           })()}
 
-          {/* Hides by this sentinel. x/collect has no sentinel self-correct
-              unhide (unlike x/forum's MsgUnhidePost): a hide stands until it
-              expires or an appeal overturns it, so this list is informational
-              with appeal state per row. */}
+          {/* Hides by this sentinel — self-correct via MsgUnhideContent (chain
+              commit 4ad8e38) while inside sentinel_unhide_window_blocks and
+              before an appeal is filed; the window is height-denominated so it
+              resolves against latestHeight. Past the window or once appealed,
+              the hide stands until it expires or the appeal decides it. */}
           <div className="sd-hull-tile rounded-xl p-5">
             <div className="mb-3 flex items-baseline justify-between">
               <h3 className="text-sm font-semibold text-zinc-300">My hides</h3>
               <span className="text-xs text-zinc-500">
-                A hide stands until it expires or an appeal overturns it
+                {unhideWindow !== null
+                  ? `Self-correct window: ${unhideWindow.toLocaleString()} blocks`
+                  : "A hide stands until it expires or an appeal overturns it"}
               </span>
             </div>
             {hidesLoading ? (
@@ -552,6 +587,17 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
                   const deadline = parseInt(r.appeal_deadline || "0", 10);
                   const appealOpen =
                     latestHeight !== null && Number.isFinite(deadline) && deadline > latestHeight;
+                  // Chain gate mirrored: original sentinel, no appeal filed,
+                  // and still inside the height-denominated window. Disabled
+                  // (not hidden) past the window so it's obvious why.
+                  const hiddenAt = parseInt(r.hidden_at || "0", 10);
+                  const inWindow =
+                    unhideWindow !== null &&
+                    latestHeight !== null &&
+                    Number.isFinite(hiddenAt) &&
+                    hiddenAt > 0 &&
+                    latestHeight - hiddenAt <= unhideWindow;
+                  const canUnhide = !r.appealed && inWindow;
                   return (
                     <li
                       key={r.id}
@@ -585,15 +631,34 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
                           )}
                         </p>
                       </div>
-                      {e.collectionId && onViewCollection && (
-                        <button
-                          type="button"
-                          onClick={() => onViewCollection(e.collectionId!)}
-                          className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:border-zinc-600 hover:text-zinc-100"
-                        >
-                          View
-                        </button>
-                      )}
+                      <div className="flex shrink-0 items-center gap-2">
+                        {unhideWindow !== null && (
+                          <button
+                            type="button"
+                            onClick={() => handleUnhide(r.id)}
+                            disabled={!canUnhide || !!actionLoading}
+                            title={
+                              r.appealed
+                                ? "An appeal was filed; the jury decides this hide"
+                                : inWindow
+                                  ? "Reverse this hide and restore the author's slashed bond and rep. Your committed bond stays reserved until the original appeal deadline."
+                                  : "Self-correct window has closed"
+                            }
+                            className="rounded-lg border border-emerald-700/50 px-3 py-1.5 text-xs text-emerald-400 transition-colors hover:bg-emerald-900/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {actionLoading === `unhide-${r.id}` ? "Unhiding…" : "Unhide"}
+                          </button>
+                        )}
+                        {e.collectionId && onViewCollection && (
+                          <button
+                            type="button"
+                            onClick={() => onViewCollection(e.collectionId!)}
+                            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:border-zinc-600 hover:text-zinc-100"
+                          >
+                            View
+                          </button>
+                        )}
+                      </div>
                     </li>
                   );
                 })}

@@ -8,7 +8,7 @@ import {
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useIsEligibleSentinel } from "@/hooks/useIsEligibleSentinel";
-import { CollectMsgTypeUrls } from "@/lib/tx";
+import { CollectMsgTypeUrls, ModerationAuthority } from "@/lib/tx";
 import CopyableAddress from "@/components/CopyableAddress";
 import BlockTime from "@/components/BlockTime";
 import {
@@ -110,6 +110,10 @@ export default function CollectionModerationPanel({ onViewCollection }: Props) {
           targetType: targetTypeNum,
           reasonCode: reason,
           reasonText: reasonText.trim(),
+          // Explicit authority (chain commit 4ad8e38): this queue only offers
+          // the accountable bonded-sentinel path, so a sentinel who is also a
+          // committee member never silently gov-hides.
+          authority: ModerationAuthority.SENTINEL,
         },
       }]);
       setOpenForm(null);

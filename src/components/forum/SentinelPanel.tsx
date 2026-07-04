@@ -25,7 +25,7 @@ import {
 import type { BondedRole, BondedRoleConfig } from "@/types/rep";
 import NumberInput from "@/components/NumberInput";
 
-const SENTINEL_ROLE = RoleType.FORUM_SENTINEL;
+const SENTINEL_ROLE = RoleType.CONTENT_SENTINEL;
 
 function formatAmount(amount: string): string {
   if (!amount || amount === "0") return "0";
@@ -771,6 +771,26 @@ export default function SentinelPanel() {
                   <p className="text-xs text-zinc-500">Rejected</p>
                   <p className="text-red-400">{activity.rejected_proposals ?? "0"}</p>
                 </div>
+                {/* Collect hides by the same shared sentinel corps (chain commit
+                    4ad8e38). Counted separately so forum's per-epoch hide budget
+                    isn't consumed, but outcomes land in the same accuracy ring,
+                    streaks, and cooldown shown above. */}
+                {Number(activity.total_collect_hides ?? "0") > 0 && (
+                  <>
+                    <div>
+                      <p className="text-xs text-zinc-500">Collect hides</p>
+                      <p className="text-zinc-200">{activity.total_collect_hides}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-zinc-500">Collect upheld</p>
+                      <p className="text-emerald-400">{activity.upheld_collect_hides ?? "0"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-zinc-500">Collect overturned</p>
+                      <p className="text-red-400">{activity.overturned_collect_hides ?? "0"}</p>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}

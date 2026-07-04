@@ -6,7 +6,8 @@ import { RoleType, BondedRoleStatus } from "@/types/rep";
 import type { BondedRole } from "@/types/rep";
 
 /**
- * Returns whether `address` is a forum sentinel currently eligible to moderate.
+ * Returns whether `address` is a content sentinel currently eligible to
+ * moderate (the shared corps covers both forum and collect surfaces).
  *
  * Mirrors x/forum's eligibleSentinel helper (chain commit d4507ca): a bonded
  * sentinel in NORMAL or RECOVERY is eligible outright; an UNBONDING sentinel
@@ -28,7 +29,7 @@ export function useIsEligibleSentinel(address: string | null | undefined): boole
       return;
     }
     let cancelled = false;
-    getBondedRole(RoleType.FORUM_SENTINEL, address)
+    getBondedRole(RoleType.CONTENT_SENTINEL, address)
       .then((res) => {
         if (!cancelled) setSentinelBond(res?.bonded_role ?? null);
       })

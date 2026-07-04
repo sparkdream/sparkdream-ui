@@ -334,6 +334,16 @@ export interface HideRecord {
   appeal_deadline: string;
   appealed: boolean;
   resolved: boolean;
+  // Sentinel self-correct (chain commit 4ad8e38, sparkdreamjs 0.0.27). True
+  // when the hiding sentinel reversed itself via MsgUnhideContent; the record
+  // is resolved but the committed bond stays reserved until the original
+  // appeal_deadline (anti hide/unhide cycling). The bond/rep snapshots below
+  // are what the unhide restores. Absent on pre-0.0.27 records.
+  self_corrected?: boolean;
+  author_bond_amount?: string;
+  author_rep_penalty?: string;
+  rep_penalty_tags?: string[];
+  rep_penalty_amounts?: string[];
 }
 
 // API response types

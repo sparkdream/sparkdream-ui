@@ -560,7 +560,7 @@ function SwarmPageInner() {
             trustAddresses={trustAddresses}
           />
         ) : (
-          <ConnectPrompt message="The flagged feed is available to forum sentinels and the operations committee." />
+          <ConnectPrompt message="The flagged feed is available to sentinels and the operations committee." />
         )
       )}
       {effectiveView === "create" && (

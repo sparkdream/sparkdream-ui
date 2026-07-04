@@ -215,6 +215,16 @@ export interface SentinelActivity {
   // upheld_*/overturned_* counters above are retained for display/audit only and
   // are no longer used for reward accuracy. Empty on pre-0.0.25 records.
   accuracy_window?: AccuracyEpochBucket[];
+  // Cross-module x/collect hide counters (chain commit 4ad8e38, sparkdreamjs
+  // 0.0.27). Collect moderation is performed by the same shared content
+  // sentinel corps; collect outcomes also land in accuracy_window, streaks,
+  // and the overturn cooldown. Kept separate from total/epoch_hides so
+  // forum's max_hides_per_epoch budget isn't consumed by collect actions.
+  // Projected from x/rep's shared RoleActivity record at query time.
+  total_collect_hides?: string;
+  upheld_collect_hides?: string;
+  overturned_collect_hides?: string;
+  epoch_collect_hides?: string;
 }
 
 // One reward-epoch's resolved-appeal tally for a sentinel, stored in the
@@ -518,7 +528,7 @@ export interface ForumParams {
   conviction_renewal_threshold: string;
   conviction_renewal_period: string;
   // Sentinel bonded-role config (flattened from forum's source of truth into
-  // x/rep BondedRoleConfig for ROLE_TYPE_FORUM_SENTINEL).
+  // x/rep BondedRoleConfig for ROLE_TYPE_CONTENT_SENTINEL).
   min_sentinel_bond: string;
   min_sentinel_rep_tier: string;
   // Trust-level enum name, e.g. "TRUST_LEVEL_ESTABLISHED". As of commit

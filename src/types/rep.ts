@@ -541,7 +541,12 @@ export interface TagBudgetAwardsResponse {
 // REST URL templates (e.g. /sparkdream/rep/v1/bonded_role/{role_type}/{address}).
 export const RoleType = {
   UNSPECIFIED: 0,
-  FORUM_SENTINEL: 1,
+  // Renamed from ROLE_TYPE_FORUM_SENTINEL (chain commit 4ad8e38): one
+  // moderation corps — one bond, one accountability record — spans forum
+  // posts/threads AND collect collections/items. x/forum remains the role's
+  // config steward; the shared accountability record (RoleActivity) lives in
+  // x/rep. Same enum value, so URLs and stored records are unchanged.
+  CONTENT_SENTINEL: 1,
   COLLECT_CURATOR: 2,
   FEDERATION_VERIFIER: 3,
 } as const;
@@ -549,7 +554,7 @@ export const RoleType = {
 export type RoleTypeValue = typeof RoleType[keyof typeof RoleType];
 
 export const ROLE_TYPE_LABELS: Record<number, string> = {
-  [RoleType.FORUM_SENTINEL]: "Sentinel",
+  [RoleType.CONTENT_SENTINEL]: "Sentinel",
   [RoleType.COLLECT_CURATOR]: "Curator",
   [RoleType.FEDERATION_VERIFIER]: "Verifier",
 };

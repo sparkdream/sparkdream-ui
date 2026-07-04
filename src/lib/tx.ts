@@ -149,6 +149,12 @@ export const CollectMsgTypeUrls = {
   DownvoteContent: "/sparkdream.collect.v1.MsgDownvoteContent",
   FlagContent: "/sparkdream.collect.v1.MsgFlagContent",
   HideContent: "/sparkdream.collect.v1.MsgHideContent",
+  // Sentinel self-correct (chain commit 4ad8e38, sparkdreamjs 0.0.27): the
+  // hiding sentinel reverses its own hide within
+  // params.sentinel_unhide_window_blocks, before any appeal. Restores the
+  // author bond + rep slashed at hide time; the sentinel's committed bond
+  // stays reserved until the original appeal_deadline.
+  UnhideContent: "/sparkdream.collect.v1.MsgUnhideContent",
   AppealHide: "/sparkdream.collect.v1.MsgAppealHide",
   EndorseCollection: "/sparkdream.collect.v1.MsgEndorseCollection",
   SetSeekingEndorsement: "/sparkdream.collect.v1.MsgSetSeekingEndorsement",
@@ -233,8 +239,10 @@ export const ForumMsgTypeUrls = {
 } as const;
 
 // authority field shared by the sentinel/council moderation messages
-// MsgHidePost, MsgLockThread and MsgMoveThread. Mirrors the chain's
-// ModerationAuthority enum (renamed from HideAuthority and extended to lock/move
+// MsgHidePost, MsgLockThread and MsgMoveThread — and, as of chain commit
+// 4ad8e38 (sparkdreamjs 0.0.27), x/collect's MsgHideContent, which mirrors the
+// same enum. Mirrors the chain's ModerationAuthority enum (renamed from
+// HideAuthority and extended to lock/move
 // in chain commit ca0508c). AUTO resolves to the sentinel path whenever the
 // account is eligible for that specific action (an eligible NORMAL/RECOVERY
 // sentinel bond plus the action's own bond/rep requirements), else the council

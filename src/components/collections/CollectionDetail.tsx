@@ -15,7 +15,7 @@ import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useTrustRank } from "@/hooks/useTrustRank";
 import { useIsEligibleCurator } from "@/hooks/useIsEligibleCurator";
 import { useIsEligibleSentinel } from "@/hooks/useIsEligibleSentinel";
-import { CollectMsgTypeUrls } from "@/lib/tx";
+import { CollectMsgTypeUrls, ModerationAuthority } from "@/lib/tx";
 import BlockTime from "@/components/BlockTime";
 import CopyableAddress from "@/components/CopyableAddress";
 import type {
@@ -555,6 +555,10 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
             targetType,
             reasonCode: flagReason,
             reasonText: flagReasonText.trim(),
+            // Explicit authority (chain commit 4ad8e38): the Hide button is
+            // sentinel-gated, so a sentinel who is also a committee member
+            // never silently gov-hides.
+            authority: ModerationAuthority.SENTINEL,
           },
         }]);
       }
@@ -745,7 +749,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
               <button
                 onClick={() => openFlagForm(FlagTargetType.COLLECTION, collection.id, "hide")}
                 disabled={!!actionLoading}
-                title="Hide this collection (forum sentinel)"
+                title="Hide this collection (content sentinel)"
                 className="rounded-lg border border-red-800/50 px-3 py-1.5 text-xs text-red-400 transition-colors hover:border-red-700 hover:bg-red-900/20 disabled:opacity-50"
               >
                 Hide

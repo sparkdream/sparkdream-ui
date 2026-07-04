@@ -550,6 +550,10 @@ const MODULES: Record<string, ModuleDef> = {
       // Sentinel & hiding
       { group: "Sentinel & Hiding", key: "sentinelCommitAmount", apiKey: "sentinel_commit_amount", label: "Sentinel Commit Amount", kind: "dream", hint: "Bonded DREAM reserved to commit a hide" },
       { group: "Sentinel & Hiding", key: "hideExpiryBlocks", apiKey: "hide_expiry_blocks", label: "Hide Expiry (blocks)", kind: "bigint" },
+      // Chain commit 4ad8e38 (sparkdreamjs 0.0.27): self-correct window +
+      // per-day hide cap for the shared content sentinel corps.
+      { group: "Sentinel & Hiding", key: "sentinelUnhideWindowBlocks", apiKey: "sentinel_unhide_window_blocks", label: "Sentinel Unhide Window (blocks)", kind: "bigint", hint: "Must be below Hide Expiry" },
+      { group: "Sentinel & Hiding", key: "maxHidesPerSentinelPerDay", apiKey: "max_hides_per_sentinel_per_day", label: "Max Hides / Sentinel / Day", kind: "number" },
 
       // Appeals
       { group: "Appeals", key: "appealFee", apiKey: "appeal_fee", label: "Appeal Fee", kind: "amount" },
