@@ -15,6 +15,7 @@ import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useTrustRank } from "@/hooks/useTrustRank";
 import { useIsEligibleCurator } from "@/hooks/useIsEligibleCurator";
 import { useIsEligibleSentinel } from "@/hooks/useIsEligibleSentinel";
+import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
 import { CollectMsgTypeUrls, ModerationAuthority } from "@/lib/tx";
 import BlockTime from "@/components/BlockTime";
 import CopyableAddress from "@/components/CopyableAddress";
@@ -69,6 +70,12 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const cannotUpvote = address ? isMember === false : false;
   const isCurator = useIsEligibleCurator(address);
   const isSentinel = useIsEligibleSentinel(address);
+  const { isOpsCommitteeMember } = useCommonsCouncil(address);
+  // Hide is open to either moderation authority; an account holding both roles
+  // must pick which one it acts under (default: the accountable sentinel path).
+  // Mirrors the forum ThreadDetail authority disambiguation.
+  const canHideContent = isSentinel || isOpsCommitteeMember;
+  const hideAuthorityIsAmbiguous = isSentinel && isOpsCommitteeMember;
   const rank = useTrustRank(address);
   // Default trust gates (chain enforces the real param). Pin: collect
   // pin_min_trust_level default ESTABLISHED. Make permanent:
@@ -106,6 +113,9 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const [flagMode, setFlagMode] = useState<"flag" | "hide">("flag");
   const [flagReason, setFlagReason] = useState<number>(MODERATION_REASONS[0].value);
   const [flagReasonText, setFlagReasonText] = useState("");
+  // When the account is both sentinel and committee, this opt-in switches the
+  // hide from the default sentinel path to an explicit council hide.
+  const [hideAsCouncil, setHideAsCouncil] = useState(false);
 
   // Add item form
   const [showAddItem, setShowAddItem] = useState(false);
@@ -153,9 +163,10 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     (isOwner || myRole === CollaboratorRole.EDITOR || isAdminCollab);
   // Owner or ADMIN collaborator may add/remove/retitle collaborators.
   const canManageCollabs = !isImmutable && (isOwner || isAdminCollab);
-  // Hidden items are suppressed for the public; sentinels, curators, and the
-  // owner still see them (badged) so they can review, hide, or appeal.
-  const canSeeHidden = isSentinel || isCurator || isOwner;
+  // Hidden items are suppressed for the public; moderators (sentinels and
+  // committee members), curators, and the owner still see them (badged) so
+  // they can review, hide, or appeal.
+  const canSeeHidden = canHideContent || isCurator || isOwner;
   const visibleItems = canSeeHidden
     ? items
     : items.filter((item) => item.status !== ItemStatus.HIDDEN);
@@ -547,6 +558,17 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
           },
         }]);
       } else {
+        // Send the authority explicitly so the chain never has to guess: an
+        // account holding both roles defaults to the sentinel path and only
+        // gov-hides when it opts in via the toggle. Single-role accounts get
+        // the one path they are eligible for.
+        const authority = hideAuthorityIsAmbiguous
+          ? hideAsCouncil
+            ? ModerationAuthority.COUNCIL
+            : ModerationAuthority.SENTINEL
+          : isSentinel
+            ? ModerationAuthority.SENTINEL
+            : ModerationAuthority.COUNCIL;
         await signAndBroadcast([{
           typeUrl: CollectMsgTypeUrls.HideContent,
           value: {
@@ -555,10 +577,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
             targetType,
             reasonCode: flagReason,
             reasonText: flagReasonText.trim(),
-            // Explicit authority (chain commit 4ad8e38): the Hide button is
-            // sentinel-gated, so a sentinel who is also a committee member
-            // never silently gov-hides.
-            authority: ModerationAuthority.SENTINEL,
+            authority,
           },
         }]);
       }
@@ -595,6 +614,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     setFlagMode(mode);
     setFlagReason(MODERATION_REASONS[0].value);
     setFlagReasonText("");
+    setHideAsCouncil(false);
     setFlagTarget(`${targetType}:${targetId}`);
   };
 
@@ -606,6 +626,53 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         <p className="text-xs font-medium text-zinc-400">
           {flagMode === "flag" ? "Flag for moderator review" : "Hide content"}
         </p>
+        {/* Make the acting authority explicit and visible. When the account
+            holds both roles, gov-hiding is an opt-in toggle (default:
+            sentinel). Otherwise we label the single path the account is
+            eligible for. Mirrors MsgHideContent.authority on the chain. */}
+        {flagMode === "hide" && (
+          hideAuthorityIsAmbiguous ? (
+            <div className="space-y-1.5">
+              <label className="flex items-start gap-2 text-[11px] text-zinc-300">
+                <input
+                  type="radio"
+                  name={`hide-authority-${targetType}-${targetId}`}
+                  checked={!hideAsCouncil}
+                  onChange={() => setHideAsCouncil(false)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-medium text-zinc-200">Hide as sentinel</span>
+                  {" "}— commits your sentinel bond, the author can appeal, self-correctable within the unhide window.
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-[11px] text-amber-300/80">
+                <input
+                  type="radio"
+                  name={`hide-authority-${targetType}-${targetId}`}
+                  checked={hideAsCouncil}
+                  onChange={() => setHideAsCouncil(true)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-medium text-amber-300">Hide as committee</span>
+                  {" "}— council hide: no bond committed, reversal only via a Commons Operations Committee proposal.
+                </span>
+              </label>
+            </div>
+          ) : isSentinel ? (
+            <p className="text-[11px] text-zinc-500">
+              Acting as a bonded sentinel. This commits your sentinel bond and can
+              be self-corrected within the unhide window.
+            </p>
+          ) : (
+            <p className="text-[11px] text-amber-300/80">
+              Acting as Commons Operations Committee. Recorded as a council hide:
+              no sentinel bond is committed, and reversal goes through a council
+              proposal rather than the sentinel self-correct window.
+            </p>
+          )
+        )}
         <select
           value={flagReason}
           onChange={(e) => setFlagReason(Number(e.target.value))}
@@ -745,11 +812,11 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                 Flag
               </button>
             )}
-            {isSentinel && !hideRecord && isCollectionActive && (
+            {canHideContent && !hideRecord && isCollectionActive && (
               <button
                 onClick={() => openFlagForm(FlagTargetType.COLLECTION, collection.id, "hide")}
                 disabled={!!actionLoading}
-                title="Hide this collection (content sentinel)"
+                title="Hide this collection (sentinel or committee)"
                 className="rounded-lg border border-red-800/50 px-3 py-1.5 text-xs text-red-400 transition-colors hover:border-red-700 hover:bg-red-900/20 disabled:opacity-50"
               >
                 Hide
@@ -1192,7 +1259,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                               Flag
                             </button>
                           )}
-                          {isSentinel && (
+                          {canHideContent && (
                             <button
                               onClick={() => openFlagForm(FlagTargetType.ITEM, item.id, "hide")}
                               disabled={!!actionLoading}

@@ -59,6 +59,7 @@ import type {
   ListFlaggedContentResponse,
   GetHideRecordResponse,
   ListHideRecordsByTargetResponse,
+  ListHideRecordsBySentinelResponse,
 } from "@/types/collect";
 import type {
   RepMember,
@@ -1103,6 +1104,19 @@ export async function listCollectionHideRecordsByTarget(
 ): Promise<ListHideRecordsByTargetResponse> {
   return get<ListHideRecordsByTargetResponse>(
     `/sparkdream/collect/v1/hide_records_by_target/${targetId}/${targetType}`
+  );
+}
+
+// All hide records created by a sentinel (most recent first), powering the
+// "My hides" list in the Wonders sentinel panel. Council hides carry no
+// sentinel address and are not returned.
+export async function listCollectionHideRecordsBySentinel(
+  sentinel: string,
+  pagination?: PaginationRequest
+): Promise<ListHideRecordsBySentinelResponse> {
+  return get<ListHideRecordsBySentinelResponse>(
+    `/sparkdream/collect/v1/hide_records_by_sentinel/${sentinel}`,
+    paginationParams(pagination)
   );
 }
 

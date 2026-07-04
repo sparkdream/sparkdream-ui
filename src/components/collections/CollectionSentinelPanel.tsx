@@ -5,12 +5,11 @@ import Link from "next/link";
 import {
   getBondedRole,
   getBondedRoleConfig,
+  getCollection,
   getCollectParams,
   getCollectionItem,
   getLatestBlockHeight,
-  listCollectionFlaggedContent,
-  listCollectionHideRecordsByTarget,
-  listPublicCollections,
+  listCollectionHideRecordsBySentinel,
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
@@ -19,7 +18,6 @@ import NumberInput from "@/components/NumberInput";
 import BlockTime from "@/components/BlockTime";
 import CollectionModerationPanel from "@/components/collections/CollectionModerationPanel";
 import {
-  CollectionStatus,
   FlagTargetType,
   MODERATION_REASON_LABELS,
 } from "@/types/collect";
@@ -119,12 +117,9 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
   const [collectParams, setCollectParams] = useState<Record<string, unknown> | null>(null);
   const [latestHeight, setLatestHeight] = useState<number | null>(null);
 
-  // All active (unresolved) hide records we can discover, most recent first.
-  // x/collect has no global or by-sentinel hide-record index (unlike x/forum's
-  // hide_record endpoint), so this is assembled from two visible surfaces:
-  // hidden public collections and the flagged-content queue. Hidden private
-  // collections, or hidden items whose flags have expired out of the queue,
-  // won't surface here until the chain grows a HideRecordsBySentinel index.
+  // This sentinel's active (unresolved) hide records, most recent first, from
+  // the hide_records_by_sentinel query. Each record is joined with its target
+  // (collection name / item title) for the label and View link.
   const [hideEntries, setHideEntries] = useState<HideEntry[]>([]);
   const [hidesLoading, setHidesLoading] = useState(true);
 
@@ -160,9 +155,10 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
   const fetchModeration = useCallback(async () => {
     try {
       setHidesLoading(true);
-      const [pubRes, flaggedRes, paramsRes, heightRes] = await Promise.all([
-        listPublicCollections({ limit: "200" }).catch(() => null),
-        listCollectionFlaggedContent({ limit: "100" }).catch(() => null),
+      const [hidesRes, paramsRes, heightRes] = await Promise.all([
+        address
+          ? listCollectionHideRecordsBySentinel(address, { limit: "100" }).catch(() => null)
+          : Promise.resolve(null),
         getCollectParams().catch(() => null),
         getLatestBlockHeight().catch(() => null),
       ]);
@@ -170,54 +166,37 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
       const h = heightRes ? parseInt(heightRes, 10) : NaN;
       setLatestHeight(Number.isFinite(h) ? h : null);
 
-      const collections = pubRes?.collections ?? [];
-      const nameById = new Map(collections.map((c) => [c.id, c.name]));
-
-      // Union of targets that could carry an active hide record.
-      const targets = new Map<string, { id: string; type: number }>();
-      for (const c of collections) {
-        if (c.status === CollectionStatus.HIDDEN) {
-          targets.set(`${FlagTargetType.COLLECTION}:${c.id}`, {
-            id: c.id,
-            type: FlagTargetType.COLLECTION,
-          });
-        }
-      }
-      for (const f of flaggedRes?.collection_flags ?? []) {
-        const type = isItemType(f.target_type) ? FlagTargetType.ITEM : FlagTargetType.COLLECTION;
-        targets.set(`${type}:${f.target_id}`, { id: f.target_id, type });
-      }
-
-      const entries: HideEntry[] = [];
-      await Promise.all(
-        Array.from(targets.values()).map(async (t) => {
-          const res = await listCollectionHideRecordsByTarget(t.id, t.type).catch(() => null);
-          const active = (res?.hide_records || []).filter((r) => !r.resolved);
-          if (active.length === 0) return;
-          let label: string;
-          let collectionId: string | null;
-          if (t.type === FlagTargetType.COLLECTION) {
-            collectionId = t.id;
-            const name = nameById.get(t.id);
-            label = name ? `Collection #${t.id} · ${name}` : `Collection #${t.id}`;
-          } else {
-            const itemRes = await getCollectionItem(t.id).catch(() => null);
-            collectionId = itemRes?.item?.collection_id ?? null;
+      const active = (hidesRes?.hide_records || []).filter((r) => !r.resolved);
+      const entries = await Promise.all(
+        active.map(async (record): Promise<HideEntry> => {
+          if (isItemType(record.target_type)) {
+            const itemRes = await getCollectionItem(record.target_id).catch(() => null);
             const title = itemRes?.item?.title;
-            label = title ? `Item #${t.id} · ${title}` : `Item #${t.id}`;
+            return {
+              record,
+              label: title ? `Item #${record.target_id} · ${title}` : `Item #${record.target_id}`,
+              collectionId: itemRes?.item?.collection_id ?? null,
+            };
           }
-          for (const record of active) entries.push({ record, label, collectionId });
+          const collRes = await getCollection(record.target_id).catch(() => null);
+          const name = collRes?.collection?.name;
+          return {
+            record,
+            label: name
+              ? `Collection #${record.target_id} · ${name}`
+              : `Collection #${record.target_id}`,
+            collectionId: record.target_id,
+          };
         })
       );
-      // hidden_at is a block height; most recent first.
-      entries.sort((a, b) => Number(BigInt(b.record.hidden_at || "0") - BigInt(a.record.hidden_at || "0")));
+      // Query already returns most recent first; keep order.
       setHideEntries(entries);
     } catch {
       setHideEntries([]);
     } finally {
       setHidesLoading(false);
     }
-  }, []);
+  }, [address]);
 
   useEffect(() => {
     fetchData();

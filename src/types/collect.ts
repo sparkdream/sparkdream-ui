@@ -408,6 +408,11 @@ export interface ListHideRecordsByTargetResponse {
   hide_records: HideRecord[];
 }
 
+export interface ListHideRecordsBySentinelResponse {
+  hide_records: HideRecord[];
+  pagination: Pagination;
+}
+
 export interface GetSponsorshipRequestResponse {
   sponsorship_request: SponsorshipRequest;
 }

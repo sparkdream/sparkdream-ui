@@ -8,6 +8,7 @@ import {
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useIsEligibleSentinel } from "@/hooks/useIsEligibleSentinel";
+import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
 import { CollectMsgTypeUrls, ModerationAuthority } from "@/lib/tx";
 import CopyableAddress from "@/components/CopyableAddress";
 import BlockTime from "@/components/BlockTime";
@@ -36,6 +37,12 @@ function isItemTarget(f: CollectionFlag): boolean {
 export default function CollectionModerationPanel({ onViewCollection }: Props) {
   const { address, connected, signAndBroadcast } = useWallet();
   const isEligible = useIsEligibleSentinel(address);
+  const { isOpsCommitteeMember } = useCommonsCouncil(address);
+  // Hide is open to either moderation authority; an account holding both
+  // roles must pick which one it acts under (default: the accountable
+  // sentinel path). Mirrors the forum ThreadDetail authority disambiguation.
+  const canHide = isEligible || isOpsCommitteeMember;
+  const hideAuthorityIsAmbiguous = isEligible && isOpsCommitteeMember;
 
   const [flags, setFlags] = useState<CollectionFlag[]>([]);
   // Active hide records keyed by `${target_type}:${target_id}`.
@@ -51,6 +58,9 @@ export default function CollectionModerationPanel({ onViewCollection }: Props) {
   const [openForm, setOpenForm] = useState<string | null>(null);
   const [reason, setReason] = useState<number>(MODERATION_REASONS[0].value);
   const [reasonText, setReasonText] = useState("");
+  // When the account is both sentinel and committee, this opt-in switches the
+  // hide from the default sentinel path to an explicit council hide.
+  const [hideAsCouncil, setHideAsCouncil] = useState(false);
 
   const rowKey = (f: CollectionFlag) => `${f.target_type}:${f.target_id}`;
 
@@ -102,6 +112,17 @@ export default function CollectionModerationPanel({ onViewCollection }: Props) {
     setActionError(null);
     try {
       const targetTypeNum = isItemTarget(f) ? FlagTargetType.ITEM : FlagTargetType.COLLECTION;
+      // Send the authority explicitly so the chain never has to guess: an
+      // account holding both roles defaults to the sentinel path and only
+      // gov-hides when it opts in via the toggle. Single-role accounts get
+      // the one path they are eligible for.
+      const authority = hideAuthorityIsAmbiguous
+        ? hideAsCouncil
+          ? ModerationAuthority.COUNCIL
+          : ModerationAuthority.SENTINEL
+        : isEligible
+          ? ModerationAuthority.SENTINEL
+          : ModerationAuthority.COUNCIL;
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.HideContent,
         value: {
@@ -110,10 +131,7 @@ export default function CollectionModerationPanel({ onViewCollection }: Props) {
           targetType: targetTypeNum,
           reasonCode: reason,
           reasonText: reasonText.trim(),
-          // Explicit authority (chain commit 4ad8e38): this queue only offers
-          // the accountable bonded-sentinel path, so a sentinel who is also a
-          // committee member never silently gov-hides.
-          authority: ModerationAuthority.SENTINEL,
+          authority,
         },
       }]);
       setOpenForm(null);
@@ -149,10 +167,11 @@ export default function CollectionModerationPanel({ onViewCollection }: Props) {
         <button onClick={fetchData} className="text-xs text-zinc-500 hover:text-zinc-300">Refresh</button>
       </div>
 
-      {!isEligible && (
+      {!canHide && (
         <div className="sd-hull-tile rounded-xl p-5 text-sm text-zinc-400">
-          Hiding flagged collection content requires an eligible sentinel bond. Bond to become a
-          sentinel using the card above. You can still review the flagged queue below.
+          Hiding flagged collection content requires an eligible sentinel bond or an
+          Operations Committee seat. Bond to become a sentinel using the card above.
+          You can still review the flagged queue below.
         </div>
       )}
 
@@ -223,10 +242,13 @@ export default function CollectionModerationPanel({ onViewCollection }: Props) {
                       )}
                     </p>
                   </div>
-                  {isEligible && !hide && (
+                  {canHide && !hide && (
                     <button
                       type="button"
-                      onClick={() => setOpenForm(openForm === key ? null : key)}
+                      onClick={() => {
+                        setHideAsCouncil(false);
+                        setOpenForm(openForm === key ? null : key);
+                      }}
                       className="shrink-0 rounded-lg border border-red-800/50 px-3 py-1.5 text-xs text-red-400 transition-colors hover:border-red-700 hover:bg-red-900/20"
                     >
                       {openForm === key ? "Cancel" : "Hide"}
@@ -234,8 +256,53 @@ export default function CollectionModerationPanel({ onViewCollection }: Props) {
                   )}
                 </div>
 
-                {openForm === key && isEligible && !hide && (
+                {openForm === key && canHide && !hide && (
                   <div className="mt-3 space-y-2 border-t border-zinc-800 pt-3">
+                    {/* Make the acting authority explicit and visible. When the
+                        account holds both roles, gov-hiding is an opt-in toggle
+                        (default: sentinel). Otherwise we label the single path
+                        the account is eligible for. */}
+                    {hideAuthorityIsAmbiguous ? (
+                      <div className="space-y-1.5">
+                        <label className="flex items-start gap-2 text-[11px] text-zinc-300">
+                          <input
+                            type="radio"
+                            name={`hide-authority-${key}`}
+                            checked={!hideAsCouncil}
+                            onChange={() => setHideAsCouncil(false)}
+                            className="mt-0.5"
+                          />
+                          <span>
+                            <span className="font-medium text-zinc-200">Hide as sentinel</span>
+                            {" "}— commits your sentinel bond, the author can appeal, self-correctable within the unhide window.
+                          </span>
+                        </label>
+                        <label className="flex items-start gap-2 text-[11px] text-amber-300/80">
+                          <input
+                            type="radio"
+                            name={`hide-authority-${key}`}
+                            checked={hideAsCouncil}
+                            onChange={() => setHideAsCouncil(true)}
+                            className="mt-0.5"
+                          />
+                          <span>
+                            <span className="font-medium text-amber-300">Hide as committee</span>
+                            {" "}— council hide: no bond committed, reversal only via a Commons Operations Committee proposal.
+                          </span>
+                        </label>
+                      </div>
+                    ) : isEligible ? (
+                      <p className="text-[11px] text-zinc-500">
+                        Acting as a bonded sentinel. This commits your sentinel bond and
+                        can be self-corrected within the unhide window.
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-amber-300/80">
+                        Acting as Commons Operations Committee. Recorded as a council hide:
+                        no sentinel bond is committed, and reversal goes through a council
+                        proposal rather than the sentinel self-correct window.
+                      </p>
+                    )}
                     <select
                       value={reason}
                       onChange={(e) => setReason(Number(e.target.value))}
