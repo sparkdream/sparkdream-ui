@@ -483,8 +483,10 @@ export interface ListInvitationResponse {
   pagination: Pagination;
 }
 
+// Same shape as ListInvitationResponse: the chain query returns a
+// `repeated Invitation invitation` field, singular name included.
 export interface InvitationsByInviterResponse {
-  invitations: Invitation[];
+  invitation: Invitation[];
   pagination: Pagination;
 }
 

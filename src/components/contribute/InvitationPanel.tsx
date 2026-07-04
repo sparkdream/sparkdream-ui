@@ -86,16 +86,16 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
       setLoading(true);
       setError(null);
 
-      // Fetch invitations sent by this user (paginated)
+      // Fetch invitations sent by this user (server-side filtered + paginated)
       const sentRes = await invitationsByInviter(address, { limit: "50" }).catch(() => ({
-        invitations: [] as Invitation[],
+        invitation: [] as Invitation[],
         pagination: { next_key: null, total: "0" },
       }));
-      setSentInvitations(sentRes.invitations || []);
+      setSentInvitations(sentRes.invitation || []);
       setSentNextKey(sentRes.pagination?.next_key || null);
 
       // Paginate through all invitations to find pending ones for this address.
-      // Stop after finding matches or exhausting pages (cap at 500 total).
+      // No by-invitee query exists on-chain, so scan the full list (cap at 500).
       const pending: Invitation[] = [];
       let pageKey: string | undefined;
       for (let page = 0; page < 5; page++) {
@@ -132,7 +132,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
     try {
       setLoadingMore(true);
       const res = await invitationsByInviter(address, { limit: "50", key: sentNextKey });
-      setSentInvitations((prev) => [...prev, ...(res.invitations || [])]);
+      setSentInvitations((prev) => [...prev, ...(res.invitation || [])]);
       setSentNextKey(res.pagination?.next_key || null);
     } catch (err) {
       console.error("Load more failed:", err);
