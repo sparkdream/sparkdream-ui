@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   getBondedRole,
   getBondedRoleConfig,
+  getCollection,
   getCollectParams,
   getCuratorActivity,
   listCurationReviewsByCurator,
@@ -67,6 +68,7 @@ export default function CuratorPanel() {
   const [params, setParams] = useState<Record<string, unknown> | null>(null);
   const [activity, setActivity] = useState<CuratorActivity | null>(null);
   const [reviews, setReviews] = useState<CurationReview[]>([]);
+  const [collectionNames, setCollectionNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCurator, setIsCurator] = useState(false);
@@ -100,12 +102,23 @@ export default function CuratorPanel() {
           listCurationReviewsByCurator(address, { limit: "50", reverse: true }).catch(() => null),
         ]);
         setActivity(actRes?.curator_activity ?? null);
-        setReviews(reviewsRes?.reviews ?? []);
+        const reviewList = reviewsRes?.reviews ?? [];
+        setReviews(reviewList);
+
+        const ids = Array.from(new Set(reviewList.map((r) => r.collection_id)));
+        const entries = await Promise.all(
+          ids.map(async (id) => {
+            const res = await getCollection(id).catch(() => null);
+            return [id, res?.collection?.name ?? ""] as const;
+          })
+        );
+        setCollectionNames(Object.fromEntries(entries.filter(([, name]) => name)));
       } else {
         setIsCurator(false);
         setBond(null);
         setActivity(null);
         setReviews([]);
+        setCollectionNames({});
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to load curator data";
@@ -430,7 +443,9 @@ export default function CuratorPanel() {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2 text-sm">
-                        <span className="font-mono text-zinc-300">Collection #{r.collection_id}</span>
+                        <span className="text-zinc-300">
+                          {collectionNames[r.collection_id] || `Collection #${r.collection_id}`}
+                        </span>
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                           r.verdict === CurationVerdict.UP
                             ? "bg-emerald-500/15 text-emerald-400"
