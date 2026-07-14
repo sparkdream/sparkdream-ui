@@ -49,6 +49,20 @@ function tierColor(tier: string): string {
   }
 }
 
+// The wallet rethrows a failed tx as `Transaction failed: <rawLog>`, where
+// rawLog is the chain's verbose form: "failed to execute message; message
+// index: 0: <reason>". Strip the preamble so the inline error shows just the
+// human reason (e.g. "project creator cannot self-assign initiatives").
+function txErrorMessage(err: unknown, fallback: string): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const reason = raw
+    .replace(/^Transaction failed:\s*/, "")
+    .replace(/^failed to execute message; message index: \d+:\s*/, "")
+    .replace(/^[a-z0-9]+1[a-z0-9]+:\s*/i, "")
+    .trim();
+  return reason || fallback;
+}
+
 function formatDream(amount: string): string {
   if (!amount || amount === "0") return "0";
   const n = BigInt(amount);
@@ -68,6 +82,7 @@ export default function InitiativeList() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("all");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -242,6 +257,7 @@ export default function InitiativeList() {
     if (!address) return;
     try {
       setActionLoading(`assign-${initiativeId}`);
+      setActionError(null);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.AssignInitiative,
         // initiative_id is uint64; pass BigInt so the override's
@@ -252,6 +268,7 @@ export default function InitiativeList() {
       await fetchInitiatives(tab);
     } catch (err) {
       console.error("Assign failed:", err);
+      setActionError({ id: initiativeId, message: txErrorMessage(err, "Failed to assign initiative") });
     } finally {
       setActionLoading(null);
     }
@@ -261,6 +278,7 @@ export default function InitiativeList() {
     if (!address) return;
     try {
       setActionLoading(`abandon-${initiativeId}`);
+      setActionError(null);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.AbandonInitiative,
         value: { creator: address, initiativeId: BigInt(initiativeId), reason: "" },
@@ -268,6 +286,7 @@ export default function InitiativeList() {
       await fetchInitiatives(tab);
     } catch (err) {
       console.error("Abandon failed:", err);
+      setActionError({ id: initiativeId, message: txErrorMessage(err, "Failed to abandon initiative") });
     } finally {
       setActionLoading(null);
     }
@@ -551,6 +570,9 @@ export default function InitiativeList() {
                       </button>
                     )}
                   </div>
+                  {actionError?.id === ini.id && (
+                    <p className="mt-2 text-xs text-red-400">{actionError.message}</p>
+                  )}
                 </div>
               )}
             </div>
