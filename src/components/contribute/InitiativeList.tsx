@@ -527,6 +527,12 @@ export default function InitiativeList() {
                         {parseFloat(ini.current_conviction || "0").toFixed(2)} / {parseFloat(ini.required_conviction || "0").toFixed(2)}
                       </dd>
                     </div>
+                    {ini.self_assign_bond && ini.self_assign_bond !== "0" && (
+                      <div>
+                        <dt className="text-xs text-zinc-500">Self-assign bond</dt>
+                        <dd style={{ color: "var(--amber)" }}>{formatDream(ini.self_assign_bond)} DREAM</dd>
+                      </div>
+                    )}
                     {ini.deliverable_uri && (
                       <div>
                         <dt className="text-xs text-zinc-500">Deliverable</dt>

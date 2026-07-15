@@ -12,13 +12,13 @@
     "snapshot:delete": "node --env-file-if-exists=.env.local --import tsx scripts/snapshot-delete.mts"
   },
   "dependencies": {
-    "@cosmjs/amino": "^0.38.1",
-    "@cosmjs/encoding": "^0.38.1",
-    "@cosmjs/math": "^0.38.1",
-    "@cosmjs/proto-signing": "^0.38.1",
-    "@cosmjs/stargate": "^0.38.1",
-    "@cosmjs/tendermint-rpc": "^0.38.1",
-    "@sparkdreamnft/sparkdreamjs": "^0.0.28",
+    "@cosmjs/amino": "^0.39.0",
+    "@cosmjs/encoding": "^0.39.0",
+    "@cosmjs/math": "^0.39.0",
+    "@cosmjs/proto-signing": "^0.39.0",
+    "@cosmjs/stargate": "^0.39.0",
+    "@cosmjs/tendermint-rpc": "^0.39.0",
+    "@sparkdreamnft/sparkdreamjs": "^0.0.32",
     "next": "16.2.7",
     "react": "19.2.4",
     "react-dom": "19.2.4"

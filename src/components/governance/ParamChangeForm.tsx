@@ -883,6 +883,11 @@ const MODULES: Record<string, ModuleDef> = {
       { group: "Project Caps", key: "maxProjectRequestedSpark", apiKey: "max_project_requested_spark", label: "Max Project Requested", kind: "amount" },
       { group: "Project Caps", key: "proposedProjectExpiryBlocks", apiKey: "proposed_project_expiry_blocks", label: "Proposed Project Expiry (blocks)", kind: "bigint" },
 
+      // Self-assignment safeguards
+      { group: "Self-Assignment", key: "selfAssignedBondRate", apiKey: "self_assigned_bond_rate", label: "Self-Assigned Bond Rate", kind: "dec", hint: "Fraction of budget locked as bond when the project creator self-assigns; 0 disables" },
+      { group: "Self-Assignment", key: "selfAssignedExternalConvictionRatio", apiKey: "self_assigned_external_conviction_ratio", label: "Self-Assigned External Conviction Ratio", kind: "dec", hint: ">= External Conviction Ratio and <= 1" },
+      { group: "Self-Assignment", key: "selfAssignedChallengeMultiplier", apiKey: "self_assigned_challenge_multiplier", label: "Self-Assigned Challenge Multiplier", kind: "bigint", hint: "Challenge window multiplier for creator-assigned initiatives; >= 1" },
+
       // Permissionless creation
       { group: "Permissionless", key: "projectCreationFee", apiKey: "project_creation_fee", label: "Project Creation Fee", kind: "dream" },
       { group: "Permissionless", key: "initiativeCreationFeeApprentice", apiKey: "initiative_creation_fee_apprentice", label: "Initiative Creation Fee (Apprentice)", kind: "dream" },

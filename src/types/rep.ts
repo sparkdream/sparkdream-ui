@@ -95,6 +95,12 @@ export interface Initiative {
   created_at: string;
   completed_at: string;
   propagated_conviction: string;
+  /**
+   * DREAM locked by a self-assigning project creator (budget-backed projects
+   * only). Returned on completion/abandonment, burned on upheld challenge.
+   * Optional: nodes older than v1.0.26 don't return it.
+   */
+  self_assign_bond?: string;
 }
 
 export interface RepStake {
