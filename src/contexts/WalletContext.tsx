@@ -26,7 +26,7 @@ interface WalletState {
   /** True once the initial auto-reconnect attempt has resolved (or was skipped). */
   ready: boolean;
   isLedger: boolean;
-  connect: () => Promise<void>;
+  connect: () => Promise<string | null>;
   disconnect: () => void;
   signAndBroadcast: (
     msgs: readonly { typeUrl: string; value: unknown }[],
@@ -49,7 +49,7 @@ const WalletContext = createContext<WalletState>({
   connecting: false,
   ready: false,
   isLedger: false,
-  connect: async () => {},
+  connect: async () => null,
   disconnect: () => {},
   signAndBroadcast: async () => "",
   sessionActive: false,
@@ -123,10 +123,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const sessionActive = activeSession !== null;
   const address = activeSession ? activeSession.granter : rawAddress;
 
-  const connect = useCallback(async () => {
+  // Returns the connected hot-wallet address, or null if Keplr was unavailable
+  // or the connect attempt failed/yielded no account. Callers that gate app
+  // readiness on connect (auto-reconnect below) rely on this to distinguish
+  // "address is set" from "connect resolved but did nothing".
+  const connect = useCallback(async (): Promise<string | null> => {
     if (typeof window === "undefined" || !window.keplr) {
       alert("Please install Keplr wallet extension");
-      return;
+      return null;
     }
 
     setConnecting(true);
@@ -144,11 +148,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const accounts = await offlineSigner.getAccounts();
       if (accounts.length > 0) {
         setRawAddress(accounts[0].address);
+        localStorage.setItem("wallet_connected", "true");
+        return accounts[0].address;
       }
 
       localStorage.setItem("wallet_connected", "true");
+      return null;
     } catch (err) {
       console.error("Failed to connect wallet:", err);
+      return null;
     } finally {
       setConnecting(false);
     }
@@ -627,9 +635,25 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (typeof window !== "undefined" && window.keplr && localStorage.getItem("wallet_connected")) {
       needsSessionRestore.current = !!localStorage.getItem("session_granter");
-      connect().finally(() => {
-        if (!needsSessionRestore.current) setReady(true);
-      });
+      connect()
+        .then((addr) => {
+          // If connect produced no address (Keplr locked, popup dismissed,
+          // enable threw, zero accounts), the session-restore effect below
+          // never runs — it early-returns on !rawAddress. Force readiness here
+          // so the app can't get wedged on the !ready skeleton with no way out.
+          if (!addr) {
+            needsSessionRestore.current = false;
+            setReady(true);
+          } else if (!needsSessionRestore.current) {
+            // Connected and no session to restore — ready immediately.
+            // Otherwise the session-restore effect owns setReady(true).
+            setReady(true);
+          }
+        })
+        .catch(() => {
+          needsSessionRestore.current = false;
+          setReady(true);
+        });
     } else {
       setReady(true);
     }

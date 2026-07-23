@@ -260,6 +260,13 @@ export function archiveKey(path: string, qs: string | null): string {
   return `${trimmed}__qs__${encodeURIComponent(remaining)}.json`;
 }
 
+// Hard ceiling on a single LCD request. A sentry that accepts the connection
+// but never responds (node mid-restart, VPN drop) would otherwise leave the
+// fetch promise pending forever, wedging any caller that gates rendering on it
+// (e.g. ProjectList's loading skeleton). On timeout we reject so the caller's
+// existing .catch()/error paths run instead of hanging.
+const REQUEST_TIMEOUT_MS = 15_000;
+
 async function get<T>(path: string, params?: URLSearchParams): Promise<T> {
   const qs = params?.toString() || null;
   if (archiveSource) {
@@ -268,7 +275,19 @@ async function get<T>(path: string, params?: URLSearchParams): Promise<T> {
     return res.json();
   }
   const url = `${BASE}${path}${qs ? `?${qs}` : ""}`;
-  const res = await fetch(url);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: controller.signal });
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error(`API request timed out after ${REQUEST_TIMEOUT_MS}ms: ${path}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`API error ${res.status}: ${text}`);
