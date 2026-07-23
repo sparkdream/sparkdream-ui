@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   ContentPageLayout,
   SidebarSection,
@@ -319,7 +320,7 @@ function BridgeBindingsSection({ bindings }: { bindings: BridgeOperator[] }) {
         </table>
       </div>
       <p className="mt-2 text-xs text-zinc-500">
-        Bond / slashing / unbonding now live on <a href="/governance?view=chain-operators" className="text-indigo-400 hover:text-indigo-300 underline">Governance → Operators</a>.
+        Bond / slashing / unbonding now live on <Link href="/governance?view=chain-operators" className="text-indigo-400 hover:text-indigo-300 underline">Governance → Operators</Link>.
       </p>
     </Section>
   );

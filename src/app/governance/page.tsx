@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { Group, Proposal, Member } from "@/types/commons";
 import { listGroups, getCouncilMembers, listProposals } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
@@ -18,6 +18,14 @@ type View =
   | "community-treasuries"
   | "chain-proposals"
   | "chain-operators";
+
+const VALID_VIEWS: View[] = [
+  "community-proposals",
+  "community-members",
+  "community-treasuries",
+  "chain-proposals",
+  "chain-operators",
+];
 
 const VALID_ACTIONS: ProposalType[] = [
   "general",
@@ -47,6 +55,7 @@ export default function GovernancePage() {
 
 function GovernancePageInner() {
   const { ready } = useWallet();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const queryGroup = searchParams.get("group");
   const queryAction = searchParams.get("action");
@@ -55,9 +64,21 @@ function GovernancePageInner() {
     : undefined;
   // Pre-fill post_id when reached via the SentinelPanel COC-override deep-link.
   const initialPostId = searchParams.get("post_id") ?? undefined;
+  const urlView = VALID_VIEWS.includes(searchParams.get("view") as View)
+    ? (searchParams.get("view") as View)
+    : null;
 
-  // Sidebar state
-  const [view, setView] = useState<View>("community-proposals");
+  // Sidebar state mirrored into `?view=` so a pane is shareable, reloadable and
+  // reachable via Back (matching /contribute). We render off local state rather
+  // than `useSearchParams()` directly: a soft `router.push` to the same pathname
+  // doesn't always re-fire the hook, which would leave the content pane stuck on
+  // the previous view. switchView updates state synchronously and the effect
+  // below resyncs from the URL for reload/back-forward/deep-link — the latter
+  // covers Federation's "Governance → Operators" pointer.
+  const [view, setView] = useState<View>(urlView ?? "community-proposals");
+  useEffect(() => {
+    setView(urlView ?? "community-proposals");
+  }, [urlView]);
   const [communityOpen, setCommunityOpen] = useState(true);
   const [chainOpen, setChainOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -124,6 +145,15 @@ function GovernancePageInner() {
   const switchView = (v: View) => {
     setView(v);
     setMobileSidebarOpen(false);
+    // Carry `group` across — it's durable council selection, and dropping it
+    // would lose the chosen council on reload. `action`/`post_id` are one-shot
+    // form triggers, so they're deliberately dropped: leaving them in the URL
+    // would re-fire the pre-filled proposal form when the switched-to view is
+    // later reloaded or shared.
+    const params = new URLSearchParams();
+    if (queryGroup) params.set("group", queryGroup);
+    params.set("view", v);
+    router.push(`/governance?${params.toString()}`, { scroll: false });
   };
 
   // Skeleton while wallet resolves

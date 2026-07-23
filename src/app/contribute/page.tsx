@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import MemberProfile from "@/components/contribute/MemberProfile";
@@ -39,17 +39,26 @@ function ReputationPageInner() {
     ? (searchParams.get("view") as View)
     : null;
 
-  // URL is the single source of truth for `view`. Sidebar clicks call
-  // switchView → router.push, and external Links (e.g. the "member" link in
-  // member-only notices on this very page) likewise update the URL; both
-  // paths funnel through urlView so the page can't disagree with itself.
-  const view: View = urlView ?? (connected ? "profile" : "members");
+  // We render off local state rather than `useSearchParams()` directly: a soft
+  // `router.push` to the same pathname doesn't always re-fire the hook, which
+  // would leave the content pane stuck on the previous view while the sidebar
+  // highlight moves (clicking Initiatives from Projects did nothing). The click
+  // handlers update state synchronously and the effect below resyncs from the
+  // URL for reload/back-forward/deep-link — including external Links such as the
+  // "member" link in member-only notices on this very page.
+  const [selectedView, setSelectedView] = useState<View | null>(urlView);
+  useEffect(() => {
+    setSelectedView(urlView);
+  }, [urlView]);
+
+  const view: View = selectedView ?? (connected ? "profile" : "members");
   const [accountOpen, setAccountOpen] = useState(true);
   const [exploreOpen, setExploreOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const switchView = (v: View) => {
     setMobileSidebarOpen(false);
+    setSelectedView(v);
     router.push(`/contribute?view=${v}`, { scroll: false });
   };
 
@@ -282,7 +291,7 @@ function ReputationPageInner() {
             connected ? <DelegationPanel /> : <ConnectPrompt message="Connect your wallet to delegate your SPARK." />
           )}
           {view === "invitations" && (
-            connected ? <InvitationPanel defaultShowForm={urlView === "invitations"} /> : <ConnectPrompt message="Connect your wallet to manage invitations." />
+            connected ? <InvitationPanel defaultShowForm={view === "invitations"} /> : <ConnectPrompt message="Connect your wallet to manage invitations." />
           )}
           {view === "members" && <MemberList />}
           {view === "projects" && <ProjectList />}
