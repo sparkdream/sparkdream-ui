@@ -71,8 +71,9 @@ import type {
   GetInitiativeResponse,
   ListInitiativeResponse,
   InitiativesByProjectResponse,
-  InitiativesByAssigneeResponse,
   AvailableInitiativesResponse,
+  InitiativesByAssigneeResponse,
+  ProjectsByCouncilResponse,
   GetStakeResponse,
   StakesByStakerResponse,
   PendingStakeRewardsResponse,
@@ -252,7 +253,10 @@ export function archiveKey(path: string, qs: string | null): string {
   if (!qs) return `${trimmed}.json`;
   const stripped = new URLSearchParams();
   for (const [k, v] of new URLSearchParams(qs)) {
-    if (!k.startsWith("pagination.")) stripped.append(k, v);
+    // sort_by is server-side ordering, like pagination a view concern: the
+    // snapshot records one pre-merged file per endpoint, so sorted requests
+    // resolve to it too (archive mode serves store order regardless of sort).
+    if (!k.startsWith("pagination.") && k !== "sort_by") stripped.append(k, v);
   }
   stripped.sort();
   const remaining = stripped.toString();
@@ -770,10 +774,31 @@ export async function getRepProject(id: string): Promise<GetProjectResponse> {
   return get<GetProjectResponse>(`/sparkdream/rep/v1/project/${id}`);
 }
 
+// The rep list queries sort chain-side: sort_by orders the complete set
+// before pagination (direction still follows pagination.reverse), so a sorted
+// first page is a true global first page, not a re-ordering of one loaded
+// page. Project keys: id | name | budget | status. Initiative keys:
+// id | title | status | budget | tier | conviction.
+export type ProjectSortKey = "id" | "name" | "budget" | "status";
+export type InitiativeSortKey = "id" | "title" | "status" | "budget" | "tier" | "conviction";
+
+function sortedPaginationParams(
+  pagination?: PaginationRequest,
+  sortBy?: string
+): URLSearchParams {
+  const params = paginationParams(pagination);
+  if (sortBy) params.set("sort_by", sortBy);
+  return params;
+}
+
 export async function listRepProjects(
-  pagination?: PaginationRequest
+  pagination?: PaginationRequest,
+  sortBy?: ProjectSortKey
 ): Promise<ListProjectResponse> {
-  return get<ListProjectResponse>("/sparkdream/rep/v1/project", paginationParams(pagination));
+  return get<ListProjectResponse>(
+    "/sparkdream/rep/v1/project",
+    sortedPaginationParams(pagination, sortBy)
+  );
 }
 
 export async function getRepInitiative(id: string): Promise<GetInitiativeResponse> {
@@ -781,37 +806,58 @@ export async function getRepInitiative(id: string): Promise<GetInitiativeRespons
 }
 
 export async function listRepInitiatives(
-  pagination?: PaginationRequest
+  pagination?: PaginationRequest,
+  sortBy?: InitiativeSortKey
 ): Promise<ListInitiativeResponse> {
-  return get<ListInitiativeResponse>("/sparkdream/rep/v1/initiative", paginationParams(pagination));
+  return get<ListInitiativeResponse>(
+    "/sparkdream/rep/v1/initiative",
+    sortedPaginationParams(pagination, sortBy)
+  );
 }
 
 export async function initiativesByProject(
   projectId: string,
-  pagination?: PaginationRequest
+  pagination?: PaginationRequest,
+  sortBy?: InitiativeSortKey
 ): Promise<InitiativesByProjectResponse> {
   return get<InitiativesByProjectResponse>(
     `/sparkdream/rep/v1/initiatives_by_project/${projectId}`,
-    paginationParams(pagination)
+    sortedPaginationParams(pagination, sortBy)
+  );
+}
+
+// Chains older than the repeated-response fix returned singular scalars from
+// these two endpoints; against such a node the fields below are simply absent
+// and callers should fall back to deriving the tab from listRepInitiatives.
+export async function availableInitiatives(
+  pagination?: PaginationRequest,
+  sortBy?: InitiativeSortKey
+): Promise<AvailableInitiativesResponse> {
+  return get<AvailableInitiativesResponse>(
+    "/sparkdream/rep/v1/available_initiatives",
+    sortedPaginationParams(pagination, sortBy)
   );
 }
 
 export async function initiativesByAssignee(
   assignee: string,
-  pagination?: PaginationRequest
+  pagination?: PaginationRequest,
+  sortBy?: InitiativeSortKey
 ): Promise<InitiativesByAssigneeResponse> {
   return get<InitiativesByAssigneeResponse>(
     `/sparkdream/rep/v1/initiatives_by_assignee/${assignee}`,
-    paginationParams(pagination)
+    sortedPaginationParams(pagination, sortBy)
   );
 }
 
-export async function availableInitiatives(
-  pagination?: PaginationRequest
-): Promise<AvailableInitiativesResponse> {
-  return get<AvailableInitiativesResponse>(
-    "/sparkdream/rep/v1/available_initiatives",
-    paginationParams(pagination)
+export async function projectsByCouncil(
+  council: string,
+  pagination?: PaginationRequest,
+  sortBy?: ProjectSortKey
+): Promise<ProjectsByCouncilResponse> {
+  return get<ProjectsByCouncilResponse>(
+    `/sparkdream/rep/v1/projects_by_council/${encodeURIComponent(council)}`,
+    sortedPaginationParams(pagination, sortBy)
   );
 }
 

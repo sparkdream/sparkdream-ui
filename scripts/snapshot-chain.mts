@@ -392,7 +392,8 @@ async function phase2Lists(): Promise<DiscoveredIds> {
 
   await attemptList("rep projects", () => api.listRepProjects(), "project" as any);
   await attemptList("rep initiatives", () => api.listRepInitiatives(), "initiative" as any);
-  await attemptList("available initiatives", () => api.availableInitiatives(), "initiative" as any);
+  // available_initiatives is deliberately absent: its response is a singular
+  // scalar record, not a list, so there is nothing here to snapshot.
   await attemptList("rep invitations", () => api.listRepInvitations(), "invitation" as any);
   await attemptList("rep tags", () => api.listTags(), "tag" as any);
 

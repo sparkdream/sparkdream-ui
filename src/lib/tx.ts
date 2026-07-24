@@ -92,6 +92,7 @@ export const RepMsgTypeUrls = {
   SubmitInitiativeWork: "/sparkdream.rep.v1.MsgSubmitInitiativeWork",
   ApproveInitiative: "/sparkdream.rep.v1.MsgApproveInitiative",
   AbandonInitiative: "/sparkdream.rep.v1.MsgAbandonInitiative",
+  CancelInitiative: "/sparkdream.rep.v1.MsgCancelInitiative",
   CompleteInitiative: "/sparkdream.rep.v1.MsgCompleteInitiative",
   Stake: "/sparkdream.rep.v1.MsgStake",
   Unstake: "/sparkdream.rep.v1.MsgUnstake",

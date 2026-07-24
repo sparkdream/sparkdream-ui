@@ -275,12 +275,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // chain commit 4ad8e38) is in the registry but not the amino map. Two
       // scalar fields (creator, uint64 hide_record_id emitted as a string),
       // so the statics are safe here too.
+      // And 0.0.33: MsgCancelInitiative (rep — project creator / ops committee
+      // retires an OPEN, unassigned initiative) ships in the registry but not
+      // the amino map. Three scalar fields (creator, uint64 initiative_id
+      // emitted as a string, reason), no repeated fields, so the statics are
+      // safe. See [[sparkdreamjs-amino-converter-gap]].
       const { MsgSetThreadProposalsLock: ForumSetThreadProposalsLock } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/forum/v1/tx");
-      const { MsgCancelUnbondRole: RepCancelUnbondRole } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
+      const { MsgCancelUnbondRole: RepCancelUnbondRole, MsgCancelInitiative: RepCancelInitiative } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
       const { MsgUnhideContent: CollectUnhideContent } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/tx");
       const latestMsgAmino = {
         "/sparkdream.forum.v1.MsgSetThreadProposalsLock": { aminoType: "sparkdream/x/forum/MsgSetThreadProposalsLock", toAmino: ForumSetThreadProposalsLock.toAmino, fromAmino: ForumSetThreadProposalsLock.fromAmino },
         "/sparkdream.rep.v1.MsgCancelUnbondRole": { aminoType: "sparkdream/x/rep/MsgCancelUnbondRole", toAmino: RepCancelUnbondRole.toAmino, fromAmino: RepCancelUnbondRole.fromAmino },
+        "/sparkdream.rep.v1.MsgCancelInitiative": { aminoType: "sparkdream/x/rep/MsgCancelInitiative", toAmino: RepCancelInitiative.toAmino, fromAmino: RepCancelInitiative.fromAmino },
         "/sparkdream.collect.v1.MsgUnhideContent": { aminoType: "sparkdream/x/collect/MsgUnhideContent", toAmino: CollectUnhideContent.toAmino, fromAmino: CollectUnhideContent.fromAmino },
       };
 

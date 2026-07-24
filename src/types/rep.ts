@@ -243,6 +243,10 @@ export const InitiativeStatus = {
   COMPLETED: "INITIATIVE_STATUS_COMPLETED",
   REJECTED: "INITIATIVE_STATUS_REJECTED",
   ABANDONED: "INITIATIVE_STATUS_ABANDONED",
+  // Retired by the project creator or Operations Committee while still OPEN
+  // and unassigned. Distinct from ABANDONED, which records an assignee walking
+  // away from work already taken on.
+  CANCELLED: "INITIATIVE_STATUS_CANCELLED",
 } as const;
 
 export const INITIATIVE_STATUS_LABELS: Record<string, string> = {
@@ -254,6 +258,7 @@ export const INITIATIVE_STATUS_LABELS: Record<string, string> = {
   [InitiativeStatus.COMPLETED]: "Completed",
   [InitiativeStatus.REJECTED]: "Rejected",
   [InitiativeStatus.ABANDONED]: "Abandoned",
+  [InitiativeStatus.CANCELLED]: "Cancelled",
 };
 
 export const InitiativeTier = {
@@ -402,14 +407,21 @@ export interface InitiativesByProjectResponse {
   pagination: Pagination;
 }
 
-export interface InitiativesByAssigneeResponse {
-  initiatives: Initiative[];
-  pagination: Pagination;
+// Both endpoints below returned singular scalar fields (initiative_id/title/…)
+// before the repeated-response fix; on older nodes `initiatives` is absent.
+export interface AvailableInitiativesResponse {
+  initiatives?: Initiative[];
+  pagination?: Pagination;
 }
 
-export interface AvailableInitiativesResponse {
-  initiatives: Initiative[];
-  pagination: Pagination;
+export interface InitiativesByAssigneeResponse {
+  initiatives?: Initiative[];
+  pagination?: Pagination;
+}
+
+export interface ProjectsByCouncilResponse {
+  projects?: RepProject[];
+  pagination?: Pagination;
 }
 
 export interface GetStakeResponse {

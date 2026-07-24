@@ -13,6 +13,10 @@ interface SearchableSelectProps {
   onChange: (value: string) => void;
   placeholder?: string;
   emptyMessage?: string;
+  // Set false for short, fixed option lists (e.g. a sort picker) that don't
+  // need filtering — hides the search box but keeps the same trigger/panel
+  // styling so it matches the searchable variant.
+  searchable?: boolean;
 }
 
 export default function SearchableSelect({
@@ -21,6 +25,7 @@ export default function SearchableSelect({
   onChange,
   placeholder = "Search...",
   emptyMessage = "No options available",
+  searchable = true,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -29,7 +34,7 @@ export default function SearchableSelect({
 
   const selected = options.find((o) => o.value === value);
 
-  const filtered = query
+  const filtered = searchable && query
     ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
     : options;
 
@@ -51,7 +56,7 @@ export default function SearchableSelect({
         type="button"
         onClick={() => {
           setOpen(!open);
-          if (!open) setTimeout(() => inputRef.current?.focus(), 0);
+          if (!open && searchable) setTimeout(() => inputRef.current?.focus(), 0);
         }}
         className="flex w-full items-center justify-between rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-left text-sm text-zinc-200 transition-colors hover:border-zinc-600 focus:border-indigo-500 focus:outline-none"
       >
@@ -68,16 +73,18 @@ export default function SearchableSelect({
 
       {open && (
         <div className="absolute z-20 mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl">
-          <div className="border-b border-zinc-800 p-2">
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={placeholder}
-              className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
-            />
-          </div>
+          {searchable && (
+            <div className="border-b border-zinc-800 p-2">
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={placeholder}
+                className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+          )}
           <ul className="max-h-48 overflow-y-auto py-1">
             {filtered.length === 0 ? (
               <li className="px-3 py-2 text-sm text-zinc-500">{emptyMessage}</li>

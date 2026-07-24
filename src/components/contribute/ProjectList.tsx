@@ -2,10 +2,13 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import { listRepProjects, listGroups, getRepParams, getLatestBlockHeight } from "@/lib/api";
+import type { ProjectSortKey } from "@/lib/api";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
+import SearchableSelect from "@/components/contribute/SearchableSelect";
 import type { Group } from "@/types/commons";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
@@ -57,8 +60,31 @@ function formatDream(amount: string): string {
   return (n / BigInt(1000000)).toLocaleString();
 }
 
+// Sorting happens chain-side: sort_by orders the complete project set before
+// pagination, so a sorted first page is a true global first page and "Load
+// more" continues in the same order. Projects carry no created_at, but ids
+// are assigned monotonically, so id order *is* creation order.
+type ProjectSort = "newest" | "oldest" | "name-asc" | "name-desc" | "budget-desc";
+
+const PROJECT_SORT_LABELS: Record<ProjectSort, string> = {
+  newest: "Newest first",
+  oldest: "Oldest first",
+  "name-asc": "Name A to Z",
+  "name-desc": "Name Z to A",
+  "budget-desc": "Budget: high to low",
+};
+
+const PROJECT_SORT_QUERY: Record<ProjectSort, { sortBy?: ProjectSortKey; reverse: boolean }> = {
+  newest: { reverse: true },
+  oldest: { reverse: false },
+  "name-asc": { sortBy: "name", reverse: false },
+  "name-desc": { sortBy: "name", reverse: true },
+  "budget-desc": { sortBy: "budget", reverse: true },
+};
+
 export default function ProjectList() {
   const { address, signAndBroadcast } = useWallet();
+  const searchParams = useSearchParams();
   const isMember = useIsRepMember(address);
   const canPropose = isMember === true;
   const [projects, setProjects] = useState<RepProject[]>([]);
@@ -67,10 +93,17 @@ export default function ProjectList() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextKey, setNextKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  // `?project=<id>` deep-links a single project open — that's how an
+  // initiative row links back to the project it belongs to.
+  const urlProject = searchParams.get("project") || "";
+  const [expanded, setExpanded] = useState<string | null>(urlProject || null);
+  useEffect(() => {
+    if (urlProject) setExpanded(urlProject);
+  }, [urlProject]);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [sort, setSort] = useState<ProjectSort>("newest");
 
   // Form state
   const [formMode, setFormMode] = useState<"self-publish" | "request-funding">("self-publish");
@@ -144,8 +177,9 @@ export default function ProjectList() {
     try {
       setLoading(true);
       setError(null);
+      const { sortBy, reverse } = PROJECT_SORT_QUERY[sort];
       const [projectsRes, groupsRes] = await Promise.all([
-        listRepProjects({ limit: "50", reverse: true }).catch(() => ({ project: [] as RepProject[], pagination: { next_key: null, total: "0" } })),
+        listRepProjects({ limit: "50", reverse }, sortBy).catch(() => ({ project: [] as RepProject[], pagination: { next_key: null, total: "0" } })),
         listGroups().catch(() => ({ group: [] as Group[], pagination: { next_key: null, total: "0" } })),
       ]);
       setProjects(projectsRes.project || []);
@@ -165,13 +199,14 @@ export default function ProjectList() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [sort]);
 
   const loadMore = useCallback(async () => {
     if (!nextKey || loadingMore) return;
     try {
       setLoadingMore(true);
-      const res = await listRepProjects({ limit: "50", reverse: true, key: nextKey });
+      const { sortBy, reverse } = PROJECT_SORT_QUERY[sort];
+      const res = await listRepProjects({ limit: "50", reverse, key: nextKey }, sortBy);
       setProjects((prev) => [...prev, ...(res.project || [])]);
       setNextKey(res.pagination?.next_key || null);
     } catch (err) {
@@ -179,7 +214,7 @@ export default function ProjectList() {
     } finally {
       setLoadingMore(false);
     }
-  }, [nextKey, loadingMore]);
+  }, [nextKey, loadingMore, sort]);
 
   useEffect(() => {
     fetchProjects();
@@ -475,6 +510,22 @@ export default function ProjectList() {
         </div>
       )}
 
+      {projects.length > 1 && (
+        <div className="mb-3 flex items-center justify-end gap-2">
+          <span className="text-xs text-zinc-500">Sort</span>
+          <div className="w-52">
+            <SearchableSelect
+              options={(Object.entries(PROJECT_SORT_LABELS) as [ProjectSort, string][]).map(
+                ([val, label]) => ({ value: val, label }),
+              )}
+              value={sort}
+              onChange={(v) => setSort(v as ProjectSort)}
+              searchable={false}
+            />
+          </div>
+        </div>
+      )}
+
       {projects.length === 0 ? (
         <div className="rounded-xl sd-hull-tile p-12 text-center">
           <p className="text-zinc-400">No projects yet</p>
@@ -553,6 +604,17 @@ export default function ProjectList() {
                       ))}
                     </div>
                   )}
+                  <div className="mt-3 border-t border-zinc-800 pt-3">
+                    <Link
+                      href={`/contribute?view=initiatives&project=${p.id}`}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-400 transition-colors hover:text-indigo-300"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+                      </svg>
+                      View initiatives in this project
+                    </Link>
+                  </div>
                 </div>
               )}
             </div>
