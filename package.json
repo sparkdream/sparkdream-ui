@@ -1,6 +1,6 @@
 {
   "name": "sparkdream-ui",
-  "version": "1.0.51",
+  "version": "1.0.53",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -18,7 +18,7 @@
     "@cosmjs/proto-signing": "^0.39.0",
     "@cosmjs/stargate": "^0.39.0",
     "@cosmjs/tendermint-rpc": "^0.39.0",
-    "@sparkdreamnft/sparkdreamjs": "^0.0.33",
+    "@sparkdreamnft/sparkdreamjs": "^0.0.34",
     "next": "16.2.7",
     "react": "19.2.4",
     "react-dom": "19.2.4"

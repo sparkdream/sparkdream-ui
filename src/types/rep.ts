@@ -438,6 +438,11 @@ export interface StakesByStakerResponse {
   pagination: Pagination;
 }
 
+export interface StakesByTargetResponse {
+  stakes: RepStake[];
+  pagination: Pagination;
+}
+
 export interface PendingStakeRewardsResponse {
   pending_rewards: string;
 }

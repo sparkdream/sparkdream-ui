@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
@@ -9,6 +9,9 @@ import type { ProjectSortKey } from "@/lib/api";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
 import SearchableSelect from "@/components/contribute/SearchableSelect";
+import SearchField from "@/components/contribute/SearchField";
+import TrendingRailCard from "@/components/contribute/TrendingRailCard";
+import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import type { Group } from "@/types/commons";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
@@ -64,7 +67,14 @@ function formatDream(amount: string): string {
 // pagination, so a sorted first page is a true global first page and "Load
 // more" continues in the same order. Projects carry no created_at, but ids
 // are assigned monotonically, so id order *is* creation order.
-type ProjectSort = "newest" | "oldest" | "name-asc" | "name-desc" | "budget-desc";
+type ProjectSort =
+  | "newest"
+  | "oldest"
+  | "name-asc"
+  | "name-desc"
+  | "budget-desc"
+  | "budget-asc"
+  | "status";
 
 const PROJECT_SORT_LABELS: Record<ProjectSort, string> = {
   newest: "Newest first",
@@ -72,14 +82,22 @@ const PROJECT_SORT_LABELS: Record<ProjectSort, string> = {
   "name-asc": "Name A to Z",
   "name-desc": "Name Z to A",
   "budget-desc": "Budget: high to low",
+  "budget-asc": "Budget: low to high",
+  status: "Status",
 };
 
+// All chain-side (ProjectSortKey = id | name | budget | status): sort_by orders
+// the full project set before pagination, so a sorted first page is a true
+// global first page and "Load more" continues in the same order. The chain
+// sorts status in enum order (Proposed/Active first, terminal last).
 const PROJECT_SORT_QUERY: Record<ProjectSort, { sortBy?: ProjectSortKey; reverse: boolean }> = {
   newest: { reverse: true },
   oldest: { reverse: false },
   "name-asc": { sortBy: "name", reverse: false },
   "name-desc": { sortBy: "name", reverse: true },
   "budget-desc": { sortBy: "budget", reverse: true },
+  "budget-asc": { sortBy: "budget", reverse: false },
+  status: { sortBy: "status", reverse: false },
 };
 
 export default function ProjectList() {
@@ -104,6 +122,9 @@ export default function ProjectList() {
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [sort, setSort] = useState<ProjectSort>("newest");
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSearchShortcut(searchRef);
 
   // Form state
   const [formMode, setFormMode] = useState<"self-publish" | "request-funding">("self-publish");
@@ -295,6 +316,56 @@ export default function ProjectList() {
     }
   };
 
+  // Free-text search over the loaded page (client-side). Matches name,
+  // description, tags, the numeric id (with or without a leading #), creator
+  // address, council, and the category/status labels.
+  const searchedProjects = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return projects;
+    const bare = q.replace(/^#/, "");
+    return projects.filter((p) => {
+      if (p.name?.toLowerCase().includes(q)) return true;
+      if (p.description?.toLowerCase().includes(q)) return true;
+      if (p.id === bare) return true;
+      if ((p.tags || []).some((t) => t.toLowerCase().includes(q))) return true;
+      if (p.creator?.toLowerCase().includes(q)) return true;
+      if (p.council?.toLowerCase().includes(q)) return true;
+      const cat = (PROJECT_CATEGORY_LABELS[p.category] || p.category || "").toLowerCase();
+      const status = (PROJECT_STATUS_LABELS[p.status] || p.status || "").toLowerCase();
+      return cat.includes(q) || status.includes(q);
+    });
+  }, [projects, searchQuery]);
+
+  // Rail widget: projects ranked by allocation progress — how much of the
+  // approved budget has been allocated to work (allocated_budget /
+  // approved_budget). Projects carry no conviction figure like initiatives do,
+  // so this is the closest "how far along is it" signal. Zero-budget
+  // self-published projects have no ratio to rank on and drop out.
+  const trendingProjects = useMemo(
+    () =>
+      projects
+        .map((p) => {
+          const approved = parseFloat(p.approved_budget || "0");
+          const allocated = parseFloat(p.allocated_budget || "0");
+          return { p, ratio: approved > 0 ? Math.min(Math.max(allocated / approved, 0), 1) : -1 };
+        })
+        .filter((x) => x.ratio >= 0)
+        .sort((a, b) => b.ratio - a.ratio)
+        .slice(0, 5)
+        .map(({ p, ratio }) => ({ id: p.id, title: p.name, metric: `${Math.round(ratio * 100)}%` })),
+    [projects],
+  );
+
+  // Clicking a trending row expands that project and scrolls to it (search is
+  // cleared so a filtered-out target still renders).
+  const handleTrendingSelect = useCallback((id: string) => {
+    setSearchQuery("");
+    setExpanded(id);
+    requestAnimationFrame(() => {
+      document.getElementById(`project-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, []);
+
   if (loading) {
     return (
       <div className="space-y-3">
@@ -315,7 +386,8 @@ export default function ProjectList() {
   }
 
   return (
-    <div>
+    <div className="flex gap-6">
+      <div className="min-w-0 flex-1">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Projects</h2>
         {!showForm && (
@@ -510,10 +582,17 @@ export default function ProjectList() {
         </div>
       )}
 
-      {projects.length > 1 && (
-        <div className="mb-3 flex items-center justify-end gap-2">
-          <span className="text-xs text-zinc-500">Sort</span>
-          <div className="w-52">
+      {projects.length > 0 && (
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1">
+            <SearchField
+              ref={searchRef}
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search projects by name, tag, #id, or creator..."
+            />
+          </div>
+          <div className="sm:w-44">
             <SearchableSelect
               options={(Object.entries(PROJECT_SORT_LABELS) as [ProjectSort, string][]).map(
                 ([val, label]) => ({ value: val, label }),
@@ -526,14 +605,25 @@ export default function ProjectList() {
         </div>
       )}
 
-      {projects.length === 0 ? (
+      {searchedProjects.length === 0 ? (
         <div className="rounded-xl sd-hull-tile p-12 text-center">
-          <p className="text-zinc-400">No projects yet</p>
+          <p className="text-zinc-400">
+            {searchQuery.trim() ? `No projects match "${searchQuery.trim()}"` : "No projects yet"}
+          </p>
+          {searchQuery.trim() && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="mt-3 text-xs text-indigo-400 underline hover:text-indigo-300"
+            >
+              Clear search
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-2">
-          {projects.map((p) => (
-            <div key={p.id} className="rounded-xl sd-hull-tile">
+          {searchedProjects.map((p) => (
+            <div key={p.id} id={`project-${p.id}`} className="rounded-xl sd-hull-tile">
               <button
                 onClick={() => setExpanded(expanded === p.id ? null : p.id)}
                 className="flex w-full items-center justify-between px-4 py-3 text-left"
@@ -630,6 +720,18 @@ export default function ProjectList() {
           )}
         </div>
       )}
+      </div>
+
+      {/* Right rail: projects ranked by approved budget. */}
+      <aside className="hidden w-72 shrink-0 xl:block">
+        <div className="sticky top-24 space-y-4">
+          <TrendingRailCard
+            items={trendingProjects}
+            emptyText="No funded projects yet."
+            onSelect={handleTrendingSelect}
+          />
+        </div>
+      </aside>
     </div>
   );
 }

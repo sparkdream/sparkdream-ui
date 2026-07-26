@@ -12,16 +12,19 @@ import {
   listRepProjects,
   listRepMembers,
   reverseResolveName,
+  stakesByTarget,
+  getRepParams,
 } from "@/lib/api";
 import type { InitiativeSortKey } from "@/lib/api";
 import { truncateAddress } from "@/lib/utils";
 import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
+import { useDisplayName } from "@/hooks/useDisplayName";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import CopyableAddress from "@/components/CopyableAddress";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
-import type { Initiative, RepProject } from "@/types/rep";
+import type { Initiative, RepProject, RepStake } from "@/types/rep";
 import {
   INITIATIVE_STATUS_LABELS,
   INITIATIVE_TIER_LABELS,
@@ -29,12 +32,17 @@ import {
   InitiativeStatus,
   InitiativeTier,
   InitiativeCategory,
+  StakeTargetType,
 } from "@/types/rep";
 import {
   initiativeTierFromJSON,
   initiativeCategoryFromJSON,
 } from "@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/initiative";
+import { stakeTargetTypeFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/stake";
 import SearchableSelect from "@/components/contribute/SearchableSelect";
+import SearchField from "@/components/contribute/SearchField";
+import TrendingRailCard from "@/components/contribute/TrendingRailCard";
+import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 
 type Tab = "all" | "available" | "mine";
 
@@ -92,6 +100,104 @@ function formatDream(amount: string): string {
   return (n / BigInt(1000000)).toLocaleString();
 }
 
+// Same as formatDream but keeps the sub-DREAM fraction. Used where the exact
+// micro-DREAM figure matters — the unstake Max value and the position it fills —
+// so a Max on a 1,500,000 micro-DREAM position reads "1.5" rather than "1".
+function formatDreamExact(amount: string): string {
+  if (!amount || amount === "0") return "0";
+  const n = BigInt(amount);
+  const divisor = BigInt(1000000);
+  const whole = n / divisor;
+  const frac = n % divisor;
+  if (frac === BigInt(0)) return whole.toLocaleString();
+  return `${whole.toLocaleString()}.${frac.toString().padStart(6, "0").replace(/0+$/, "")}`;
+}
+
+// Conviction the way the chain computes it (x/rep/keeper/stake_conviction.go).
+// Three steps, and skipping any of them makes the number wrong:
+//   1. each stake matures linearly, reaching full weight after two half-lives;
+//   2. a staker's matured total is sqrt-damped ONCE, over their aggregate — so
+//      splitting a position across several stakes buys nothing;
+//   3. the result is capped at max_conviction_share_per_member of what the
+//      initiative requires, so no single member can carry an initiative.
+// The chain also applies a reputation multiplier (1 + rep/1000) that would cost
+// a per-tag reputation query per staker to reproduce, so it is left out here.
+// Dropping a multiplier >= 1 makes every figure below a floor: it never
+// overstates a staker's contribution, and it is exact whenever the cap binds —
+// which is the case that matters most, since a capped staker can withdraw a
+// large slice of their DREAM without moving conviction at all.
+type ConvictionParams = {
+  halfLifeSeconds: number;
+  maxSharePerMember: number;
+  // Fraction of the threshold that must come from members unaffiliated with the
+  // work. The self-assigned figure applies when the assignee is also the project
+  // creator: the two internal roles collapse into one party, so the community
+  // alone has to vouch (CanCompleteInitiative).
+  externalRatio: number;
+  selfAssignedExternalRatio: number;
+};
+
+// Chain defaults (conviction_half_life_epochs 3 x epoch_blocks 300 x ~6s per
+// block; max_conviction_share_per_member 0.33). Used until rep params load, and
+// as the fallback on an older node that doesn't return them.
+const DEFAULT_CONVICTION_PARAMS: ConvictionParams = {
+  halfLifeSeconds: 3 * 300 * 6,
+  maxSharePerMember: 0.33,
+  externalRatio: 0.5,
+  selfAssignedExternalRatio: 1,
+};
+
+// Weight of one stake at `nowSeconds`: 0 when just placed, 1 once held for two
+// half-lives. Mirrors the chain's linear stand-in for exponential decay. Stake
+// created_at is a unix timestamp (unlike the block-height *_at fields
+// elsewhere), so wall-clock time is the right comparison.
+function stakeTimeFactor(createdAt: string, nowSeconds: number, halfLifeSeconds: number): number {
+  const created = parseInt(createdAt || "0", 10);
+  if (!Number.isFinite(created) || halfLifeSeconds <= 0) return 0;
+  return Math.min(1, Math.max(0, nowSeconds - created) / (2 * halfLifeSeconds));
+}
+
+// One staker's conviction contribution to an initiative: sqrt of their matured
+// micro-DREAM aggregate, capped at their share ceiling.
+function stakerConviction(
+  stakes: { amount: string; created_at: string }[],
+  requiredConviction: number,
+  nowSeconds: number,
+  params: ConvictionParams,
+): number {
+  let raw = 0;
+  for (const s of stakes) {
+    const amt = Number(s.amount || "0");
+    if (!(amt > 0)) continue;
+    raw += amt * stakeTimeFactor(s.created_at, nowSeconds, params.halfLifeSeconds);
+  }
+  const damped = Math.sqrt(raw);
+  const cap = requiredConviction * params.maxSharePerMember;
+  return cap > 0 ? Math.min(damped, cap) : damped;
+}
+
+// The position left after withdrawing `amountMicro`, walking stakes in the same
+// order handleUnstake drains them (oldest id first, each emptied before the
+// next) so a projection describes the transaction the button actually sends.
+// A partially drained stake keeps its created_at: the chain reduces it in place
+// rather than replacing it, so its maturity carries over.
+function stakesAfterWithdrawal(
+  mine: RepStake[],
+  amountMicro: bigint,
+): { amount: string; created_at: string }[] {
+  let remaining = amountMicro;
+  const left: { amount: string; created_at: string }[] = [];
+  for (const s of mine) {
+    const amt = BigInt(s.amount || "0");
+    if (amt <= BigInt(0)) continue;
+    const take = remaining >= amt ? amt : remaining;
+    remaining -= take;
+    const rest = amt - take;
+    if (rest > BigInt(0)) left.push({ amount: rest.toString(), created_at: s.created_at });
+  }
+  return left;
+}
+
 // Sorting happens chain-side: sort_by orders the complete initiative set
 // before pagination, so a sorted first page is a true global first page and
 // "Load more" continues in the same order. Newest/oldest use plain id order
@@ -128,37 +234,118 @@ const INITIATIVE_SORT_QUERY: Record<InitiativeSort, { sortBy?: InitiativeSortKey
   "tier-desc": { sortBy: "tier", reverse: true },
 };
 
-// Conviction progress at a glance: a small ring plus the percentage. Exact
-// figures stay in the expanded details. A zero required_conviction has no
-// ratio to show, so the widget renders nothing at all rather than an empty
-// ring the reader has to interpret.
-function ConvictionWheel({ current, required }: { current: string; required: string }) {
-  const cur = parseFloat(current || "0");
-  const req = parseFloat(required || "0");
-  if (!(req > 0)) return null;
-  const ratio = Math.min(Math.max(cur / req, 0), 1);
-  const met = cur >= req;
-  const radius = 7;
-  const circumference = 2 * Math.PI * radius;
+// Conviction meter — the primary per-row signal: how much conviction an
+// initiative has gathered against the threshold it must clear to complete, as a
+// percentage, a current/required figure, and a progress bar. An initiative with
+// no required conviction (the permissionless ones) has no threshold to track, so
+// it shows a muted note instead.
+//
+// The fill splits into two segments (design 2a): everyone else's conviction in
+// the state color and *your* contribution in a lighter tint of the same hue.
+// Both are conviction, not DREAM — a member at the per-member cap owns a smaller
+// slice of the bar than their DREAM share would suggest, which is the point.
+//
+// This deliberately does NOT show DREAM staked against the initiative's budget.
+// The two are different quantities (a budget of 80 DREAM against a threshold of
+// 1788.85, a sqrt-damped score), and staked/budget saturates: three initiatives
+// backed by 120, 180 and 190 DREAM all read "100% of an 80 DREAM budget" while
+// their conviction was 66%, 132% and 66%. The DREAM behind an initiative stays
+// available in the tooltip and in the expanded row.
+//
+// Conviction comes off the initiative itself, refreshed every block by the rep
+// EndBlocker, so the percentage needs no per-row query and never renders a
+// placeholder. Only `yours` depends on the stakes query.
+function ConvictionMeter({
+  current = 0,
+  required = 0,
+  yours = 0,
+  externalCurrent = 0,
+  externalRequired = 0,
+  poolMicro,
+  budgetMicro = BigInt(0),
+  released = false,
+}: {
+  current?: number;
+  required?: number;
+  yours?: number;
+  externalCurrent?: number;
+  externalRequired?: number;
+  poolMicro?: bigint;
+  budgetMicro?: bigint;
+  released?: boolean;
+}) {
+  const fmtConv = (n: number) => Math.round(n).toLocaleString();
+  const fmtDream = (n: bigint) => formatDream(n.toString());
+  if (released) {
+    return (
+      <div className="w-full" title="Threshold met, initiative completed and stakes returned">
+        <div className="flex items-baseline justify-between gap-2 font-mono text-[11px]">
+          <span className="font-semibold text-emerald-400">Complete</span>
+          <span className="truncate text-zinc-500">{fmtConv(required)} conviction</span>
+        </div>
+        <div className="mt-1.5 h-1.5 rounded-full bg-emerald-400/30" />
+      </div>
+    );
+  }
+  if (!(required > 0)) {
+    return <div className="text-xs text-zinc-600">No conviction threshold</div>;
+  }
+  const ratio = current / required;
+  // Two independent gates, both from CanCompleteInitiative: the total must reach
+  // the threshold AND enough of it must come from members unaffiliated with the
+  // work. An initiative over 100% that hasn't cleared the external gate is not
+  // ready, so it reads amber rather than the emerald of a genuinely met bar.
+  const totalMet = current >= required;
+  const externalMet = externalRequired <= 0 || externalCurrent >= externalRequired;
+  const met = totalMet && externalMet;
+  const fillPct = Math.min(ratio, 1) * 100;
+  const yoursPct = current > 0 ? fillPct * Math.min(yours / current, 1) : 0;
+  const othersPct = Math.max(0, fillPct - yoursPct);
+  const barColor = met ? "bg-emerald-400" : totalMet ? "bg-amber-400" : "bg-indigo-400";
+  const yoursColor = met ? "bg-emerald-200" : totalMet ? "bg-amber-200" : "bg-indigo-300";
+  const textColor = met ? "text-emerald-400" : totalMet ? "text-amber-400" : "text-indigo-300";
+  const backing =
+    poolMicro !== undefined
+      ? ` · backed by ${fmtDream(poolMicro)} DREAM${
+          budgetMicro > BigInt(0) ? ` toward a ${fmtDream(budgetMicro)} DREAM budget` : ""
+        }`
+      : "";
+  const externalNote =
+    externalRequired > 0
+      ? ` · external ${fmtConv(externalCurrent)} / ${fmtConv(externalRequired)} required${
+          totalMet && !externalMet ? " (not yet met)" : ""
+        }`
+      : "";
   return (
-    <span
-      className="flex items-center gap-1.5"
-      title={`Conviction: ${cur.toFixed(2)} of ${req.toFixed(2)} required`}
+    <div
+      className="w-full"
+      title={`Conviction ${fmtConv(current)} / ${fmtConv(required)} required${externalNote}${backing}`}
     >
-      <svg viewBox="0 0 18 18" className="h-4 w-4 -rotate-90" aria-hidden="true">
-        <circle cx="9" cy="9" r={radius} fill="none" strokeWidth={2.5} className="stroke-zinc-700" />
-        {ratio > 0 && (
-          <circle
-            cx="9" cy="9" r={radius} fill="none" strokeWidth={2.5} strokeLinecap="round"
-            className={met ? "stroke-emerald-400" : "stroke-indigo-400"}
-            strokeDasharray={circumference}
-            strokeDashoffset={circumference * (1 - ratio)}
-          />
-        )}
-      </svg>
-      <span className={met ? "text-emerald-400" : undefined}>{Math.round(ratio * 100)}%</span>
-    </span>
+      <div className="flex items-baseline justify-between gap-2 font-mono text-[11px]">
+        <span className={`font-semibold ${textColor}`}>{Math.round(ratio * 100)}%</span>
+        {/* Unit spelled out. Bare figures next to a "80 DREAM" budget on the
+            metadata line above read as DREAM, and a conviction score is a
+            different quantity an order of magnitude larger. */}
+        <span className="truncate text-zinc-500">
+          {fmtConv(current)} / {fmtConv(required)} conviction
+        </span>
+      </div>
+      <div className="mt-1.5 flex h-1.5 gap-px overflow-hidden rounded-full bg-zinc-700/50">
+        <div className={`h-full ${barColor}`} style={{ width: `${othersPct}%` }} />
+        {yoursPct > 0 && <div className={`h-full ${yoursColor}`} style={{ width: `${yoursPct}%` }} />}
+      </div>
+    </div>
   );
+}
+
+// Resolves an assignee address to its onchain name, falling back to the
+// truncated bech32, for the compact row metadata. Plain text on purpose: the
+// row itself is the click target (expand), so this stays non-interactive,
+// unlike the expanded <CopyableAddress>. Uses useDisplayName so the row and the
+// expanded detail agree on the same name.
+function AssigneeName({ address }: { address: string }) {
+  const { name } = useDisplayName(address);
+  return <>{name || truncateAddress(address)}</>;
 }
 
 export default function InitiativeList() {
@@ -167,6 +354,7 @@ export default function InitiativeList() {
   const searchParams = useSearchParams();
   const isMember = useIsRepMember(address);
   const canCreate = isMember === true;
+  const canStake = isMember === true;
   const [initiatives, setInitiatives] = useState<Initiative[]>([]);
   const [initialLoad, setInitialLoad] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -177,6 +365,9 @@ export default function InitiativeList() {
   const [tab, setTab] = useState<Tab>("all");
   const [showClosed, setShowClosed] = useState(false);
   const [sort, setSort] = useState<InitiativeSort>("newest");
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSearchShortcut(searchRef);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -207,6 +398,73 @@ export default function InitiativeList() {
   const [assignTarget, setAssignTarget] = useState("");
   const [memberOptions, setMemberOptions] = useState<{ value: string; label: string }[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
+
+  // Inline conviction staking: which initiative the stake form is open for and
+  // the DREAM amount typed into it. Lets a member back an initiative from its
+  // own details card instead of routing through the Staking view. The panel is
+  // shared by adding stake ("stake") and withdrawing it ("unstake") — partial
+  // unstaking reuses the same amount field rather than a separate all-or-nothing
+  // confirmation, since MsgUnstake carries its own amount.
+  const [stakePickerFor, setStakePickerFor] = useState<string | null>(null);
+  const [stakeMode, setStakeMode] = useState<"stake" | "unstake">("stake");
+  const [stakeAmount, setStakeAmount] = useState("");
+
+  // Per-initiative stake info: every stake backing it, plus the `poolTotal`
+  // DREAM they add up to. One stakes_by_target read per initiative — that query
+  // returns the full repeated shape, unlike the broken stakes_by_staker.
+  // Prefetched for every row (not just on expand) so a position reads at a
+  // glance, and so the meter can size your segment against the pool.
+  // `poolTotal` is DREAM, not conviction, so it only splits the meter
+  // proportionally.
+  //
+  // Stakes are kept whole rather than pre-split into "mine" and a total, because
+  // nothing here depends on who is signing: the signer's slice is derived at
+  // render time. That keeps the pool — and with it the percentage every reader
+  // sees — independent of whether a wallet is connected.
+  const [stakeInfo, setStakeInfo] = useState<Record<string, { stakes: RepStake[]; poolTotal: string }>>({});
+  // Ids already requested, so the prefetch effect never double-fetches. A ref
+  // (not state) keeps it out of the effect's dependency loop.
+  const stakeLoadRef = useRef<Set<string>>(new Set());
+
+  // Conviction params drive the withdrawal projection (maturity half-life and
+  // the per-member share ceiling). Defaults stand in until this lands, and on
+  // an older node that doesn't report them.
+  const [convictionParams, setConvictionParams] = useState<ConvictionParams>(DEFAULT_CONVICTION_PARAMS);
+  // Hard ceiling on the DREAM one member may stake on a single initiative,
+  // enforced by AddStake (ErrInitiativeStakeCap). Distinct from the conviction
+  // share cap: that one only bounds how much a stake counts, this one rejects
+  // the transaction outright, so the amount field has to respect it.
+  const [maxStakePerMemberMicro, setMaxStakePerMemberMicro] = useState<bigint | null>(null);
+  useEffect(() => {
+    getRepParams()
+      .then((res) => {
+        const p = (res.params as Record<string, unknown>) || {};
+        const halfLifeEpochs = Number(p.conviction_half_life_epochs);
+        const epochBlocks = Number(p.epoch_blocks);
+        const maxShare = Number(p.max_conviction_share_per_member);
+        const extRatio = Number(p.external_conviction_ratio);
+        const selfExtRatio = Number(p.self_assigned_external_conviction_ratio);
+        const maxStake = p.max_initiative_stake_per_member;
+        if (typeof maxStake === "string" && /^\d+$/.test(maxStake)) {
+          setMaxStakePerMemberMicro(BigInt(maxStake));
+        }
+        setConvictionParams({
+          // Same arithmetic as the keeper: epochs x blocks x ~6s per block.
+          halfLifeSeconds:
+            halfLifeEpochs > 0 && epochBlocks > 0
+              ? halfLifeEpochs * epochBlocks * 6
+              : DEFAULT_CONVICTION_PARAMS.halfLifeSeconds,
+          maxSharePerMember:
+            maxShare > 0 ? maxShare : DEFAULT_CONVICTION_PARAMS.maxSharePerMember,
+          externalRatio: extRatio > 0 ? extRatio : DEFAULT_CONVICTION_PARAMS.externalRatio,
+          selfAssignedExternalRatio:
+            selfExtRatio > 0 ? selfExtRatio : DEFAULT_CONVICTION_PARAMS.selfAssignedExternalRatio,
+        });
+      })
+      .catch(() => {
+        // Keep the defaults — the projection stays approximate, not absent.
+      });
+  }, []);
 
   // Project filter. Mirrored into `?project=` so a filtered list is
   // shareable and so Projects can deep-link into its own initiatives.
@@ -503,6 +761,151 @@ export default function InitiativeList() {
     }
   };
 
+  // Load stake info for one initiative: every stake on it (the correct repeated
+  // shape from stakes_by_target) and the `poolTotal` DREAM they sum to.
+  //
+  // Pages through to the end rather than reading one 200-stake page: a
+  // truncated page silently undercounts the pool, which shows up as a funding
+  // percentage that is too low on exactly the most-backed initiatives. The page
+  // cap also bounds the walk, so a node that keeps returning a next_key can't
+  // spin this forever.
+  const loadStakeInfo = useCallback(async (initiativeId: string) => {
+    const targetType = stakeTargetTypeFromJSON(StakeTargetType.INITIATIVE);
+    const all: RepStake[] = [];
+    let key: string | undefined;
+    try {
+      for (let page = 0; page < 20; page++) {
+        const res = await stakesByTarget(targetType, initiativeId, { limit: "200", key });
+        all.push(...(res.stakes || []));
+        key = res.pagination?.next_key || undefined;
+        if (!key) break;
+      }
+      const poolTotal = all
+        .reduce((sum, s) => sum + BigInt(s.amount || "0"), BigInt(0))
+        .toString();
+      setStakeInfo((prev) => ({ ...prev, [initiativeId]: { stakes: all, poolTotal } }));
+    } catch {
+      // Drop the id from the guard so a transient failure can be retried on the
+      // next render pass, and leave the entry absent so the meter shows its
+      // unknown state instead of claiming nothing is staked.
+      stakeLoadRef.current.delete(initiativeId);
+    }
+  }, []);
+
+  // Prefetch stake info for every loaded initiative so a position and a funding
+  // percentage show without expanding. No wallet gate: the pool is public and
+  // the percentage every reader sees comes from it, so gating this on a
+  // connected signer left disconnected visitors reading 0% on every row. Closed
+  // initiatives are fetched too — CANCELLED and ABANDONED ones keep their
+  // stakes, and the expanded row still lists them.
+  useEffect(() => {
+    for (const ini of initiatives) {
+      if (stakeLoadRef.current.has(ini.id)) continue;
+      stakeLoadRef.current.add(ini.id);
+      loadStakeInfo(ini.id);
+    }
+  }, [initiatives, loadStakeInfo]);
+
+  // Stake DREAM directly on an initiative to build its conviction, without
+  // leaving the Initiatives view. Mirrors StakingPanel's MsgStake for an
+  // INITIATIVE target: target_id carries the initiative id and
+  // target_identifier stays empty. BigInt on the uint64 id keeps the amino
+  // override's `!== BigInt(0)` omit-zero check honest under JS strict equality.
+  const handleStake = async (initiativeId: string) => {
+    if (!address || !stakeAmount) return;
+    const amt = parseFloat(stakeAmount);
+    if (!(amt > 0)) return;
+    try {
+      setActionLoading(`stake-${initiativeId}`);
+      setActionError(null);
+      const amount = (BigInt(Math.floor(amt * 1e6))).toString();
+      await signAndBroadcast([{
+        typeUrl: RepMsgTypeUrls.Stake,
+        value: {
+          staker: address,
+          targetType: stakeTargetTypeFromJSON(StakeTargetType.INITIATIVE),
+          targetId: BigInt(initiativeId),
+          targetIdentifier: "",
+          amount,
+        },
+      }]);
+      setStakePickerFor(null);
+      setStakeAmount("");
+      await Promise.all([
+        loadStakeInfo(initiativeId),
+        fetchInitiatives(tab, projectFilter, sort),
+      ]);
+    } catch (err) {
+      console.error("Stake failed:", err);
+      setActionError({ id: initiativeId, message: txErrorMessage(err, "Failed to stake") });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Withdraw some or all of the signer's position on an initiative. MsgUnstake
+  // carries an amount (the chain's RemoveStake reduces a stake in place and
+  // emits a `stake_reduced` event for the remainder), so a position held across
+  // several stakes is withdrawn by walking them in id order: drain each one
+  // fully until the requested total is covered, then reduce the last touched
+  // stake by just the remainder. Asking for the whole position reproduces the
+  // old all-or-nothing path (one MsgUnstake per stake at its full amount).
+  // `amount` is a micro-DREAM string, which the chain's math.Int field takes
+  // verbatim and the amino converter passes straight through.
+  const handleUnstake = async (initiativeId: string) => {
+    if (!address) return;
+    const mine = (stakeInfo[initiativeId]?.stakes ?? []).filter((s) => s.staker === address);
+    if (mine.length === 0) return;
+    const amt = parseFloat(stakeAmount);
+    if (!(amt > 0)) return;
+    let remaining = BigInt(Math.floor(amt * 1e6));
+    if (remaining <= BigInt(0)) return;
+    const msgs = [];
+    for (const s of mine) {
+      if (remaining <= BigInt(0)) break;
+      const stakeAmt = BigInt(s.amount || "0");
+      if (stakeAmt <= BigInt(0)) continue;
+      const take = remaining >= stakeAmt ? stakeAmt : remaining;
+      msgs.push({
+        typeUrl: RepMsgTypeUrls.Unstake,
+        value: { staker: address, stakeId: BigInt(s.id), amount: take.toString() },
+      });
+      remaining -= take;
+    }
+    if (msgs.length === 0) return;
+    try {
+      setActionLoading(`unstake-${initiativeId}`);
+      setActionError(null);
+      await signAndBroadcast(msgs);
+      setStakePickerFor(null);
+      setStakeAmount("");
+      await Promise.all([
+        loadStakeInfo(initiativeId),
+        fetchInitiatives(tab, projectFilter, sort),
+      ]);
+    } catch (err) {
+      console.error("Unstake failed:", err);
+      setActionError({ id: initiativeId, message: txErrorMessage(err, "Failed to unstake") });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Open the shared stake/unstake panel for an initiative. Expands the row so
+  // the panel (which lives in the details) is in view, picks the mode, and
+  // resets the amount/error so a stale figure from a prior open can't leak in.
+  const openStakePanel = useCallback((id: string, mode: "stake" | "unstake") => {
+    setExpanded(id);
+    setStakeMode(mode);
+    setStakePickerFor(id);
+    setStakeAmount("");
+    setActionError(null);
+  }, []);
+  const closeStakePanel = useCallback(() => {
+    setStakePickerFor(null);
+    setStakeAmount("");
+  }, []);
+
   const tabs: { key: Tab; label: string }[] = [
     { key: "all", label: "All" },
     { key: "available", label: "Available" },
@@ -544,6 +947,60 @@ export default function InitiativeList() {
     [tabInitiatives, showClosed],
   );
 
+  // Free-text search over the loaded page, applied client-side on top of the
+  // tab/closed filters. Matches title, description, tags, the numeric id (with
+  // or without a leading #), assignee address, project name, and the category/
+  // tier labels — the same fields a reader scans a row for.
+  const searchedInitiatives = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return visibleInitiatives;
+    const bare = q.replace(/^#/, "");
+    return visibleInitiatives.filter((i) => {
+      if (i.title?.toLowerCase().includes(q)) return true;
+      if (i.description?.toLowerCase().includes(q)) return true;
+      if (i.id === bare) return true;
+      if ((i.tags || []).some((t) => t.toLowerCase().includes(q))) return true;
+      if (i.assignee?.toLowerCase().includes(q)) return true;
+      if (projectLabel(i.project_id).toLowerCase().includes(q)) return true;
+      const cat = (INITIATIVE_CATEGORY_LABELS[i.category] || i.category || "").toLowerCase();
+      const tier = (INITIATIVE_TIER_LABELS[i.tier] || i.tier || "").toLowerCase();
+      return cat.includes(q) || tier.includes(q);
+    });
+    // projectNameById backs projectLabel; re-run when either changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleInitiatives, searchQuery, projectNameById]);
+
+  // Rail widget: live initiatives ranked by how close their conviction is to the
+  // required threshold. Terminal ones (already complete/abandoned) are excluded
+  // so the card shows work still climbing, not finished work sitting at 100%.
+  const trendingInitiatives = useMemo(
+    () =>
+      initiatives
+        .filter((i) => !CLOSED_STATUSES.has(i.status) && parseFloat(i.required_conviction || "0") > 0)
+        .map((i) => {
+          const cur = parseFloat(i.current_conviction || "0");
+          const req = parseFloat(i.required_conviction || "0");
+          // Unclamped: an initiative past its threshold is further along than
+          // one sitting exactly on it, and clamping tied them all at 100%.
+          return { i, ratio: Math.max(cur / req, 0) };
+        })
+        .sort((a, b) => b.ratio - a.ratio)
+        .slice(0, 5)
+        .map(({ i, ratio }) => ({ id: i.id, title: i.title, metric: `${Math.round(ratio * 100)}%` })),
+    [initiatives],
+  );
+
+  // Clicking a trending row expands that initiative and scrolls to it. Search is
+  // cleared first so a filtered-out target still renders (trending is drawn from
+  // the current tab's loaded set, so the row is always present once unfiltered).
+  const handleTrendingSelect = useCallback((id: string) => {
+    setSearchQuery("");
+    setExpanded(id);
+    requestAnimationFrame(() => {
+      document.getElementById(`initiative-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, []);
+
   // "No initiatives yet" would be wrong when the only ones loaded are closed
   // and currently hidden, so the empty state names whichever subset is empty.
   const emptyKind =
@@ -551,7 +1008,9 @@ export default function InitiativeList() {
     : tab === "mine" ? "assigned "
     : closedCount > 0 && !showClosed ? "active "
     : "";
-  const emptyMessage = projectFilter
+  const emptyMessage = searchQuery.trim()
+    ? `No initiatives match "${searchQuery.trim()}"`
+    : projectFilter
     ? `No ${emptyKind}initiatives in ${filterProjectLabel}`
     : emptyKind
     ? `No ${emptyKind}initiatives`
@@ -577,7 +1036,8 @@ export default function InitiativeList() {
   }
 
   return (
-    <div>
+    <div className="flex gap-6">
+      <div className="min-w-0 flex-1">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className="text-lg font-semibold text-white">Initiatives</h2>
@@ -716,6 +1176,16 @@ export default function InitiativeList() {
         </div>
       )}
 
+      {/* Search */}
+      <div className="mb-3">
+        <SearchField
+          ref={searchRef}
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search initiatives by title, tag, #id, or assignee..."
+        />
+      </div>
+
       {/* Tabs + project filter */}
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="flex flex-1 gap-1 rounded-lg sd-hull-tile p-1">
@@ -723,7 +1193,7 @@ export default function InitiativeList() {
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                 tab === t.key
                   ? "bg-zinc-800 text-white"
                   : "text-zinc-400 hover:text-zinc-200"
@@ -733,7 +1203,7 @@ export default function InitiativeList() {
             </button>
           ))}
         </div>
-        <div className="sm:w-64">
+        <div className="sm:w-44">
           <SearchableSelect
             options={[
               { value: "", label: "All projects" },
@@ -745,7 +1215,7 @@ export default function InitiativeList() {
             emptyMessage="No matching projects"
           />
         </div>
-        <div className="sm:w-52">
+        <div className="sm:w-40">
           <SearchableSelect
             options={(Object.entries(INITIATIVE_SORT_LABELS) as [InitiativeSort, string][]).map(
               ([val, label]) => ({ value: val, label }),
@@ -773,9 +1243,18 @@ export default function InitiativeList() {
         </div>
       )}
 
-      {visibleInitiatives.length === 0 ? (
+      {searchedInitiatives.length === 0 ? (
         <div className="rounded-xl sd-hull-tile p-12 text-center">
           <p className="text-zinc-400">{emptyMessage}</p>
+          {searchQuery.trim() && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="mt-3 text-xs text-indigo-400 underline hover:text-indigo-300"
+            >
+              Clear search
+            </button>
+          )}
           {projectFilter && (
             <button
               type="button"
@@ -803,97 +1282,479 @@ export default function InitiativeList() {
         </div>
       ) : (
         <div className="space-y-2">
-          {visibleInitiatives.map((ini) => (
-            <div key={ini.id} className="@container rounded-xl sd-hull-tile">
-              {/* Header runs as one row when the card is wide enough and
-                  stacks below that. Container queries rather than viewport
-                  ones: the list shares the pane with a fixed 13rem sidebar. */}
-              <div className="flex flex-col gap-1.5 px-4 py-3 @2xl:flex-row @2xl:items-center @2xl:gap-3">
-                {/* The project sits outside the expand button so it can be a
-                    link through to the project it belongs to. */}
-                <Link
-                  href={`/contribute?view=projects&project=${ini.project_id}`}
-                  title={`View project ${projectLabel(ini.project_id)} (#${ini.project_id})`}
-                  className="flex min-w-0 max-w-full items-center gap-1.5 self-start rounded-full bg-indigo-500/10 px-2 py-0.5 text-xs font-medium text-indigo-300 transition-colors hover:bg-indigo-500/20 hover:text-indigo-200 @2xl:max-w-52 @2xl:shrink-0 @2xl:self-auto"
-                >
-                  <svg className="h-3.5 w-3.5 shrink-0 text-indigo-400/80" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
-                  </svg>
-                  <span className="truncate">{projectLabel(ini.project_id)}</span>
-                </Link>
-                <button
-                  onClick={() => setExpanded(expanded === ini.id ? null : ini.id)}
-                  className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
-                >
-                  <div className="flex min-w-0 flex-1 flex-col gap-y-0.5 @4xl:flex-row @4xl:items-center @4xl:justify-between @4xl:gap-4">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-zinc-200">{ini.title}</span>
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(ini.status)}`}>
-                        {INITIATIVE_STATUS_LABELS[ini.status] || ini.status}
+          {searchedInitiatives.map((ini) => {
+            // Your position on this initiative and the total staked pool, used by
+            // the YOU pill, the segmented meter, and the stake/unstake panel.
+            // `info` absent means the stakes query hasn't landed; poolMicro stays
+            // undefined so the tooltip omits the DREAM backing rather than
+            // claiming none. The conviction bar itself doesn't wait on it.
+            const info = stakeInfo[ini.id];
+            const mineStakes = address ? (info?.stakes ?? []).filter((s) => s.staker === address) : [];
+            const yoursMicro = mineStakes.reduce((s, x) => s + BigInt(x.amount || "0"), BigInt(0));
+            const poolMicro = info ? BigInt(info.poolTotal) : undefined;
+            const hasStake = yoursMicro > BigInt(0);
+            const curConv = parseFloat(ini.current_conviction || "0");
+            const reqConv = parseFloat(ini.required_conviction || "0");
+            // Your DREAM stated as a plain fraction of the pool rather than a
+            // percentage. A bare "17% of pool" invited being read as your share
+            // of the initiative's progress, which it is not: DREAM share and
+            // conviction share diverge under sqrt dampening and the per-member
+            // cap (30 of 180 DREAM is 17% of the pool but 25% of the conviction
+            // once four members are all capped). The percentage that decides
+            // anything is the conviction one, below.
+            const poolStr =
+              poolMicro !== undefined ? `of ${formatDream(poolMicro.toString())} staked` : "";
+            const canManageStake = !CLOSED_STATUSES.has(ini.status);
+            // Completion unlocks and deletes every stake, so a COMPLETED
+            // initiative has an empty pool by design rather than by neglect.
+            const stakesReleased = ini.status === InitiativeStatus.COMPLETED;
+            // The external-conviction gate the chain checks alongside the total.
+            // A self-assigned initiative (assignee is the project creator) needs
+            // the whole threshold from unaffiliated members.
+            const extConv = parseFloat(ini.external_conviction || "0");
+            const extRatio =
+              ini.assignee && projectCreatorById.get(ini.project_id) === ini.assignee
+                ? convictionParams.selfAssignedExternalRatio
+                : convictionParams.externalRatio;
+            const extReqConv = reqConv * extRatio;
+            // Shared stake/unstake panel values. Only this row's panel reads
+            // them, but they're cheap and keep the JSX below branch-free. In
+            // unstake mode the amount is bounded by the signer's position.
+            const panelOpen = stakePickerFor === ini.id;
+            const isUnstakePanel = panelOpen && stakeMode === "unstake";
+            const amtNum = stakeAmount ? parseFloat(stakeAmount) : NaN;
+            const amtMicro = Number.isFinite(amtNum) && amtNum > 0 ? BigInt(Math.floor(amtNum * 1e6)) : BigInt(0);
+            const maxDreamStr = formatDreamExact(yoursMicro.toString());
+            const overPosition = isUnstakePanel && amtMicro > yoursMicro;
+            // AddStake rejects anything that would push a member's total on one
+            // initiative past max_initiative_stake_per_member, so catch it here
+            // rather than letting the tx fail at broadcast.
+            const overStakeCap =
+              !isUnstakePanel &&
+              maxStakePerMemberMicro !== null &&
+              yoursMicro + amtMicro > maxStakePerMemberMicro;
+            const stakeHeadroomStr =
+              maxStakePerMemberMicro !== null && maxStakePerMemberMicro > yoursMicro
+                ? formatDreamExact((maxStakePerMemberMicro - yoursMicro).toString())
+                : "0";
+            const amountOk = amtMicro > BigInt(0) && !overPosition && !overStakeCap;
+            // Conviction after this withdrawal. Conviction is not proportional
+            // to DREAM: it is sqrt-damped and capped per member, so the old
+            // pool-share estimate (conviction falls by your share of the pool)
+            // was wrong by roughly 2x in both directions — worst where a staker
+            // sits at the per-member cap, whose conviction doesn't move at all
+            // until the withdrawal drops them under it. Recompute your own
+            // contribution before and after under the chain's own rules and
+            // swap it into the reported total.
+            const nowSeconds = Math.floor(Date.now() / 1000);
+            const yoursConvNow = stakerConviction(mineStakes, reqConv, nowSeconds, convictionParams);
+            const yoursConvAfter = stakerConviction(
+              stakesAfterWithdrawal(mineStakes, amtMicro),
+              reqConv,
+              nowSeconds,
+              convictionParams,
+            );
+            const atConvictionCap =
+              reqConv > 0 && yoursConvNow >= reqConv * convictionParams.maxSharePerMember - 1e-9;
+            // Your slice of the conviction actually gathered — the same fraction
+            // the meter draws as your segment, so the panel and the bar agree.
+            const convShare = curConv > 0 && yoursConvNow > 0 ? yoursConvNow / curConv : 0;
+            const postConv = Math.max(0, curConv - yoursConvNow + yoursConvAfter);
+            const postConvPct = reqConv > 0 ? Math.round(Math.min(postConv / reqConv, 1) * 100) : 0;
+            const remainingMicro = isUnstakePanel && amountOk ? yoursMicro - amtMicro : BigInt(0);
+            return (
+            <div key={ini.id} id={`initiative-${ini.id}`} className="@container rounded-xl sd-hull-tile">
+              {/* Conviction-first row (design 1b): the title leads, the funding
+                  meter is the primary right-hand axis, and every open row carries
+                  a Stake affordance. The right cluster drops below the title where
+                  the pane is narrow (@2xl). Container queries, not viewport ones:
+                  the list shares the pane with a fixed sidebar and the rail. */}
+              <div
+                onClick={() => setExpanded(expanded === ini.id ? null : ini.id)}
+                className="flex cursor-pointer flex-col gap-3 rounded-xl px-4 py-3 transition-colors hover:bg-white/[0.02] @2xl:flex-row @2xl:items-center @2xl:gap-4"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="min-w-0 truncate text-sm font-semibold text-zinc-100">
+                      {ini.title}
+                    </span>
+                    <span className="shrink-0 font-mono text-[11px] text-zinc-500">#{ini.id}</span>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(ini.status)}`}>
+                      {INITIATIVE_STATUS_LABELS[ini.status] || ini.status}
+                    </span>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${tierColor(ini.tier)}`}>
+                      {INITIATIVE_TIER_LABELS[ini.tier] || ini.tier}
+                    </span>
+                    {/* Your position, visible without expanding (design 2a). */}
+                    {hasStake && (
+                      <span
+                        title="Your stake on this initiative"
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/[0.13] px-2 py-0.5 font-mono text-[10px] font-semibold text-indigo-300"
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />
+                        YOU {formatDream(yoursMicro.toString())} DREAM
                       </span>
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${tierColor(ini.tier)}`}>
-                        {INITIATIVE_TIER_LABELS[ini.tier] || ini.tier}
-                      </span>
-                    </div>
-                    {/* Glanceable only: category, budget amount and conviction
-                        progress. Labels and exact figures live in the details. */}
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-zinc-500 @4xl:shrink-0 @4xl:justify-end">
-                      <span>{INITIATIVE_CATEGORY_LABELS[ini.category] || ini.category}</span>
-                      {ini.assignee && <span>Assignee: <CopyableAddress address={ini.assignee} prefixLen={8} suffixLen={4} nested /></span>}
-                      <span title="Budget">{formatDream(ini.budget)} DREAM</span>
-                      <ConvictionWheel current={ini.current_conviction} required={ini.required_conviction} />
-                    </div>
+                    )}
                   </div>
-                  <svg
-                    className={`h-4 w-4 shrink-0 text-zinc-500 transition-transform ${expanded === ini.id ? "rotate-180" : ""}`}
-                    fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                  {/* One compact metadata line — project (links through),
+                      category, budget, assignee. Budget and conviction are not
+                      repeated in the expanded panel. */}
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-500">
+                    <Link
+                      href={`/contribute?view=projects&project=${ini.project_id}`}
+                      title={`View project ${projectLabel(ini.project_id)} (#${ini.project_id})`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex min-w-0 max-w-[16rem] items-center gap-1 text-indigo-300/90 transition-colors hover:text-indigo-200"
+                    >
+                      <svg className="h-3.5 w-3.5 shrink-0 text-indigo-400/70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                      </svg>
+                      <span className="truncate">{projectLabel(ini.project_id)}</span>
+                    </Link>
+                    <span className="text-zinc-700">·</span>
+                    <span>{INITIATIVE_CATEGORY_LABELS[ini.category] || ini.category}</span>
+                    <span className="text-zinc-700">·</span>
+                    <span className="font-mono">{formatDream(ini.budget)} DREAM</span>
+                    {ini.assignee && (
+                      <>
+                        <span className="text-zinc-700">·</span>
+                        <span className="truncate">Assigned <AssigneeName address={ini.assignee} /></span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 @2xl:shrink-0 @2xl:gap-4">
+                  <div className="min-w-0 flex-1 @2xl:w-56 @2xl:flex-none">
+                    <ConvictionMeter
+                      current={curConv}
+                      required={reqConv}
+                      yours={yoursConvNow}
+                      externalCurrent={extConv}
+                      externalRequired={extReqConv}
+                      poolMicro={poolMicro}
+                      budgetMicro={BigInt(ini.budget || "0")}
+                      released={stakesReleased}
+                    />
+                  </div>
+                  {/* Stake affordance, keyed to your position (design 2a): Stake
+                      when you hold none, Add + Unstake when you do. Both open
+                      the shared amount panel below — unstaking supports partial
+                      withdrawals, so it takes an amount, not a confirmation. */}
+                  {canManageStake && (
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openStakePanel(ini.id, "stake");
+                        }}
+                        disabled={!canStake}
+                        title={
+                          !address
+                            ? "Connect a wallet to stake"
+                            : isMember === false
+                            ? "Only existing members can stake"
+                            : atConvictionCap
+                            ? "Add to your stake. Your conviction is already at the per-member cap, so more DREAM earns rewards rather than adding progress"
+                            : hasStake
+                            ? "Add to your stake"
+                            : "Stake DREAM toward this initiative's conviction"
+                        }
+                        className="rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-1.5 text-xs font-semibold text-indigo-300 transition-colors hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {hasStake ? "Add" : "Stake"}
+                      </button>
+                      {hasStake && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openStakePanel(ini.id, "unstake");
+                          }}
+                          title="Withdraw some or all of your stake"
+                          className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-zinc-200"
+                        >
+                          Unstake
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpanded(expanded === ini.id ? null : ini.id);
+                    }}
+                    aria-label={expanded === ini.id ? "Collapse details" : "Expand details"}
+                    className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:text-zinc-300"
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
+                    <svg
+                      className={`h-4 w-4 transition-transform ${expanded === ini.id ? "rotate-180" : ""}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
               </div>
+
+              {/* Add/withdrawal panel, directly under the row's Add/Unstake buttons
+                  so the amount field sits next to the control that opened it,
+                  rather than at the bottom of the expanded details. */}
+              {stakePickerFor === ini.id && (
+                <div className="mx-4 mb-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <label className="block text-xs text-zinc-400">
+                      {isUnstakePanel ? "Withdraw DREAM from your stake" : "Stake DREAM toward conviction"}
+                    </label>
+                    {isUnstakePanel && (
+                      <span className="shrink-0 font-mono text-[10px] text-zinc-500">
+                        Position {maxDreamStr}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      autoFocus
+                      placeholder="Amount (DREAM)"
+                      value={stakeAmount}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "" || /^\d*\.?\d*$/.test(v)) setStakeAmount(v);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && amountOk) {
+                          if (isUnstakePanel) handleUnstake(ini.id);
+                          else handleStake(ini.id);
+                        }
+                      }}
+                      className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+                    />
+                    {isUnstakePanel && (
+                      <button
+                        type="button"
+                        onClick={() => setStakeAmount(maxDreamStr)}
+                        disabled={yoursMicro <= BigInt(0)}
+                        title="Fill your whole position"
+                        className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-2 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:text-white disabled:opacity-50"
+                      >
+                        Max
+                      </button>
+                    )}
+                  </div>
+                  {stakeAmount !== "" && !amountOk && (
+                    <p className="mt-1.5 text-xs text-red-400">
+                      {overPosition
+                        ? `Enter at most ${maxDreamStr} DREAM`
+                        : overStakeCap
+                        ? `One member may stake at most ${formatDream(
+                            (maxStakePerMemberMicro ?? BigInt(0)).toString(),
+                          )} DREAM on an initiative. You can add ${stakeHeadroomStr} more.`
+                        : "Enter a valid amount greater than 0"}
+                    </p>
+                  )}
+                  <p className="mt-2 text-xs leading-relaxed text-zinc-500">
+                    {isUnstakePanel ? (
+                      <>
+                        {yoursConvAfter >= yoursConvNow ? (
+                          <>
+                            Conviction stays near{" "}
+                            <span className="font-mono text-zinc-300">{postConvPct}%</span> of what this
+                            initiative needs. Your remaining stake still counts for as much, since a member&apos;s
+                            conviction is capped at a share of the threshold.
+                          </>
+                        ) : (
+                          <>
+                            Conviction drops to roughly{" "}
+                            <span className="font-mono text-zinc-300">{postConvPct}%</span> of what this
+                            initiative needs.
+                          </>
+                        )}
+                        {amountOk && remainingMicro > BigInt(0)
+                          ? ` ${formatDreamExact(remainingMicro.toString())} DREAM stays staked.`
+                          : amountOk
+                          ? " Withdrawing everything returns the full amount and you'd stake again from zero."
+                          : ""}
+                      </>
+                    ) : atConvictionCap ? (
+                      <>
+                        {/* Staking on past the cap is allowed and not pointless:
+                            completion rewards are proportional to DREAM staked,
+                            not to conviction. Saying so is the honest version of
+                            leaving Add enabled. */}
+                        Your conviction is already at the per-member cap of{" "}
+                        {Math.round(reqConv * convictionParams.maxSharePerMember).toLocaleString()}, so more DREAM
+                        here won&apos;t move this initiative closer to its threshold. It still increases your share
+                        of the rewards paid out on completion. To raise the conviction, ask another member to stake.
+                      </>
+                    ) : (
+                      <>
+                        Your stake counts toward the{" "}
+                        {parseFloat(ini.required_conviction || "0").toFixed(2)} conviction this initiative needs.
+                        You can unstake or claim rewards later from the Staking view.
+                      </>
+                    )}
+                  </p>
+                  <div className="mt-2.5 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => (isUnstakePanel ? handleUnstake(ini.id) : handleStake(ini.id))}
+                      disabled={
+                        !amountOk ||
+                        actionLoading === (isUnstakePanel ? `unstake-${ini.id}` : `stake-${ini.id}`)
+                      }
+                      className="sd-btn sd-btn-primary"
+                    >
+                      {actionLoading === (isUnstakePanel ? `unstake-${ini.id}` : `stake-${ini.id}`)
+                        ? isUnstakePanel
+                          ? "Unstaking..."
+                          : "Staking..."
+                        : isUnstakePanel
+                        ? "Unstake"
+                        : "Stake"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closeStakePanel}
+                      className="sd-btn sd-btn-secondary"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {actionError?.id === ini.id && (
+                <p className="mx-4 mb-2 text-xs text-red-400">{actionError.message}</p>
+              )}
 
               {expanded === ini.id && (
                 <div className="border-t border-zinc-800 px-4 py-3 text-sm">
-                  {ini.description && <p className="mb-3 text-zinc-400">{ini.description}</p>}
+                  {/* Description + metadata on the left, your position card on the
+                      right (design 2a). ID/budget/conviction live in the row. */}
+                  <div className="grid grid-cols-1 gap-6 @2xl:grid-cols-[minmax(0,1fr)_17rem]">
+                    <div className="min-w-0">
+                      {ini.description && <p className="mb-3 text-zinc-400">{ini.description}</p>}
 
-                  {/* Project is intentionally absent — the header pill above
-                      already names it and links through. */}
-                  <dl className="grid grid-cols-1 gap-x-6 gap-y-2 @md:grid-cols-2 @2xl:grid-cols-3">
-                    <div>
-                      <dt className="text-xs text-zinc-500">Budget</dt>
-                      <dd className="text-zinc-300">{formatDream(ini.budget)} DREAM</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-zinc-500">Conviction</dt>
-                      <dd className="text-zinc-300">
-                        {parseFloat(ini.current_conviction || "0").toFixed(2)} / {parseFloat(ini.required_conviction || "0").toFixed(2)}
-                        <span className="ml-1.5 text-xs text-zinc-500">required</span>
-                      </dd>
-                    </div>
-                    {ini.self_assign_bond && ini.self_assign_bond !== "0" && (
-                      <div>
-                        <dt className="text-xs text-zinc-500">Self-assign bond</dt>
-                        <dd style={{ color: "var(--amber)" }}>{formatDream(ini.self_assign_bond)} DREAM</dd>
-                      </div>
-                    )}
-                    {ini.deliverable_uri && (
-                      <div>
-                        <dt className="text-xs text-zinc-500">Deliverable</dt>
-                        <dd className="truncate text-zinc-300">{ini.deliverable_uri}</dd>
-                      </div>
-                    )}
-                  </dl>
+                      {(ini.assignee || (ini.self_assign_bond && ini.self_assign_bond !== "0") || ini.deliverable_uri) && (
+                        <dl className="flex flex-wrap gap-x-8 gap-y-2">
+                          {ini.assignee && (
+                            <div className="min-w-0">
+                              <dt className="text-xs text-zinc-500">Assignee</dt>
+                              <dd className="text-zinc-300">
+                                <CopyableAddress address={ini.assignee} prefixLen={10} suffixLen={6} resolveName />
+                              </dd>
+                            </div>
+                          )}
+                          {ini.self_assign_bond && ini.self_assign_bond !== "0" && (
+                            <div>
+                              <dt className="text-xs text-zinc-500">Self-assign bond</dt>
+                              <dd style={{ color: "var(--amber)" }}>{formatDream(ini.self_assign_bond)} DREAM</dd>
+                            </div>
+                          )}
+                          {ini.deliverable_uri && (
+                            <div className="min-w-0 max-w-xs">
+                              <dt className="text-xs text-zinc-500">Deliverable</dt>
+                              <dd className="truncate text-zinc-300">{ini.deliverable_uri}</dd>
+                            </div>
+                          )}
+                        </dl>
+                      )}
 
-                  {ini.tags?.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {ini.tags.map((tag) => (
-                        <span key={tag} className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">{tag}</span>
-                      ))}
+                      {ini.tags?.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {ini.tags.map((tag) => (
+                            <span key={tag} className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">{tag}</span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
+
+                    {/* YOUR POSITION (design 2a): your exposure, share of the
+                        pool, and the same Add / Unstake affordances as the row.
+                        Add and Unstake both open the shared amount panel below. */}
+                    <div>
+                      <div className="rounded-xl border border-indigo-500/20 bg-zinc-950/40 p-4">
+                        <div className="font-mono text-[10px] font-semibold tracking-wider text-indigo-400">
+                          YOUR POSITION
+                        </div>
+                        {!address ? (
+                          <p className="mt-2 text-xs leading-relaxed text-zinc-400">
+                            Connect a wallet to stake on this initiative.
+                          </p>
+                        ) : hasStake ? (
+                          <>
+                            <div className="mt-2 flex items-baseline gap-1.5">
+                              <span className="font-mono text-2xl font-semibold text-zinc-100">
+                                {formatDream(yoursMicro.toString())}
+                              </span>
+                              <span className="text-xs text-zinc-500">DREAM {poolStr}</span>
+                            </div>
+                            <div className="mt-2.5 flex flex-col gap-1 font-mono text-[10.5px] text-zinc-500">
+                              <span>{mineStakes.length} stake{mineStakes.length === 1 ? "" : "s"}</span>
+                              {/* What the position is actually worth to the
+                                  completion gate. Worth stating separately from
+                                  the DREAM figure above: the two diverge once
+                                  sqrt dampening and the per-member cap bite, and
+                                  at the cap more DREAM buys no more conviction. */}
+                              {reqConv > 0 && (
+                                <span>
+                                  {Math.round(yoursConvNow).toLocaleString()} conviction ·{" "}
+                                  {Math.round(convShare * 100)}% of the total
+                                  {atConvictionCap ? " · at the per-member cap" : ""}
+                                </span>
+                              )}
+                              <span>Withdraw any amount, up to the full position.</span>
+                            </div>
+                            {canManageStake && (
+                              <div className="mt-3 flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openStakePanel(ini.id, "stake")}
+                                  disabled={!canStake}
+                                  className="flex-1 rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-300 transition-colors hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  Add stake
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openStakePanel(ini.id, "unstake")}
+                                  className="rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-zinc-200"
+                                >
+                                  Unstake
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <p className="mt-2 text-xs leading-relaxed text-zinc-400">
+                              You haven&apos;t staked here. Backing an initiative signals it should be built and is
+                              refundable until it&apos;s accepted.
+                            </p>
+                            {canManageStake && (
+                              <button
+                                type="button"
+                                onClick={() => openStakePanel(ini.id, "stake")}
+                                disabled={!canStake}
+                                title={isMember === false ? "Only existing members can stake" : undefined}
+                                className="sd-btn sd-btn-primary mt-3 w-full justify-center"
+                              >
+                                Stake DREAM
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
 
                   {/* Actions */}
+                  {(ini.status === InitiativeStatus.OPEN ||
+                    (ini.status === InitiativeStatus.ASSIGNED && ini.assignee === address)) && (
                   <div className="mt-3 flex flex-wrap gap-2 border-t border-zinc-800 pt-3">
                     {ini.status === InitiativeStatus.OPEN && (
                       <button
@@ -955,7 +1816,11 @@ export default function InitiativeList() {
                         {actionLoading === `cancel-${ini.id}` ? "Cancelling..." : "Cancel initiative"}
                       </button>
                     )}
+                    {/* Staking is initiated from the row's Stake button, which
+                        opens the panel directly under the row — no separate
+                        action button here. */}
                   </div>
+                  )}
 
                   {assignPickerFor === ini.id && (
                     <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
@@ -1001,14 +1866,11 @@ export default function InitiativeList() {
                       </div>
                     </div>
                   )}
-
-                  {actionError?.id === ini.id && (
-                    <p className="mt-2 text-xs text-red-400">{actionError.message}</p>
-                  )}
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
           {nextKey && (
             <button
               onClick={loadMore}
@@ -1020,6 +1882,18 @@ export default function InitiativeList() {
           )}
         </div>
       )}
+      </div>
+
+      {/* Right rail: initiatives closest to their required conviction. */}
+      <aside className="hidden w-72 shrink-0 xl:block">
+        <div className="sticky top-24 space-y-4">
+          <TrendingRailCard
+            items={trendingInitiatives}
+            emptyText="No conviction climbing yet."
+            onSelect={handleTrendingSelect}
+          />
+        </div>
+      </aside>
     </div>
   );
 }

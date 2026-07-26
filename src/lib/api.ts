@@ -76,6 +76,7 @@ import type {
   ProjectsByCouncilResponse,
   GetStakeResponse,
   StakesByStakerResponse,
+  StakesByTargetResponse,
   PendingStakeRewardsResponse,
   AuthorBondResponse,
   AuthorBondsByTypeResponse,
@@ -871,6 +872,22 @@ export async function stakesByStaker(
 ): Promise<StakesByStakerResponse> {
   return get<StakesByStakerResponse>(
     `/sparkdream/rep/v1/stakes_by_staker/${staker}`,
+    paginationParams(pagination)
+  );
+}
+
+// All stakes on one target (e.g. every stake backing an initiative's
+// conviction), full Stake shape with pagination. Unlike stakes_by_staker,
+// this query returns the correct repeated `stakes` array on the current node,
+// so it backs the per-initiative "your stakes" view. targetType is the numeric
+// StakeTargetType (0 = initiative).
+export async function stakesByTarget(
+  targetType: number,
+  targetId: string,
+  pagination?: PaginationRequest
+): Promise<StakesByTargetResponse> {
+  return get<StakesByTargetResponse>(
+    `/sparkdream/rep/v1/stakes_by_target/${targetType}/${targetId}`,
     paginationParams(pagination)
   );
 }
