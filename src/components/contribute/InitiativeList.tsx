@@ -9,6 +9,7 @@ import {
   initiativesByProject,
   availableInitiatives,
   initiativesByAssignee,
+  initiativesByCreator,
   listRepProjects,
   listRepMembers,
   reverseResolveName,
@@ -44,7 +45,7 @@ import SearchField from "@/components/contribute/SearchField";
 import TrendingRailCard from "@/components/contribute/TrendingRailCard";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 
-type Tab = "all" | "available" | "mine";
+type Tab = "all" | "available" | "mine" | "authored";
 
 // Terminal statuses: nothing further can happen to an initiative in one of
 // these. They're hidden by default so finished and abandoned work (including
@@ -527,6 +528,21 @@ export default function InitiativeList() {
       if (res.initiatives) {
         return { items: res.initiatives, pageKey: res.pagination?.next_key || null };
       }
+    } else if (tabSel === "authored") {
+      if (!address) return { items: [], pageKey: null };
+      // initiatives_by_creator lands with the chain release that adds
+      // Initiative.creator. An older node 404s here rather than answering with a
+      // degenerate shape, so swallow the error and fall through to the
+      // unfiltered list — the client-side creator filter below then narrows it,
+      // and yields nothing while no initiative carries a creator yet.
+      try {
+        const res = await initiativesByCreator(address, page, sortBy);
+        if (res.initiatives) {
+          return { items: res.initiatives, pageKey: res.pagination?.next_key || null };
+        }
+      } catch {
+        /* fall through */
+      }
     }
     const res = await listRepInitiatives(page, sortBy);
     return { items: res.initiative || [], pageKey: res.pagination?.next_key || null };
@@ -910,6 +926,7 @@ export default function InitiativeList() {
     { key: "all", label: "All" },
     { key: "available", label: "Available" },
     { key: "mine", label: "My assignments" },
+    { key: "authored", label: "Authored by me" },
   ];
 
   // Projects the chain knows about but this UI hasn't loaded a name for
@@ -933,6 +950,9 @@ export default function InitiativeList() {
   const tabInitiatives = useMemo(() => {
     if (tab === "available") return initiatives.filter((i) => i.status === InitiativeStatus.OPEN);
     if (tab === "mine") return address ? initiatives.filter((i) => i.assignee === address) : [];
+    // `creator` is absent on initiatives written before the field existed, so
+    // this narrows to nothing rather than mislabelling them as anyone's.
+    if (tab === "authored") return address ? initiatives.filter((i) => i.creator === address) : [];
     return initiatives;
   }, [initiatives, tab, address]);
 
@@ -961,6 +981,7 @@ export default function InitiativeList() {
       if (i.id === bare) return true;
       if ((i.tags || []).some((t) => t.toLowerCase().includes(q))) return true;
       if (i.assignee?.toLowerCase().includes(q)) return true;
+      if (i.creator?.toLowerCase().includes(q)) return true;
       if (projectLabel(i.project_id).toLowerCase().includes(q)) return true;
       const cat = (INITIATIVE_CATEGORY_LABELS[i.category] || i.category || "").toLowerCase();
       const tier = (INITIATIVE_TIER_LABELS[i.tier] || i.tier || "").toLowerCase();
@@ -1006,6 +1027,7 @@ export default function InitiativeList() {
   const emptyKind =
     tab === "available" ? "available "
     : tab === "mine" ? "assigned "
+    : tab === "authored" ? "authored "
     : closedCount > 0 && !showClosed ? "active "
     : "";
   const emptyMessage = searchQuery.trim()
@@ -1639,8 +1661,19 @@ export default function InitiativeList() {
                     <div className="min-w-0">
                       {ini.description && <p className="mb-3 text-zinc-400">{ini.description}</p>}
 
-                      {(ini.assignee || (ini.self_assign_bond && ini.self_assign_bond !== "0") || ini.deliverable_uri) && (
+                      {(ini.creator || ini.assignee || (ini.self_assign_bond && ini.self_assign_bond !== "0") || ini.deliverable_uri) && (
                         <dl className="flex flex-wrap gap-x-8 gap-y-2">
+                          {/* Authorship is only on state for initiatives created
+                              after the creator field shipped; older ones simply
+                              omit the term rather than showing a blank. */}
+                          {ini.creator && (
+                            <div className="min-w-0">
+                              <dt className="text-xs text-zinc-500">Author</dt>
+                              <dd className="text-zinc-300">
+                                <CopyableAddress address={ini.creator} prefixLen={10} suffixLen={6} resolveName />
+                              </dd>
+                            </div>
+                          )}
                           {ini.assignee && (
                             <div className="min-w-0">
                               <dt className="text-xs text-zinc-500">Assignee</dt>

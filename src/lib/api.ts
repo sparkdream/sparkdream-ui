@@ -73,6 +73,8 @@ import type {
   InitiativesByProjectResponse,
   AvailableInitiativesResponse,
   InitiativesByAssigneeResponse,
+  InitiativesByCreatorResponse,
+  ProjectsByCreatorResponse,
   ProjectsByCouncilResponse,
   GetStakeResponse,
   StakesByStakerResponse,
@@ -847,6 +849,31 @@ export async function initiativesByAssignee(
 ): Promise<InitiativesByAssigneeResponse> {
   return get<InitiativesByAssigneeResponse>(
     `/sparkdream/rep/v1/initiatives_by_assignee/${assignee}`,
+    sortedPaginationParams(pagination, sortBy)
+  );
+}
+
+// Authorship lookups. Both endpoints land with the chain release that adds
+// Initiative.creator; against an older node they 404 and callers fall back to
+// the unfiltered list.
+export async function initiativesByCreator(
+  creator: string,
+  pagination?: PaginationRequest,
+  sortBy?: InitiativeSortKey
+): Promise<InitiativesByCreatorResponse> {
+  return get<InitiativesByCreatorResponse>(
+    `/sparkdream/rep/v1/initiatives_by_creator/${creator}`,
+    sortedPaginationParams(pagination, sortBy)
+  );
+}
+
+export async function projectsByCreator(
+  creator: string,
+  pagination?: PaginationRequest,
+  sortBy?: ProjectSortKey
+): Promise<ProjectsByCreatorResponse> {
+  return get<ProjectsByCreatorResponse>(
+    `/sparkdream/rep/v1/projects_by_creator/${creator}`,
     sortedPaginationParams(pagination, sortBy)
   );
 }

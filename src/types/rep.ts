@@ -101,6 +101,13 @@ export interface Initiative {
    * Optional: nodes older than v1.0.26 don't return it.
    */
   self_assign_bond?: string;
+  /**
+   * Address that submitted MsgCreateInitiative, recorded on state so authorship
+   * is answerable from a node query rather than only from the initiative_created
+   * event. Immutable once set. Optional: absent on initiatives created before
+   * the field existed, and on nodes that predate it.
+   */
+  creator?: string;
 }
 
 export interface RepStake {
@@ -420,6 +427,18 @@ export interface InitiativesByAssigneeResponse {
 }
 
 export interface ProjectsByCouncilResponse {
+  projects?: RepProject[];
+  pagination?: Pagination;
+}
+
+// Authorship lookups added in sparkdreamjs 0.0.35. Nodes that predate them 404,
+// so both fields are optional and callers fall back to the unfiltered list.
+export interface InitiativesByCreatorResponse {
+  initiatives?: Initiative[];
+  pagination?: Pagination;
+}
+
+export interface ProjectsByCreatorResponse {
   projects?: RepProject[];
   pagination?: Pagination;
 }

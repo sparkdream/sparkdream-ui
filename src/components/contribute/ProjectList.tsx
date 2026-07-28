@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
-import { listRepProjects, listGroups, getRepParams, getLatestBlockHeight } from "@/lib/api";
+import { listRepProjects, projectsByCreator, listGroups, getRepParams, getLatestBlockHeight } from "@/lib/api";
 import type { ProjectSortKey } from "@/lib/api";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
@@ -100,6 +100,17 @@ const PROJECT_SORT_QUERY: Record<ProjectSort, { sortBy?: ProjectSortKey; reverse
   status: { sortBy: "status", reverse: false },
 };
 
+// Which slice of the project set the list is showing. "authored" reads
+// projects_by_creator; against a node without that endpoint it falls back to the
+// unfiltered list narrowed client-side, which still works because Project.creator
+// has been on state all along (unlike Initiative.creator).
+type Scope = "all" | "authored";
+
+const SCOPES: { key: Scope; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "authored", label: "Authored by me" },
+];
+
 export default function ProjectList() {
   const { address, signAndBroadcast } = useWallet();
   const searchParams = useSearchParams();
@@ -122,6 +133,12 @@ export default function ProjectList() {
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [sort, setSort] = useState<ProjectSort>("newest");
+  const [scope, setScope] = useState<Scope>("all");
+  // Disconnecting hides the scope strip, so a stored "authored" scope would
+  // strand the list on a permanently empty filter with no control to undo it.
+  // Derived rather than reset in an effect so there's no intermediate render
+  // showing the empty filtered list.
+  const effectiveScope: Scope = address ? scope : "all";
   const [searchQuery, setSearchQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   useSearchShortcut(searchRef);
@@ -194,17 +211,37 @@ export default function ProjectList() {
     }
   })();
 
+  // One page of the list backing the current scope, sorted chain-side.
+  // "Authored by me" reads projects_by_creator; an older node 404s there, so it
+  // falls through to the unfiltered list and the client-side scope filter takes
+  // over.
+  const fetchPage = useCallback(async (scopeSel: Scope, sortSel: ProjectSort, key?: string) => {
+    const { sortBy, reverse } = PROJECT_SORT_QUERY[sortSel];
+    const page = { limit: "50", reverse, ...(key ? { key } : {}) };
+    if (scopeSel === "authored" && address) {
+      try {
+        const res = await projectsByCreator(address, page, sortBy);
+        if (res.projects) {
+          return { items: res.projects, pageKey: res.pagination?.next_key || null };
+        }
+      } catch {
+        /* fall through */
+      }
+    }
+    const res = await listRepProjects(page, sortBy);
+    return { items: res.project || [], pageKey: res.pagination?.next_key || null };
+  }, [address]);
+
   const fetchProjects = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const { sortBy, reverse } = PROJECT_SORT_QUERY[sort];
       const [projectsRes, groupsRes] = await Promise.all([
-        listRepProjects({ limit: "50", reverse }, sortBy).catch(() => ({ project: [] as RepProject[], pagination: { next_key: null, total: "0" } })),
+        fetchPage(effectiveScope, sort).catch(() => ({ items: [] as RepProject[], pageKey: null })),
         listGroups().catch(() => ({ group: [] as Group[], pagination: { next_key: null, total: "0" } })),
       ]);
-      setProjects(projectsRes.project || []);
-      setNextKey(projectsRes.pagination?.next_key || null);
+      setProjects(projectsRes.items);
+      setNextKey(projectsRes.pageKey);
       const groups = groupsRes.group || [];
       setCouncils(groups);
       if (groups.length > 0) {
@@ -220,22 +257,21 @@ export default function ProjectList() {
     } finally {
       setLoading(false);
     }
-  }, [sort]);
+  }, [fetchPage, effectiveScope, sort]);
 
   const loadMore = useCallback(async () => {
     if (!nextKey || loadingMore) return;
     try {
       setLoadingMore(true);
-      const { sortBy, reverse } = PROJECT_SORT_QUERY[sort];
-      const res = await listRepProjects({ limit: "50", reverse, key: nextKey }, sortBy);
-      setProjects((prev) => [...prev, ...(res.project || [])]);
-      setNextKey(res.pagination?.next_key || null);
+      const { items, pageKey } = await fetchPage(effectiveScope, sort, nextKey);
+      setProjects((prev) => [...prev, ...items]);
+      setNextKey(pageKey);
     } catch (err) {
       console.error("Load more failed:", err);
     } finally {
       setLoadingMore(false);
     }
-  }, [nextKey, loadingMore, sort]);
+  }, [nextKey, loadingMore, fetchPage, effectiveScope, sort]);
 
   useEffect(() => {
     fetchProjects();
@@ -319,11 +355,19 @@ export default function ProjectList() {
   // Free-text search over the loaded page (client-side). Matches name,
   // description, tags, the numeric id (with or without a leading #), creator
   // address, council, and the category/status labels.
+  // A safety net over what fetchPage returned: a no-op when projects_by_creator
+  // answered (its results already satisfy the predicate), and the real narrowing
+  // on the old-node fallback path.
+  const scopedProjects = useMemo(() => {
+    if (effectiveScope !== "authored") return projects;
+    return address ? projects.filter((p) => p.creator === address) : [];
+  }, [projects, effectiveScope, address]);
+
   const searchedProjects = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return projects;
+    if (!q) return scopedProjects;
     const bare = q.replace(/^#/, "");
-    return projects.filter((p) => {
+    return scopedProjects.filter((p) => {
       if (p.name?.toLowerCase().includes(q)) return true;
       if (p.description?.toLowerCase().includes(q)) return true;
       if (p.id === bare) return true;
@@ -334,7 +378,7 @@ export default function ProjectList() {
       const status = (PROJECT_STATUS_LABELS[p.status] || p.status || "").toLowerCase();
       return cat.includes(q) || status.includes(q);
     });
-  }, [projects, searchQuery]);
+  }, [scopedProjects, searchQuery]);
 
   // Rail widget: projects ranked by allocation progress — how much of the
   // approved budget has been allocated to work (allocated_budget /
@@ -343,7 +387,7 @@ export default function ProjectList() {
   // self-published projects have no ratio to rank on and drop out.
   const trendingProjects = useMemo(
     () =>
-      projects
+      scopedProjects
         .map((p) => {
           const approved = parseFloat(p.approved_budget || "0");
           const allocated = parseFloat(p.allocated_budget || "0");
@@ -353,7 +397,7 @@ export default function ProjectList() {
         .sort((a, b) => b.ratio - a.ratio)
         .slice(0, 5)
         .map(({ p, ratio }) => ({ id: p.id, title: p.name, metric: `${Math.round(ratio * 100)}%` })),
-    [projects],
+    [scopedProjects],
   );
 
   // Clicking a trending row expands that project and scrolls to it (search is
@@ -582,6 +626,27 @@ export default function ProjectList() {
         </div>
       )}
 
+      {/* Scope strip. Rendered whenever a wallet is connected rather than only
+          when the list is non-empty, so an empty "Authored by me" still offers
+          the way back to "All". */}
+      {address && (
+        <div className="mb-2 flex gap-1 rounded-lg sd-hull-tile p-1">
+          {SCOPES.map((s) => (
+            <button
+              key={s.key}
+              onClick={() => setScope(s.key)}
+              className={`flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                scope === s.key
+                  ? "bg-zinc-800 text-white"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {projects.length > 0 && (
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="min-w-0 flex-1">
@@ -608,7 +673,11 @@ export default function ProjectList() {
       {searchedProjects.length === 0 ? (
         <div className="rounded-xl sd-hull-tile p-12 text-center">
           <p className="text-zinc-400">
-            {searchQuery.trim() ? `No projects match "${searchQuery.trim()}"` : "No projects yet"}
+            {searchQuery.trim()
+              ? `No projects match "${searchQuery.trim()}"`
+              : effectiveScope === "authored"
+              ? "No projects authored by you"
+              : "No projects yet"}
           </p>
           {searchQuery.trim() && (
             <button
@@ -618,6 +687,21 @@ export default function ProjectList() {
             >
               Clear search
             </button>
+          )}
+          {/* A scope narrowed client-side can come up empty while later pages
+              still hold matches, so the empty state has to offer the next page
+              too. Otherwise the list would be a dead end. */}
+          {nextKey && (
+            <div>
+              <button
+                type="button"
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="mt-3 text-xs text-indigo-400 underline hover:text-indigo-300 disabled:opacity-50"
+              >
+                {loadingMore ? "Loading..." : "Load more projects"}
+              </button>
+            </div>
           )}
         </div>
       ) : (
