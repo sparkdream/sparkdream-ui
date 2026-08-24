@@ -11,6 +11,7 @@ import { CommunityTreasuries } from "@/components/governance/CouncilTreasury";
 import ChainProposals from "@/components/governance/ChainProposals";
 import ServiceOperators from "@/components/governance/ServiceOperators";
 import type { ProposalType } from "@/components/governance/NewCommunityProposal";
+import ErrorState from "@/components/ErrorState";
 
 type View =
   | "community-proposals"
@@ -89,7 +90,7 @@ function GovernancePageInner() {
   const [members, setMembers] = useState<Member[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [communityLoading, setCommunityLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   // Forward initialAction to CommunityProposals only until it's been consumed
   // (i.e., the proposals view has rendered with a selected group). After that,
@@ -112,7 +113,7 @@ function GovernancePageInner() {
         setSelectedGroup(match || groupList[0]);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load groups");
+      setError(err);
     }
   }, [selectedGroup, queryGroup]);
 
@@ -128,7 +129,7 @@ function GovernancePageInner() {
       setProposals(proposalsRes.proposals || []);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
+      setError(err);
     } finally {
       setCommunityLoading(false);
     }
@@ -371,17 +372,9 @@ function GovernancePageInner() {
 
         {/* Content */}
         <div className="min-w-0 flex-1">
-          {error && (
-            <div className="mb-6 rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-              {error}
-              <button
-                onClick={fetchGroupData}
-                className="ml-2 underline hover:text-red-300"
-              >
-                Retry
-              </button>
-            </div>
-          )}
+          {error ? (
+            <ErrorState error={error} onRetry={fetchGroupData} className="mb-6" />
+          ) : null}
 
           {view === "community-proposals" && selectedGroup && (
             <CommunityProposals

@@ -44,6 +44,7 @@ import {
   MODERATION_REASONS,
   MODERATION_REASON_LABELS,
 } from "@/types/collect";
+import ErrorState from "@/components/ErrorState";
 
 interface CollectionDetailProps {
   collectionId: string;
@@ -91,7 +92,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   // Active hide record on the collection itself (target_type COLLECTION), if any.
   const [hideRecord, setHideRecord] = useState<HideRecord | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [tab, setTab] = useState<"items" | "collaborators" | "curation">("items");
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -196,7 +197,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         .then((r) => setHideRecord((r.hide_records || []).find((h) => !h.resolved) ?? null))
         .catch(() => setHideRecord(null));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load collection");
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -729,10 +730,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         <button onClick={onBack} className="mb-4 text-sm text-zinc-400 hover:text-zinc-200">
           &larr; Back
         </button>
-        <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-          {error || "Collection not found"}
-          <button onClick={fetchData} className="ml-2 underline hover:text-red-300">Retry</button>
-        </div>
+        <ErrorState error={error} onRetry={fetchData} fallback="Collection not found" />
       </div>
     );
   }

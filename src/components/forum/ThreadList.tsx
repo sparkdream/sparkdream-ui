@@ -15,6 +15,8 @@ import { useWallet } from "@/contexts/WalletContext";
 import type { ForumPost, PostFlag } from "@/types/forum";
 import { PostStatus, PostStatusValue, POST_STATUS_LABELS } from "@/types/forum";
 import type { Category } from "@/types/commons";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 function statusBadge(status: string) {
   const colors: Record<string, string> = {
@@ -51,7 +53,7 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
   const [threads, setThreads] = useState<ForumPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [nextKey, setNextKey] = useState<string | null>(null);
   // Bonded mode: post_id → bonded amount (micro-DREAM), and the chosen order.
   const [bondAmounts, setBondAmounts] = useState<Map<string, string>>(new Map());
@@ -156,11 +158,10 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
       setThreads(posts);
       setNextKey(nk);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load threads";
-      if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
+      if (isMissingEndpoint(err)) {
         setThreads([]);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -222,10 +223,7 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-        {error}
-        <button onClick={fetchThreads} className="ml-2 underline hover:text-red-300">Retry</button>
-      </div>
+      <ErrorState error={error} onRetry={fetchThreads} />
     );
   }
 

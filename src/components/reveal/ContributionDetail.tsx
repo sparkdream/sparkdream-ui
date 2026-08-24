@@ -26,6 +26,7 @@ import type {
   RevealTranche,
 } from "@/types/reveal";
 import NumberInput from "@/components/NumberInput";
+import ErrorState from "@/components/ErrorState";
 
 interface TrancheTally {
   yes_weight: string;
@@ -86,9 +87,7 @@ export default function ContributionDetail({
         <button onClick={onBack} className="text-sm text-zinc-400 hover:text-zinc-200">
           ← Back
         </button>
-        <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-          {error || "Contribution not found."}
-        </div>
+        <ErrorState error={error} fallback="Contribution not found" />
       </div>
     );
   }

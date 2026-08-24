@@ -23,6 +23,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useCanPin } from "@/hooks/useCanPin";
 import { useCanMakePermanent } from "@/hooks/useCanMakePermanent";
 import { MsgTypeUrls } from "@/lib/tx";
+import ErrorState from "@/components/ErrorState";
 
 export default function DreamDetail({
   postId,
@@ -43,7 +44,7 @@ export default function DreamDetail({
   const [post, setPost] = useState<Post | null>(null);
   const [replies, setReplies] = useState<Reply[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [actionLoading, setActionLoading] = useState(false);
   // Reply ids carrying an author bond (BLOG_REPLY_AUTHOR_BOND, type 10).
   // One indexed query so the bond panel only mounts under bonded replies.
@@ -75,7 +76,7 @@ export default function DreamDetail({
       setBondedReplyIds(bondIds);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load dream");
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -228,9 +229,7 @@ export default function DreamDetail({
           </svg>
           Back
         </button>
-        <div className="rounded-xl border border-red-800 bg-red-900/20 p-6 text-center">
-          <p className="text-red-400">{error || "Dream not found"}</p>
-        </div>
+        <ErrorState error={error} fallback="Dream not found" />
       </div>
     );
   }

@@ -7,6 +7,8 @@ import NameOrAddress from "@/components/NameOrAddress";
 import { useWallet } from "@/contexts/WalletContext";
 import type { Bounty } from "@/types/forum";
 import { BountyStatus, BOUNTY_STATUS_LABELS } from "@/types/forum";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 function bountyStatusBadge(status: string) {
   const colors: Record<string, string> = {
@@ -35,7 +37,7 @@ export default function BountyList({ mode, onSelectThread }: BountyListProps) {
   const [bounties, setBounties] = useState<Bounty[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [nextKey, setNextKey] = useState<string | null>(null);
 
   // The chain's dedicated active_bounties/user_bounties queries return a
@@ -56,11 +58,10 @@ export default function BountyList({ mode, onSelectThread }: BountyListProps) {
       setBounties((res.bounty || []).filter(matchesMode));
       setNextKey(res.pagination?.next_key || null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load bounties";
-      if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
+      if (isMissingEndpoint(err)) {
         setBounties([]);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -97,10 +98,7 @@ export default function BountyList({ mode, onSelectThread }: BountyListProps) {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-        {error}
-        <button onClick={fetchBounties} className="ml-2 underline hover:text-red-300">Retry</button>
-      </div>
+      <ErrorState error={error} onRetry={fetchBounties} />
     );
   }
 

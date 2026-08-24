@@ -7,6 +7,8 @@ import { formatTime } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
 import type { RepMember } from "@/types/rep";
 import { TRUST_LEVEL_LABELS, MEMBER_STATUS_LABELS, TrustLevel } from "@/types/rep";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 function trustLevelColor(level: string): string {
   switch (level) {
@@ -32,7 +34,7 @@ export default function MemberProfile() {
   const { address } = useWallet();
   const [member, setMember] = useState<RepMember | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [notFound, setNotFound] = useState(false);
 
   const fetchMember = useCallback(async () => {
@@ -44,11 +46,10 @@ export default function MemberProfile() {
       const res = await getRepMember(address);
       setMember(res.member);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load member";
-      if (msg.includes("404") || msg.includes("not found")) {
+      if (isMissingEndpoint(err)) {
         setNotFound(true);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -70,10 +71,7 @@ export default function MemberProfile() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-        {error}
-        <button onClick={fetchMember} className="ml-2 underline hover:text-red-300">Retry</button>
-      </div>
+      <ErrorState error={error} onRetry={fetchMember} />
     );
   }
 

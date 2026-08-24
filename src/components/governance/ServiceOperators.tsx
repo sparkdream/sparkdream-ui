@@ -12,6 +12,8 @@ import {
   type ServiceTypeConfig,
 } from "@/types/service";
 import CopyableAddress from "@/components/CopyableAddress";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 // x/service was added in chain commit 95a0e38 as the SPARK-bonded
 // accountability primitive for off-chain operators (Akash funders, pinning
@@ -51,7 +53,7 @@ export default function ServiceOperators() {
   const [operators, setOperators] = useState<Operator[]>([]);
   const [types, setTypes] = useState<ServiceTypeConfig[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   // Per-service-type filter; empty = show all.
   const [filterType, setFilterType] = useState<string>("");
 
@@ -66,13 +68,12 @@ export default function ServiceOperators() {
       setOperators(opsRes?.operators || []);
       setTypes(typesRes?.configs || []);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load service operators";
       // Pre-v1.0.4 chains don't have x/service; surface as empty state, not error.
-      if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
+      if (isMissingEndpoint(err)) {
         setOperators([]);
         setTypes([]);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -106,10 +107,7 @@ export default function ServiceOperators() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-        {error}
-        <button onClick={fetchData} className="ml-2 underline hover:text-red-300">Retry</button>
-      </div>
+      <ErrorState error={error} onRetry={fetchData} />
     );
   }
 

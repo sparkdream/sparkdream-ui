@@ -24,6 +24,8 @@ import {
 } from "@/types/rep";
 import type { BondedRole, BondedRoleConfig } from "@/types/rep";
 import NumberInput from "@/components/NumberInput";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 const SENTINEL_ROLE = RoleType.CONTENT_SENTINEL;
 
@@ -139,7 +141,7 @@ export default function SentinelPanel() {
   const [config, setConfig] = useState<BondedRoleConfig | null>(null);
   const [activity, setActivity] = useState<SentinelActivity | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [isSentinel, setIsSentinel] = useState(false);
 
   const [showBondForm, setShowBondForm] = useState(false);
@@ -212,11 +214,10 @@ export default function SentinelPanel() {
       }
       setUnhideWindow(win);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load sentinel data";
-      if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
+      if (isMissingEndpoint(err)) {
         setIsSentinel(false);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -330,10 +331,7 @@ export default function SentinelPanel() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-        {error}
-        <button onClick={fetchData} className="ml-2 underline hover:text-red-300">Retry</button>
-      </div>
+      <ErrorState error={error} onRetry={fetchData} />
     );
   }
 

@@ -2,6 +2,8 @@
 
 import { defaults } from "./chain";
 import { cachedFetch, invalidate, invalidateAll } from "./queryCache";
+import { ApiError, errorMessage, isNodeUnreachable } from "./errors";
+import { reportChainReachable, reportChainUnreachable } from "./chainStatus";
 import type {
   ListPostResponse,
   ShowPostResponse,
@@ -274,7 +276,38 @@ export function archiveKey(path: string, qs: string | null): string {
 // existing .catch()/error paths run instead of hanging.
 const REQUEST_TIMEOUT_MS = 15_000;
 
+// Build the ApiError for a non-2xx response. The body is only mined for a
+// server-written reason when it parses as JSON: a node behind a proxy answers
+// an outage with an HTML error page, and that markup must never reach a
+// component (see lib/errors.ts).
+async function failure(res: Response, path: string): Promise<ApiError> {
+  const raw = await res.text().catch(() => "");
+  let detail: string | undefined;
+  try {
+    const body = JSON.parse(raw);
+    const candidate = body?.message ?? body?.error ?? body?.details;
+    if (typeof candidate === "string" && candidate) detail = candidate;
+  } catch {
+    // Non-JSON body: a gateway page, not something the node wrote. Drop it.
+  }
+  return new ApiError(res.status, path, `LCD request failed with ${res.status}`, detail);
+}
+
 async function get<T>(path: string, params?: URLSearchParams): Promise<T> {
+  try {
+    const value = await request<T>(path, params);
+    // The node answered, so it is up whatever else is failing.
+    reportChainReachable();
+    return value;
+  } catch (err) {
+    if (isNodeUnreachable(err)) reportChainUnreachable();
+    // A 404 or a module-level error still came back from the node.
+    else if (err instanceof ApiError) reportChainReachable();
+    throw err;
+  }
+}
+
+async function request<T>(path: string, params?: URLSearchParams): Promise<T> {
   const qs = params?.toString() || null;
   if (archiveSource) {
     const res = await archiveSource.fetch(path, qs);
@@ -289,17 +322,21 @@ async function get<T>(path: string, params?: URLSearchParams): Promise<T> {
     res = await fetch(url, { signal: controller.signal });
   } catch (err) {
     if (controller.signal.aborted) {
-      throw new Error(`API request timed out after ${REQUEST_TIMEOUT_MS}ms: ${path}`);
+      throw new ApiError(0, path, `LCD request timed out after ${REQUEST_TIMEOUT_MS}ms`);
     }
-    throw err;
+    // DNS failure, refused connection, CORS: no response to classify by status.
+    throw new ApiError(0, path, "Could not reach the chain node", errorMessage(err) || undefined);
   } finally {
     clearTimeout(timer);
   }
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API error ${res.status}: ${text}`);
+  if (!res.ok) throw await failure(res, path);
+  try {
+    return await res.json();
+  } catch {
+    // 200 with a body that isn't JSON means something between us and the node
+    // answered in its place.
+    throw new ApiError(res.status, path, "The chain node returned an unreadable response");
   }
-  return res.json();
 }
 
 // List all posts with pagination
@@ -961,7 +998,7 @@ export async function contentChallengeByTarget(
     );
     return res.content_challenge ?? null;
   } catch (err) {
-    if (err instanceof Error && err.message.includes("API error 404")) return null;
+    if (err instanceof ApiError && err.status === 404) return null;
     throw err;
   }
 }

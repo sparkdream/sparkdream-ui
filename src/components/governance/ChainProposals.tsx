@@ -24,13 +24,14 @@ import {
 import CopyableAddress from "@/components/CopyableAddress";
 import NewChainProposal from "./NewChainProposal";
 import NumberInput from "@/components/NumberInput";
+import ErrorState from "@/components/ErrorState";
 
 export default function ChainProposals() {
   const { address, connected, signAndBroadcast } = useWallet();
   const { config } = useChainConfig();
   const [proposals, setProposals] = useState<GovProposal[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showNewProposal, setShowNewProposal] = useState(false);
   // Chain's gov `min_deposit` for the bond denom, in micro-units. Used per
@@ -148,17 +149,9 @@ export default function ChainProposals() {
         </div>
       )}
 
-      {error && (
-        <div className="mb-6 rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-          {error}
-          <button
-            onClick={fetchProposals}
-            className="ml-2 underline hover:text-red-300"
-          >
-            Retry
-          </button>
-        </div>
-      )}
+      {error ? (
+        <ErrorState error={error} onRetry={fetchProposals} className="mb-6" />
+      ) : null}
 
       {loading ? (
         <div className="space-y-4">

@@ -18,6 +18,8 @@ import {
   MODERATION_REASON_LABELS,
 } from "@/types/collect";
 import type { CollectionFlag, HideRecord } from "@/types/collect";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 interface Props {
   onViewCollection?: (collectionId: string) => void;
@@ -50,7 +52,7 @@ export default function CollectionModerationPanel({ onViewCollection }: Props) {
   // For item flags, the resolved parent collection id (for the View link).
   const [itemCollections, setItemCollections] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
@@ -90,11 +92,10 @@ export default function CollectionModerationPanel({ onViewCollection }: Props) {
       setHides(hideEntries);
       setItemCollections(itemEntries);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load flagged content";
-      if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
+      if (isMissingEndpoint(err)) {
         setFlags([]);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -189,10 +190,7 @@ export default function CollectionModerationPanel({ onViewCollection }: Props) {
           ))}
         </div>
       ) : error ? (
-        <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-          {error}
-          <button onClick={fetchData} className="ml-2 underline hover:text-red-300">Retry</button>
-        </div>
+        <ErrorState error={error} onRetry={fetchData} />
       ) : flags.length === 0 ? (
         <div className="sd-hull-tile rounded-xl p-12 text-center">
           <p className="text-zinc-400">No flagged collection content.</p>

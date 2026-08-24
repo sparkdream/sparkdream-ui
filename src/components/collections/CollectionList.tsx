@@ -12,6 +12,8 @@ import {
   CollectionType,
 } from "@/types/collect";
 import { useWallet } from "@/contexts/WalletContext";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 function typeBadge(type: string) {
   const colors: Record<string, string> = {
@@ -115,7 +117,7 @@ export default function CollectionList({ mode, onSelect, filterType = "all", tag
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [nextKey, setNextKey] = useState<string | null>(null);
 
   const fetchCollections = useCallback(async () => {
@@ -131,11 +133,10 @@ export default function CollectionList({ mode, onSelect, filterType = "all", tag
       setCollections(res.collections || []);
       setNextKey(res.pagination?.next_key || null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load collections";
-      if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
+      if (isMissingEndpoint(err)) {
         setCollections([]);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -195,10 +196,7 @@ export default function CollectionList({ mode, onSelect, filterType = "all", tag
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-        {error}
-        <button onClick={fetchCollections} className="ml-2 underline hover:text-red-300">Retry</button>
-      </div>
+      <ErrorState error={error} onRetry={fetchCollections} />
     );
   }
 

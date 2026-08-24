@@ -8,12 +8,13 @@ import { listPostsByCreator } from "@/lib/api";
 import PostCard from "@/components/PostCard";
 import CreatePostForm from "@/components/CreatePostForm";
 import { useWallet } from "@/contexts/WalletContext";
+import ErrorState from "@/components/ErrorState";
 
 export default function MyPostsPage() {
   const { address, connected, ready } = useWallet();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [nextKey, setNextKey] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -38,7 +39,7 @@ export default function MyPostsPage() {
         setNextKey(res.pagination?.next_key || null);
         setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load dreams");
+        setError(err);
       } finally {
         setLoading(false);
       }
@@ -146,17 +147,9 @@ export default function MyPostsPage() {
         </button>
       </div>
 
-      {error && (
-        <div className="mb-6 rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-          {error}
-          <button
-            onClick={() => fetchPosts()}
-            className="ml-2 underline hover:text-red-300"
-          >
-            Retry
-          </button>
-        </div>
-      )}
+      {error ? (
+        <ErrorState error={error} onRetry={() => fetchPosts()} className="mb-6" />
+      ) : null}
 
       {loading && posts.length === 0 ? (
         <div className="animate-pulse sd-hull-tile rounded-xl p-5">

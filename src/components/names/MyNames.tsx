@@ -11,6 +11,8 @@ import {
 } from "@/lib/api";
 import { NameMsgTypeUrls } from "@/lib/tx";
 import type { NameRecord, NameParams } from "@/types/name";
+import { isMissingEndpoint } from "@/lib/errors";
+import ErrorState from "@/components/ErrorState";
 
 const DISPLAY_NAME_MAX_CODEPOINTS = 32;
 const codepointLength = (s: string) => Array.from(s).length;
@@ -29,7 +31,7 @@ export default function MyNames() {
   const [displayName, setDisplayName] = useState<string>("");
   const [params, setParams] = useState<NameParams | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   // Registration form
   const [showRegister, setShowRegister] = useState(false);
@@ -75,11 +77,10 @@ export default function MyNames() {
       setParams(paramsRes.params);
       setIncomingTargets(targetsRes.names || []);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load names";
-      if (msg.includes("404") || msg.includes("not found")) {
+      if (isMissingEndpoint(err)) {
         setNames([]);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -278,14 +279,9 @@ export default function MyNames() {
         )}
       </div>
 
-      {error && (
-        <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-          {error}
-          <button onClick={fetchNames} className="ml-2 underline">
-            Retry
-          </button>
-        </div>
-      )}
+      {error ? (
+        <ErrorState error={error} onRetry={fetchNames} className="mb-4" />
+      ) : null}
 
       {submitError && (
         <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">

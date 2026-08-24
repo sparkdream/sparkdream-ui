@@ -44,6 +44,8 @@ import SearchableSelect from "@/components/contribute/SearchableSelect";
 import SearchField from "@/components/contribute/SearchField";
 import TrendingRailCard from "@/components/contribute/TrendingRailCard";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 type Tab = "all" | "available" | "mine" | "authored";
 
@@ -361,7 +363,7 @@ export default function InitiativeList() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextKey, setNextKey] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("all");
   const [showClosed, setShowClosed] = useState(false);
@@ -557,11 +559,10 @@ export default function InitiativeList() {
       setInitiatives(items);
       setNextKey(pageKey);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load initiatives";
-      if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
+      if (isMissingEndpoint(err)) {
         setInitiatives([]);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setRefreshing(false);
@@ -1050,10 +1051,7 @@ export default function InitiativeList() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-        {error}
-        <button onClick={() => fetchInitiatives(tab, projectFilter, sort)} className="ml-2 underline hover:text-red-300">Retry</button>
-      </div>
+      <ErrorState error={error} onRetry={() => fetchInitiatives(tab, projectFilter, sort)} />
     );
   }
 

@@ -30,6 +30,7 @@ import AuthorBondPanel from "@/components/AuthorBondPanel";
 import type { Category } from "@/types/commons";
 import type { ForumPost, ThreadMetadata, Bounty, PostConvictionStake } from "@/types/forum";
 import { PostStatus, BountyStatus } from "@/types/forum";
+import ErrorState from "@/components/ErrorState";
 
 // Promoting an ephemeral post to permanent is a member action gated on
 // make_permanent_min_trust_level (default PROVISIONAL). Pinning a thread,
@@ -85,7 +86,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const [bounty, setBounty] = useState<Bounty | null>(null);
   const [myStakes, setMyStakes] = useState<PostConvictionStake[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showReplyForm, setShowReplyForm] = useState(false);
   const [replyToId, setReplyToId] = useState<string>(threadId);
@@ -186,7 +187,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
         setMyStakes([]);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load spark");
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -730,10 +731,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
         <button onClick={onBack} className="mb-4 text-sm text-zinc-400 hover:text-zinc-200">
           &larr; Back
         </button>
-        <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-          {error || "Spark not found"}
-          <button onClick={fetchData} className="ml-2 underline hover:text-red-300">Retry</button>
-        </div>
+        <ErrorState error={error} onRetry={fetchData} fallback="Spark not found" />
       </div>
     );
   }

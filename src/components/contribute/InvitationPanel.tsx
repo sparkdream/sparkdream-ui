@@ -12,6 +12,8 @@ import CopyableAddress from "@/components/CopyableAddress";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import type { Invitation, RequiredInvitationStakeResponse } from "@/types/rep";
 import { INVITATION_STATUS_LABELS, InvitationStatus, TRUST_LEVEL_LABELS } from "@/types/rep";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 function statusColor(status: string): string {
   switch (status) {
@@ -35,7 +37,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [sentNextKey, setSentNextKey] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [showForm, setShowForm] = useState(defaultShowForm);
   const [submitting, setSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -115,12 +117,11 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
       }
       setPendingForMe(pending);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load invitations";
-      if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
+      if (isMissingEndpoint(err)) {
         setSentInvitations([]);
         setPendingForMe([]);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -205,10 +206,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-        {error}
-        <button onClick={fetchInvitations} className="ml-2 underline hover:text-red-300">Retry</button>
-      </div>
+      <ErrorState error={error} onRetry={fetchInvitations} />
     );
   }
 

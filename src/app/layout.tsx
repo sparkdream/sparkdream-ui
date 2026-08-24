@@ -6,6 +6,7 @@ import { WalletProvider } from "@/contexts/WalletContext";
 import Header from "@/components/Header";
 import Ticker from "@/components/Ticker";
 import BackgroundField from "@/components/BackgroundField";
+import ChainStatusBanner from "@/components/ChainStatusBanner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -45,6 +46,7 @@ export default function RootLayout({
           <WalletProvider>
             <Ticker />
             <Header />
+            <ChainStatusBanner />
             <main className="flex-1">{children}</main>
           </WalletProvider>
         </ChainConfigProvider>

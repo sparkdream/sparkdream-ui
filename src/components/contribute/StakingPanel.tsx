@@ -17,6 +17,8 @@ import type { RepStake } from "@/types/rep";
 import { STAKE_TARGET_LABELS, StakeTargetType } from "@/types/rep";
 import { stakeTargetTypeFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/stake";
 import SearchableSelect from "@/components/contribute/SearchableSelect";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 interface TargetOption {
   value: string;
@@ -63,7 +65,7 @@ export default function StakingPanel() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextKey, setNextKey] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -87,11 +89,10 @@ export default function StakingPanel() {
       setStakes(res.stakes || []);
       setNextKey(res.pagination?.next_key || null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load stakes";
-      if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
+      if (isMissingEndpoint(err)) {
         setStakes([]);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -301,10 +302,7 @@ export default function StakingPanel() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-        {error}
-        <button onClick={fetchStakes} className="ml-2 underline hover:text-red-300">Retry</button>
-      </div>
+      <ErrorState error={error} onRetry={fetchStakes} />
     );
   }
 

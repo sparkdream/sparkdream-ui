@@ -11,6 +11,8 @@ import {
 } from "@/types/rep";
 import type { BondedRole } from "@/types/rep";
 import type { CuratorActivity } from "@/types/collect";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 const CURATOR_ROLE = RoleType.COLLECT_CURATOR;
 
@@ -40,7 +42,7 @@ export default function CuratorList() {
   const [activity, setActivity] = useState<Record<string, CuratorActivity>>({});
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [nextKey, setNextKey] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -52,11 +54,10 @@ export default function CuratorList() {
       setCurators(res.bonded_roles || []);
       setNextKey(res.pagination?.next_key || null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load curators";
-      if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
+      if (isMissingEndpoint(err)) {
         setCurators([]);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -103,10 +104,7 @@ export default function CuratorList() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-        {error}
-        <button onClick={fetchCurators} className="ml-2 underline hover:text-red-300">Retry</button>
-      </div>
+      <ErrorState error={error} onRetry={fetchCurators} />
     );
   }
 

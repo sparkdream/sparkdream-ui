@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { listCategories } from "@/lib/api";
 import type { Category } from "@/types/commons";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 interface CategoryListProps {
   onSelectCategory: (category: Category) => void;
@@ -11,7 +13,7 @@ interface CategoryListProps {
 export default function CategoryList({ onSelectCategory }: CategoryListProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -20,11 +22,10 @@ export default function CategoryList({ onSelectCategory }: CategoryListProps) {
       const res = await listCategories();
       setCategories(res.category || []);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load categories";
-      if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
+      if (isMissingEndpoint(err)) {
         setCategories([]);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -47,10 +48,7 @@ export default function CategoryList({ onSelectCategory }: CategoryListProps) {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-        {error}
-        <button onClick={fetchCategories} className="ml-2 underline hover:text-red-300">Retry</button>
-      </div>
+      <ErrorState error={error} onRetry={fetchCategories} />
     );
   }
 

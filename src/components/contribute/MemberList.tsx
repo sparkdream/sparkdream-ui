@@ -5,6 +5,8 @@ import { listRepMembers, membersByTrustLevel } from "@/lib/api";
 import NameOrAddress from "@/components/NameOrAddress";
 import type { RepMember } from "@/types/rep";
 import { TRUST_LEVEL_LABELS, MEMBER_STATUS_LABELS, MemberStatus, TrustLevel } from "@/types/rep";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 function trustLevelBadge(level: string) {
   const colors: Record<string, string> = {
@@ -44,7 +46,7 @@ export default function MemberList() {
   const [members, setMembers] = useState<RepMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filterLevel, setFilterLevel] = useState<string>("all");
   const [nextKey, setNextKey] = useState<string | null>(null);
@@ -62,11 +64,10 @@ export default function MemberList() {
       setMembers(list || []);
       setNextKey(res.pagination?.next_key || null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load members";
-      if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
+      if (isMissingEndpoint(err)) {
         setMembers([]);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -110,10 +111,7 @@ export default function MemberList() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-        {error}
-        <button onClick={fetchMembers} className="ml-2 underline hover:text-red-300">Retry</button>
-      </div>
+      <ErrorState error={error} onRetry={fetchMembers} />
     );
   }
 

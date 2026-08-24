@@ -17,6 +17,8 @@ import {
 } from "@/types/reveal";
 import type { Contribution } from "@/types/reveal";
 import { formatDream } from "@/lib/reveal-fmt";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 type Mode = "all" | "by-contributor" | "by-status";
 
@@ -33,7 +35,7 @@ export default function ContributionList({
 }) {
   const [items, setItems] = useState<Contribution[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,12 +57,11 @@ export default function ContributionList({
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        const msg = err instanceof Error ? err.message : "Failed to load contributions";
-        if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
+        if (isMissingEndpoint(err)) {
           setItems([]);
           setError(null);
         } else {
-          setError(msg);
+          setError(err);
         }
       })
       .finally(() => {
@@ -83,9 +84,7 @@ export default function ContributionList({
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-        {error}
-      </div>
+      <ErrorState error={error} />
     );
   }
 

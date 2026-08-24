@@ -7,6 +7,7 @@ import type { BankBalance } from "@/lib/api";
 import { formatDream } from "@/lib/reveal-fmt";
 import CopyableAddress from "@/components/CopyableAddress";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
+import ErrorState from "@/components/ErrorState";
 
 interface Balances {
   spark: string;
@@ -20,7 +21,7 @@ function pickBalance(balances: BankBalance[], denom: string): string {
 function useGroupTreasuries(addresses: string[], sparkDenom: string) {
   const [balances, setBalances] = useState<Map<string, Balances>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   // Bumped by the caller (or refresh button) to force a re-fetch.
   const [tick, setTick] = useState(0);
 
@@ -54,7 +55,7 @@ function useGroupTreasuries(addresses: string[], sparkDenom: string) {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load balances");
+        setError(err);
       })
       .finally(() => {
         if (cancelled) return;
@@ -91,7 +92,7 @@ export function CouncilTreasuryBanner({ group }: CouncilTreasuryBannerProps) {
           <CopyableAddress className="font-mono text-zinc-400" address={group.policy_address} />
         </div>
         {error ? (
-          <span className="text-xs text-red-400">{error}</span>
+          <ErrorState error={error} compact />
         ) : loading || !b ? (
           <div>
             <span className="text-xs text-zinc-500">{config.displayDenom} </span>
@@ -145,11 +146,7 @@ export function CommunityTreasuries({ groups }: CommunityTreasuriesProps) {
         </button>
       </div>
 
-      {error && (
-        <div className="mb-4 rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-          {error}
-        </div>
-      )}
+      {error ? <ErrorState error={error} className="mb-4" /> : null}
 
       {groups.length === 0 ? (
         <div className="rounded-xl sd-hull-tile p-12 text-center">

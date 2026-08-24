@@ -25,6 +25,8 @@ import {
   TrustLevel,
 } from "@/types/rep";
 import { projectCategoryFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/project";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 // Chain defaults (x/rep params) — used as fallbacks if the params query
 // hasn't completed when the form renders.
@@ -121,7 +123,7 @@ export default function ProjectList() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextKey, setNextKey] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   // `?project=<id>` deep-links a single project open — that's how an
   // initiative row links back to the project it belongs to.
   const urlProject = searchParams.get("project") || "";
@@ -248,11 +250,10 @@ export default function ProjectList() {
         setFormCouncil((prev) => prev || groups[0].index);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load projects";
-      if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
+      if (isMissingEndpoint(err)) {
         setProjects([]);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -422,10 +423,7 @@ export default function ProjectList() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-        {error}
-        <button onClick={fetchProjects} className="ml-2 underline hover:text-red-300">Retry</button>
-      </div>
+      <ErrorState error={error} onRetry={fetchProjects} />
     );
   }
 

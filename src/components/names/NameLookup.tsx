@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { resolveName, reverseResolveName } from "@/lib/api";
 import type { NameRecord } from "@/types/name";
+import { isMissingEndpoint } from "@/lib/errors";
+import ErrorState from "@/components/ErrorState";
 
 type Mode = "forward" | "reverse";
 
@@ -12,7 +14,7 @@ export default function NameLookup() {
   const [result, setResult] = useState<NameRecord | null>(null);
   const [reverseName, setReverseName] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   async function handleLookup(e: React.FormEvent) {
     e.preventDefault();
@@ -37,11 +39,10 @@ export default function NameLookup() {
         }
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Lookup failed";
-      if (msg.includes("404") || msg.includes("not found")) {
+      if (isMissingEndpoint(err)) {
         setError(mode === "forward" ? "Name not found" : "No primary name found for this address");
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -103,11 +104,9 @@ export default function NameLookup() {
         </div>
       </form>
 
-      {error && (
-        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-          {error}
-        </div>
-      )}
+      {error ? (
+        <ErrorState error={error} />
+      ) : null}
 
       {result && (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">

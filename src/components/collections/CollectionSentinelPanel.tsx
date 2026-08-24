@@ -28,6 +28,8 @@ import {
   BONDED_ROLE_STATUS_LABELS,
 } from "@/types/rep";
 import type { BondedRole, BondedRoleConfig } from "@/types/rep";
+import ErrorState from "@/components/ErrorState";
+import { isMissingEndpoint } from "@/lib/errors";
 
 interface Props {
   onViewCollection?: (collectionId: string) => void;
@@ -106,7 +108,7 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
   const [config, setConfig] = useState<BondedRoleConfig | null>(null);
   const [isSentinel, setIsSentinel] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   const [showBondForm, setShowBondForm] = useState(false);
   const [bondAmount, setBondAmount] = useState("");
@@ -141,11 +143,10 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
         setBond(null);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load sentinel data";
-      if (msg.includes("404") || msg.includes("not found") || msg.includes("501")) {
+      if (isMissingEndpoint(err)) {
         setIsSentinel(false);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -310,10 +311,7 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
       {loading ? (
         <div className="h-32 animate-pulse sd-hull-tile rounded-xl" />
       ) : error ? (
-        <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-          {error}
-          <button onClick={fetchData} className="ml-2 underline hover:text-red-300">Retry</button>
-        </div>
+        <ErrorState error={error} onRetry={fetchData} />
       ) : !isSentinel ? (
         <div className="sd-hull-tile rounded-xl p-6">
           <p className="mb-2 text-sm text-zinc-400">

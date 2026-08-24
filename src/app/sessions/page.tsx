@@ -14,6 +14,7 @@ import { truncateAddress, formatTime } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import NumberInput from "@/components/NumberInput";
+import ErrorState from "@/components/ErrorState";
 
 type Tab = "granted" | "received";
 
@@ -47,7 +48,7 @@ export default function SessionsPage() {
   const [allowedTypes, setAllowedTypes] = useState<string[]>([]);
   const [sessionParams, setSessionParams] = useState<SessionParams | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // Create session form state
@@ -87,7 +88,7 @@ export default function SessionsPage() {
       setSessionParams(params.params || null);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load sessions");
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -447,14 +448,9 @@ export default function SessionsPage() {
         </div>
       </div>
 
-      {error && (
-        <div className="mb-6 rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-          {error}
-          <button onClick={fetchSessions} className="ml-2 underline hover:text-red-300">
-            Retry
-          </button>
-        </div>
-      )}
+      {error ? (
+        <ErrorState error={error} onRetry={fetchSessions} className="mb-6" />
+      ) : null}
 
       {loading ? (
         <div className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">

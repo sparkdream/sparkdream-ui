@@ -6,13 +6,15 @@ import { listDisputes, getNameParams } from "@/lib/api";
 import { NameMsgTypeUrls } from "@/lib/tx";
 import CopyableAddress from "@/components/CopyableAddress";
 import type { Dispute, NameParams } from "@/types/name";
+import { isMissingEndpoint } from "@/lib/errors";
+import ErrorState from "@/components/ErrorState";
 
 export default function DisputeList() {
   const { address, signAndBroadcast } = useWallet();
   const [disputes, setDisputes] = useState<Dispute[]>([]);
   const [params, setParams] = useState<NameParams | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   // File dispute form
   const [showFile, setShowFile] = useState(false);
@@ -36,11 +38,10 @@ export default function DisputeList() {
       setDisputes(disputeRes.dispute || []);
       setParams(paramsRes.params);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load disputes";
-      if (msg.includes("404") || msg.includes("not found")) {
+      if (isMissingEndpoint(err)) {
         setDisputes([]);
       } else {
-        setError(msg);
+        setError(err);
       }
     } finally {
       setLoading(false);
@@ -132,14 +133,9 @@ export default function DisputeList() {
         )}
       </div>
 
-      {error && (
-        <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-          {error}
-          <button onClick={fetchData} className="ml-2 underline">
-            Retry
-          </button>
-        </div>
-      )}
+      {error ? (
+        <ErrorState error={error} onRetry={fetchData} className="mb-4" />
+      ) : null}
 
       {submitError && (
         <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">

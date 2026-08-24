@@ -38,6 +38,7 @@ import type {
   Nomination,
   RetroRewardRecord,
 } from "@/types/season";
+import ErrorState from "@/components/ErrorState";
 
 type View =
   | "overview"
@@ -172,7 +173,7 @@ export default function SeasonPage() {
   const [treasury, setTreasury] = useState<QueryTreasuryStatusResponse | null>(null);
 
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [txPending, setTxPending] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -263,7 +264,7 @@ export default function SeasonPage() {
         setProfile(null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load season data");
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -853,34 +854,9 @@ export default function SeasonPage() {
         <aside className="sd-side">{sidebar}</aside>
 
         <section>
-          {error && (
-            <div
-              style={{
-                marginBottom: 20,
-                padding: "10px 14px",
-                borderRadius: "var(--r-sm)",
-                border: "1px solid rgba(244,63,94,0.35)",
-                background: "rgba(244,63,94,0.08)",
-                color: "#fb7185",
-                fontSize: 13,
-              }}
-            >
-              {error}
-              <button
-                onClick={loadAll}
-                style={{
-                  marginLeft: 10,
-                  background: "transparent",
-                  border: 0,
-                  color: "inherit",
-                  textDecoration: "underline",
-                  cursor: "pointer",
-                }}
-              >
-                Retry
-              </button>
-            </div>
-          )}
+          {error ? (
+            <ErrorState error={error} onRetry={loadAll} className="mb-5" />
+          ) : null}
 
           {toast && (
             <div
