@@ -290,6 +290,84 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         "/sparkdream.collect.v1.MsgUnhideContent": { aminoType: "sparkdream/x/collect/MsgUnhideContent", toAmino: CollectUnhideContent.toAmino, fromAmino: CollectUnhideContent.fromAmino },
       };
 
+      // 0.0.36 (chain commits 70dce72 / 32f2cee) ships the bonded-reviewer,
+      // jury-summons and review-bounty messages in the registry, and once again
+      // omits every one of them from the generated AminoConverter map. See
+      // [[sparkdreamjs-amino-converter-gap]].
+      //
+      // Two of them can't just delegate to the telescope statics:
+      //
+      //   - MsgSubmitInitiativeReview has a repeated criteria_votes. The
+      //     generated toAmino emits `[]` for an empty list where the chain's
+      //     aminojson omits the key, so a verdict filed without per-criterion
+      //     votes (the common case, since acceptance_criteria is optional)
+      //     would fail sigverify. Patched to return undefined when empty,
+      //     mirroring the package's own hand-written overrides.
+      //   - MsgCreateInitiative gained repeated acceptance_criteria, and the
+      //     package's hand-written override still predates it: it emits the
+      //     removed template_id and drops acceptance_criteria entirely, so any
+      //     initiative created WITH criteria would sign bytes the chain never
+      //     reconstructs. Replaced here rather than left to the package.
+      //
+      // The rest are scalars only. MsgResolveReviewEscalation.resolution is an
+      // enum the converter emits as a plain int (matching aminojson), and
+      // MsgSetVerificationPolicy's nested policy is non-nullable, so it is
+      // always emitted — both delegate safely.
+      const {
+        MsgSubmitInitiativeReview: RepSubmitInitiativeReview,
+        MsgCreateInitiative: RepCreateInitiative,
+        MsgSetVerificationPolicy: RepSetVerificationPolicy,
+        MsgResolveReviewEscalation: RepResolveReviewEscalation,
+        MsgFundReviewBounty: RepFundReviewBounty,
+        MsgReclaimReviewBounty: RepReclaimReviewBounty,
+        MsgAcceptJuryDuty: RepAcceptJuryDuty,
+        MsgDeclineJuryDuty: RepDeclineJuryDuty,
+      } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
+      const { CriteriaVote: RepCriteriaVote } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/jury_review");
+      const { VerificationCriteria: RepVerificationCriteria } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/acceptance_criteria");
+      const reviewAmino = {
+        "/sparkdream.rep.v1.MsgCreateInitiative": {
+          aminoType: "sparkdream/x/rep/MsgCreateInitiative",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          toAmino: (message: any) => ({
+            creator: message.creator === "" ? undefined : message.creator,
+            project_id: message.projectId !== BigInt(0) ? message.projectId?.toString() : undefined,
+            title: message.title === "" ? undefined : message.title,
+            description: message.description === "" ? undefined : message.description,
+            tags: (message.tags?.length ?? 0) > 0 ? message.tags : undefined,
+            tier: message.tier !== BigInt(0) ? message.tier?.toString() : undefined,
+            category: message.category !== BigInt(0) ? message.category?.toString() : undefined,
+            budget: message.budget === "" ? undefined : message.budget,
+            acceptance_criteria: (message.acceptanceCriteria?.length ?? 0) > 0
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ? message.acceptanceCriteria.map((e: any) => RepVerificationCriteria.toAmino(e))
+              : undefined,
+          }),
+          fromAmino: RepCreateInitiative.fromAmino,
+        },
+        "/sparkdream.rep.v1.MsgSubmitInitiativeReview": {
+          aminoType: "sparkdream/x/rep/MsgSubmitInitiativeReview",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          toAmino: (message: any) => ({
+            reviewer: message.reviewer === "" ? undefined : message.reviewer,
+            initiative_id: message.initiativeId !== BigInt(0) ? message.initiativeId?.toString() : undefined,
+            approved: message.approved === false ? undefined : message.approved,
+            criteria_votes: (message.criteriaVotes?.length ?? 0) > 0
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ? message.criteriaVotes.map((e: any) => RepCriteriaVote.toAmino(e))
+              : undefined,
+            comments: message.comments === "" ? undefined : message.comments,
+          }),
+          fromAmino: RepSubmitInitiativeReview.fromAmino,
+        },
+        "/sparkdream.rep.v1.MsgSetVerificationPolicy": { aminoType: "sparkdream/x/rep/MsgSetVerificationPolicy", toAmino: RepSetVerificationPolicy.toAmino, fromAmino: RepSetVerificationPolicy.fromAmino },
+        "/sparkdream.rep.v1.MsgResolveReviewEscalation": { aminoType: "sparkdream/x/rep/MsgResolveReviewEscalation", toAmino: RepResolveReviewEscalation.toAmino, fromAmino: RepResolveReviewEscalation.fromAmino },
+        "/sparkdream.rep.v1.MsgFundReviewBounty": { aminoType: "sparkdream/x/rep/MsgFundReviewBounty", toAmino: RepFundReviewBounty.toAmino, fromAmino: RepFundReviewBounty.fromAmino },
+        "/sparkdream.rep.v1.MsgReclaimReviewBounty": { aminoType: "sparkdream/x/rep/MsgReclaimReviewBounty", toAmino: RepReclaimReviewBounty.toAmino, fromAmino: RepReclaimReviewBounty.fromAmino },
+        "/sparkdream.rep.v1.MsgAcceptJuryDuty": { aminoType: "sparkdream/x/rep/MsgAcceptJuryDuty", toAmino: RepAcceptJuryDuty.toAmino, fromAmino: RepAcceptJuryDuty.fromAmino },
+        "/sparkdream.rep.v1.MsgDeclineJuryDuty": { aminoType: "sparkdream/x/rep/MsgDeclineJuryDuty", toAmino: RepDeclineJuryDuty.toAmino, fromAmino: RepDeclineJuryDuty.fromAmino },
+      };
+
       // Telescope's auto-generated amino converters don't recursively decode
       // `repeated google.protobuf.Any` fields, so MsgSubmitProposal /
       // MsgSubmitAnonymousProposal / MsgExecSession need the registry + the
@@ -437,7 +515,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         },
       };
 
-      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...pinSeparationAmino, ...latestMsgAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
+      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...pinSeparationAmino, ...latestMsgAmino, ...reviewAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
       // Cast: cosmjs's `lookupType` returns `GeneratedType` (union of TsProto +
       // Pbjs); the override only ever encounters TsProto types here.
       configureNestedAminoConverter({ registry: registry as unknown as Parameters<typeof configureNestedAminoConverter>[0]["registry"], aminoTypes });

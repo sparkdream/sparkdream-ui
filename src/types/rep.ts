@@ -77,7 +77,6 @@ export interface Initiative {
   tags: string[];
   tier: string;
   category: string;
-  template_id: string;
   budget: string;
   assignee: string;
   apprentice: string;
@@ -90,6 +89,12 @@ export interface Initiative {
   conviction_last_updated: string;
   review_period_end: string;
   challenge_period_end: string;
+  /**
+   * Advisory endorsements from stakers who signed MsgApproveInitiative with
+   * approved=true. Nothing consults this list: conviction gates payout and the
+   * bonded reviewers' verdicts gate quality. Disapproval is Operations
+   * Committee only and abandons the initiative outright.
+   */
   approvals: string[];
   status: string;
   created_at: string;
@@ -108,6 +113,194 @@ export interface Initiative {
    * the field existed, and on nodes that predate it.
    */
   creator?: string;
+  /**
+   * The definition of done, fixed at creation and immutable afterwards. Gives a
+   * challenger a concrete criterion to cite (Challenge.criteria_id) and a
+   * reviewer's per-item verdict a real referent. Replaces the removed
+   * template_id, which resolved against a registry no message could write to.
+   */
+  acceptance_criteria?: VerificationCriteria[];
+  /**
+   * Which review round the work is on. A reviewer rejection returns the
+   * initiative to ASSIGNED and increments this, so the assignee can fix and
+   * resubmit; each round collects its own verdicts. Bounded by
+   * params.max_review_rounds, after which a rejection is terminal.
+   */
+  review_round?: number;
+  /**
+   * Height at which the current round's review window closes. Past this with
+   * the gate unmet, the round escalates to the Operations Committee.
+   */
+  review_deadline?: string;
+  /** How the committee resolved an escalation for the current round. */
+  review_escalation?: string;
+  /**
+   * Approving verdicts this round needs, snapshotted from the project's
+   * verification policy when the review window opened. Read instead of the live
+   * policy so a project cannot relax its own standard out from under work
+   * already under review. Zero means no per-project gate, though the chain-wide
+   * review_required_above_budget threshold still applies on top.
+   */
+  required_verifiers?: number;
+}
+
+// Initiative review (chain commits 70dce72, 32f2cee).
+//
+// Conviction measures whether people wanted the work done, not whether it was
+// done, so completion above params.review_required_above_budget now needs a
+// bonded reviewer's verdict as well. Reviewers are paid per verdict filed and
+// never per approval, and commit bond scaled to the initiative budget that a
+// jury slashes if it overturns them.
+
+export const CriteriaType = {
+  BINARY: "CRITERIA_TYPE_BINARY",
+  SCALE: "CRITERIA_TYPE_SCALE",
+  TEXT: "CRITERIA_TYPE_TEXT",
+} as const;
+
+export const CRITERIA_TYPE_LABELS: Record<string, string> = {
+  [CriteriaType.BINARY]: "Pass / fail",
+  [CriteriaType.SCALE]: "Scored 0-100",
+  [CriteriaType.TEXT]: "Written answer",
+};
+
+// Numeric values match the on-chain CriteriaType enum. Sent as ints in tx
+// messages, read back as the string form from the LCD.
+export const CriteriaTypeValue = {
+  BINARY: 0,
+  SCALE: 1,
+  TEXT: 2,
+} as const;
+
+/** One item in an initiative's definition of done. */
+export interface VerificationCriteria {
+  id: string;
+  question: string;
+  type: string;
+  required: boolean;
+  how_to_verify: string;
+  evidence: string;
+}
+
+/** A reviewer's (or juror's) verdict on a single acceptance criterion. */
+export interface CriteriaVote {
+  criteria_id: string;
+  passed: boolean;
+  /** 0-100 for SCALE criteria; ignored for BINARY and TEXT. */
+  score?: number;
+  notes?: string;
+}
+
+/** One bonded reviewer's verdict on one round of submitted work. */
+export interface InitiativeReview {
+  initiative_id: string;
+  round: number;
+  reviewer: string;
+  approved: boolean;
+  criteria_votes?: CriteriaVote[];
+  comments: string;
+  created_at: string;
+  /**
+   * Bond committed against this verdict, released when the challenge window
+   * closes unchallenged and slashed when a jury overturns it.
+   */
+  bond_reserved: string;
+  /** Set once the bond has been released or slashed. */
+  settled: boolean;
+}
+
+export interface InitiativeReviewRound {
+  round: number;
+  reviews: InitiativeReview[];
+  approvals: number;
+}
+
+/**
+ * Every round's verdicts plus what the current round adds up to against the
+ * gate. `satisfied` is reported rather than recomputed client-side, because
+ * approvals >= required is not the whole rule: a committee escalation can
+ * satisfy or fail the gate on its own.
+ */
+export interface InitiativeReviewsResponse {
+  rounds?: InitiativeReviewRound[];
+  current_round: number;
+  approvals: number;
+  required: number;
+  satisfied: boolean;
+}
+
+/** How the Operations Committee resolved an escalated review round. */
+export const ReviewEscalation = {
+  NONE: "REVIEW_ESCALATION_NONE",
+  APPROVED: "REVIEW_ESCALATION_APPROVED",
+  REJECTED: "REVIEW_ESCALATION_REJECTED",
+  PASSED: "REVIEW_ESCALATION_PASSED",
+} as const;
+
+export const REVIEW_ESCALATION_LABELS: Record<string, string> = {
+  [ReviewEscalation.NONE]: "Not escalated",
+  [ReviewEscalation.APPROVED]: "Committee approved",
+  [ReviewEscalation.REJECTED]: "Committee rejected",
+  [ReviewEscalation.PASSED]: "Committee passed",
+};
+
+// Numeric values for MsgResolveReviewEscalation.resolution. NONE is not a
+// resolution: the amino converter omits zero, so sending it would file an empty
+// field the chain reads as unset.
+export const ReviewEscalationValue = {
+  APPROVED: 1,
+  REJECTED: 2,
+  PASSED: 3,
+} as const;
+
+/** One review round sitting with the Operations Committee. */
+export interface EscalatedReview {
+  initiative_id: string;
+  round: number;
+  /** Height at which committee silence rejects the round. */
+  review_deadline: string;
+  title: string;
+  assignee: string;
+}
+
+export interface EscalatedReviewsResponse {
+  escalations?: EscalatedReview[];
+}
+
+/**
+ * DREAM escrowed against one initiative to bid reviewer attention toward it.
+ * Paid out per verdict filed and split across the round's reviewers, exactly
+ * like the review fee: a bounty released on completion would be a bribe to
+ * approve.
+ */
+export interface ReviewBounty {
+  initiative_id: string;
+  amount: string;
+  contributions?: ReviewBountyContribution[];
+  /**
+   * True once any verdict has been filed. Reclaim is barred from that point:
+   * reviewers commit bond on the strength of the advertised bounty.
+   */
+  committed: boolean;
+}
+
+export interface ReviewBountyContribution {
+  funder: string;
+  amount: string;
+  /** Block height the contribution was made, for the reclaim delay. */
+  funded_at: string;
+}
+
+export interface ReviewBountyReclaimStatus {
+  funder: string;
+  amount: string;
+  reclaimable_at_height: string;
+  reclaimable: boolean;
+}
+
+export interface ReviewBountyResponse {
+  bounty: ReviewBounty;
+  reclaim_status?: ReviewBountyReclaimStatus[];
 }
 
 export interface RepStake {
@@ -363,6 +556,16 @@ export const ReviewProcess = {
   COMMITTEE_REVIEW: "REVIEW_PROCESS_COMMITTEE_REVIEW",
 } as const;
 
+// Descriptive rather than a restatement of the enum name: the process a project
+// declares here only matters alongside min_verifier_count, which is what
+// actually gates completion.
+export const REVIEW_PROCESS_LABELS: Record<string, string> = {
+  [ReviewProcess.CONVICTION_ONLY]: "Conviction only",
+  [ReviewProcess.CREATOR_APPROVAL]: "Creator approval",
+  [ReviewProcess.PEER_REVIEW]: "Peer review",
+  [ReviewProcess.COMMITTEE_REVIEW]: "Committee review",
+};
+
 export const ChallengeStatus = {
   ACTIVE: "CHALLENGE_STATUS_ACTIVE",
   IN_JURY_REVIEW: "CHALLENGE_STATUS_IN_JURY_REVIEW",
@@ -593,6 +796,11 @@ export const RoleType = {
   CONTENT_SENTINEL: 1,
   COLLECT_CURATOR: 2,
   FEDERATION_VERIFIER: 3,
+  // Reviews submitted initiative work against its acceptance criteria (chain
+  // commit 70dce72). Owned by x/rep rather than folded into CONTENT_SENTINEL
+  // because the competence, the liability (a wrong approval mints DREAM), the
+  // bond sizing and the accuracy denominators all differ.
+  INITIATIVE_REVIEWER: 4,
 } as const;
 
 export type RoleTypeValue = typeof RoleType[keyof typeof RoleType];
@@ -601,6 +809,7 @@ export const ROLE_TYPE_LABELS: Record<number, string> = {
   [RoleType.CONTENT_SENTINEL]: "Sentinel",
   [RoleType.COLLECT_CURATOR]: "Curator",
   [RoleType.FEDERATION_VERIFIER]: "Verifier",
+  [RoleType.INITIATIVE_REVIEWER]: "Reviewer",
 };
 
 export const BondedRoleStatus = {
@@ -664,4 +873,131 @@ export interface BondedRolesByTypeResponse {
 
 export interface BondedRoleConfigResponse {
   bonded_role_config: BondedRoleConfig;
+}
+
+// RoleActivity is the shared accountability record behind every bonded role,
+// keyed by (role_type, address) and owned by x/rep. Sentinels had it projected
+// through x/forum; reviewers and curators had no read surface at all, which
+// matters because the record gates pay and drives demotion (chain commit
+// 32f2cee).
+
+/** One reward-epoch slot in the rolling accuracy ring. */
+export interface RoleAccuracyBucket {
+  epoch: string;
+  upheld: string;
+  overturned: string;
+}
+
+export interface RoleActivity {
+  role_type: string;
+  address: string;
+  consecutive_upheld: string;
+  consecutive_overturns: string;
+  /**
+   * Unix timestamp until which the holder may not take new moderation actions
+   * on any surface, after a lost appeal.
+   */
+  overturn_cooldown_until: string;
+  consecutive_inactive_epochs?: string;
+  /** Jury verdicts (either way) resolved this reward epoch. */
+  epoch_appeals_resolved: string;
+  accuracy_window?: RoleAccuracyBucket[];
+  /** Per-action-kind counters, keyed by the rep-owned kind constants. */
+  epoch_actions?: Record<string, string>;
+  total_actions?: Record<string, string>;
+  upheld_actions?: Record<string, string>;
+  overturned_actions?: Record<string, string>;
+}
+
+export interface RoleActivityResponse {
+  role_activity: RoleActivity;
+}
+
+/**
+ * One bonded-role SPARK reward pool. The pools are derived sub-addresses with
+ * no other read surface, so without this query the automatic community-pool
+ * funding is invisible.
+ */
+export interface RoleRewardPoolStatus {
+  /** e.g. "content_sentinel", "initiative_reviewer", "collect_curator". */
+  role: string;
+  address: string;
+  balance: string;
+  /** Configured ceiling; excess is burned each epoch. */
+  cap: string;
+  /** max(0, cap - balance): this pool's share of the daily draw. */
+  headroom: string;
+}
+
+export interface RoleRewardPoolsResponse {
+  pools?: RoleRewardPoolStatus[];
+  /** SPARK already drawn from the community pool on the current UTC day. */
+  funded_today: string;
+  /**
+   * Today's computed allowance in uspark, from
+   * annual_provisions * community_tax * inflation_share / 365. Zero means
+   * automatic funding is off or nothing is being minted yet.
+   */
+  daily_funding_cap: string;
+  /** The role_reward_inflation_share param the allowance derives from. */
+  inflation_share: string;
+}
+
+// Jury summons. Jurors are drawn by lot and must accept to convert the seat
+// into a commitment; declining is free and immediate, while ignoring the
+// summons costs the seat and counts against the participation rate.
+
+export const Verdict = {
+  PENDING: "VERDICT_PENDING",
+  UPHOLD_CHALLENGE: "VERDICT_UPHOLD_CHALLENGE",
+  REJECT_CHALLENGE: "VERDICT_REJECT_CHALLENGE",
+  INCONCLUSIVE: "VERDICT_INCONCLUSIVE",
+} as const;
+
+export const VERDICT_LABELS: Record<string, string> = {
+  [Verdict.PENDING]: "Pending",
+  [Verdict.UPHOLD_CHALLENGE]: "Challenge upheld",
+  [Verdict.REJECT_CHALLENGE]: "Challenge rejected",
+  [Verdict.INCONCLUSIVE]: "Inconclusive",
+};
+
+export interface JurorVote {
+  juror: string;
+  criteria_votes?: CriteriaVote[];
+  verdict: string;
+  confidence: string;
+  reasoning: string;
+  submitted_at: string;
+}
+
+export interface JuryReview {
+  id: string;
+  challenge_id: string;
+  initiative_id: string;
+  jurors: string[];
+  required_votes: number;
+  expert_witnesses?: string[];
+  review_deliverable: string;
+  challenger_claim: string;
+  assignee_response: string;
+  votes?: JurorVote[];
+  deadline: string;
+  verdict: string;
+  reasoning: string;
+  /** Non-zero when this review settles a content challenge, not an initiative. */
+  content_challenge_id: string;
+  /**
+   * Height by which a seated juror must accept, after which unanswered seats
+   * are vacated and redrawn. Scaled to the review period via
+   * jury_acceptance_window_ratio rather than a fixed two hours.
+   */
+  acceptance_deadline: string;
+  /** Jurors who have accepted the summons. */
+  accepted?: string[];
+  redraw_count: number;
+}
+
+export interface JuryReviewsByJurorResponse {
+  jury_review?: JuryReview[];
+  pagination?: Pagination;
 }

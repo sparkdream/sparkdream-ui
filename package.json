@@ -18,7 +18,7 @@
     "@cosmjs/proto-signing": "^0.39.0",
     "@cosmjs/stargate": "^0.39.0",
     "@cosmjs/tendermint-rpc": "^0.39.0",
-    "@sparkdreamnft/sparkdreamjs": "^0.0.35",
+    "@sparkdreamnft/sparkdreamjs": "^0.0.36",
     "next": "16.2.7",
     "react": "19.2.4",
     "react-dom": "19.2.4"

@@ -884,9 +884,10 @@ const MODULES: Record<string, ModuleDef> = {
       { group: "Project Caps", key: "proposedProjectExpiryBlocks", apiKey: "proposed_project_expiry_blocks", label: "Proposed Project Expiry (blocks)", kind: "bigint" },
 
       // Self-assignment safeguards
-      { group: "Self-Assignment", key: "selfAssignedBondRate", apiKey: "self_assigned_bond_rate", label: "Self-Assigned Bond Rate", kind: "dec", hint: "Fraction of budget locked as bond when the project creator self-assigns; 0 disables" },
+      { group: "Self-Assignment", key: "selfAssignedBondRate", apiKey: "self_assigned_bond_rate", label: "Self-Assigned Bond Rate", kind: "dec", hint: "Fraction of budget locked as bond when the assignee authored the initiative or its project; 0 disables" },
       { group: "Self-Assignment", key: "selfAssignedExternalConvictionRatio", apiKey: "self_assigned_external_conviction_ratio", label: "Self-Assigned External Conviction Ratio", kind: "dec", hint: ">= External Conviction Ratio and <= 1" },
-      { group: "Self-Assignment", key: "selfAssignedChallengeMultiplier", apiKey: "self_assigned_challenge_multiplier", label: "Self-Assigned Challenge Multiplier", kind: "bigint", hint: "Challenge window multiplier for creator-assigned initiatives; >= 1" },
+      { group: "Self-Assignment", key: "selfAssignedChallengeMultiplier", apiKey: "self_assigned_challenge_multiplier", label: "Self-Assigned Challenge Multiplier", kind: "bigint", hint: "Challenge window multiplier for self-assigned initiatives; >= 1" },
+      { group: "Self-Assignment", key: "permissionlessSelfAssignedBondRate", apiKey: "permissionless_self_assigned_bond_rate", label: "Permissionless Self-Assigned Bond Rate", kind: "dec", hint: "Higher than the funded rate: permissionless work mints DREAM nobody approved" },
 
       // Permissionless creation
       { group: "Permissionless", key: "projectCreationFee", apiKey: "project_creation_fee", label: "Project Creation Fee", kind: "dream" },
@@ -903,6 +904,47 @@ const MODULES: Record<string, ModuleDef> = {
       { group: "Sentinel Rewards", key: "minAppealsForAccuracy", apiKey: "min_appeals_for_accuracy", label: "Min Appeals For Accuracy", kind: "bigint" },
       { group: "Sentinel Rewards", key: "minEpochActivityForReward", apiKey: "min_epoch_activity_for_reward", label: "Min Epoch Activity For Reward", kind: "bigint" },
       { group: "Sentinel Rewards", key: "minAppealRate", apiKey: "min_appeal_rate", label: "Min Appeal Rate", kind: "dec" },
+
+      // Curator rewards. Same shape and cadence as the sentinel pool and sized
+      // to match it, but kept as separate params so neither role can be
+      // retuned by the other's bar (chain commit 32f2cee).
+      { group: "Curator Rewards", key: "maxCuratorRewardPool", apiKey: "max_curator_reward_pool", label: "Max Curator Reward Pool", kind: "amount" },
+      { group: "Curator Rewards", key: "curatorRewardPoolOverflowBurnRatio", apiKey: "curator_reward_pool_overflow_burn_ratio", label: "Curator Pool Overflow Burn Ratio", kind: "dec" },
+      { group: "Curator Rewards", key: "curatorRewardEpochBlocks", apiKey: "curator_reward_epoch_blocks", label: "Curator Reward Epoch (blocks)", kind: "bigint" },
+      { group: "Curator Rewards", key: "minCuratorAccuracy", apiKey: "min_curator_accuracy", label: "Min Curator Accuracy", kind: "dec" },
+      { group: "Curator Rewards", key: "curatorAccuracyWindowEpochs", apiKey: "curator_accuracy_window_epochs", label: "Curator Accuracy Window (epochs)", kind: "bigint" },
+
+      // Reviewer rewards. The DREAM review fee pays for the act of reviewing;
+      // this SPARK pool pays for reviewing well, gated on windowed accuracy.
+      { group: "Reviewer Rewards", key: "maxReviewerRewardPool", apiKey: "max_reviewer_reward_pool", label: "Max Reviewer Reward Pool", kind: "amount" },
+      { group: "Reviewer Rewards", key: "reviewerRewardPoolOverflowBurnRatio", apiKey: "reviewer_reward_pool_overflow_burn_ratio", label: "Reviewer Pool Overflow Burn Ratio", kind: "dec" },
+      { group: "Reviewer Rewards", key: "reviewerRewardEpochBlocks", apiKey: "reviewer_reward_epoch_blocks", label: "Reviewer Reward Epoch (blocks)", kind: "bigint" },
+      { group: "Reviewer Rewards", key: "minReviewerAccuracy", apiKey: "min_reviewer_accuracy", label: "Min Reviewer Accuracy", kind: "dec" },
+      { group: "Reviewer Rewards", key: "reviewerAccuracyWindowEpochs", apiKey: "reviewer_accuracy_window_epochs", label: "Reviewer Accuracy Window (epochs)", kind: "bigint" },
+
+      // Shared bonded-role funding. One capped claim on the community pool for
+      // the whole module, divided internally by each pool's headroom.
+      { group: "Role Rewards", key: "roleRewardInflationShare", apiKey: "role_reward_inflation_share", label: "Role Reward Inflation Share", kind: "dec", hint: "Share of the community pool's inflation income drawn per day; 0 disables the skim" },
+
+      // Initiative review (chain commits 70dce72 / 32f2cee)
+      { group: "Initiative Review", key: "reviewRequiredAboveBudget", apiKey: "review_required_above_budget", label: "Review Required Above Budget", kind: "dream", hint: "Budgets above this cannot complete without a reviewer verdict; 0 leaves review to project policy" },
+      { group: "Initiative Review", key: "reviewerBondReserveRate", apiKey: "reviewer_bond_reserve_rate", label: "Reviewer Bond Reserve Rate", kind: "dec", hint: "Fraction of the budget a reviewer commits per verdict, and what an overturn slashes" },
+      { group: "Initiative Review", key: "reviewFeeRate", apiKey: "review_fee_rate", label: "Review Fee Rate", kind: "dec", hint: "Fraction of the budget split across the round's reviewers, paid per verdict filed" },
+      { group: "Initiative Review", key: "maxReviewRounds", apiKey: "max_review_rounds", label: "Max Review Rounds", kind: "number", hint: "Rounds before a rejection is terminal" },
+      { group: "Initiative Review", key: "reviewBountyReclaimDelay", apiKey: "review_bounty_reclaim_delay", label: "Review Bounty Reclaim Delay (blocks)", kind: "bigint" },
+      { group: "Initiative Review", key: "permissionlessMinReviewBountyRate", apiKey: "permissionless_min_review_bounty_rate", label: "Permissionless Min Review Bounty Rate", kind: "dec", hint: "Fraction of budget a permissionless initiative escrows at creation, above the review threshold" },
+
+      // Jury economics and timing
+      { group: "Jury", key: "jurorRewardRate", apiKey: "juror_reward_rate", label: "Juror Reward Rate", kind: "dec", hint: "Fraction of the disputed initiative's budget split across the seats" },
+      { group: "Jury", key: "minJurorReward", apiKey: "min_juror_reward", label: "Min Juror Reward", kind: "dream", hint: "Floor on one juror's pay, and the whole rate for disputes with no initiative budget" },
+      { group: "Jury", key: "abandonedJurySeatPenalty", apiKey: "abandoned_jury_seat_penalty", label: "Abandoned Jury Seat Penalty", kind: "dec", hint: "Reputation deducted per tag from a juror who accepted and then lapsed" },
+      { group: "Jury", key: "juryAcceptanceWindowRatio", apiKey: "jury_acceptance_window_ratio", label: "Jury Acceptance Window Ratio", kind: "dec", hint: "Fraction of the review period a juror has to answer a summons" },
+      { group: "Jury", key: "maxJuryRedraws", apiKey: "max_jury_redraws", label: "Max Jury Redraws", kind: "number" },
+      { group: "Jury", key: "minJurorSelectionWeight", apiKey: "min_juror_selection_weight", label: "Min Juror Selection Weight", kind: "dec", hint: "Floor on the responsiveness multiplier; never zero, or a juror could not earn their way back" },
+      { group: "Jury", key: "minJurySeatingsForWeighting", apiKey: "min_jury_seatings_for_weighting", label: "Min Jury Seatings For Weighting", kind: "bigint" },
+
+      // Initiative payouts
+      { group: "Initiatives", key: "initiativeCompletionBonusRate", apiKey: "initiative_completion_bonus_rate", label: "Initiative Completion Bonus Rate", kind: "dec", hint: "Conviction-weighted bonus to external stakers on completion" },
     ],
   },
 };

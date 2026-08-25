@@ -101,6 +101,31 @@ export const RepMsgTypeUrls = {
   CreateChallenge: "/sparkdream.rep.v1.MsgCreateChallenge",
   RespondToChallenge: "/sparkdream.rep.v1.MsgRespondToChallenge",
   SubmitJurorVote: "/sparkdream.rep.v1.MsgSubmitJurorVote",
+  // Jury summons lifecycle (chain commit 70dce72, sparkdreamjs 0.0.36).
+  // Accepting converts a seat drawn by lot into a commitment to vote and is
+  // what makes the abandoned-seat penalty fair; declining is free and immediate
+  // so the seat can be redrawn while there is still time to read the work.
+  AcceptJuryDuty: "/sparkdream.rep.v1.MsgAcceptJuryDuty",
+  DeclineJuryDuty: "/sparkdream.rep.v1.MsgDeclineJuryDuty",
+  // Bonded initiative review (chain commit 70dce72). SubmitInitiativeReview
+  // files one reviewer's verdict on the current round and reserves bond scaled
+  // to the initiative budget; MsgApproveInitiative is the separate, advisory
+  // staker endorsement and does not satisfy the gate.
+  SubmitInitiativeReview: "/sparkdream.rep.v1.MsgSubmitInitiativeReview",
+  // Project creator (or Operations Committee) turns review on for a project's
+  // initiatives. Settable while the project is ACTIVE rather than fixed at
+  // creation, because the reviewer roster grows over time.
+  SetVerificationPolicy: "/sparkdream.rep.v1.MsgSetVerificationPolicy",
+  // Operations Committee settles a review round that hit its deadline without
+  // meeting the gate: approve, reject (another round), or pass (let conviction
+  // and the challenge window decide). Silence resolves to reject.
+  ResolveReviewEscalation: "/sparkdream.rep.v1.MsgResolveReviewEscalation",
+  // Review bounties (chain commit 32f2cee): anyone escrows DREAM against an
+  // initiative to bid reviewer attention toward it. Paid per verdict filed, so
+  // funding buys a look rather than an approval. Reclaim needs
+  // params.review_bounty_reclaim_delay blocks AND no verdict filed yet.
+  FundReviewBounty: "/sparkdream.rep.v1.MsgFundReviewBounty",
+  ReclaimReviewBounty: "/sparkdream.rep.v1.MsgReclaimReviewBounty",
   // Content challenges against author-bonded posts/replies (distinct from the
   // member challenge flow above).
   ChallengeContent: "/sparkdream.rep.v1.MsgChallengeContent",

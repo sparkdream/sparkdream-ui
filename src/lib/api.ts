@@ -76,6 +76,12 @@ import type {
   AvailableInitiativesResponse,
   InitiativesByAssigneeResponse,
   InitiativesByCreatorResponse,
+  InitiativeReviewsResponse,
+  ReviewBountyResponse,
+  EscalatedReviewsResponse,
+  RoleRewardPoolsResponse,
+  RoleActivityResponse,
+  JuryReviewsByJurorResponse,
   ProjectsByCreatorResponse,
   ProjectsByCouncilResponse,
   GetStakeResponse,
@@ -923,6 +929,80 @@ export async function projectsByCouncil(
   return get<ProjectsByCouncilResponse>(
     `/sparkdream/rep/v1/projects_by_council/${encodeURIComponent(council)}`,
     sortedPaginationParams(pagination, sortBy)
+  );
+}
+
+// Initiative review (chain commits 70dce72 / 32f2cee). Nodes older than
+// v1.0.31 don't serve any of these; callers treat a failure as "no reviewer
+// gate on this chain" and fall back to the conviction-only presentation.
+
+/**
+ * Every review round's verdicts on one initiative, plus what the current round
+ * adds up to against the gate. There is no round selector by design: rounds
+ * number from zero and max_review_rounds bounds the set at three, so the whole
+ * history comes back at once.
+ */
+export async function initiativeReviews(initiativeId: string): Promise<InitiativeReviewsResponse> {
+  return get<InitiativeReviewsResponse>(
+    `/sparkdream/rep/v1/initiative_reviews/${initiativeId}`
+  );
+}
+
+/** DREAM escrowed against an initiative, with each contribution's reclaim state. */
+export async function reviewBounty(initiativeId: string): Promise<ReviewBountyResponse> {
+  return get<ReviewBountyResponse>(
+    `/sparkdream/rep/v1/review_bounty/${initiativeId}`
+  );
+}
+
+/**
+ * Review rounds awaiting an Operations Committee decision. Escalation is
+ * recorded in its own set rather than on the initiative, so this query is the
+ * only way for the committee to find what is waiting on it.
+ */
+export async function escalatedReviews(): Promise<EscalatedReviewsResponse> {
+  return get<EscalatedReviewsResponse>("/sparkdream/rep/v1/escalated_reviews");
+}
+
+/**
+ * Funding state of every bonded-role SPARK reward pool, plus how much of
+ * today's community-pool allowance x/rep has already drawn. The pools are
+ * derived sub-addresses with no other read surface, so automatic funding is
+ * otherwise invisible.
+ */
+export async function roleRewardPools(): Promise<RoleRewardPoolsResponse> {
+  return get<RoleRewardPoolsResponse>("/sparkdream/rep/v1/role_reward_pools");
+}
+
+/**
+ * A bonded role holder's shared accountability record: per-kind action
+ * counters, verdict streaks, overturn cooldown and the accuracy ring. The
+ * record gates reward-pool pay and drives demotion.
+ */
+export async function roleActivity(
+  roleType: RoleTypeValue,
+  address: string
+): Promise<RoleActivityResponse> {
+  return get<RoleActivityResponse>(
+    `/sparkdream/rep/v1/role_activity/${roleType}/${address}`
+  );
+}
+
+/**
+ * The jury reviews an address has been seated on. `pendingOnly` narrows it to
+ * summons they can still act on — jury duty pays but is infrequent, and there
+ * is no other way to ask "am I seated" short of paging every review.
+ */
+export async function juryReviewsByJuror(
+  juror: string,
+  pendingOnly?: boolean,
+  pagination?: PaginationRequest
+): Promise<JuryReviewsByJurorResponse> {
+  const params = paginationParams(pagination);
+  if (pendingOnly) params.set("pending_only", "true");
+  return get<JuryReviewsByJurorResponse>(
+    `/sparkdream/rep/v1/jury_reviews_by_juror/${juror}`,
+    params
   );
 }
 

@@ -34,6 +34,9 @@ import {
   InitiativeTier,
   InitiativeCategory,
   StakeTargetType,
+  CriteriaType,
+  CriteriaTypeValue,
+  CRITERIA_TYPE_LABELS,
 } from "@/types/rep";
 import {
   initiativeTierFromJSON,
@@ -43,6 +46,7 @@ import { stakeTargetTypeFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/
 import SearchableSelect from "@/components/contribute/SearchableSelect";
 import SearchField from "@/components/contribute/SearchField";
 import TrendingRailCard from "@/components/contribute/TrendingRailCard";
+import InitiativeReviewPanel from "@/components/contribute/InitiativeReviewPanel";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
@@ -341,6 +345,45 @@ function ConvictionMeter({
   );
 }
 
+// One row of the acceptance-criteria editor. `id` is what a challenger cites
+// and what a reviewer's per-criterion verdict answers, so it is authored
+// explicitly rather than generated from the question text.
+type CriteriaDraft = {
+  id: string;
+  question: string;
+  type: string;
+  required: boolean;
+  howToVerify: string;
+};
+
+const EMPTY_CRITERIA_DRAFT: CriteriaDraft = {
+  id: "",
+  question: "",
+  type: CriteriaType.BINARY,
+  required: true,
+  howToVerify: "",
+};
+
+// Chain-side limits from x/rep/types/accountability_defaults.go. Enforced here
+// so the form refuses what ValidateAcceptanceCriteria would reject at creation,
+// where the criteria are already immutable.
+const MAX_ACCEPTANCE_CRITERIA = 20;
+const MAX_CRITERIA_ID_LENGTH = 64;
+const MAX_CRITERIA_QUESTION_LENGTH = 512;
+
+// CriteriaType travels as the numeric enum in tx messages and as the string
+// form in LCD responses.
+function criteriaTypeValue(type: string): number {
+  switch (type) {
+    case CriteriaType.SCALE:
+      return CriteriaTypeValue.SCALE;
+    case CriteriaType.TEXT:
+      return CriteriaTypeValue.TEXT;
+    default:
+      return CriteriaTypeValue.BINARY;
+  }
+}
+
 // Resolves an assignee address to its onchain name, falling back to the
 // truncated bech32, for the compact row metadata. Plain text on purpose: the
 // row itself is the click target (expand), so this stays non-interactive,
@@ -402,6 +445,18 @@ export default function InitiativeList() {
   const [memberOptions, setMemberOptions] = useState<{ value: string; label: string }[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
 
+  // Submit-work panel: which initiative it's open for, plus the deliverable URI
+  // and comments typed into it. This is the step that moves an ASSIGNED
+  // initiative to SUBMITTED, where the conviction gates are evaluated.
+  const [submitWorkFor, setSubmitWorkFor] = useState<string | null>(null);
+  const [deliverableUri, setDeliverableUri] = useState("");
+  const [submitComments, setSubmitComments] = useState("");
+
+  // Review panel: which initiative it's open for and the reviewer's comments.
+  // Shared by the approve and disapprove verdicts.
+  const [reviewFor, setReviewFor] = useState<string | null>(null);
+  const [reviewComments, setReviewComments] = useState("");
+
   // Inline conviction staking: which initiative the stake form is open for and
   // the DREAM amount typed into it. Lets a member back an initiative from its
   // own details card instead of routing through the Staking view. The panel is
@@ -438,6 +493,15 @@ export default function InitiativeList() {
   // share cap: that one only bounds how much a stake counts, this one rejects
   // the transaction outright, so the amount field has to respect it.
   const [maxStakePerMemberMicro, setMaxStakePerMemberMicro] = useState<bigint | null>(null);
+  // Budget above which completion needs a bonded reviewer's approval, whatever
+  // the parent project's policy says (chain commit 32f2cee). The gate keys on
+  // how much DREAM a completion CREATES, so it applies to permissionless work
+  // too — that is the path with no treasury behind it.
+  const [reviewRequiredAboveMicro, setReviewRequiredAboveMicro] = useState<bigint | null>(null);
+  // Fraction of the budget a PERMISSIONLESS initiative escrows as a review
+  // bounty at creation, charged only above the threshold above. Below the gate
+  // it would take DREAM for a review that never happens.
+  const [minBountyRate, setMinBountyRate] = useState(0);
   useEffect(() => {
     getRepParams()
       .then((res) => {
@@ -447,6 +511,12 @@ export default function InitiativeList() {
         const maxShare = Number(p.max_conviction_share_per_member);
         const extRatio = Number(p.external_conviction_ratio);
         const selfExtRatio = Number(p.self_assigned_external_conviction_ratio);
+        const reviewAbove = p.review_required_above_budget;
+        if (typeof reviewAbove === "string" && /^\d+$/.test(reviewAbove)) {
+          setReviewRequiredAboveMicro(BigInt(reviewAbove));
+        }
+        const bountyRate = Number(p.permissionless_min_review_bounty_rate);
+        if (bountyRate > 0) setMinBountyRate(bountyRate);
         const maxStake = p.max_initiative_stake_per_member;
         if (typeof maxStake === "string" && /^\d+$/.test(maxStake)) {
           setMaxStakePerMemberMicro(BigInt(maxStake));
@@ -477,6 +547,19 @@ export default function InitiativeList() {
     setProjectFilter(urlProject);
   }, [urlProject]);
 
+  // `?initiative=<id>` opens one initiative directly — that's how the Review
+  // queue links to the work it wants a verdict on. The list is paginated, so
+  // the id is pushed through the search field (which matches a bare or #-
+  // prefixed id) rather than assumed to be on the current page, and closed
+  // statuses are unhidden so a completed one still resolves.
+  const urlInitiative = searchParams.get("initiative") || "";
+  useEffect(() => {
+    if (!urlInitiative) return;
+    setSearchQuery(`#${urlInitiative}`);
+    setShowClosed(true);
+    setExpanded(urlInitiative);
+  }, [urlInitiative]);
+
   const selectProject = useCallback(
     (id: string) => {
       setProjectFilter(id);
@@ -498,6 +581,24 @@ export default function InitiativeList() {
   const [formTier, setFormTier] = useState<string>(InitiativeTier.STANDARD);
   const [formCategory, setFormCategory] = useState<string>(InitiativeCategory.FEATURE);
   const [formBudget, setFormBudget] = useState("");
+  // Acceptance criteria: the definition of done, pre-committed before any work
+  // starts and immutable afterwards. Optional, and empty by default — an
+  // initiative with none can only ever be challenged free-form, which is what
+  // every initiative could do before chain commit 70dce72.
+  const [formCriteria, setFormCriteria] = useState<CriteriaDraft[]>([]);
+
+  // Budget as micro-DREAM, for the review-gate notice under the form. Parsed
+  // leniently: the field is free text and only compares against the threshold.
+  const budgetMicro = useMemo(() => {
+    const parsed = parseFloat(formBudget);
+    return Number.isFinite(parsed) && parsed > 0
+      ? BigInt(Math.floor(parsed * 1e6))
+      : BigInt(0);
+  }, [formBudget]);
+  const selectedProjectPermissionless = useMemo(
+    () => projects.find((p) => p.id === formProjectId)?.permissionless === true,
+    [projects, formProjectId],
+  );
 
   // One page of the list backing the current tab, sorted chain-side.
   //
@@ -688,8 +789,22 @@ export default function InitiativeList() {
             tags: formTags,
             tier: BigInt(initiativeTierFromJSON(formTier)),
             category: BigInt(initiativeCategoryFromJSON(formCategory)),
-            templateId: "",
             budget: budgetAmount,
+            // The definition of done, immutable from here on. Chain commit
+            // 70dce72 replaced template_id (which resolved against a registry
+            // no message could write to) with these per-initiative criteria.
+            // Rows with no question are dropped: an empty one fails
+            // ValidateAcceptanceCriteria rather than being ignored.
+            acceptanceCriteria: formCriteria
+              .filter((c) => c.question.trim())
+              .map((c, i) => ({
+                id: c.id.trim() || `c${i + 1}`,
+                question: c.question.trim(),
+                type: criteriaTypeValue(c.type),
+                required: c.required,
+                howToVerify: c.howToVerify.trim(),
+                evidence: "",
+              })),
           },
         },
       ]);
@@ -699,6 +814,7 @@ export default function InitiativeList() {
       setFormDesc("");
       setFormTags([]);
       setFormBudget("");
+      setFormCriteria([]);
       await fetchInitiatives(tab, projectFilter, sort);
     } catch (err) {
       console.error("Create initiative failed:", err);
@@ -731,6 +847,89 @@ export default function InitiativeList() {
     } catch (err) {
       console.error("Assign failed:", err);
       setActionError({ id: initiativeId, message: txErrorMessage(err, "Failed to assign initiative") });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Hands in the deliverable for an initiative you're assigned to. The chain
+  // only accepts this from the assignee while the initiative is ASSIGNED, and
+  // it doesn't check conviction here: submitting flips the status to SUBMITTED,
+  // and the EndBlocker then evaluates the completion gates (total conviction,
+  // the external share, no open challenges) every block from that point on.
+  //
+  // deliverable_uri has no ValidateBasic chain-side, so an empty string would
+  // be accepted and leave the initiative in review with nothing to review. The
+  // button is disabled until something is typed.
+  const handleSubmitWork = async (initiativeId: string) => {
+    if (!address || !deliverableUri.trim()) return;
+    try {
+      setActionLoading(`submit-${initiativeId}`);
+      setActionError(null);
+      await signAndBroadcast([{
+        typeUrl: RepMsgTypeUrls.SubmitInitiativeWork,
+        // initiative_id is uint64; BigInt keeps the amino converter's
+        // `!== BigInt(0)` omit-zero check honest under JS strict equality.
+        value: {
+          creator: address,
+          initiativeId: BigInt(initiativeId),
+          deliverableUri: deliverableUri.trim(),
+          comments: submitComments.trim(),
+        },
+      }]);
+      setSubmitWorkFor(null);
+      setDeliverableUri("");
+      setSubmitComments("");
+      await fetchInitiatives(tab, projectFilter, sort);
+    } catch (err) {
+      console.error("Submit work failed:", err);
+      setActionError({ id: initiativeId, message: txErrorMessage(err, "Failed to submit work") });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Records a staker's endorsement of submitted work, or the Operations
+  // Committee's decision to end it.
+  //
+  // The two verdicts are not symmetric. Approval is advisory: the chain appends
+  // the signer to `approvals` and nothing consults that list, so conviction and
+  // the bonded reviewers' verdicts remain the gates on payout. Disapproval is
+  // committee-only and abandons the initiative outright, returning its budget
+  // and self-assign bond. The stake-weighted staker veto that used to sit here
+  // was retired in chain commit 70dce72: it was held by exactly the people paid
+  // on completion, and quality is the bonded reviewer's question now. Stakers
+  // still exit by withdrawing stake, which drops conviction back below the bar.
+  //
+  // MsgApproveInitiative no longer carries criteria_votes at all. Per-criterion
+  // verdicts moved to MsgSubmitInitiativeReview and MsgSubmitJurorVote, where
+  // somebody is accountable for getting them right.
+  const handleReview = async (initiativeId: string, approved: boolean) => {
+    if (!address) return;
+    const key = approved ? `approve-${initiativeId}` : `disapprove-${initiativeId}`;
+    try {
+      setActionLoading(key);
+      setActionError(null);
+      await signAndBroadcast([{
+        typeUrl: RepMsgTypeUrls.ApproveInitiative,
+        // initiative_id is uint64; BigInt keeps the amino override's
+        // `!== BigInt(0)` omit-zero check honest under JS strict equality.
+        value: {
+          creator: address,
+          initiativeId: BigInt(initiativeId),
+          approved,
+          comments: reviewComments.trim(),
+        },
+      }]);
+      setReviewFor(null);
+      setReviewComments("");
+      await fetchInitiatives(tab, projectFilter, sort);
+    } catch (err) {
+      console.error("Review failed:", err);
+      setActionError({
+        id: initiativeId,
+        message: txErrorMessage(err, approved ? "Failed to approve" : "Failed to end initiative"),
+      });
     } finally {
       setActionLoading(null);
     }
@@ -1172,6 +1371,131 @@ export default function InitiativeList() {
                 className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
               />
             </div>
+
+            {/* Acceptance criteria. Optional, and worth saying why they are
+                worth writing: they are fixed before any work starts, so they
+                give a challenger something objective to point at and a reviewer
+                a real question to answer instead of a free-form impression. */}
+            <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  Definition of done
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setFormCriteria((prev) => [...prev, { ...EMPTY_CRITERIA_DRAFT }])}
+                  disabled={formCriteria.length >= MAX_ACCEPTANCE_CRITERIA}
+                  className="sd-btn sd-btn-secondary"
+                >
+                  Add criterion
+                </button>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                Optional, and fixed once the initiative exists. Each criterion gives a
+                challenger a concrete claim to dispute and a reviewer a specific question to
+                answer. Up to {MAX_ACCEPTANCE_CRITERIA}.
+              </p>
+              {formCriteria.map((c, idx) => (
+                <div key={idx} className="mt-2 rounded border border-zinc-800 p-2">
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      type="text"
+                      placeholder={`id (defaults to c${idx + 1})`}
+                      value={c.id}
+                      maxLength={MAX_CRITERIA_ID_LENGTH}
+                      onChange={(e) =>
+                        setFormCriteria((prev) =>
+                          prev.map((x, i) => (i === idx ? { ...x, id: e.target.value } : x)),
+                        )
+                      }
+                      className="w-32 rounded border border-zinc-700 bg-zinc-800/50 px-2 py-1 text-xs text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+                    />
+                    <select
+                      value={c.type}
+                      onChange={(e) =>
+                        setFormCriteria((prev) =>
+                          prev.map((x, i) => (i === idx ? { ...x, type: e.target.value } : x)),
+                        )
+                      }
+                      className="rounded border border-zinc-700 bg-zinc-800/50 px-2 py-1 text-xs text-zinc-200 focus:border-indigo-500 focus:outline-none"
+                    >
+                      {Object.entries(CRITERIA_TYPE_LABELS).map(([val, label]) => (
+                        <option key={val} value={val}>{label}</option>
+                      ))}
+                    </select>
+                    <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+                      <input
+                        type="checkbox"
+                        checked={c.required}
+                        onChange={(e) =>
+                          setFormCriteria((prev) =>
+                            prev.map((x, i) => (i === idx ? { ...x, required: e.target.checked } : x)),
+                          )
+                        }
+                      />
+                      Required
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setFormCriteria((prev) => prev.filter((_, i) => i !== idx))}
+                      className="ml-auto text-xs text-zinc-500 transition-colors hover:text-red-400"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="What has to be true for this to be done?"
+                    value={c.question}
+                    maxLength={MAX_CRITERIA_QUESTION_LENGTH}
+                    onChange={(e) =>
+                      setFormCriteria((prev) =>
+                        prev.map((x, i) => (i === idx ? { ...x, question: e.target.value } : x)),
+                      )
+                    }
+                    className="mt-1.5 w-full rounded border border-zinc-700 bg-zinc-800/50 px-2 py-1 text-xs text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    placeholder="How to verify it (optional)"
+                    value={c.howToVerify}
+                    maxLength={MAX_CRITERIA_QUESTION_LENGTH}
+                    onChange={(e) =>
+                      setFormCriteria((prev) =>
+                        prev.map((x, i) => (i === idx ? { ...x, howToVerify: e.target.value } : x)),
+                      )
+                    }
+                    className="mt-1.5 w-full rounded border border-zinc-700 bg-zinc-800/50 px-2 py-1 text-xs text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* What creating this will cost beyond the budget itself. Both
+                notices key on the same chain-wide threshold. */}
+            {reviewRequiredAboveMicro !== null &&
+              reviewRequiredAboveMicro > BigInt(0) &&
+              budgetMicro > reviewRequiredAboveMicro && (
+              <p className="text-xs leading-relaxed text-zinc-500">
+                A budget this size needs at least one bonded reviewer&apos;s approval before it
+                can complete.
+                {selectedProjectPermissionless && minBountyRate > 0 && (
+                  <>
+                    {" "}
+                    Because this project is permissionless, creating it also locks{" "}
+                    <span style={{ color: "var(--amber)" }}>
+                      {formatDream(
+                        ((budgetMicro * BigInt(Math.round(minBountyRate * 1e6))) / BigInt(1e6)).toString(),
+                      )}{" "}
+                      DREAM
+                    </span>{" "}
+                    of yours as a review bounty, so the review is paid for by whoever
+                    commissions the mint.
+                  </>
+                )}
+              </p>
+            )}
+
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -1223,7 +1547,7 @@ export default function InitiativeList() {
             </button>
           ))}
         </div>
-        <div className="sm:w-44">
+        <div className="sm:w-48">
           <SearchableSelect
             options={[
               { value: "", label: "All projects" },
@@ -1337,6 +1661,22 @@ export default function InitiativeList() {
                 ? convictionParams.selfAssignedExternalRatio
                 : convictionParams.externalRatio;
             const extReqConv = reqConv * extRatio;
+
+            // Endorsement standing, mirroring msg_server_approve_initiative.go:
+            // an active stake on the initiative or a seat on the Operations
+            // Committee, minus the conflict-of-interest exclusion that bars the
+            // assignee and the parent project's creator from judging the work.
+            // Ending the initiative is committee-only; a staker's button only
+            // records the advisory endorsement.
+            const inReview =
+              ini.status === InitiativeStatus.SUBMITTED ||
+              ini.status === InitiativeStatus.IN_REVIEW;
+            const isConflicted =
+              !!address &&
+              (ini.assignee === address || projectCreatorById.get(ini.project_id) === address);
+            const canReview =
+              inReview && !!address && !isConflicted && (hasStake || isOpsCommitteeMember);
+            const youApproved = !!address && (ini.approvals ?? []).includes(address);
             // Shared stake/unstake panel values. Only this row's panel reads
             // them, but they're cheap and keep the JSX below branch-free. In
             // unstake mode the amount is bounded by the signer's position.
@@ -1692,6 +2032,19 @@ export default function InitiativeList() {
                               <dd className="truncate text-zinc-300">{ini.deliverable_uri}</dd>
                             </div>
                           )}
+                          {/* Staker endorsements. Kept separate from the
+                              reviewer verdicts below, because they are a
+                              different claim: this one says members who backed
+                              the work like the result, and nothing reads it. */}
+                          {inReview && (ini.approvals?.length ?? 0) > 0 && (
+                            <div className="min-w-0">
+                              <dt className="text-xs text-zinc-500">Endorsements</dt>
+                              <dd className="text-emerald-400">
+                                {ini.approvals.length} staker
+                                {ini.approvals.length === 1 ? "" : "s"}
+                              </dd>
+                            </div>
+                          )}
                         </dl>
                       )}
 
@@ -1783,9 +2136,22 @@ export default function InitiativeList() {
                     </div>
                   </div>
 
+                  {/* The bonded-reviewer gate: verdicts filed on the deliverable,
+                      the bounty bidding for reviewer attention, and the actions a
+                      reviewer or the Operations Committee can take. Full width
+                      below the two columns, and mounted only while the card is
+                      open, since it owns four reads of its own. */}
+                  <InitiativeReviewPanel
+                    initiative={ini}
+                    projectCreator={projectCreatorById.get(ini.project_id)}
+                    isOpsCommitteeMember={isOpsCommitteeMember}
+                    onChanged={() => { void fetchInitiatives(tab, projectFilter, sort); }}
+                  />
+
                   {/* Actions */}
                   {(ini.status === InitiativeStatus.OPEN ||
-                    (ini.status === InitiativeStatus.ASSIGNED && ini.assignee === address)) && (
+                    (ini.status === InitiativeStatus.ASSIGNED && ini.assignee === address) ||
+                    canReview) && (
                   <div className="mt-3 flex flex-wrap gap-2 border-t border-zinc-800 pt-3">
                     {ini.status === InitiativeStatus.OPEN && (
                       <button
@@ -1820,6 +2186,22 @@ export default function InitiativeList() {
                         Assign to member...
                       </button>
                     )}
+                    {ini.status === InitiativeStatus.ASSIGNED &&
+                      ini.assignee === address &&
+                      submitWorkFor !== ini.id && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSubmitWorkFor(ini.id);
+                          setDeliverableUri("");
+                          setSubmitComments("");
+                          setActionError(null);
+                        }}
+                        className="sd-btn sd-btn-primary"
+                      >
+                        Submit work
+                      </button>
+                    )}
                     {ini.status === InitiativeStatus.ASSIGNED && ini.assignee === address && (
                       <button
                         onClick={() => handleAbandon(ini.id)}
@@ -1851,6 +2233,154 @@ export default function InitiativeList() {
                         opens the panel directly under the row — no separate
                         action button here. */}
                   </div>
+                  )}
+
+                    {canReview && reviewFor !== ini.id && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReviewFor(ini.id);
+                          setReviewComments("");
+                          setActionError(null);
+                        }}
+                        className="sd-btn sd-btn-secondary"
+                      >
+                        {isOpsCommitteeMember ? "Endorse or end..." : "Endorse work"}
+                      </button>
+                    )}
+
+                    {reviewFor === ini.id && (
+                    <div className="mt-3 w-full rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+                      <label className="mb-1.5 block text-xs text-zinc-400">Review comments</label>
+                      <textarea
+                        placeholder="What you checked, and what you found (optional)"
+                        value={reviewComments}
+                        onChange={(e) => setReviewComments(e.target.value)}
+                        rows={2}
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+                      />
+
+                      {/* Be explicit about what each button does. The two are
+                          not symmetric, and neither is the quality judgement:
+                          that belongs to the bonded reviewers below. */}
+                      <div className="mt-2 space-y-1 text-xs leading-relaxed text-zinc-500">
+                        <p>
+                          Approving records your endorsement on the initiative. It does not
+                          change whether the work completes. Conviction and the reviewer
+                          verdicts decide that.
+                        </p>
+                        {/* Ending the initiative is committee-only. The
+                            stake-weighted staker veto was retired: it was held by
+                            the people paid on completion, and withdrawing stake is
+                            the exit that actually works. */}
+                        {isOpsCommitteeMember ? (
+                          <p className="text-red-400">
+                            You are on the Operations Committee, so ending this initiative
+                            abandons it immediately and returns its budget to the project.
+                            The assignee keeps their self-assign bond.
+                          </p>
+                        ) : (
+                          <p>
+                            Only the Operations Committee can end submitted work. If you no
+                            longer back this initiative, withdraw your stake instead:
+                            conviction is recomputed from live stakes, so it drops back below
+                            the completion bar within about one refresh.
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="mt-2.5 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleReview(ini.id, true)}
+                          disabled={actionLoading === `approve-${ini.id}` || youApproved}
+                          title={youApproved ? "You have already approved this initiative" : undefined}
+                          className="sd-btn sd-btn-primary"
+                        >
+                          {actionLoading === `approve-${ini.id}`
+                            ? "Approving..."
+                            : youApproved
+                              ? "Approved"
+                              : "Approve"}
+                        </button>
+                        {isOpsCommitteeMember && (
+                          <button
+                            type="button"
+                            onClick={() => handleReview(ini.id, false)}
+                            disabled={actionLoading === `disapprove-${ini.id}`}
+                            className="rounded-lg border border-red-700 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/20 disabled:opacity-50"
+                          >
+                            {actionLoading === `disapprove-${ini.id}`
+                              ? "Ending..."
+                              : "End initiative"}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReviewFor(null);
+                            setReviewComments("");
+                          }}
+                          className="sd-btn sd-btn-secondary"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {submitWorkFor === ini.id && (
+                    /* w-full so this wraps onto its own line inside the flex
+                       actions row rather than shrinking to its content width. */
+                    <div className="mt-3 w-full rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+                      <label className="mb-1.5 block text-xs text-zinc-400">Deliverable link</label>
+                      <input
+                        type="text"
+                        placeholder="https://github.com/... or ipfs://..."
+                        value={deliverableUri}
+                        onChange={(e) => setDeliverableUri(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+                      />
+                      <textarea
+                        placeholder="Comments (optional)"
+                        value={submitComments}
+                        onChange={(e) => setSubmitComments(e.target.value)}
+                        rows={2}
+                        className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+                      />
+                      {/* Submitting itself has no conviction requirement. Say so,
+                          then state whichever gate is still outstanding, so a
+                          member doesn't hold work back waiting for a bar that
+                          only matters once the initiative is in review. */}
+                      <p className="mt-2 text-xs leading-relaxed text-zinc-500">
+                        {curConv >= reqConv && extConv >= extReqConv
+                          ? "Conviction has already cleared both gates. Once submitted, this enters the review and challenge window, then completes and pays out."
+                          : curConv >= reqConv
+                            ? `Submitting doesn't require conviction. This one is over the total bar but still needs ${Math.round(extReqConv).toLocaleString()} conviction from members unaffiliated with the work before it can complete.`
+                            : `Submitting doesn't require conviction. The initiative waits in review until it reaches ${Math.round(reqConv).toLocaleString()} conviction, with ${Math.round(extReqConv).toLocaleString()} of that from members unaffiliated with the work.`}
+                      </p>
+                      <div className="mt-2.5 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSubmitWork(ini.id)}
+                          disabled={!deliverableUri.trim() || actionLoading === `submit-${ini.id}`}
+                          className="sd-btn sd-btn-primary"
+                        >
+                          {actionLoading === `submit-${ini.id}` ? "Submitting..." : "Submit work"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSubmitWorkFor(null);
+                            setDeliverableUri("");
+                            setSubmitComments("");
+                          }}
+                          className="sd-btn sd-btn-secondary"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
                   )}
 
                   {assignPickerFor === ini.id && (

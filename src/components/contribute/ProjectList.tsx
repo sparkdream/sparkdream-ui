@@ -12,6 +12,8 @@ import SearchableSelect from "@/components/contribute/SearchableSelect";
 import SearchField from "@/components/contribute/SearchField";
 import TrendingRailCard from "@/components/contribute/TrendingRailCard";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
+import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
+import VerificationPolicyPanel from "@/components/contribute/VerificationPolicyPanel";
 import type { Group } from "@/types/commons";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
@@ -115,6 +117,9 @@ const SCOPES: { key: Scope; label: string }[] = [
 
 export default function ProjectList() {
   const { address, signAndBroadcast } = useWallet();
+  // Ops committee members may set any project's verification policy, not just
+  // one they created.
+  const { isOpsCommitteeMember } = useCommonsCouncil(address ?? null);
   const searchParams = useSearchParams();
   const isMember = useIsRepMember(address);
   const canPropose = isMember === true;
@@ -776,6 +781,16 @@ export default function ProjectList() {
                       ))}
                     </div>
                   )}
+                  {/* How this project's initiatives get reviewed. Editable by
+                      the creator or the Operations Committee while the project
+                      is ACTIVE, because the reviewer roster fills up over time
+                      (chain commit 70dce72). */}
+                  <VerificationPolicyPanel
+                    project={p}
+                    isOpsCommitteeMember={isOpsCommitteeMember}
+                    onChanged={() => { void fetchProjects(); }}
+                  />
+
                   <div className="mt-3 border-t border-zinc-800 pt-3">
                     <Link
                       href={`/contribute?view=initiatives&project=${p.id}`}
