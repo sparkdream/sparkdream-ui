@@ -42,3 +42,11 @@ next-env.d.ts
 
 # testnet snapshots (captured via `npm run snapshot:capture`)
 /public/archive/
+
+# AI tooling
+.aiexclude
+.claude/
+.gemini/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
