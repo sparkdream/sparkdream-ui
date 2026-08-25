@@ -77,6 +77,9 @@ import type {
   InitiativesByAssigneeResponse,
   InitiativesByCreatorResponse,
   InitiativeReviewsResponse,
+  GetChallengeResponse,
+  ListChallengeResponse,
+  ChallengesByInitiativeResponse,
   ReviewBountyResponse,
   EscalatedReviewsResponse,
   RoleRewardPoolsResponse,
@@ -929,6 +932,37 @@ export async function projectsByCouncil(
   return get<ProjectsByCouncilResponse>(
     `/sparkdream/rep/v1/projects_by_council/${encodeURIComponent(council)}`,
     sortedPaginationParams(pagination, sortBy)
+  );
+}
+
+// Initiative challenges. A challenger locks DREAM against submitted work; the
+// assignee answers or the challenge auto-upholds at its deadline, and a
+// contested answer goes to a lot-drawn jury.
+
+export async function getRepChallenge(id: string): Promise<GetChallengeResponse> {
+  return get<GetChallengeResponse>(`/sparkdream/rep/v1/challenge/${id}`);
+}
+
+export async function listRepChallenges(
+  pagination?: PaginationRequest
+): Promise<ListChallengeResponse> {
+  return get<ListChallengeResponse>(
+    "/sparkdream/rep/v1/challenge",
+    paginationParams(pagination)
+  );
+}
+
+/**
+ * The FIRST challenge recorded against an initiative, as an id plus a numeric
+ * status — the chain's response message holds no more than that. Used only to
+ * backstop the paged listRepChallenges scan, which reads newest-first and so
+ * misses exactly the oldest challenge this one returns.
+ */
+export async function challengesByInitiative(
+  initiativeId: string
+): Promise<ChallengesByInitiativeResponse> {
+  return get<ChallengesByInitiativeResponse>(
+    `/sparkdream/rep/v1/challenges_by_initiative/${initiativeId}`
   );
 }
 

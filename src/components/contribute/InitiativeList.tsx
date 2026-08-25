@@ -47,6 +47,7 @@ import SearchableSelect from "@/components/contribute/SearchableSelect";
 import SearchField from "@/components/contribute/SearchField";
 import TrendingRailCard from "@/components/contribute/TrendingRailCard";
 import InitiativeReviewPanel from "@/components/contribute/InitiativeReviewPanel";
+import InitiativeChallengePanel from "@/components/contribute/InitiativeChallengePanel";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
@@ -2145,6 +2146,14 @@ export default function InitiativeList() {
                     initiative={ini}
                     projectCreator={projectCreatorById.get(ini.project_id)}
                     isOpsCommitteeMember={isOpsCommitteeMember}
+                    onChanged={() => { void fetchInitiatives(tab, projectFilter, sort); }}
+                  />
+
+                  {/* Disputes over the same deliverable, directly under the
+                      verdicts on it: a challenge is what a reader does when
+                      they think the reviewers got it wrong. */}
+                  <InitiativeChallengePanel
+                    initiative={ini}
                     onChanged={() => { void fetchInitiatives(tab, projectFilter, sort); }}
                   />
 

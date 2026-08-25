@@ -308,6 +308,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       //     removed template_id and drops acceptance_criteria entirely, so any
       //     initiative created WITH criteria would sign bytes the chain never
       //     reconstructs. Replaced here rather than left to the package.
+      //   - MsgCreateChallenge is stale the same way: its override predates the
+      //     criteria_id the challenger cites, so a challenge naming a criterion
+      //     would sign without it. (A free-form challenge signs fine either
+      //     way, which is what makes this the kind of bug that ships.)
       //
       // The rest are scalars only. MsgResolveReviewEscalation.resolution is an
       // enum the converter emits as a plain int (matching aminojson), and
@@ -316,6 +320,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const {
         MsgSubmitInitiativeReview: RepSubmitInitiativeReview,
         MsgCreateInitiative: RepCreateInitiative,
+        MsgCreateChallenge: RepCreateChallenge,
         MsgSetVerificationPolicy: RepSetVerificationPolicy,
         MsgResolveReviewEscalation: RepResolveReviewEscalation,
         MsgFundReviewBounty: RepFundReviewBounty,
@@ -344,6 +349,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
               : undefined,
           }),
           fromAmino: RepCreateInitiative.fromAmino,
+        },
+        "/sparkdream.rep.v1.MsgCreateChallenge": {
+          aminoType: "sparkdream/x/rep/MsgCreateChallenge",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          toAmino: (message: any) => ({
+            challenger: message.challenger === "" ? undefined : message.challenger,
+            initiative_id: message.initiativeId !== BigInt(0) ? message.initiativeId?.toString() : undefined,
+            reason: message.reason === "" ? undefined : message.reason,
+            evidence: (message.evidence?.length ?? 0) > 0 ? message.evidence : undefined,
+            staked_dream: message.stakedDream === "" ? undefined : message.stakedDream,
+            criteria_id: message.criteriaId === "" ? undefined : message.criteriaId,
+          }),
+          fromAmino: RepCreateChallenge.fromAmino,
         },
         "/sparkdream.rep.v1.MsgSubmitInitiativeReview": {
           aminoType: "sparkdream/x/rep/MsgSubmitInitiativeReview",

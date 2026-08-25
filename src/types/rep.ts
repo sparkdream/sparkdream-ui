@@ -334,10 +334,23 @@ export interface Challenge {
   evidence: string[];
   staked_dream: string;
   status: string;
+  /** Block height, not a unix timestamp. */
   created_at: string;
-  response: string;
-  response_evidence: string[];
-  responded_at: string;
+  /** Block height the challenge resolved; "0" while it is still open. */
+  resolved_at: string;
+  /**
+   * Block height by which the assignee must answer. Silence past it auto-upholds
+   * the challenge, so this is a real deadline rather than a formality. Cleared
+   * to "0" once the dispute moves to a jury.
+   */
+  response_deadline: string;
+  /**
+   * The acceptance criterion the work is said to fail, when the initiative
+   * declared any. Optional: a challenge may still be a free-form claim, but
+   * naming one turns "the work is bad" into a question a jury can settle
+   * against a standard the author agreed to before starting.
+   */
+  criteria_id?: string;
 }
 
 export interface Tag {
@@ -571,7 +584,40 @@ export const ChallengeStatus = {
   IN_JURY_REVIEW: "CHALLENGE_STATUS_IN_JURY_REVIEW",
   UPHELD: "CHALLENGE_STATUS_UPHELD",
   REJECTED: "CHALLENGE_STATUS_REJECTED",
+  // Terminates a challenge without a verdict when the initiative is discarded
+  // out from under it (the parent project was cancelled). The challenger's
+  // stake is refunded in full: the dispute was never adjudicated.
+  VOIDED: "CHALLENGE_STATUS_VOIDED",
 } as const;
+
+export const CHALLENGE_STATUS_LABELS: Record<string, string> = {
+  [ChallengeStatus.ACTIVE]: "Awaiting the assignee's answer",
+  [ChallengeStatus.IN_JURY_REVIEW]: "With the jury",
+  [ChallengeStatus.UPHELD]: "Upheld",
+  [ChallengeStatus.REJECTED]: "Rejected",
+  [ChallengeStatus.VOIDED]: "Voided",
+};
+
+export interface GetChallengeResponse {
+  challenge: Challenge;
+}
+
+export interface ListChallengeResponse {
+  challenge: Challenge[];
+  pagination: Pagination;
+}
+
+/**
+ * Singular by design of the chain's proto, not by accident of the data: the
+ * query walks the whole challenge store and returns the FIRST match for the
+ * initiative, so it finds the oldest challenge and cannot report the rest.
+ * Both fields are absent when the initiative has never been challenged.
+ */
+export interface ChallengesByInitiativeResponse {
+  challenge_id?: string;
+  /** The numeric ChallengeStatus enum value, not its string form. */
+  status?: string;
+}
 
 // API response types
 
