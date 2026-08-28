@@ -64,7 +64,18 @@ function statusColor(status: string): string {
 function formatDream(amount: string): string {
   if (!amount || amount === "0") return "0";
   const n = BigInt(amount);
-  return (n / BigInt(1000000)).toLocaleString();
+  const divisor = BigInt(1000000);
+  const whole = n / divisor;
+  const frac = n % divisor;
+  // Whole DREAM once the amount is large enough that decimals are noise, but
+  // never rounded down to a bare "0": integer division rendered a real 0.43
+  // DREAM position as "0", which reads as no position at all. Sub-DREAM
+  // amounts keep their full micro-DREAM fraction, and amounts in between keep
+  // two decimals so a position and the pool it sits in agree.
+  if (frac === BigInt(0) || whole >= BigInt(1000)) return whole.toLocaleString();
+  const digits = whole > BigInt(0) ? 2 : 6;
+  const fracStr = frac.toString().padStart(6, "0").slice(0, digits).replace(/0+$/, "");
+  return fracStr ? `${whole.toLocaleString()}.${fracStr}` : whole.toLocaleString();
 }
 
 // Sorting happens chain-side: sort_by orders the complete project set before

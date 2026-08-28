@@ -6,6 +6,7 @@ import {
   escalatedReviews,
   getBondedRole,
   getBondedRoleConfig,
+  getRepMember,
   getRepParams,
   listRepInitiatives,
   roleActivity,
@@ -25,12 +26,15 @@ import {
   BondedRoleStatus,
   InitiativeStatus,
   RoleType,
+  TRUST_LEVEL_LABELS,
+  TrustLevel,
 } from "@/types/rep";
 import type {
   BondedRole,
   BondedRoleConfig,
   EscalatedReview,
   Initiative,
+  RepMember,
   RoleActivity,
   RoleRewardPoolStatus,
 } from "@/types/rep";
@@ -41,6 +45,50 @@ const REVIEWER_POOL = "initiative_reviewer";
 
 function toMicro(amount: string): string {
   return BigInt(Math.floor(parseFloat(amount) * 1_000_000)).toString();
+}
+
+// Bonding is gated on the chain by BondRole against the role's config, and a
+// failed gate only surfaces as "tier 3 required, have 0" after the wallet has
+// signed and the tx has been broadcast. The two checks below reproduce that
+// gate so the requirement can be stated before anyone signs.
+
+// Reputation floors per tier, mirroring GetReputationTier in
+// x/rep/keeper/moderation.go. That ladder is hardcoded on the chain rather than
+// carried in params, so there is nothing to query: it has to be duplicated
+// here, and it moves only when the chain moves.
+const REP_TIER_FLOORS = [0, 10, 50, 200, 500, 1000];
+
+function repTierFor(totalRep: number): number {
+  let tier = 0;
+  for (let i = REP_TIER_FLOORS.length - 1; i >= 0; i--) {
+    if (totalRep >= REP_TIER_FLOORS[i]) {
+      tier = i;
+      break;
+    }
+  }
+  return tier;
+}
+
+// Trust levels compare by proto enum order, which is the order they are
+// declared in. BondRole tests `int32(actual) < required`.
+const TRUST_ORDER = [
+  TrustLevel.NEW,
+  TrustLevel.PROVISIONAL,
+  TrustLevel.ESTABLISHED,
+  TrustLevel.TRUSTED,
+  TrustLevel.CORE,
+] as const;
+
+function trustRank(level: string): number {
+  const i = TRUST_ORDER.indexOf(level as (typeof TRUST_ORDER)[number]);
+  return i < 0 ? 0 : i;
+}
+
+// Total reputation is the sum across tags, the same aggregate the tier ladder
+// reads. Per-tag scores are not comparable to the tier floors on their own.
+function totalReputation(member: RepMember | null): number {
+  const scores = member?.reputation_scores ?? {};
+  return Object.values(scores).reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
 }
 
 // Sums the accuracy ring the reward distribution scores. Reported as a
@@ -82,6 +130,10 @@ export default function ReviewerPanel() {
   const [queue, setQueue] = useState<Initiative[]>([]);
   const [escalations, setEscalations] = useState<EscalatedReview[]>([]);
   const [minAccuracy, setMinAccuracy] = useState<number | null>(null);
+  // The signer's own member record, read for the two eligibility gates the
+  // chain enforces on BondRole. Absent for a non-member, which cannotBond
+  // already covers.
+  const [member, setMember] = useState<RepMember | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [unsupported, setUnsupported] = useState(false);
@@ -96,7 +148,7 @@ export default function ReviewerPanel() {
       setLoading(true);
       setError(null);
 
-      const [bondRes, configRes, poolsRes, queueRes, escalationsRes, paramsRes] =
+      const [bondRes, configRes, poolsRes, queueRes, escalationsRes, paramsRes, memberRes] =
         await Promise.all([
           address ? getBondedRole(REVIEWER_ROLE, address).catch(() => null) : Promise.resolve(null),
           getBondedRoleConfig(REVIEWER_ROLE).catch(() => null),
@@ -107,6 +159,7 @@ export default function ReviewerPanel() {
           listRepInitiatives({ limit: "100", reverse: true }).catch(() => null),
           escalatedReviews().catch(() => null),
           getRepParams().catch(() => null),
+          address ? getRepMember(address).catch(() => null) : Promise.resolve(null),
         ]);
 
       // The role config is served for every RoleType, so its absence means the
@@ -124,6 +177,7 @@ export default function ReviewerPanel() {
         ),
       );
       setEscalations(escalationsRes?.escalations ?? []);
+      setMember(memberRes?.member ?? null);
       const accuracy = Number((paramsRes?.params as Record<string, unknown>)?.min_reviewer_accuracy);
       setMinAccuracy(Number.isFinite(accuracy) && accuracy > 0 ? accuracy : null);
 
@@ -200,6 +254,54 @@ export default function ReviewerPanel() {
   const accuracy = windowedAccuracy(activity);
   const totalReviews = Number(activity?.total_actions?.review ?? "0");
 
+  // Eligibility, evaluated against the live role config rather than assumed:
+  // the gates differ per chain, and a chain that drops one should stop showing
+  // it. Each requirement carries the signer's own standing so an unmet one says
+  // how far off they are, not just that they failed.
+  const requiredTier = Number(config?.min_rep_tier ?? "0");
+  const requiredTrust = config?.min_trust_level ?? "";
+  const myRep = totalReputation(member);
+  const myTier = repTierFor(myRep);
+  const tierMet = requiredTier === 0 || myTier >= requiredTier;
+  const trustMet = !requiredTrust || trustRank(member?.trust_level ?? "") >= trustRank(requiredTrust);
+  const requirements = [
+    ...(requiredTrust
+      ? [
+          {
+            key: "trust",
+            met: trustMet,
+            need: `${TRUST_LEVEL_LABELS[requiredTrust] ?? requiredTrust} trust or higher`,
+            have: member
+              ? `You are ${TRUST_LEVEL_LABELS[member.trust_level] ?? member.trust_level}`
+              : "No member record",
+          },
+        ]
+      : []),
+    ...(requiredTier > 0
+      ? [
+          {
+            key: "tier",
+            met: tierMet,
+            need: `Reputation tier ${requiredTier} (${REP_TIER_FLOORS[requiredTier]?.toLocaleString() ?? "?"} reputation)`,
+            have: `You are tier ${myTier} with ${myRep.toLocaleString(undefined, {
+              maximumFractionDigits: 2,
+            })} reputation across all tags`,
+          },
+        ]
+      : []),
+  ];
+  // Membership is checked separately and has its own copy below, so it is not
+  // folded into the list: an outsider needs an invitation, not a checklist.
+  const ineligible = !cannotBond && requirements.some((r) => !r.met);
+  const blockBond = cannotBond || ineligible;
+  // The chain requires the aggregate bond to clear min_bond on a first bond.
+  const minBondMicro = BigInt(config?.min_bond ?? "0");
+  const enteredMicro =
+    bondAmount.trim() && Number.isFinite(parseFloat(bondAmount)) && parseFloat(bondAmount) > 0
+      ? BigInt(toMicro(bondAmount))
+      : BigInt(0);
+  const belowMinBond = enteredMicro > BigInt(0) && enteredMicro < minBondMicro;
+
   return (
     <div className="space-y-4">
       <div>
@@ -237,6 +339,43 @@ export default function ReviewerPanel() {
             </p>
             <p>Pay is per verdict filed, whether you approve or reject.</p>
           </div>
+          {/* What the chain will check, shown before the wallet is asked to
+              sign. Rendered for every requirement, met or not: a reviewer who
+              qualifies should be able to see why, and a list that only appears
+              on failure reads as an error rather than as the entry rules. */}
+          {!cannotBond && requirements.length > 0 && (
+            <div className="mb-4 space-y-1.5 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+              {requirements.map((r) => (
+                <div key={r.key} className="flex items-start gap-2 text-xs">
+                  <span
+                    aria-hidden="true"
+                    className={`mt-0.5 shrink-0 font-semibold ${
+                      r.met ? "text-emerald-400" : "text-amber-400"
+                    }`}
+                  >
+                    {r.met ? "\u2713" : "\u2717"}
+                  </span>
+                  <span className="min-w-0">
+                    <span className={r.met ? "text-zinc-300" : "text-amber-300"}>{r.need}</span>
+                    <span className="text-zinc-500"> &middot; {r.have}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {ineligible && (
+            <p className="mb-3 text-xs leading-relaxed text-zinc-500">
+              Reputation comes from completing initiatives, and trust rises with reputation and
+              completed interims. Take on{" "}
+              <Link
+                href="/contribute?view=initiatives"
+                className="text-indigo-400 underline hover:text-indigo-300"
+              >
+                initiative work
+              </Link>{" "}
+              first, then come back to bond.
+            </p>
+          )}
           {cannotBond && (
             <p className="mb-3 text-xs text-zinc-500">
               Reviewing is open to members. Ask any existing{" "}
@@ -253,8 +392,14 @@ export default function ReviewerPanel() {
             <button
               type="button"
               onClick={() => setShowBondForm(true)}
-              disabled={cannotBond}
-              title={cannotBond ? "Only existing members can become a reviewer" : undefined}
+              disabled={blockBond}
+              title={
+                cannotBond
+                  ? "Only existing members can become a reviewer"
+                  : ineligible
+                  ? "You do not yet meet this chain's requirements for the reviewer role"
+                  : undefined
+              }
               className="sd-btn sd-btn-primary"
             >
               Become a reviewer
@@ -267,11 +412,16 @@ export default function ReviewerPanel() {
                 placeholder="Amount (DREAM)"
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
               />
+              {belowMinBond && (
+                <p className="text-xs text-amber-400">
+                  A first bond has to reach the {formatSpark(config?.min_bond ?? "0")} DREAM minimum.
+                </p>
+              )}
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => bondAmount.trim() && bondTx(RepMsgTypeUrls.BondRole, toMicro(bondAmount), "bond")}
-                  disabled={!bondAmount.trim() || actionLoading === "bond" || cannotBond}
+                  disabled={!bondAmount.trim() || actionLoading === "bond" || blockBond || belowMinBond}
                   className="sd-btn sd-btn-primary"
                 >
                   {actionLoading === "bond" ? "Bonding..." : "Bond"}

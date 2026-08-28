@@ -1243,8 +1243,8 @@ function LMSRCard({ params }: { params: FutarchyParams | null }) {
             <span className="var">p</span><sub>yes</sub> = <i>e</i><sup>q<sub>Y</sub>/<span className="var">b</span></sup> / (<i>e</i><sup>q<sub>Y</sub>/<span className="var">b</span></sup> + <i>e</i><sup>q<sub>N</sub>/<span className="var">b</span></sup>)
           </div>
           <p>
-            <span className="var" style={{ color: "var(--violet-hi)" }}>b</span> is the
-            liquidity parameter — derived from the creator&apos;s seed liquidity as{" "}
+            <span className="var" style={{ color: "var(--violet-hi)" }}>b</span>{" "}
+            is the liquidity parameter — derived from the creator&apos;s seed liquidity as{" "}
             <b style={{ color: "var(--ink)" }}>b = subsidy / ln(2)</b> so the maximum
             loss the creator subsidises equals their initial deposit. Bigger{" "}
             <b>b</b> ⇒ flatter price, more liquidity, larger creator subsidy.

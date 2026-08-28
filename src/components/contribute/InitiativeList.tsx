@@ -17,7 +17,7 @@ import {
   getRepParams,
 } from "@/lib/api";
 import type { InitiativeSortKey } from "@/lib/api";
-import { truncateAddress } from "@/lib/utils";
+import { truncateAddress, formatDurationApprox } from "@/lib/utils";
 import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
@@ -105,7 +105,18 @@ function txErrorMessage(err: unknown, fallback: string): string {
 function formatDream(amount: string): string {
   if (!amount || amount === "0") return "0";
   const n = BigInt(amount);
-  return (n / BigInt(1000000)).toLocaleString();
+  const divisor = BigInt(1000000);
+  const whole = n / divisor;
+  const frac = n % divisor;
+  // Whole DREAM once the amount is large enough that decimals are noise, but
+  // never rounded down to a bare "0": integer division rendered a real 0.43
+  // DREAM position as "0", which reads as no position at all. Sub-DREAM
+  // amounts keep their full micro-DREAM fraction, and amounts in between keep
+  // two decimals so a position and the pool it sits in agree.
+  if (frac === BigInt(0) || whole >= BigInt(1000)) return whole.toLocaleString();
+  const digits = whole > BigInt(0) ? 2 : 6;
+  const fracStr = frac.toString().padStart(6, "0").slice(0, digits).replace(/0+$/, "");
+  return fracStr ? `${whole.toLocaleString()}.${fracStr}` : whole.toLocaleString();
 }
 
 // Same as formatDream but keeps the sub-DREAM fraction. Used where the exact
@@ -119,6 +130,51 @@ function formatDreamExact(amount: string): string {
   const frac = n % divisor;
   if (frac === BigInt(0)) return whole.toLocaleString();
   return `${whole.toLocaleString()}.${frac.toString().padStart(6, "0").replace(/0+$/, "")}`;
+}
+
+// Conviction figures in the stake panel. Conviction is the square root of
+// micro-DREAM, so the numbers are small next to the DREAM amounts beside them
+// and rounding to whole units would erase a modest position entirely.
+function formatConviction(n: number): string {
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+// Micro-DREAM as DREAM, rounded up to two decimals. Used where the figure is
+// quoted as an amount that suffices: rounding down would name a number that
+// falls just short.
+function formatDreamCeil(micro: number): string {
+  return (Math.ceil(micro / 10_000) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+// The mirror of formatDreamCeil: rounded DOWN, for a figure quoted as "this
+// much of your entry still counts" and for the amount the Use button fills in.
+// Rounding up there would name a number that overshoots the very cap it is
+// steering the user away from. Amounts under a hundredth of a DREAM keep their
+// decimals rather than collapsing to a bare 0.
+// Plain, unlocalized DREAM string for FILLING the amount input, as opposed to
+// displaying a figure. The field is read back with parseFloat, which stops at a
+// thousands separator: a localized "4,356" would be staked as 4.
+function dreamInputValue(micro: number): string {
+  const m = Math.max(0, Math.floor(micro));
+  return String(m >= 10_000 ? Math.floor(m / 10_000) / 100 : m / 1e6);
+}
+
+// The exact-position variant, for Max: the whole micro-DREAM figure, so filling
+// Max withdraws the position down to the last micro-DREAM rather than leaving a
+// rounded-off remainder behind.
+function dreamInputExact(micro: bigint): string {
+  const divisor = BigInt(1_000_000);
+  const whole = micro / divisor;
+  const frac = (micro % divisor).toString().padStart(6, "0").replace(/0+$/, "");
+  return frac ? `${whole}.${frac}` : whole.toString();
+}
+
+function formatDreamFloor(micro: number): string {
+  const m = Math.max(0, Math.floor(micro));
+  if (m >= 10_000) {
+    return (Math.floor(m / 10_000) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+  return (m / 1e6).toLocaleString(undefined, { maximumFractionDigits: 6 });
 }
 
 // Conviction the way the chain computes it (x/rep/keeper/stake_conviction.go).
@@ -165,6 +221,18 @@ function stakeTimeFactor(createdAt: string, nowSeconds: number, halfLifeSeconds:
   return Math.min(1, Math.max(0, nowSeconds - created) / (2 * halfLifeSeconds));
 }
 
+// Conviction from an already-matured micro-DREAM aggregate: the sqrt damping
+// and the per-member cap, with the maturity walk already done by the caller.
+function convictionFromMatured(
+  maturedMicro: number,
+  requiredConviction: number,
+  params: ConvictionParams,
+): number {
+  const damped = Math.sqrt(Math.max(0, maturedMicro));
+  const cap = requiredConviction * params.maxSharePerMember;
+  return cap > 0 ? Math.min(damped, cap) : damped;
+}
+
 // One staker's conviction contribution to an initiative: sqrt of their matured
 // micro-DREAM aggregate, capped at their share ceiling.
 function stakerConviction(
@@ -179,9 +247,7 @@ function stakerConviction(
     if (!(amt > 0)) continue;
     raw += amt * stakeTimeFactor(s.created_at, nowSeconds, params.halfLifeSeconds);
   }
-  const damped = Math.sqrt(raw);
-  const cap = requiredConviction * params.maxSharePerMember;
-  return cap > 0 ? Math.min(damped, cap) : damped;
+  return convictionFromMatured(raw, requiredConviction, params);
 }
 
 // The position left after withdrawing `amountMicro`, walking stakes in the same
@@ -1723,6 +1789,48 @@ export default function InitiativeList() {
             const postConv = Math.max(0, curConv - yoursConvNow + yoursConvAfter);
             const postConvPct = reqConv > 0 ? Math.round(Math.min(postConv / reqConv, 1) * 100) : 0;
             const remainingMicro = isUnstakePanel && amountOk ? yoursMicro - amtMicro : BigInt(0);
+            // Conviction after this addition. A new stake enters at zero weight
+            // and matures linearly over two half-lives, so the instant after the
+            // tx nothing has moved: the figure worth showing is where the
+            // initiative lands once the stake has matured. Existing stakes are
+            // counted at full weight too, since they mature on the same clock,
+            // and everyone else's conviction is held at its current value. Both
+            // of those make the projection a floor rather than a forecast: other
+            // members' stakes are also still maturing upward.
+            const maturitySeconds = 2 * convictionParams.halfLifeSeconds;
+            const yoursConvMature = convictionFromMatured(
+              Number(yoursMicro + amtMicro),
+              reqConv,
+              convictionParams,
+            );
+            const addPostConv = Math.max(0, curConv - yoursConvNow + yoursConvMature);
+            const addPostConvPct =
+              reqConv > 0 ? Math.round(Math.min(addPostConv / reqConv, 1) * 100) : 0;
+            // The position that first reaches the per-member cap: conviction is
+            // the square root of matured micro-DREAM, so the cap in DREAM is the
+            // cap squared. The omitted reputation multiplier only shortens that
+            // distance, so this is a safe answer to "how much is enough".
+            const capPositionMicro = Math.pow(reqConv * convictionParams.maxSharePerMember, 2);
+            const addHitsCap =
+              reqConv > 0 && yoursConvMature >= reqConv * convictionParams.maxSharePerMember - 1e-9;
+            // Overstaking. Conviction is capped per member, so DREAM past
+            // `capPositionMicro` buys reward share and no progress at all. Two
+            // distinct cases, and only the first was previously caught:
+            //   - the entry overshoots the cap, so part of it is surplus;
+            //   - the EXISTING position already reaches the cap on its own, so
+            //     the whole entry is surplus.
+            // The second is the trap. The old check keyed on `yoursConvNow`,
+            // which is time-weighted, so a young position destined for the cap
+            // reads as far below it and the warning stayed silent exactly when
+            // the user was about to waste DREAM. Cap distance is a question
+            // about the position, not about how long it has been held.
+            const positionCapsAlone = reqConv > 0 && Number(yoursMicro) >= capPositionMicro;
+            const capHeadroomMicro = Math.max(0, capPositionMicro - Number(yoursMicro));
+            const surplusMicro = Math.max(0, Number(yoursMicro + amtMicro) - capPositionMicro);
+            const overstaking = reqConv > 0 && amtMicro > BigInt(0) && surplusMicro > 0;
+            // Only project when there is a threshold to project against and an
+            // amount that would actually be accepted.
+            const showAddProjection = !isUnstakePanel && amountOk && reqConv > 0;
             return (
             <div key={ini.id} id={`initiative-${ini.id}`} className="@container rounded-xl sd-hull-tile">
               {/* Conviction-first row (design 1b): the title leads, the funding
@@ -1816,8 +1924,8 @@ export default function InitiativeList() {
                             ? "Connect a wallet to stake"
                             : isMember === false
                             ? "Only existing members can stake"
-                            : atConvictionCap
-                            ? "Add to your stake. Your conviction is already at the per-member cap, so more DREAM earns rewards rather than adding progress"
+                            : positionCapsAlone
+                            ? "Add to your stake. Your position already reaches the per-member conviction cap, so more DREAM earns rewards rather than adding progress"
                             : hasStake
                             ? "Add to your stake"
                             : "Stake DREAM toward this initiative's conviction"
@@ -1897,7 +2005,7 @@ export default function InitiativeList() {
                     {isUnstakePanel && (
                       <button
                         type="button"
-                        onClick={() => setStakeAmount(maxDreamStr)}
+                        onClick={() => setStakeAmount(dreamInputExact(yoursMicro))}
                         disabled={yoursMicro <= BigInt(0)}
                         title="Fill your whole position"
                         className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-2 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:text-white disabled:opacity-50"
@@ -1917,15 +2025,56 @@ export default function InitiativeList() {
                         : "Enter a valid amount greater than 0"}
                     </p>
                   )}
+                  {showAddProjection && overstaking && (
+                    <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-700/50 bg-amber-900/15 px-2.5 py-2">
+                      <svg
+                        className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400"
+                        fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round" strokeLinejoin="round"
+                          d="M12 9v3.75m0 3.75h.008M10.34 3.94l-7.6 13.16A1.5 1.5 0 004.04 19.5h15.92a1.5 1.5 0 001.3-2.4L13.66 3.94a1.5 1.5 0 00-2.6 0z"
+                        />
+                      </svg>
+                      <div className="min-w-0 text-xs leading-relaxed text-amber-300">
+                        {positionCapsAlone ? (
+                          <>
+                            <span className="font-semibold">
+                              This adds no conviction.
+                            </span>{" "}
+                            Your {formatDreamExact(yoursMicro.toString())} DREAM already reaches your
+                            per-member cap, so the meter won&apos;t move however much you add.
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-semibold">
+                              Only {formatDreamFloor(capHeadroomMicro)} DREAM of this adds conviction.
+                            </span>{" "}
+                            The remaining {formatDreamCeil(surplusMicro)} DREAM is past your per-member cap.
+                            {capHeadroomMicro >= 10_000 && (
+                              <button
+                                type="button"
+                                onClick={() => setStakeAmount(dreamInputValue(capHeadroomMicro))}
+                                className="ml-1.5 rounded border border-amber-700/60 px-1.5 py-0.5 font-medium text-amber-200 transition-colors hover:border-amber-600 hover:bg-amber-900/30"
+                              >
+                                Use {formatDreamFloor(capHeadroomMicro)}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   <p className="mt-2 text-xs leading-relaxed text-zinc-500">
                     {isUnstakePanel ? (
                       <>
                         {yoursConvAfter >= yoursConvNow ? (
                           <>
                             Conviction stays near{" "}
-                            <span className="font-mono text-zinc-300">{postConvPct}%</span> of what this
-                            initiative needs. Your remaining stake still counts for as much, since a member&apos;s
-                            conviction is capped at a share of the threshold.
+                            <span className="font-mono text-zinc-300">{postConvPct}%</span>{" "}
+                            of what this initiative needs. Your remaining stake still counts for as much, since a
+                            member&apos;s conviction is capped at a share of the threshold.
                           </>
                         ) : (
                           <>
@@ -1940,16 +2089,55 @@ export default function InitiativeList() {
                           ? " Withdrawing everything returns the full amount and you'd stake again from zero."
                           : ""}
                       </>
-                    ) : atConvictionCap ? (
+                    ) : showAddProjection ? (
                       <>
-                        {/* Staking on past the cap is allowed and not pointless:
-                            completion rewards are proportional to DREAM staked,
-                            not to conviction. Saying so is the honest version of
-                            leaving Add enabled. */}
-                        Your conviction is already at the per-member cap of{" "}
-                        {Math.round(reqConv * convictionParams.maxSharePerMember).toLocaleString()}, so more DREAM
-                        here won&apos;t move this initiative closer to its threshold. It still increases your share
-                        of the rewards paid out on completion. To raise the conviction, ask another member to stake.
+                        {/* Under the amber callout, so this paragraph explains
+                            rather than warns. When the position already caps, it
+                            must NOT lead with "your conviction rises to 933":
+                            that is true and irrelevant, since it rises to 933
+                            whether or not this stake happens. */}
+                        {positionCapsAlone ? (
+                          <>
+                            {/* Staking past the cap is allowed and not pointless:
+                                completion rewards are proportional to DREAM
+                                staked, not to conviction. Saying so is the honest
+                                version of leaving Stake enabled. */}
+                            One member can contribute at most{" "}
+                            <span className="font-mono text-zinc-300">
+                              {formatConviction(reqConv * convictionParams.maxSharePerMember)}
+                            </span>{" "}
+                            of the {formatConviction(reqConv)} conviction this initiative needs, which{" "}
+                            {formatDreamCeil(capPositionMicro)} DREAM already reaches. Staking more still raises
+                            your share of the rewards paid out on completion. To move the meter, ask another
+                            member to stake.
+                          </>
+                        ) : (
+                          <>
+                            {/* A projection, not a receipt: staking moves nothing
+                                immediately, because the chain weights a stake by
+                                how long it has been held. Saying only "conviction
+                                rises to X%" would have the staker watch an
+                                unchanged meter and assume the tx failed. */}
+                            Once it matures, this stake takes your conviction from{" "}
+                            <span className="font-mono text-zinc-300">{formatConviction(yoursConvNow)}</span> to{" "}
+                            <span className="font-mono text-zinc-300">{formatConviction(yoursConvMature)}</span>,
+                            putting this initiative at roughly{" "}
+                            <span className="font-mono text-zinc-300">{addPostConvPct}%</span> of the{" "}
+                            {formatConviction(reqConv)} conviction it needs. A new stake starts at zero weight and
+                            reaches full weight over {formatDurationApprox(maturitySeconds)}, so the meter
+                            won&apos;t move the moment you stake.
+                            {addHitsCap && !overstaking
+                              ? ` That is the most one member can contribute, and ${formatDreamCeil(capPositionMicro)} DREAM staked here is exactly what reaches it.`
+                              : ""}
+                          </>
+                        )}
+                      </>
+                    ) : positionCapsAlone ? (
+                      <>
+                        Your position already reaches the per-member cap of{" "}
+                        {formatConviction(reqConv * convictionParams.maxSharePerMember)}{" "}
+                        conviction, the most one member can contribute here. More DREAM raises your share of the
+                        completion rewards rather than this initiative&apos;s progress. To raise the conviction, ask another member to stake.
                       </>
                     ) : (
                       <>
@@ -2089,7 +2277,11 @@ export default function InitiativeList() {
                                 <span>
                                   {Math.round(yoursConvNow).toLocaleString()} conviction ·{" "}
                                   {Math.round(convShare * 100)}% of the total
-                                  {atConvictionCap ? " · at the per-member cap" : ""}
+                                  {atConvictionCap
+                                    ? " · at the per-member cap"
+                                    : positionCapsAlone
+                                    ? " · reaches the per-member cap once matured"
+                                    : ""}
                                 </span>
                               )}
                               <span>Withdraw any amount, up to the full position.</span>

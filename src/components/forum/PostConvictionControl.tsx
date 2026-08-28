@@ -14,7 +14,17 @@ const UDREAM = 1_000_000;
 
 function formatDream(udream: string): string {
   if (!udream || udream === "0") return "0";
-  return (BigInt(udream) / BigInt(UDREAM)).toLocaleString();
+  const n = BigInt(udream);
+  const divisor = BigInt(UDREAM);
+  const whole = n / divisor;
+  const frac = n % divisor;
+  // Never round a real stake down to "0": integer division showed a 0.43 DREAM
+  // stake as no stake at all. Sub-DREAM amounts keep their full fraction,
+  // larger ones two decimals, and anything past 1,000 DREAM stays whole.
+  if (frac === BigInt(0) || whole >= BigInt(1000)) return whole.toLocaleString();
+  const digits = whole > BigInt(0) ? 2 : 6;
+  const fracStr = frac.toString().padStart(6, "0").slice(0, digits).replace(/0+$/, "");
+  return fracStr ? `${whole.toLocaleString()}.${fracStr}` : whole.toLocaleString();
 }
 
 interface Props {
