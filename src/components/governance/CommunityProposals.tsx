@@ -12,6 +12,7 @@ import {
   describeProposalMessages,
 } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
+import { useDisplayName } from "@/hooks/useDisplayName";
 import { canSpendTreasury } from "@/lib/commons";
 import NewCommunityProposal, { type ProposalType } from "./NewCommunityProposal";
 import { CouncilTreasuryBanner } from "./CouncilTreasury";
@@ -327,6 +328,28 @@ function TallyBar({
   );
 }
 
+// ── Vote row ────────────────────────────────────────────────────────
+
+/**
+ * One voter line in a proposal's vote list. Shows the voter's registered name
+ * when they have one (the address is still the tooltip and the copied value),
+ * falling back to the truncated bech32.
+ */
+function VoteRow({ voter, option }: { voter: string; option: number }) {
+  const { name } = useDisplayName(voter);
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <NameOrAddress
+        address={voter}
+        className={name ? "text-zinc-300" : "font-mono text-zinc-400"}
+      />
+      <span className={voteColor(option)}>
+        {VOTE_OPTION_LABELS[option] || "?"}
+      </span>
+    </div>
+  );
+}
+
 // ── Proposal card ───────────────────────────────────────────────────
 
 function CommonsProposalCard({
@@ -455,15 +478,7 @@ function CommonsProposalCard({
           {detail.votes.length > 0 && (
             <div className="mt-3 space-y-1">
               {detail.votes.map((v) => (
-                <div
-                  key={v.voter}
-                  className="flex items-center gap-2 text-xs"
-                >
-                  <NameOrAddress address={v.voter} className="font-mono text-zinc-400" />
-                  <span className={voteColor(v.option)}>
-                    {VOTE_OPTION_LABELS[v.option] || "?"}
-                  </span>
-                </div>
+                <VoteRow key={v.voter} voter={v.voter} option={v.option} />
               ))}
             </div>
           )}

@@ -22,6 +22,7 @@ import {
   describeProposalMessages,
 } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
+import { useDisplayName } from "@/hooks/useDisplayName";
 import NewChainProposal from "./NewChainProposal";
 import ParamChangeDiff from "./ParamChangeDiff";
 import NumberInput from "@/components/NumberInput";
@@ -397,6 +398,33 @@ function GovTallyBar({
   );
 }
 
+/**
+ * One voter line in a proposal's vote list. Shows the voter's registered name
+ * when they have one (the address is still the tooltip and the copied value),
+ * falling back to the truncated bech32.
+ */
+function GovVoteRow({ vote }: { vote: GovVote }) {
+  const { name } = useDisplayName(vote.voter);
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <CopyableAddress
+        className={name ? "text-zinc-300" : "font-mono text-zinc-400"}
+        address={vote.voter}
+        resolveName
+      />
+      <span className="text-zinc-500">
+        {vote.options
+          ?.map(
+            (o) =>
+              GOV_VOTE_OPTION_LABELS[o.option] ||
+              o.option.replace("VOTE_OPTION_", "")
+          )
+          .join(", ") || "?"}
+      </span>
+    </div>
+  );
+}
+
 // ── Proposal card ───────────────────────────────────────────────────
 
 function GovProposalCard({
@@ -593,21 +621,7 @@ function GovProposalCard({
           {votes && votes.length > 0 && (
             <div className="mt-3 space-y-1">
               {votes.slice(0, 20).map((v) => (
-                <div
-                  key={v.voter}
-                  className="flex items-center gap-2 text-xs"
-                >
-                  <CopyableAddress className="font-mono text-zinc-400" address={v.voter} />
-                  <span className="text-zinc-500">
-                    {v.options
-                      ?.map(
-                        (o) =>
-                          GOV_VOTE_OPTION_LABELS[o.option] ||
-                          o.option.replace("VOTE_OPTION_", "")
-                      )
-                      .join(", ") || "?"}
-                  </span>
-                </div>
+                <GovVoteRow key={v.voter} vote={v} />
               ))}
               {votes.length > 20 && (
                 <div className="text-xs text-zinc-600">
