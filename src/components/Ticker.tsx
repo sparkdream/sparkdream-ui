@@ -1,12 +1,30 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { getCurrentSeason, getLatestBlockHeight } from "@/lib/api";
+import Link from "next/link";
+import {
+  getCurrentSeason,
+  getLatestBlockHeight,
+  listGovProposals,
+  listProposals,
+} from "@/lib/api";
 import type { CurrentSeasonResponse } from "@/types/season";
+import type { GovProposal } from "@/types/gov";
+import { GovProposalStatus } from "@/types/gov";
+import type { Proposal } from "@/types/commons";
+import { ProposalStatus } from "@/types/commons";
+import { describeProposalMessages, timeRemaining } from "@/lib/utils";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 
 const FALLBACK_POLL_MS = 6000;
 const SEASON_POLL_MS = 30000;
+const PROPOSAL_POLL_MS = 60000;
+
+// How many open proposals of each kind the marquee carries before it starts
+// dropping the older ones. Enough to show a busy governance cycle without
+// pushing everything else off the loop.
+const MAX_PROPOSALS_PER_KIND = 3;
+const MAX_TITLE_CHARS = 52;
 
 // Status labels for the ticker — short, uppercase to match the marquee voice.
 // "1"/"SEASON_STATUS_*" forms both appear depending on whether the LCD encodes
@@ -53,15 +71,89 @@ function seasonItem(season: CurrentSeasonResponse | null): ReactNode {
   );
 }
 
+// A proposal earns a ticker line only while it is still open: collecting
+// deposits or taking votes. Everything settled is history, and history belongs
+// on /governance, not on the marquee. Both the "1" and "PROPOSAL_STATUS_*"
+// forms appear depending on how the LCD encodes the proto enum.
+const GOV_DEPOSIT_STATUSES = new Set<string>([
+  "1",
+  GovProposalStatus.DEPOSIT_PERIOD,
+]);
+const GOV_VOTING_STATUSES = new Set<string>([
+  "2",
+  GovProposalStatus.VOTING_PERIOD,
+]);
+const OPEN_GOV_STATUSES = new Set<string>([
+  ...GOV_DEPOSIT_STATUSES,
+  ...GOV_VOTING_STATUSES,
+]);
+
+// x/commons has a single open state: submitted, i.e. inside its voting window.
+const OPEN_COMMONS_STATUSES = new Set<string>(["1", ProposalStatus.SUBMITTED]);
+
+function shorten(text: string): string {
+  const t = text.trim();
+  if (!t) return "Proposal";
+  return t.length > MAX_TITLE_CHARS
+    ? `${t.slice(0, MAX_TITLE_CHARS - 1).trimEnd()}…`
+    : t;
+}
+
+function govItem(p: GovProposal): ReactNode {
+  const depositing = GOV_DEPOSIT_STATUSES.has(p.status);
+  // Proposers usually set a title; fall back to the inner message types so a
+  // title-less proposal still says what it would do (e.g. "Rep Param Change").
+  const what = shorten(p.title || describeProposalMessages(p.messages));
+  const left = timeRemaining(
+    depositing ? p.deposit_end_time : p.voting_end_time
+  );
+  return (
+    <Link className="sd-ticker-link" href="/governance?view=chain-proposals">
+      Chain proposal #{p.id} · {what} ·{" "}
+      <b className="hot">{depositing ? "DEPOSIT" : "VOTING"}</b>
+      {left ? ` · ${left}` : ""}
+    </Link>
+  );
+}
+
+function commonsItem(p: Proposal): ReactNode {
+  const what = shorten(describeProposalMessages(p.messages));
+  const left = timeRemaining(p.voting_deadline);
+  return (
+    <Link className="sd-ticker-link" href="/governance?view=community-proposals">
+      {p.council_name} #{p.id} · {what} · <b className="hot">VOTING</b>
+      {left ? ` · ${left}` : ""}
+    </Link>
+  );
+}
+
+// Only proposals a reader can still act on. Nothing open means no proposal
+// items at all — the ticker just carries its other lines rather than padding
+// itself out with settled votes or a placeholder.
+function proposalItems(gov: GovProposal[], community: Proposal[]): ReactNode[] {
+  return [
+    ...gov
+      .filter((p) => OPEN_GOV_STATUSES.has(p.status))
+      .slice(0, MAX_PROPOSALS_PER_KIND)
+      .map(govItem),
+    ...community
+      .filter((p) => OPEN_COMMONS_STATUSES.has(p.status))
+      .slice(0, MAX_PROPOSALS_PER_KIND)
+      .map(commonsItem),
+  ];
+}
+
 function buildItems(
   height: string | null,
-  season: CurrentSeasonResponse | null
+  season: CurrentSeasonResponse | null,
+  gov: GovProposal[],
+  community: Proposal[]
 ): ReactNode[] {
   return [
     <>Block <b>{height ?? "—"}</b></>,
     seasonItem(season),
     <>14 posts in last 24h</>,
-    <>Proposal #17 · mint curve · <b className="hot">VOTING</b></>,
+    ...proposalItems(gov, community),
     <>Naming dispute #3 · resolved</>,
     <>12 active session keys</>,
     <>Futarchy market: treasury allocation · $2,840 TVL</>,
@@ -83,6 +175,8 @@ export default function Ticker() {
   const { config } = useChainConfig();
   const [height, setHeight] = useState<string | null>(null);
   const [season, setSeason] = useState<CurrentSeasonResponse | null>(null);
+  const [govProposals, setGovProposals] = useState<GovProposal[]>([]);
+  const [communityProposals, setCommunityProposals] = useState<Proposal[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +190,29 @@ export default function Ticker() {
     };
     fetchSeason();
     const id = setInterval(fetchSeason, SEASON_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Independent settles: one endpoint being down shouldn't blank the other
+    // kind of proposal, and a failed poll keeps the last good list.
+    const fetchProposals = async () => {
+      const [gov, community] = await Promise.allSettled([
+        listGovProposals(undefined, { reverse: true, limit: "20" }),
+        listProposals(undefined, { reverse: true, limit: "20" }),
+      ]);
+      if (cancelled) return;
+      if (gov.status === "fulfilled") setGovProposals(gov.value.proposals || []);
+      if (community.status === "fulfilled") {
+        setCommunityProposals(community.value.proposals || []);
+      }
+    };
+    fetchProposals();
+    const id = setInterval(fetchProposals, PROPOSAL_POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(id);
@@ -192,7 +309,7 @@ export default function Ticker() {
     };
   }, [config.rpcEndpoint]);
 
-  const items = buildItems(height, season);
+  const items = buildItems(height, season, govProposals, communityProposals);
 
   return (
     <div className="sd-ticker" aria-label="Onchain ticker">
