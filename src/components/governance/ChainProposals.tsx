@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import type { GovProposal, GovTallyResult, GovVote } from "@/types/gov";
+import type {
+  GovParams,
+  GovProposal,
+  GovTallyResult,
+  GovVote,
+} from "@/types/gov";
+import type { DelegationResponse, Validator } from "@/types/staking";
 import {
   GovProposalStatus,
   GovVoteOptionNum,
@@ -12,7 +18,12 @@ import {
   getGovProposalVotes,
   getGovProposalTally,
   getGovDepositParams,
+  getGovParams,
+  getStakingPool,
+  listStakingValidators,
+  listDelegationsByDelegator,
 } from "@/lib/api";
+import { computeVotePower, evaluateTally, pct } from "@/lib/govTally";
 import { GovMsgTypeUrls } from "@/lib/tx";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
@@ -42,6 +53,35 @@ export default function ChainProposals() {
   // loading or if the LCD lookup fails — in either case the cards fall back
   // to the prior "type any amount" behavior.
   const [minDepositMicro, setMinDepositMicro] = useState<bigint | null>(null);
+  // Chain-wide inputs to the tally math, fetched once and shared by every
+  // card: the tallying params (quorum / threshold / veto_threshold) and the
+  // bonded set they are measured against. `null` means the lookup is still in
+  // flight or failed, and the cards degrade to a bar with no markers rather
+  // than showing a quorum we can't back up.
+  const [tallyParams, setTallyParams] = useState<GovParams | null>(null);
+  const [bondedTokens, setBondedTokens] = useState<bigint | null>(null);
+  const [bondedValidators, setBondedValidators] = useState<Validator[] | null>(
+    null
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      getGovParams().catch(() => null),
+      getStakingPool().catch(() => null),
+      listStakingValidators("BOND_STATUS_BONDED", { limit: "300" }).catch(
+        () => null
+      ),
+    ]).then(([paramsRes, poolRes, validatorsRes]) => {
+      if (cancelled) return;
+      if (paramsRes?.params) setTallyParams(paramsRes.params);
+      if (poolRes?.pool) setBondedTokens(BigInt(poolRes.pool.bonded_tokens));
+      if (validatorsRes) setBondedValidators(validatorsRes.validators || []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -186,6 +226,10 @@ export default function ChainProposals() {
               displayDenom={config.displayDenom}
               denom={config.denom}
               minDepositMicro={minDepositMicro}
+              tallyParams={tallyParams}
+              bondedTokens={bondedTokens}
+              bondedValidators={bondedValidators}
+              accPrefix={config.bech32Prefix}
               onVote={handleVote}
               onDeposit={handleDeposit}
             />
@@ -338,61 +382,194 @@ function describeGovMessage(m: GovMsg, displayDenom: string): string {
 
 // ── Tally progress bar ──────────────────────────────────────────────
 
+/**
+ * One bar carrying both tests the chain applies, because both are edges on the
+ * same axis once the bar is scaled to total bonded stake:
+ *
+ *   - Quorum is the filled region (every option, abstain included) reaching
+ *     the quorum tick.
+ *   - The pass threshold is the yes segment's right edge reaching the
+ *     threshold tick. Threshold is a share of the abstain-free total, so its
+ *     tick sits at threshold x decisive / bonded, which is exactly where yes
+ *     has to reach in bonded coordinates. It slides right as abstain grows.
+ *
+ * Yes is drawn first for that reason: its right edge has to start from zero
+ * for the comparison to hold.
+ *
+ * A concluded proposal keeps both marks, but its quorum reading is against
+ * stake bonded *now* rather than the set the chain measured at voting end,
+ * which the legend line says outright. Where that present-day set is smaller
+ * than the votes cast the reading would be nonsense, so the bar falls back to
+ * scaling by votes cast and drops the quorum tick.
+ */
 function GovTallyBar({
-  yes,
-  no,
-  abstain,
-  veto,
+  tally,
+  tallyParams,
+  bondedTokens,
   displayDenom,
   denom,
+  isVoting,
 }: {
-  yes: string;
-  no: string;
-  abstain: string;
-  veto: string;
+  tally: GovTallyResult;
+  tallyParams: GovParams | null;
+  bondedTokens: bigint | null;
   displayDenom: string;
   denom: string;
+  isVoting: boolean;
 }) {
-  const yesN = parseInt(yes || "0", 10);
-  const noN = parseInt(no || "0", 10);
-  const abstainN = parseInt(abstain || "0", 10);
-  const vetoN = parseInt(veto || "0", 10);
-  const total = yesN + noN + abstainN + vetoN;
+  const o = evaluateTally(tally, tallyParams, bondedTokens);
 
-  if (total === 0) {
+  const fmt = (amt: bigint) =>
+    denom.startsWith("u")
+      ? `${(Number(amt) / 1_000_000).toLocaleString(undefined, {
+          maximumFractionDigits: 6,
+        })} ${displayDenom}`
+      : `${Number(amt).toLocaleString()}`;
+
+  // Scale to bonded stake, which is what quorum is a share of. Falling below
+  // the votes already cast means the bonded set has shrunk since the vote, so
+  // there is nothing coherent left to measure quorum against.
+  const againstBonded = o.bonded >= o.cast && o.bonded > BigInt(0);
+  const scale = againstBonded ? o.bonded : o.cast;
+
+  if (o.cast === BigInt(0)) {
     return (
       <div className="mb-1">
-        <div className="h-2 w-full rounded-full bg-zinc-800" />
+        <div className="h-2.5 w-full rounded-full bg-zinc-800" />
         <div className="mt-1 text-center text-[10px] text-zinc-600">
-          No votes yet
+          {isVoting && againstBonded
+            ? `No votes yet. ${fmt(o.quorumShortfall)} needs to vote for quorum.`
+            : "No votes yet"}
         </div>
       </div>
     );
   }
 
-  const pYes = (yesN / total) * 100;
-  const pNo = (noN / total) * 100;
-  const pAbstain = (abstainN / total) * 100;
-  const pVeto = (vetoN / total) * 100;
+  const pYes = pct(o.yes, scale);
+  const pNo = pct(o.no, scale);
+  const pVeto = pct(o.veto, scale);
+  const pAbstain = pct(o.abstain, scale);
+  const turnout = pct(o.cast, scale);
+  const thresholdPos = Math.min(
+    (o.thresholdFrac * Number(o.decisive) * 100) / Number(scale),
+    100
+  );
+  const quorumPos = o.quorumFrac * 100;
 
-  const fmt = (amt: number) =>
-    denom.startsWith("u")
-      ? `${(amt / 1_000_000).toLocaleString()} ${displayDenom}`
-      : `${amt.toLocaleString()}`;
+  // Share of votes cast, which is what the option legend below reports —
+  // distinct from the bar's own scale whenever turnout is short of bonded.
+  const ofCast = (amt: bigint) => pct(amt, o.cast).toFixed(0);
 
   return (
     <div className="mb-1">
-      <div className="flex h-2 w-full overflow-hidden rounded-full bg-zinc-800">
-        {pYes > 0 && <div className="bg-green-500 transition-all" style={{ width: `${pYes}%` }} />}
-        {pNo > 0 && <div className="bg-red-500 transition-all" style={{ width: `${pNo}%` }} />}
-        {pVeto > 0 && <div className="bg-orange-500 transition-all" style={{ width: `${pVeto}%` }} />}
-        {pAbstain > 0 && <div className="bg-zinc-600 transition-all" style={{ width: `${pAbstain}%` }} />}
+      <div className="relative mt-2">
+        <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-zinc-800">
+          {pYes > 0 && <div className="bg-green-500 transition-all" style={{ width: `${pYes}%` }} />}
+          {pNo > 0 && <div className="bg-red-500 transition-all" style={{ width: `${pNo}%` }} />}
+          {pVeto > 0 && <div className="bg-orange-500 transition-all" style={{ width: `${pVeto}%` }} />}
+          {pAbstain > 0 && <div className="bg-zinc-600 transition-all" style={{ width: `${pAbstain}%` }} />}
+        </div>
+
+        {/* Pass threshold: the mark the yes segment has to clear. */}
+        {o.decisive > BigInt(0) && (
+          <div
+            className="sd-tick-threshold sd-tick-cap pointer-events-none absolute inset-y-0 w-[3px]"
+            style={{ left: `${thresholdPos}%`, marginLeft: "-1.5px" }}
+            title={`Pass threshold: yes must exceed ${(o.thresholdFrac * 100).toFixed(1)}% of yes, no and veto`}
+          />
+        )}
+
+        {/* Quorum: the mark the whole filled region has to clear. */}
+        {againstBonded && (
+          <div
+            className="sd-tick-quorum sd-tick-cap pointer-events-none absolute inset-y-0 w-[3px]"
+            style={{ left: `${quorumPos}%`, marginLeft: "-1.5px" }}
+            title={`Quorum: ${quorumPos.toFixed(1)}% of bonded stake must vote`}
+          />
+        )}
       </div>
-      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]">
-        <span className="text-green-400">Yes {pYes.toFixed(0)}%<span className="ml-0.5 text-zinc-600">({fmt(yesN)})</span></span>
-        <span className="text-red-400">No {pNo.toFixed(0)}%<span className="ml-0.5 text-zinc-600">({fmt(noN)})</span></span>
-        {vetoN > 0 && <span className="text-orange-400">Veto {pVeto.toFixed(0)}%<span className="ml-0.5 text-zinc-600">({fmt(vetoN)})</span></span>}
-        {abstainN > 0 && <span className="text-zinc-500">Abstain {pAbstain.toFixed(0)}%<span className="ml-0.5 text-zinc-600">({fmt(abstainN)})</span></span>}
+
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]">
+        <span className="text-green-400">Yes {ofCast(o.yes)}%<span className="ml-0.5 text-zinc-600">({fmt(o.yes)})</span></span>
+        <span className="text-red-400">No {ofCast(o.no)}%<span className="ml-0.5 text-zinc-600">({fmt(o.no)})</span></span>
+        {o.veto > BigInt(0) && <span className="text-orange-400">Veto {ofCast(o.veto)}%<span className="ml-0.5 text-zinc-600">({fmt(o.veto)})</span></span>}
+        {o.abstain > BigInt(0) && <span className="text-zinc-500">Abstain {ofCast(o.abstain)}%<span className="ml-0.5 text-zinc-600">({fmt(o.abstain)})</span></span>}
+        <span className="text-zinc-600">of votes cast</span>
+      </div>
+
+      {/* What each tick means. While the vote is live these say what it would
+          take to pass; once it has concluded they only say where the vote
+          landed, because the status badge already carries the outcome the
+          chain reached. */}
+      <div className="mt-1.5 space-y-0.5 text-[10px]">
+        {againstBonded && (
+          <div
+            className={
+              !isVoting
+                ? "text-zinc-500"
+                : o.quorumReached
+                  ? "text-zinc-400"
+                  : "text-yellow-400"
+            }
+            title={
+              isVoting
+                ? undefined
+                : "Measured against stake bonded now. The chain measured it against the set bonded when voting ended, which it does not keep."
+            }
+          >
+            <span className="sd-tick-quorum mr-1.5 inline-block h-3.5 w-[3px] rounded-full align-middle" />
+            {isVoting ? (
+              <>
+                Quorum {quorumPos.toFixed(1)}% of {fmt(o.bonded)} bonded.
+                {o.quorumReached
+                  ? ` Reached, turnout is ${turnout.toFixed(0)}%.`
+                  : ` ${fmt(o.quorumShortfall)} more must vote.`}
+              </>
+            ) : (
+              <>
+                Quorum {quorumPos.toFixed(1)}%. Turnout was{" "}
+                {turnout.toFixed(0)}% of the stake bonded today.
+              </>
+            )}
+          </div>
+        )}
+        <div
+          className={
+            !isVoting
+              ? "text-zinc-500"
+              : o.vetoed
+                ? "text-orange-400"
+                : o.passing
+                  ? "text-green-400"
+                  : "text-zinc-400"
+          }
+        >
+          <span className="sd-tick-threshold mr-1.5 inline-block h-3.5 w-[3px] rounded-full align-middle" />
+          {!isVoting ? (
+            <>
+              Threshold {(o.thresholdFrac * 100).toFixed(0)}% of yes, no and
+              veto. Yes was {pct(o.yes, o.decisive).toFixed(0)}%.
+            </>
+          ) : o.vetoed ? (
+            <>
+              Veto is above {(o.vetoFrac * 100).toFixed(1)}% of votes cast, so
+              this is rejected as it stands.
+            </>
+          ) : o.passing ? (
+            <>
+              Passing as it stands. Yes is {pct(o.yes, o.decisive).toFixed(0)}%
+              of yes, no and veto, above the{" "}
+              {(o.thresholdFrac * 100).toFixed(0)}% threshold.
+            </>
+          ) : (
+            <>
+              Threshold {(o.thresholdFrac * 100).toFixed(0)}% of yes, no and
+              veto, currently {pct(o.yes, o.decisive).toFixed(0)}%. Needs{" "}
+              <span className="text-green-400">{fmt(o.yesShortfall)}</span>{" "}
+              more yes to pass.
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -402,9 +579,39 @@ function GovTallyBar({
  * One voter line in a proposal's vote list. Shows the voter's registered name
  * when they have one (the address is still the tooltip and the copied value),
  * falling back to the truncated bech32.
+ *
+ * The chain tallies stake, not voters, so the row also carries the stake this
+ * voter actually swings. `power` is null when the delegation lookup did not
+ * run or failed, in which case the row stays name-and-option only rather than
+ * implying every voter counts equally.
  */
-function GovVoteRow({ vote }: { vote: GovVote }) {
+function GovVoteRow({
+  vote,
+  power,
+  bondedTokens,
+  displayDenom,
+  denom,
+}: {
+  vote: GovVote;
+  power: bigint | null;
+  bondedTokens: bigint | null;
+  displayDenom: string;
+  denom: string;
+}) {
   const { name } = useDisplayName(vote.voter);
+  const share =
+    power !== null && bondedTokens && bondedTokens > BigInt(0)
+      ? pct(power, bondedTokens)
+      : null;
+  const powerLabel =
+    power === null
+      ? null
+      : power === BigInt(0)
+        ? "no voting power"
+        : denom.startsWith("u")
+          ? `${(Number(power) / 1_000_000).toLocaleString()} ${displayDenom}`
+          : Number(power).toLocaleString();
+
   return (
     <div className="flex items-center gap-2 text-xs">
       <CopyableAddress
@@ -421,11 +628,26 @@ function GovVoteRow({ vote }: { vote: GovVote }) {
           )
           .join(", ") || "?"}
       </span>
+      {powerLabel && (
+        <span
+          className={`ml-auto text-[10px] ${power === BigInt(0) ? "text-zinc-600" : "text-zinc-500"}`}
+          title="Stake delegated to bonded validators, which is what the chain tallies"
+        >
+          {powerLabel}
+          {share !== null && power !== null && power > BigInt(0) && (
+            <span className="ml-1 text-zinc-600">{share.toFixed(1)}%</span>
+          )}
+        </span>
+      )}
     </div>
   );
 }
 
 // ── Proposal card ───────────────────────────────────────────────────
+
+// Voters above which the per-voter power lookup is skipped: it costs one
+// delegation query per voter and has to cover all of them to stay correct.
+const MAX_POWER_VOTERS = 100;
 
 function GovProposalCard({
   proposal,
@@ -434,6 +656,10 @@ function GovProposalCard({
   displayDenom,
   denom,
   minDepositMicro,
+  tallyParams,
+  bondedTokens,
+  bondedValidators,
+  accPrefix,
   onVote,
   onDeposit,
 }: {
@@ -443,12 +669,22 @@ function GovProposalCard({
   displayDenom: string;
   denom: string;
   minDepositMicro: bigint | null;
+  tallyParams: GovParams | null;
+  bondedTokens: bigint | null;
+  bondedValidators: Validator[] | null;
+  accPrefix: string;
   onVote: (id: string, option: number) => void;
   onDeposit: (id: string, amount: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [tally, setTally] = useState<GovTallyResult | null>(null);
   const [votes, setVotes] = useState<GovVote[] | null>(null);
+  // Per-voter stake weight, keyed by voter address. `null` until the
+  // delegation lookups land (or if they fail, or if there are more voters
+  // than MAX_POWER_VOTERS), in which case the rows omit power entirely.
+  const [powerByVoter, setPowerByVoter] = useState<Map<string, bigint> | null>(
+    null
+  );
 
   // Compute the missing deposit (in micro-units) needed to push this proposal
   // out of DEPOSIT_PERIOD into VOTING_PERIOD. The chain transitions as soon
@@ -502,11 +738,48 @@ function GovProposalCard({
         getGovProposalTally(proposal.id),
         getGovProposalVotes(proposal.id),
       ]);
+      const voteList = votesRes.votes || [];
       setTally(tallyRes.tally);
-      setVotes(votesRes.votes || []);
+      setVotes(voteList);
       setExpanded(true);
+      loadVotePower(voteList);
     } catch {
       setExpanded(!expanded);
+    }
+  };
+
+  /**
+   * Resolve each voter's stake weight. One delegation query per voter, so it
+   * runs after the card is already expanded and populates the rows when it
+   * lands. Every voter has to be covered, not just the displayed ones: a
+   * validator's own weight is its bonded tokens less the delegations of all
+   * self-voting delegators, so a voter left out would inflate their
+   * validator's row. Past MAX_POWER_VOTERS we skip the whole thing rather
+   * than show numbers we know are wrong.
+   */
+  const loadVotePower = async (voteList: GovVote[]) => {
+    if (!bondedValidators || voteList.length === 0) return;
+    if (voteList.length > MAX_POWER_VOTERS) return;
+    try {
+      const delegations = await Promise.all(
+        voteList.map((v) =>
+          listDelegationsByDelegator(v.voter, { limit: "200" })
+            .then((res) => res.delegation_responses || [])
+            .catch(() => [] as DelegationResponse[])
+        )
+      );
+      const byVoter = new Map<string, DelegationResponse[]>();
+      voteList.forEach((v, i) => byVoter.set(v.voter, delegations[i]));
+      setPowerByVoter(
+        computeVotePower({
+          votes: voteList,
+          delegationsByVoter: byVoter,
+          bondedValidators,
+          accPrefix,
+        })
+      );
+    } catch {
+      // Leave the rows without power rather than guessing.
     }
   };
 
@@ -608,12 +881,12 @@ function GovProposalCard({
           {/* Progress bar tally */}
           {tally && (
             <GovTallyBar
-              yes={tally.yes_count}
-              no={tally.no_count}
-              abstain={tally.abstain_count}
-              veto={tally.no_with_veto_count}
+              tally={tally}
+              tallyParams={tallyParams}
+              bondedTokens={bondedTokens}
               displayDenom={displayDenom}
               denom={denom}
+              isVoting={isVoting}
             />
           )}
 
@@ -621,7 +894,14 @@ function GovProposalCard({
           {votes && votes.length > 0 && (
             <div className="mt-3 space-y-1">
               {votes.slice(0, 20).map((v) => (
-                <GovVoteRow key={v.voter} vote={v} />
+                <GovVoteRow
+                  key={v.voter}
+                  vote={v}
+                  power={powerByVoter?.get(v.voter) ?? null}
+                  bondedTokens={bondedTokens}
+                  displayDenom={displayDenom}
+                  denom={denom}
+                />
               ))}
               {votes.length > 20 && (
                 <div className="text-xs text-zinc-600">

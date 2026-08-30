@@ -161,6 +161,42 @@ input[type="number"] {
    width:100% so it tracks the host input. For fixed-width inputs (w-32,
    w-24, etc.) put the width class on `wrapperClassName` so the wrapper
    tracks the input's actual width and the spinner sits flush to its edge. */
+/* The two marks on the gov tally bar, and the swatches that key each legend
+   line to its mark. They sit on one bar and mean different things, so they are
+   told apart by hue: crystal-accent for quorum, ember for the pass threshold.
+   Each colour is held in --tick-hue so the cap below can pick it up without
+   the two having to be kept in step by hand. */
+.sd-tick-quorum {
+  --tick-hue: var(--crystal-accent);
+  background-color: var(--tick-hue);
+}
+
+.sd-tick-threshold {
+  --tick-hue: var(--ember-hi);
+  background-color: var(--tick-hue);
+}
+
+/* Downward cap sitting above the bar, pointing at its own mark. The marks
+   themselves are confined to the bar's 10px, which is not much to catch the
+   eye, so the cap does the flagging from outside it. Carried by the bar marks
+   only, never the legend swatches.
+
+   Inset symmetrically from the mark rather than centred with a 50% offset: a
+   3px mark has its centre on a half pixel, so `translateX(-50%)` leaves the
+   cap and the mark rounding independently and drifting apart by a pixel.
+   Equal insets keep the two centres identical whatever fraction of a pixel
+   the mark itself lands on. */
+.sd-tick-cap:before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: -3px;
+  right: -3px;
+  height: 5px;
+  background-color: var(--tick-hue);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
 .sd-number-input {
   position: relative;
   display: inline-block;
