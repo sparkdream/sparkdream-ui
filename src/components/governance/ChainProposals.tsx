@@ -23,6 +23,7 @@ import {
 } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
 import NewChainProposal from "./NewChainProposal";
+import ParamChangeDiff from "./ParamChangeDiff";
 import NumberInput from "@/components/NumberInput";
 import ErrorState from "@/components/ErrorState";
 
@@ -269,61 +270,69 @@ function formatISOTime(iso: string): string {
   }
 }
 
-/** Decode chain proposal inner messages into human-readable lines */
+type GovMsg = { "@type": string; [key: string]: unknown };
+
+/** Decode chain proposal inner messages into human-readable lines, keeping
+ * each line paired with the message it came from so richer per-message views
+ * (the params diff) can render alongside it. */
 function decodeGovMessages(
-  msgs: { "@type": string; [key: string]: unknown }[],
+  msgs: GovMsg[],
   displayDenom: string
-): string[] {
+): { line: string; msg: GovMsg }[] {
   if (!msgs?.length) return [];
-  return msgs.map((m) => {
-    const t = m["@type"] || "";
+  return msgs
+    .map((msg) => ({ line: describeGovMessage(msg, displayDenom), msg }))
+    .filter((entry) => entry.line);
+}
 
-    if (t.includes("MsgSoftwareUpgrade")) {
-      const plan = m.plan as Record<string, unknown> | undefined;
-      if (plan) return `Upgrade "${plan.name}" at height ${plan.height}`;
-      return "Software upgrade";
-    }
+function describeGovMessage(m: GovMsg, displayDenom: string): string {
+  const t = m["@type"] || "";
 
-    if (t.includes("MsgCancelUpgrade")) {
-      return "Cancel pending software upgrade";
-    }
+  if (t.includes("MsgSoftwareUpgrade")) {
+    const plan = m.plan as Record<string, unknown> | undefined;
+    if (plan) return `Upgrade "${plan.name}" at height ${plan.height}`;
+    return "Software upgrade";
+  }
 
-    if (t.includes("MsgRenewGroup")) {
-      const name = m.group_name as string;
-      const members = m.new_members as string[];
-      return `Renew council "${name}" with ${members?.length || "?"} members`;
-    }
+  if (t.includes("MsgCancelUpgrade")) {
+    return "Cancel pending software upgrade";
+  }
 
-    if (t.includes("MsgRegisterGroup")) {
-      const name = m.name as string;
-      const members = m.members as string[];
-      return `Register council "${name}" with ${members?.length || "?"} members`;
-    }
+  if (t.includes("MsgRenewGroup")) {
+    const name = m.group_name as string;
+    const members = m.new_members as string[];
+    return `Renew council "${name}" with ${members?.length || "?"} members`;
+  }
 
-    if (t.includes("MsgUpdateParams")) {
-      // Extract module name from type URL
-      const parts = t.split(".");
-      const mod = parts.length >= 3 ? parts[parts.length - 3] : "unknown";
-      return `Update ${mod} module parameters`;
-    }
+  if (t.includes("MsgRegisterGroup")) {
+    const name = m.name as string;
+    const members = m.members as string[];
+    return `Register council "${name}" with ${members?.length || "?"} members`;
+  }
 
-    if (t.includes("MsgCommunityPoolSpend") || t.includes("MsgSpendFromCommons")) {
-      const recipient = m.recipient as string;
-      const amount = m.amount as { denom: string; amount: string }[];
-      return `Send ${formatCoins(amount || [], displayDenom)} to ${recipient ? truncateAddress(recipient) : "?"}`;
-    }
+  if (t.includes("MsgUpdateParams")) {
+    // Extract module name from type URL
+    const parts = t.split(".");
+    const mod = parts.length >= 3 ? parts[parts.length - 3] : "unknown";
+    return `Update ${mod} module parameters`;
+  }
 
-    if (t.includes("MsgUpdateGroupMembers")) {
-      const add = m.members_to_add as string[];
-      const remove = m.members_to_remove as string[];
-      const parts: string[] = [];
-      if (add?.length) parts.push(`add ${add.length} member${add.length > 1 ? "s" : ""}`);
-      if (remove?.length) parts.push(`remove ${remove.length} member${remove.length > 1 ? "s" : ""}`);
-      return parts.join(", ") || "Update group members";
-    }
+  if (t.includes("MsgCommunityPoolSpend") || t.includes("MsgSpendFromCommons")) {
+    const recipient = m.recipient as string;
+    const amount = m.amount as { denom: string; amount: string }[];
+    return `Send ${formatCoins(amount || [], displayDenom)} to ${recipient ? truncateAddress(recipient) : "?"}`;
+  }
 
-    return "";
-  }).filter(Boolean);
+  if (t.includes("MsgUpdateGroupMembers")) {
+    const add = m.members_to_add as string[];
+    const remove = m.members_to_remove as string[];
+    const parts: string[] = [];
+    if (add?.length) parts.push(`add ${add.length} member${add.length > 1 ? "s" : ""}`);
+    if (remove?.length) parts.push(`remove ${remove.length} member${remove.length > 1 ? "s" : ""}`);
+    return parts.join(", ") || "Update group members";
+  }
+
+  return "";
 }
 
 // ── Tally progress bar ──────────────────────────────────────────────
@@ -525,13 +534,22 @@ function GovProposalCard({
         </p>
       )}
 
-      {/* Decoded message details */}
+      {/* Decoded message details. A params message gets its before/after diff
+          rendered under its description — the message itself carries the whole
+          params object, so "Update rep module parameters" alone never says
+          which parameter the proposal actually moves. */}
       {decodedMsgs.length > 0 && (
-        <div className="mb-2 space-y-0.5">
-          {decodedMsgs.map((line, i) => (
-            <div key={i} className="flex items-start gap-1.5 text-xs text-zinc-400">
-              <span className="mt-0.5 text-indigo-400/60">&#9656;</span>
-              {line}
+        <div className="mb-2 space-y-1">
+          {decodedMsgs.map(({ line, msg }, i) => (
+            <div key={i}>
+              <div className="flex items-start gap-1.5 text-xs text-zinc-400">
+                <span className="mt-0.5 text-indigo-400/60">&#9656;</span>
+                {line}
+              </div>
+              <ParamChangeDiff
+                msg={msg}
+                applied={proposal.status === GovProposalStatus.PASSED}
+              />
             </div>
           ))}
         </div>
