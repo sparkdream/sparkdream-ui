@@ -11,6 +11,7 @@ import {
   initiativesByAssignee,
   initiativesByCreator,
   listRepProjects,
+  initiativeConviction,
   listRepMembers,
   reverseResolveName,
   stakesByTarget,
@@ -25,7 +26,9 @@ import TagPicker from "@/components/contribute/TagPicker";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import CopyableAddress from "@/components/CopyableAddress";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
-import type { Initiative, RepProject, RepStake } from "@/types/rep";
+import { loadRepMember } from "@/lib/repMember";
+import { useConvictionClock } from "@/hooks/useConvictionClock";
+import type { Initiative, RepMember, RepProject, RepStake } from "@/types/rep";
 import {
   INITIATIVE_STATUS_LABELS,
   INITIATIVE_TIER_LABELS,
@@ -55,13 +58,36 @@ import { isMissingEndpoint } from "@/lib/errors";
 type Tab = "all" | "available" | "mine" | "authored";
 
 // Terminal statuses: nothing further can happen to an initiative in one of
-// these. They're hidden by default so finished and abandoned work (including
+// these. They're hidden by default so finished and retired work (including
 // initiatives superseded by a recreated one) doesn't crowd out live work.
+//
+// Releasing an assignment is deliberately absent. It used to land here as
+// ABANDONED; since chain commit 50c6fb6 it returns the initiative to OPEN with
+// its conviction intact, so it belongs in the live list where someone can pick
+// it up, not hidden behind the "show closed" toggle.
 const CLOSED_STATUSES = new Set<string>([
   InitiativeStatus.COMPLETED,
   InitiativeStatus.REJECTED,
-  InitiativeStatus.ABANDONED,
-  InitiativeStatus.CANCELLED,
+  InitiativeStatus.CLOSED,
+]);
+
+// Statuses the Operations Committee can force an assignment out of, from
+// Keeper.UnassignInitiative. The assignee's own release stops at ASSIGNED: once
+// work is submitted they have to see the round out or ask the committee. A
+// CHALLENGED initiative is frozen for everyone until the challenge resolves.
+const RELEASABLE_STATUSES = new Set<string>([
+  InitiativeStatus.ASSIGNED,
+  InitiativeStatus.SUBMITTED,
+  InitiativeStatus.IN_REVIEW,
+]);
+
+// Statuses Keeper.CloseInitiative accepts. CHALLENGED is excluded for the same
+// reason: the budget cannot be returned while a jury may still order a payout.
+const CLOSABLE_STATUSES = new Set<string>([
+  InitiativeStatus.OPEN,
+  InitiativeStatus.ASSIGNED,
+  InitiativeStatus.SUBMITTED,
+  InitiativeStatus.IN_REVIEW,
 ]);
 
 function statusColor(status: string): string {
@@ -73,10 +99,50 @@ function statusColor(status: string): string {
     case InitiativeStatus.CHALLENGED: return "bg-red-500/15 text-red-400";
     case InitiativeStatus.COMPLETED: return "bg-emerald-500/15 text-emerald-400";
     case InitiativeStatus.REJECTED: return "bg-red-500/15 text-red-400";
-    case InitiativeStatus.ABANDONED: return "bg-zinc-500/15 text-zinc-400";
-    case InitiativeStatus.CANCELLED: return "bg-zinc-500/15 text-zinc-400";
+    case InitiativeStatus.CLOSED: return "bg-zinc-500/15 text-zinc-400";
     default: return "bg-zinc-800/50 text-zinc-400";
   }
+}
+
+// Average reputation a member brings to an initiative, mirroring
+// AssignInitiativeToMember: the mean of their scores on the initiative's tags
+// (a missing tag counts as zero), or the mean of all their scores when the
+// initiative carries no tags. Used to show who the chain will accept before a
+// signature is spent finding out.
+function avgReputationFor(member: RepMember, tags: string[]): number {
+  const scores = member.reputation_scores || {};
+  if (tags.length > 0) {
+    const total = tags.reduce((sum, tag) => sum + (parseFloat(scores[tag] || "0") || 0), 0);
+    return total / tags.length;
+  }
+  const values = Object.values(scores);
+  if (values.length === 0) return 0;
+  return values.reduce((sum, v) => sum + (parseFloat(v) || 0), 0) / values.length;
+}
+
+// Cheapest tier first. Order matters: the create form picks the first tier
+// whose budget ceiling covers what was typed, which is also the tier with the
+// lowest reputation floor that can hold the work.
+const TIER_ORDER = [
+  InitiativeTier.APPRENTICE,
+  InitiativeTier.STANDARD,
+  InitiativeTier.EXPERT,
+  InitiativeTier.EPIC,
+];
+
+// The two chain-enforced halves of a tier, read from rep params.
+type TierConfig = {
+  /** Average reputation an assignee needs on the initiative's tags. */
+  minRep: number;
+  /** Largest budget the tier accepts, in micro-DREAM. */
+  maxBudgetMicro: bigint;
+};
+
+// Reputation reads as a whole number at these magnitudes (tier floors are
+// 0/25/100/250); a member mid-climb keeps one decimal rather than rounding to
+// a figure that looks like it clears a floor it doesn't.
+function fmtRep(rep: number): string {
+  return Number.isInteger(rep) ? rep.toString() : rep.toFixed(1);
 }
 
 function tierColor(tier: string): string {
@@ -146,22 +212,33 @@ function formatDreamCeil(micro: number): string {
   return (Math.ceil(micro / 10_000) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-// The mirror of formatDreamCeil: rounded DOWN, for a figure quoted as "this
-// much of your entry still counts" and for the amount the Use button fills in.
-// Rounding up there would name a number that overshoots the very cap it is
-// steering the user away from. Amounts under a hundredth of a DREAM keep their
-// decimals rather than collapsing to a bare 0.
-// Plain, unlocalized DREAM string for FILLING the amount input, as opposed to
-// displaying a figure. The field is read back with parseFloat, which stops at a
-// thousands separator: a localized "4,356" would be staked as 4.
-function dreamInputValue(micro: number): string {
-  const m = Math.max(0, Math.floor(micro));
-  return String(m >= 10_000 ? Math.floor(m / 10_000) / 100 : m / 1e6);
+// Exact micro-DREAM from what is in the amount field.
+//
+// Micro-DREAM is the chain's unit and the field holds decimal DREAM, so the
+// conversion is a six-place decimal shift — done on the STRING, because the
+// float route silently loses the tail: parseFloat("563.289123") * 1e6 is
+// 563289122.9999999, and flooring that stakes one micro-DREAM less than was
+// asked for. That one-micro shortfall is what left a dust remainder behind
+// every "stake the whole headroom" and every "withdraw the whole position".
+//
+// Digits past the sixth are truncated rather than rounded: the chain cannot
+// represent them, and rounding up would ask for more than the user typed.
+// Anything that isn't a plain decimal returns 0, and every caller already
+// guards on a positive amount.
+function parseDreamToMicro(input: string): bigint {
+  const m = /^\s*(\d*)(?:\.(\d*))?\s*$/.exec(input);
+  if (!m || (!m[1] && !m[2])) return BigInt(0);
+  const whole = m[1] || "0";
+  const frac = (m[2] || "").slice(0, 6).padEnd(6, "0");
+  return BigInt(whole) * BigInt(1_000_000) + BigInt(frac);
 }
 
-// The exact-position variant, for Max: the whole micro-DREAM figure, so filling
-// Max withdraws the position down to the last micro-DREAM rather than leaving a
-// rounded-off remainder behind.
+// Plain, unlocalized DREAM string for FILLING the amount input, as opposed to
+// displaying a figure: no thousands separators (parseDreamToMicro rejects them)
+// and the whole micro-DREAM figure, down to the last digit. Both fills need
+// that exactness — Max withdraws the position to nothing, and Use stakes the
+// conviction headroom to nothing — and a rounded fill leaves a remainder behind
+// that takes a second transaction to clear.
 function dreamInputExact(micro: bigint): string {
   const divisor = BigInt(1_000_000);
   const whole = micro / divisor;
@@ -169,6 +246,12 @@ function dreamInputExact(micro: bigint): string {
   return frac ? `${whole}.${frac}` : whole.toString();
 }
 
+// The mirror of formatDreamCeil: rounded DOWN, for a figure quoted as "this
+// much of your entry still counts". Rounding up there would name a number that
+// overshoots the very cap it is steering the user away from. Amounts under a
+// hundredth of a DREAM keep their decimals rather than collapsing to a bare 0.
+// This is for DISPLAY only — what the Use button fills is the exact figure, via
+// dreamInputExact.
 function formatDreamFloor(micro: number): string {
   const m = Math.max(0, Math.floor(micro));
   if (m >= 10_000) {
@@ -200,6 +283,14 @@ type ConvictionParams = {
   externalRatio: number;
   selfAssignedExternalRatio: number;
 };
+
+// How often the expanded card re-reads authoritative conviction. Deliberately
+// slow: the chain's own refresh cadence for a maturing initiative is the
+// maturity window over 8 (tens of minutes at default params), and the client
+// interpolates continuously between reads, so a faster poll would buy precision
+// the underlying number does not have. What it is really for is picking up
+// OTHER members' stakes, which arrive at human speed.
+const LIVE_CONVICTION_POLL_MS = 60_000;
 
 // Chain defaults (conviction_half_life_epochs 3 x epoch_blocks 300 x ~6s per
 // block; max_conviction_share_per_member 0.33). Used until rep params load, and
@@ -474,7 +565,28 @@ export default function InitiativeList() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextKey, setNextKey] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
+  // One shared timer for the whole page drives every time-dependent conviction
+  // figure below. See useConvictionClock for why this is not a per-row interval.
+  const clockSeconds = useConvictionClock();
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Conviction recomputed on demand for the expanded card only.
+  //
+  // The list read carries the chain's last *stored* recompute, which lags by
+  // design — EndBlocker drains a due-time queue under a per-block work budget,
+  // so a fresh stake is not in the stored figure yet. Refreshing that for every
+  // row would mean a full stake walk per initiative per poll, which is the cost
+  // model this UI has to survive at thousands of initiatives. Exactly one card
+  // is expanded at a time, so this is one request per poll, whatever the list
+  // holds.
+  const [liveConviction, setLiveConviction] = useState<{
+    id: string;
+    total: number;
+    external: number;
+    threshold: number;
+  } | null>(null);
+  // Bumped by anything that moves conviction from this tab (stake, unstake), to
+  // re-read without waiting out the poll interval.
+  const [convictionNonce, setConvictionNonce] = useState(0);
   const [tab, setTab] = useState<Tab>("all");
   const [showClosed, setShowClosed] = useState(false);
   const [sort, setSort] = useState<InitiativeSort>("newest");
@@ -509,7 +621,11 @@ export default function InitiativeList() {
   // assignee, and the member list backing it (loaded on first open).
   const [assignPickerFor, setAssignPickerFor] = useState<string | null>(null);
   const [assignTarget, setAssignTarget] = useState("");
-  const [memberOptions, setMemberOptions] = useState<{ value: string; label: string }[]>([]);
+  const [members, setMembers] = useState<RepMember[]>([]);
+  // address -> onchain name, "" when the address has none. Kept beside the
+  // member records rather than folded into a label so the picker can rebuild
+  // labels per initiative (tier eligibility differs between them).
+  const [memberNames, setMemberNames] = useState<Record<string, string>>({});
   const [loadingMembers, setLoadingMembers] = useState(false);
 
   // Submit-work panel: which initiative it's open for, plus the deliverable URI
@@ -569,6 +685,11 @@ export default function InitiativeList() {
   // bounty at creation, charged only above the threshold above. Below the gate
   // it would take DREAM for a review that never happens.
   const [minBountyRate, setMinBountyRate] = useState(0);
+  // Tier configs keyed by the InitiativeTier enum string. Both halves are
+  // enforced by the chain and both are invisible in the UI otherwise: the
+  // reputation floor rejects an assignment (AssignInitiativeToMember) and the
+  // budget ceiling rejects the creation (CreateInitiative).
+  const [tierConfigs, setTierConfigs] = useState<Record<string, TierConfig>>({});
   useEffect(() => {
     getRepParams()
       .then((res) => {
@@ -584,6 +705,22 @@ export default function InitiativeList() {
         }
         const bountyRate = Number(p.permissionless_min_review_bounty_rate);
         if (bountyRate > 0) setMinBountyRate(bountyRate);
+        const tierCfg = (key: string): TierConfig => {
+          const cfg = p[key] as Record<string, unknown> | undefined;
+          const min = Number(cfg?.min_reputation);
+          const max = cfg?.max_budget;
+          return {
+            minRep: Number.isFinite(min) ? min : 0,
+            maxBudgetMicro:
+              typeof max === "string" && /^\d+$/.test(max) ? BigInt(max) : BigInt(0),
+          };
+        };
+        setTierConfigs({
+          [InitiativeTier.APPRENTICE]: tierCfg("apprentice_tier"),
+          [InitiativeTier.STANDARD]: tierCfg("standard_tier"),
+          [InitiativeTier.EXPERT]: tierCfg("expert_tier"),
+          [InitiativeTier.EPIC]: tierCfg("epic_tier"),
+        });
         const maxStake = p.max_initiative_stake_per_member;
         if (typeof maxStake === "string" && /^\d+$/.test(maxStake)) {
           setMaxStakePerMemberMicro(BigInt(maxStake));
@@ -645,7 +782,13 @@ export default function InitiativeList() {
   const [formTags, setFormTags] = useState<string[]>([]);
   const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
   const canCreateTags = useCanCreateTags(address);
-  const [formTier, setFormTier] = useState<string>(InitiativeTier.STANDARD);
+  // Derived from the budget (see the effect below) until the author picks a
+  // tier themselves. Apprentice is the resting default because it is the only
+  // tier with a zero reputation floor — on a young chain nobody clears any of
+  // the others, and a defaulted tier that nobody can be assigned to produces an
+  // initiative that cannot be worked.
+  const [formTier, setFormTier] = useState<string>(InitiativeTier.APPRENTICE);
+  const [tierTouched, setTierTouched] = useState(false);
   const [formCategory, setFormCategory] = useState<string>(InitiativeCategory.FEATURE);
   const [formBudget, setFormBudget] = useState("");
   // Acceptance criteria: the definition of done, pre-committed before any work
@@ -662,6 +805,36 @@ export default function InitiativeList() {
       ? BigInt(Math.floor(parsed * 1e6))
       : BigInt(0);
   }, [formBudget]);
+  // Cheapest tier whose ceiling covers the budget. The chain rejects a budget
+  // over the tier maximum at creation, and every tier above the cheapest one
+  // that fits only raises the reputation floor an assignee has to clear, so the
+  // smallest fitting tier is the one that keeps the initiative assignable.
+  useEffect(() => {
+    if (tierTouched) return;
+    const derived = TIER_ORDER.find((t) => {
+      const cap = tierConfigs[t]?.maxBudgetMicro ?? BigInt(0);
+      return cap > BigInt(0) && budgetMicro <= cap;
+    });
+    if (derived) setFormTier(derived);
+  }, [budgetMicro, tierConfigs, tierTouched]);
+
+  // The connected member's own record, for the "you could not take this on
+  // yourself" notice under the form.
+  const [myMember, setMyMember] = useState<RepMember | null>(null);
+  useEffect(() => {
+    if (!address) {
+      setMyMember(null);
+      return;
+    }
+    let cancelled = false;
+    loadRepMember(address).then((m) => {
+      if (!cancelled) setMyMember(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [address]);
+
   const selectedProjectPermissionless = useMemo(
     () => projects.find((p) => p.id === formProjectId)?.permissionless === true,
     [projects, formProjectId],
@@ -789,12 +962,8 @@ export default function InitiativeList() {
         const names = await Promise.all(
           list.map((m) => reverseResolveName(m.address).then((r) => r.name || "").catch(() => "")),
         );
-        setMemberOptions(
-          list.map((m, i) => ({
-            value: m.address,
-            label: names[i] ? `${names[i]} · ${truncateAddress(m.address)}` : m.address,
-          })),
-        );
+        setMembers(list);
+        setMemberNames(Object.fromEntries(list.map((m, i) => [m.address, names[i]])));
       } catch {
         // Let the next open retry rather than stranding an empty picker.
         membersRequested.current = false;
@@ -882,6 +1051,7 @@ export default function InitiativeList() {
       setFormTags([]);
       setFormBudget("");
       setFormCriteria([]);
+      setTierTouched(false);
       await fetchInitiatives(tab, projectFilter, sort);
     } catch (err) {
       console.error("Create initiative failed:", err);
@@ -962,7 +1132,7 @@ export default function InitiativeList() {
   // The two verdicts are not symmetric. Approval is advisory: the chain appends
   // the signer to `approvals` and nothing consults that list, so conviction and
   // the bonded reviewers' verdicts remain the gates on payout. Disapproval is
-  // committee-only and abandons the initiative outright, returning its budget
+  // committee-only and closes the initiative outright, returning its budget
   // and self-assign bond. The stake-weighted staker veto that used to sit here
   // was retired in chain commit 70dce72: it was held by exactly the people paid
   // on completion, and quality is the bonded reviewer's question now. Stakers
@@ -1002,43 +1172,61 @@ export default function InitiativeList() {
     }
   };
 
-  const handleAbandon = async (initiativeId: string) => {
+  // Releases an assignment, returning the initiative to OPEN so someone else
+  // can take it on. Authorization mirrors msg_server_unassign_initiative.go:
+  // the assignee stepping down, or the Operations Committee freeing work that
+  // has stalled. Notably not the project creator, whose lever is Close.
+  //
+  // This is not a retirement. The keeper clears only what was tied to the
+  // holder (assignee, deliverable, approvals, review deadline) and leaves
+  // budget, acceptance criteria, conviction and every stake in place, so the
+  // demand the community built up survives the change of hands. The row stays
+  // in the live list rather than dropping into the closed set.
+  const handleRelease = async (initiativeId: string) => {
     if (!address) return;
     try {
-      setActionLoading(`abandon-${initiativeId}`);
+      setActionLoading(`release-${initiativeId}`);
       setActionError(null);
       await signAndBroadcast([{
-        typeUrl: RepMsgTypeUrls.AbandonInitiative,
-        value: { creator: address, initiativeId: BigInt(initiativeId), reason: "" },
-      }]);
-      await fetchInitiatives(tab, projectFilter, sort);
-    } catch (err) {
-      console.error("Abandon failed:", err);
-      setActionError({ id: initiativeId, message: txErrorMessage(err, "Failed to abandon initiative") });
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  // Retires an OPEN, unassigned initiative. Authorization mirrors
-  // msg_server_cancel_initiative.go: project creator or Commons Operations
-  // Committee — the same standing as assigning someone else, so the button is
-  // gated by canAssignOthers below.
-  const handleCancel = async (initiativeId: string) => {
-    if (!address) return;
-    try {
-      setActionLoading(`cancel-${initiativeId}`);
-      setActionError(null);
-      await signAndBroadcast([{
-        typeUrl: RepMsgTypeUrls.CancelInitiative,
-        // initiative_id is uint64; pass BigInt so the amino override's
+        typeUrl: RepMsgTypeUrls.UnassignInitiative,
+        // initiative_id is uint64; pass BigInt so the amino converter's
         // `!== BigInt(0)` omit-zero check survives JS strict equality.
         value: { creator: address, initiativeId: BigInt(initiativeId), reason: "" },
       }]);
       await fetchInitiatives(tab, projectFilter, sort);
     } catch (err) {
-      console.error("Cancel failed:", err);
-      setActionError({ id: initiativeId, message: txErrorMessage(err, "Failed to cancel initiative") });
+      console.error("Release failed:", err);
+      setActionError({ id: initiativeId, message: txErrorMessage(err, "Failed to release initiative") });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Retires an initiative for good. Authorization mirrors
+  // msg_server_close_initiative.go: project creator or Commons Operations
+  // Committee — the same standing as assigning someone else, so the button is
+  // gated by canAssignOthers below.
+  //
+  // Since chain commit 50c6fb6 this no longer requires the initiative to be
+  // unassigned: the project side has to be able to stop funding work it no
+  // longer wants without the assignee's cooperation. The budget goes back to
+  // the project net of review fees already earned, and any self-assign bond is
+  // returned. An open challenge blocks it until the challenge resolves.
+  const handleClose = async (initiativeId: string) => {
+    if (!address) return;
+    try {
+      setActionLoading(`close-${initiativeId}`);
+      setActionError(null);
+      await signAndBroadcast([{
+        typeUrl: RepMsgTypeUrls.CloseInitiative,
+        // initiative_id is uint64; pass BigInt so the amino converter's
+        // `!== BigInt(0)` omit-zero check survives JS strict equality.
+        value: { creator: address, initiativeId: BigInt(initiativeId), reason: "" },
+      }]);
+      await fetchInitiatives(tab, projectFilter, sort);
+    } catch (err) {
+      console.error("Close failed:", err);
+      setActionError({ id: initiativeId, message: txErrorMessage(err, "Failed to close initiative") });
     } finally {
       setActionLoading(null);
     }
@@ -1079,8 +1267,8 @@ export default function InitiativeList() {
   // percentage show without expanding. No wallet gate: the pool is public and
   // the percentage every reader sees comes from it, so gating this on a
   // connected signer left disconnected visitors reading 0% on every row. Closed
-  // initiatives are fetched too — CANCELLED and ABANDONED ones keep their
-  // stakes, and the expanded row still lists them.
+  // initiatives are fetched too — a CLOSED one keeps its stakes, and the
+  // expanded row still lists them.
   useEffect(() => {
     for (const ini of initiatives) {
       if (stakeLoadRef.current.has(ini.id)) continue;
@@ -1096,12 +1284,12 @@ export default function InitiativeList() {
   // override's `!== BigInt(0)` omit-zero check honest under JS strict equality.
   const handleStake = async (initiativeId: string) => {
     if (!address || !stakeAmount) return;
-    const amt = parseFloat(stakeAmount);
-    if (!(amt > 0)) return;
+    const amountMicro = parseDreamToMicro(stakeAmount);
+    if (amountMicro <= BigInt(0)) return;
     try {
       setActionLoading(`stake-${initiativeId}`);
       setActionError(null);
-      const amount = (BigInt(Math.floor(amt * 1e6))).toString();
+      const amount = amountMicro.toString();
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.Stake,
         value: {
@@ -1118,6 +1306,8 @@ export default function InitiativeList() {
         loadStakeInfo(initiativeId),
         fetchInitiatives(tab, projectFilter, sort),
       ]);
+      // Our own stake moved conviction; don't make the card wait out the poll.
+      setConvictionNonce((n) => n + 1);
     } catch (err) {
       console.error("Stake failed:", err);
       setActionError({ id: initiativeId, message: txErrorMessage(err, "Failed to stake") });
@@ -1139,9 +1329,7 @@ export default function InitiativeList() {
     if (!address) return;
     const mine = (stakeInfo[initiativeId]?.stakes ?? []).filter((s) => s.staker === address);
     if (mine.length === 0) return;
-    const amt = parseFloat(stakeAmount);
-    if (!(amt > 0)) return;
-    let remaining = BigInt(Math.floor(amt * 1e6));
+    let remaining = parseDreamToMicro(stakeAmount);
     if (remaining <= BigInt(0)) return;
     const msgs = [];
     for (const s of mine) {
@@ -1166,6 +1354,8 @@ export default function InitiativeList() {
         loadStakeInfo(initiativeId),
         fetchInitiatives(tab, projectFilter, sort),
       ]);
+      // Our own stake moved conviction; don't make the card wait out the poll.
+      setConvictionNonce((n) => n + 1);
     } catch (err) {
       console.error("Unstake failed:", err);
       setActionError({ id: initiativeId, message: txErrorMessage(err, "Failed to unstake") });
@@ -1177,6 +1367,64 @@ export default function InitiativeList() {
   // Open the shared stake/unstake panel for an initiative. Expands the row so
   // the panel (which lives in the details) is in view, picks the mode, and
   // resets the amount/error so a stale figure from a prior open can't leak in.
+  // Poll live conviction for whichever card is open. Three bounds keep this
+  // from becoming the thing that melts a page of a thousand initiatives:
+  // only the expanded card is ever polled, the poll stops while the tab is
+  // hidden, and a slow cadence is enough because the numbers between polls are
+  // interpolated locally by the conviction clock rather than fetched.
+  useEffect(() => {
+    if (!expanded) {
+      setLiveConviction(null);
+      return;
+    }
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const read = async () => {
+      try {
+        const res = await initiativeConviction(expanded);
+        if (cancelled) return;
+        setLiveConviction({
+          id: expanded,
+          total: parseFloat(res.total_conviction || "0"),
+          external: parseFloat(res.external_conviction || "0"),
+          threshold: parseFloat(res.threshold || "0"),
+        });
+      } catch {
+        // Older nodes don't serve this endpoint. Leave the stored figures from
+        // the list read in place rather than blanking a card that was fine.
+        if (!cancelled) setLiveConviction(null);
+      }
+    };
+
+    const start = () => {
+      if (timer !== null) return;
+      timer = setInterval(read, LIVE_CONVICTION_POLL_MS);
+    };
+    const stop = () => {
+      if (timer === null) return;
+      clearInterval(timer);
+      timer = null;
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        stop();
+      } else {
+        void read();
+        start();
+      }
+    };
+
+    void read();
+    if (document.visibilityState !== "hidden") start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [expanded, convictionNonce]);
+
   const openStakePanel = useCallback((id: string, mode: "stake" | "unstake") => {
     setExpanded(id);
     setStakeMode(mode);
@@ -1259,7 +1507,7 @@ export default function InitiativeList() {
   }, [visibleInitiatives, searchQuery, projectNameById]);
 
   // Rail widget: live initiatives ranked by how close their conviction is to the
-  // required threshold. Terminal ones (already complete/abandoned) are excluded
+  // required threshold. Terminal ones (already complete or closed) are excluded
   // so the card shows work still climbing, not finished work sitting at 100%.
   const trendingInitiatives = useMemo(
     () =>
@@ -1404,12 +1652,28 @@ export default function InitiativeList() {
             <div className="grid grid-cols-2 gap-3">
               <select
                 value={formTier}
-                onChange={(e) => setFormTier(e.target.value)}
+                onChange={(e) => {
+                  // From here on the budget stops moving the tier — an explicit
+                  // choice outranks the derived one.
+                  setTierTouched(true);
+                  setFormTier(e.target.value);
+                }}
                 className="sd-select"
               >
-                {Object.entries(INITIATIVE_TIER_LABELS).map(([val, label]) => (
-                  <option key={val} value={val}>{label}</option>
-                ))}
+                {/* Both chain limits are in the label. The budget ceiling is
+                    checked at creation and the reputation floor at assignment,
+                    and neither was visible anywhere before the rejection. */}
+                {TIER_ORDER.map((val) => {
+                  const cfg = tierConfigs[val];
+                  const label = INITIATIVE_TIER_LABELS[val] || val;
+                  return (
+                    <option key={val} value={val}>
+                      {cfg
+                        ? `${label} · up to ${formatDream(cfg.maxBudgetMicro.toString())} DREAM · ${fmtRep(cfg.minRep)} rep`
+                        : label}
+                    </option>
+                  );
+                })}
               </select>
               <select
                 value={formCategory}
@@ -1537,6 +1801,39 @@ export default function InitiativeList() {
                 </div>
               ))}
             </div>
+
+            {/* Whether this initiative can actually be worked once it exists.
+                Both limits belong to the selected tier and both are only
+                reported by the chain after a signature, the budget one at
+                creation and the reputation one at assignment. */}
+            {(() => {
+              const cfg = tierConfigs[formTier];
+              if (!cfg) return null;
+              const tierLabel = INITIATIVE_TIER_LABELS[formTier] || formTier;
+              if (cfg.maxBudgetMicro > BigInt(0) && budgetMicro > cfg.maxBudgetMicro) {
+                return (
+                  <p className="text-xs leading-relaxed text-red-400">
+                    A {formatDream(budgetMicro.toString())} DREAM budget exceeds the{" "}
+                    {tierLabel} tier maximum of {formatDream(cfg.maxBudgetMicro.toString())}{" "}
+                    DREAM. Creating it will be rejected. Raise the tier or lower the budget.
+                  </p>
+                );
+              }
+              // Reputation is only a warning: someone else may clear the floor
+              // even when the author does not, and the author may intend that.
+              const myRep = myMember ? avgReputationFor(myMember, formTags) : 0;
+              if (cfg.minRep > 0 && myRep < cfg.minRep) {
+                return (
+                  <p className="text-xs leading-relaxed text-amber-400">
+                    {tierLabel} tier needs {fmtRep(cfg.minRep)} reputation
+                    {formTags.length > 0 ? ` on ${formTags.join(", ")}` : ""} to be assigned.
+                    You have {fmtRep(myRep)}, so you will not be able to take this on
+                    yourself. It has to go to a member who clears the floor.
+                  </p>
+                );
+              }
+              return null;
+            })()}
 
             {/* What creating this will cost beyond the budget itself. Both
                 notices key on the same chain-wide threshold. */}
@@ -1704,8 +2001,14 @@ export default function InitiativeList() {
             const yoursMicro = mineStakes.reduce((s, x) => s + BigInt(x.amount || "0"), BigInt(0));
             const poolMicro = info ? BigInt(info.poolTotal) : undefined;
             const hasStake = yoursMicro > BigInt(0);
-            const curConv = parseFloat(ini.current_conviction || "0");
-            const reqConv = parseFloat(ini.required_conviction || "0");
+            // Prefer the on-demand recompute when this is the expanded card and
+            // the node served it; otherwise the stored figure from the list.
+            const live = liveConviction?.id === ini.id ? liveConviction : null;
+            const curConv = live ? live.total : parseFloat(ini.current_conviction || "0");
+            const reqConv =
+              live && live.threshold > 0
+                ? live.threshold
+                : parseFloat(ini.required_conviction || "0");
             // Your DREAM stated as a plain fraction of the pool rather than a
             // percentage. A bare "17% of pool" invited being read as your share
             // of the initiative's progress, which it is not: DREAM share and
@@ -1722,11 +2025,18 @@ export default function InitiativeList() {
             // The external-conviction gate the chain checks alongside the total.
             // A self-assigned initiative (assignee is the project creator) needs
             // the whole threshold from unaffiliated members.
-            const extConv = parseFloat(ini.external_conviction || "0");
-            const extRatio =
-              ini.assignee && projectCreatorById.get(ini.project_id) === ini.assignee
-                ? convictionParams.selfAssignedExternalRatio
-                : convictionParams.externalRatio;
+            const extConv = live ? live.external : parseFloat(ini.external_conviction || "0");
+            // IsSelfAssigned counts the initiative's AUTHOR as well as the
+            // project's creator (x/rep/keeper/helpers.go). Testing only the
+            // project creator understated the gate by half for an author who
+            // took on their own initiative under someone else's project.
+            const selfAssigned =
+              !!ini.assignee &&
+              (ini.assignee === ini.creator ||
+                projectCreatorById.get(ini.project_id) === ini.assignee);
+            const extRatio = selfAssigned
+              ? convictionParams.selfAssignedExternalRatio
+              : convictionParams.externalRatio;
             const extReqConv = reqConv * extRatio;
 
             // Endorsement standing, mirroring msg_server_approve_initiative.go:
@@ -1749,8 +2059,11 @@ export default function InitiativeList() {
             // unstake mode the amount is bounded by the signer's position.
             const panelOpen = stakePickerFor === ini.id;
             const isUnstakePanel = panelOpen && stakeMode === "unstake";
-            const amtNum = stakeAmount ? parseFloat(stakeAmount) : NaN;
-            const amtMicro = Number.isFinite(amtNum) && amtNum > 0 ? BigInt(Math.floor(amtNum * 1e6)) : BigInt(0);
+            // Exact, from the string. What the panel projects and what the tx
+            // sends must be the same micro-DREAM figure, or the "Use" button
+            // fills an amount the projection agrees with and the stake falls
+            // short of.
+            const amtMicro = parseDreamToMicro(stakeAmount);
             const maxDreamStr = formatDreamExact(yoursMicro.toString());
             const overPosition = isUnstakePanel && amtMicro > yoursMicro;
             // AddStake rejects anything that would push a member's total on one
@@ -1773,7 +2086,11 @@ export default function InitiativeList() {
             // until the withdrawal drops them under it. Recompute your own
             // contribution before and after under the chain's own rules and
             // swap it into the reported total.
-            const nowSeconds = Math.floor(Date.now() / 1000);
+            // From the shared clock, so a maturing position climbs on its own
+            // instead of freezing until something else re-renders the page.
+            // `|| Date.now()` covers the server/hydration snapshot, which is 0
+            // by design so the two renders agree on a value.
+            const nowSeconds = clockSeconds || Math.floor(Date.now() / 1000);
             const yoursConvNow = stakerConviction(mineStakes, reqConv, nowSeconds, convictionParams);
             const yoursConvAfter = stakerConviction(
               stakesAfterWithdrawal(mineStakes, amtMicro),
@@ -1785,7 +2102,14 @@ export default function InitiativeList() {
               reqConv > 0 && yoursConvNow >= reqConv * convictionParams.maxSharePerMember - 1e-9;
             // Your slice of the conviction actually gathered — the same fraction
             // the meter draws as your segment, so the panel and the bar agree.
-            const convShare = curConv > 0 && yoursConvNow > 0 ? yoursConvNow / curConv : 0;
+            // Clamped: yoursConvNow is projected client-side from live stake
+            // records at the current second, while curConv can be the chain's
+            // last stored recompute (and omits the reputation multiplier). The
+            // two can disagree enough to put a lone staker "over 100% of the
+            // total", which is nonsense on its face. The meter already clamps
+            // its segment the same way.
+            const convShare =
+              curConv > 0 && yoursConvNow > 0 ? Math.min(yoursConvNow / curConv, 1) : 0;
             const postConv = Math.max(0, curConv - yoursConvNow + yoursConvAfter);
             const postConvPct = reqConv > 0 ? Math.round(Math.min(postConv / reqConv, 1) * 100) : 0;
             const remainingMicro = isUnstakePanel && amountOk ? yoursMicro - amtMicro : BigInt(0);
@@ -2022,6 +2346,12 @@ export default function InitiativeList() {
                         ? `One member may stake at most ${formatDream(
                             (maxStakePerMemberMicro ?? BigInt(0)).toString(),
                           )} DREAM on an initiative. You can add ${stakeHeadroomStr} more.`
+                        : /[,\s]/.test(stakeAmount.trim())
+                        ? // parseFloat used to read "1,000" as 1 and stake a
+                          // thousandth of what was meant, silently. Rejecting it
+                          // is right; saying why keeps that from reading as a
+                          // broken field.
+                          "Enter the amount without separators, for example 1000.5"
                         : "Enter a valid amount greater than 0"}
                     </p>
                   )}
@@ -2053,9 +2383,21 @@ export default function InitiativeList() {
                             </span>{" "}
                             The remaining {formatDreamCeil(surplusMicro)} DREAM is past your per-member cap.
                             {capHeadroomMicro >= 10_000 && (
+                              /* Fills the headroom to the last micro-DREAM, not
+                                 the two-decimal figure in the label. Rounding
+                                 the fill to hundredths left up to 0.009999
+                                 DREAM of headroom unstaked, so reaching the cap
+                                 always took a second top-up stake. The label
+                                 stays short; the title carries the exact
+                                 figure the field will hold. */
                               <button
                                 type="button"
-                                onClick={() => setStakeAmount(dreamInputValue(capHeadroomMicro))}
+                                onClick={() =>
+                                  setStakeAmount(dreamInputExact(BigInt(Math.floor(capHeadroomMicro))))
+                                }
+                                title={`Fills the exact remaining headroom, ${formatDreamExact(
+                                  String(Math.floor(capHeadroomMicro)),
+                                )} DREAM`}
                                 className="ml-1.5 rounded border border-amber-700/60 px-1.5 py-0.5 font-medium text-amber-200 transition-colors hover:border-amber-600 hover:bg-amber-900/30"
                               >
                                 Use {formatDreamFloor(capHeadroomMicro)}
@@ -2403,31 +2745,56 @@ export default function InitiativeList() {
                         Submit work
                       </button>
                     )}
-                    {ini.status === InitiativeStatus.ASSIGNED && ini.assignee === address && (
-                      <button
-                        onClick={() => handleAbandon(ini.id)}
-                        disabled={actionLoading === `abandon-${ini.id}`}
-                        className="rounded-lg border border-red-700 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/20 disabled:opacity-50"
-                      >
-                        {actionLoading === `abandon-${ini.id}` ? "Abandoning..." : "Abandon"}
-                      </button>
-                    )}
-                    {/* Cancel retires an OPEN initiative before anyone takes it
-                        on. Project creator / ops committee only, and never once
-                        assigned (the assignee's Abandon owns that exit). */}
-                    {ini.status === InitiativeStatus.OPEN && !ini.assignee && canAssignOthers(ini) && (
+                    {/* Release hands the work back rather than ending it: the
+                        initiative returns to OPEN with its conviction and
+                        stakes intact. Shown to the assignee while the work is
+                        still theirs to step down from. Once submitted, only the
+                        committee can pull it, so the assignee's button stops at
+                        ASSIGNED and the committee's covers the rest. */}
+                    {ini.assignee === address && ini.status === InitiativeStatus.ASSIGNED && (
                       <button
                         type="button"
-                        onClick={() => handleCancel(ini.id)}
-                        disabled={actionLoading === `cancel-${ini.id}`}
+                        onClick={() => handleRelease(ini.id)}
+                        disabled={actionLoading === `release-${ini.id}`}
+                        title="Returns the initiative to open. Its stakes and conviction stay."
+                        className="rounded-lg border border-amber-700 px-3 py-1.5 text-xs font-medium text-amber-400 transition-colors hover:bg-amber-900/20 disabled:opacity-50"
+                      >
+                        {actionLoading === `release-${ini.id}` ? "Releasing..." : "Release assignment"}
+                      </button>
+                    )}
+                    {isOpsCommitteeMember &&
+                      ini.assignee &&
+                      ini.assignee !== address &&
+                      RELEASABLE_STATUSES.has(ini.status) && (
+                      <button
+                        type="button"
+                        onClick={() => handleRelease(ini.id)}
+                        disabled={actionLoading === `release-${ini.id}`}
+                        title="Commons Operations Committee: free stalled work without retiring it"
+                        className="rounded-lg border border-amber-700 px-3 py-1.5 text-xs font-medium text-amber-400 transition-colors hover:bg-amber-900/20 disabled:opacity-50"
+                      >
+                        {actionLoading === `release-${ini.id}` ? "Releasing..." : "Release assignment"}
+                      </button>
+                    )}
+                    {/* Close retires the item and returns its budget to the
+                        project. Project creator / ops committee only. Since
+                        chain commit 50c6fb6 it no longer waits for the
+                        initiative to be unassigned, so the project side can
+                        stop funding work already in flight. A challenge blocks
+                        it until that resolves. */}
+                    {CLOSABLE_STATUSES.has(ini.status) && canAssignOthers(ini) && (
+                      <button
+                        type="button"
+                        onClick={() => handleClose(ini.id)}
+                        disabled={actionLoading === `close-${ini.id}`}
                         title={
                           projectCreatorById.get(ini.project_id) === address
-                            ? "You created this project"
+                            ? "You created this project. The budget returns to it, net of review fees."
                             : "Commons Operations Committee"
                         }
                         className="rounded-lg border border-red-700 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/20 disabled:opacity-50"
                       >
-                        {actionLoading === `cancel-${ini.id}` ? "Cancelling..." : "Cancel initiative"}
+                        {actionLoading === `close-${ini.id}` ? "Closing..." : "Close initiative"}
                       </button>
                     )}
                     {/* Staking is initiated from the row's Stake button, which
@@ -2477,8 +2844,9 @@ export default function InitiativeList() {
                         {isOpsCommitteeMember ? (
                           <p className="text-red-400">
                             You are on the Operations Committee, so ending this initiative
-                            abandons it immediately and returns its budget to the project.
-                            The assignee keeps their self-assign bond.
+                            closes it immediately and returns its budget to the project, net
+                            of review fees already earned. The assignee keeps their
+                            self-assign bond.
                           </p>
                         ) : (
                           <p>
@@ -2553,12 +2921,28 @@ export default function InitiativeList() {
                           then state whichever gate is still outstanding, so a
                           member doesn't hold work back waiting for a bar that
                           only matters once the initiative is in review. */}
+                      {/* State where the initiative actually stands, not just
+                          the bar it has to clear. The previous copy named only
+                          the threshold, which reads as "none of this has been
+                          gathered" on an initiative that already has stakes on
+                          it. Both figures are the live ones while this card is
+                          open. */}
                       <p className="mt-2 text-xs leading-relaxed text-zinc-500">
                         {curConv >= reqConv && extConv >= extReqConv
                           ? "Conviction has already cleared both gates. Once submitted, this enters the review and challenge window, then completes and pays out."
-                          : curConv >= reqConv
-                            ? `Submitting doesn't require conviction. This one is over the total bar but still needs ${Math.round(extReqConv).toLocaleString()} conviction from members unaffiliated with the work before it can complete.`
-                            : `Submitting doesn't require conviction. The initiative waits in review until it reaches ${Math.round(reqConv).toLocaleString()} conviction, with ${Math.round(extReqConv).toLocaleString()} of that from members unaffiliated with the work.`}
+                          : `Submitting doesn't require conviction. ${
+                              curConv >= reqConv
+                                ? `This one is over the ${Math.round(reqConv).toLocaleString()} total bar`
+                                : `It waits in review until conviction reaches ${Math.round(reqConv).toLocaleString()}, currently ${Math.round(curConv).toLocaleString()}`
+                            }${
+                              extConv >= extReqConv
+                                ? "."
+                                : `, and until ${Math.round(extReqConv).toLocaleString()} of it comes from members unaffiliated with the work, currently ${Math.round(extConv).toLocaleString()}.${
+                                    selfAssigned
+                                      ? " Because you took on your own initiative, that unaffiliated share is the whole threshold rather than half, and your own stake does not count toward it."
+                                      : ""
+                                  }`
+                            }`}
                       </p>
                       <div className="mt-2.5 flex gap-2">
                         <button
@@ -2584,7 +2968,31 @@ export default function InitiativeList() {
                     </div>
                   )}
 
-                  {assignPickerFor === ini.id && (
+                  {assignPickerFor === ini.id && (() => {
+                    // Labels are built here rather than at fetch time because
+                    // eligibility is per initiative: the tier sets the floor and
+                    // the tags decide which of a member's scores count.
+                    const minRep = tierConfigs[ini.tier]?.minRep ?? 0;
+                    const candidates = members.filter((m) => m.address !== address);
+                    const options = candidates.map((m) => {
+                      const name = memberNames[m.address];
+                      const short = truncateAddress(m.address);
+                      const rep = avgReputationFor(m, ini.tags || []);
+                      const qualifies = rep >= minRep;
+                      // The name goes first so typing a name finds the member;
+                      // the address stays in the label so it is searchable too,
+                      // and so two members sharing a name are still telling apart.
+                      return {
+                        value: m.address,
+                        label: `${name ? `${name} · ${short}` : short} · ${fmtRep(rep)} rep${
+                          qualifies ? "" : ` (needs ${fmtRep(minRep)})`
+                        }`,
+                      };
+                    });
+                    const eligible = candidates.filter(
+                      (m) => avgReputationFor(m, ini.tags || []) >= minRep,
+                    ).length;
+                    return (
                     <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
                       <label className="mb-1.5 block text-xs text-zinc-400">Assign to member</label>
                       {loadingMembers ? (
@@ -2594,17 +3002,32 @@ export default function InitiativeList() {
                         </div>
                       ) : (
                         <SearchableSelect
-                          options={memberOptions.filter((m) => m.value !== address)}
+                          options={options}
                           value={assignTarget}
                           onChange={setAssignTarget}
                           placeholder="Search members..."
                           emptyMessage="No matching members"
                         />
                       )}
+                      {/* State the outcome up front. The chain checks this at
+                          assign time, and "insufficient reputation for tier"
+                          arrives as a raw dec-string error after signing. */}
                       <p className="mt-2 text-xs text-zinc-500">
-                        The member needs enough reputation for this initiative&apos;s{" "}
-                        {INITIATIVE_TIER_LABELS[ini.tier] || ini.tier} tier and room under the
-                        active-initiative cap, or the chain will reject the assignment.
+                        {!loadingMembers && candidates.length > 0 && eligible === 0 ? (
+                          <span className="text-amber-400">
+                            No other member has the {fmtRep(minRep)}{" "}
+                            reputation this initiative&apos;s{" "}
+                            {INITIATIVE_TIER_LABELS[ini.tier] || ini.tier} tier requires
+                            {(ini.tags || []).length > 0 ? ` on ${ini.tags.join(", ")}` : ""}.
+                            Assigning to any of them will be rejected.
+                          </span>
+                        ) : (
+                          <>
+                            The member needs enough reputation for this initiative&apos;s{" "}
+                            {INITIATIVE_TIER_LABELS[ini.tier] || ini.tier} tier and room under the
+                            active-initiative cap, or the chain will reject the assignment.
+                          </>
+                        )}
                       </p>
                       <div className="mt-2.5 flex gap-2">
                         <button
@@ -2627,7 +3050,8 @@ export default function InitiativeList() {
                         </button>
                       </div>
                     </div>
-                  )}
+                    );
+                  })()}
                 </div>
               )}
             </div>

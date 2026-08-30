@@ -93,7 +93,7 @@ export interface Initiative {
    * Advisory endorsements from stakers who signed MsgApproveInitiative with
    * approved=true. Nothing consults this list: conviction gates payout and the
    * bonded reviewers' verdicts gate quality. Disapproval is Operations
-   * Committee only and abandons the initiative outright.
+   * Committee only and closes the initiative outright.
    */
   approvals: string[];
   status: string;
@@ -102,7 +102,8 @@ export interface Initiative {
   propagated_conviction: string;
   /**
    * DREAM locked by a self-assigning project creator (budget-backed projects
-   * only). Returned on completion/abandonment, burned on upheld challenge.
+   * only). Returned on completion, on release of the assignment and on close;
+   * burned on upheld challenge.
    * Optional: nodes older than v1.0.26 don't return it.
    */
   self_assign_bond?: string;
@@ -142,6 +143,18 @@ export interface Initiative {
    * review_required_above_budget threshold still applies on top.
    */
   required_verifiers?: number;
+}
+
+/**
+ * Conviction recomputed on demand for one initiative (query_initiative_conviction.go).
+ * `threshold` is the required conviction, restated here so a caller polling this
+ * endpoint does not have to hold the initiative record alongside it.
+ */
+export interface InitiativeConvictionResponse {
+  total_conviction: string;
+  external_conviction: string;
+  threshold: string;
+  propagated_conviction: string;
 }
 
 // Initiative review (chain commits 70dce72, 32f2cee).
@@ -455,11 +468,16 @@ export const InitiativeStatus = {
   CHALLENGED: "INITIATIVE_STATUS_CHALLENGED",
   COMPLETED: "INITIATIVE_STATUS_COMPLETED",
   REJECTED: "INITIATIVE_STATUS_REJECTED",
-  ABANDONED: "INITIATIVE_STATUS_ABANDONED",
-  // Retired by the project creator or Operations Committee while still OPEN
-  // and unassigned. Distinct from ABANDONED, which records an assignee walking
-  // away from work already taken on.
-  CANCELLED: "INITIATIVE_STATUS_CANCELLED",
+  // Retired by the project creator or the Operations Committee, whether or not
+  // anyone was assigned. The work is not being done and its budget has gone
+  // back to the project, net of what review already cost.
+  //
+  // Replaces the former ABANDONED (7) and CANCELLED (8) pair (chain commit
+  // 50c6fb6): an assignee stepping down no longer retires anything, it returns
+  // the initiative to OPEN with its conviction intact, so the only terminal
+  // retirement left is the project side's. CLOSED reuses tag 7, so a node that
+  // predates the change would render an old ABANDONED record under this label.
+  CLOSED: "INITIATIVE_STATUS_CLOSED",
 } as const;
 
 export const INITIATIVE_STATUS_LABELS: Record<string, string> = {
@@ -470,8 +488,7 @@ export const INITIATIVE_STATUS_LABELS: Record<string, string> = {
   [InitiativeStatus.CHALLENGED]: "Challenged",
   [InitiativeStatus.COMPLETED]: "Completed",
   [InitiativeStatus.REJECTED]: "Rejected",
-  [InitiativeStatus.ABANDONED]: "Abandoned",
-  [InitiativeStatus.CANCELLED]: "Cancelled",
+  [InitiativeStatus.CLOSED]: "Closed",
 };
 
 export const InitiativeTier = {
@@ -906,6 +923,21 @@ export interface BondedRoleConfig {
   // Seconds the bond stays locked + slashable after MsgUnbondRole; 0 =
   // immediate (legacy). Sourced from the owning module's operational params.
   unbond_cooldown: string;
+  /**
+   * Verdict-streak policy, applied by x/rep in RecordRoleOutcome and made
+   * per-role config in chain commit 9033c4e. The federation verifier's
+   * accountability moved onto this shared record and its streak rules differ
+   * from the moderation roles': a sentinel's overturn is one contested
+   * judgement call, a verifier's means they attested to a wrong hash.
+   *
+   * Consecutive upheld verdicts needed to clear an overturn streak. 0 or 1 is
+   * the moderation-role behaviour, reset on the first upheld verdict.
+   */
+  upheld_to_reset_overturns?: string;
+  /** Lockout in seconds on an overturned verdict; 0 falls back to 24h. */
+  overturn_base_cooldown?: string;
+  /** Doubles the lockout per consecutive overturn, capped at 7 days. */
+  overturn_cooldown_escalates?: boolean;
 }
 
 export interface BondedRoleResponse {
@@ -953,6 +985,13 @@ export interface RoleActivity {
   total_actions?: Record<string, string>;
   upheld_actions?: Record<string, string>;
   overturned_actions?: Record<string, string>;
+  /**
+   * Reward epoch this role was most recently slashed in, stamped by SlashBond
+   * for every role type. Reward distributions may use it as a "no pay in an
+   * epoch you were slashed in" gate; only the federation verifier does today.
+   * 0 means never slashed under the current accounting.
+   */
+  last_slash_epoch?: string;
 }
 
 export interface RoleActivityResponse {

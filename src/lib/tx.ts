@@ -91,8 +91,16 @@ export const RepMsgTypeUrls = {
   AssignInitiative: "/sparkdream.rep.v1.MsgAssignInitiative",
   SubmitInitiativeWork: "/sparkdream.rep.v1.MsgSubmitInitiativeWork",
   ApproveInitiative: "/sparkdream.rep.v1.MsgApproveInitiative",
-  AbandonInitiative: "/sparkdream.rep.v1.MsgAbandonInitiative",
-  CancelInitiative: "/sparkdream.rep.v1.MsgCancelInitiative",
+  // Releasing an assignment and retiring the work item are separate exits
+  // (chain commit 50c6fb6, sparkdreamjs 0.0.38). UnassignInitiative returns the
+  // initiative to OPEN with its conviction and stakes intact so someone else
+  // can pick it up; it is signed by the assignee stepping down or by the
+  // Operations Committee freeing stalled work, and deliberately NOT by the
+  // project creator, whose lever is CloseInitiative. CloseInitiative retires
+  // the item and returns its budget to the project net of review fees, and now
+  // works whether or not anyone is assigned.
+  UnassignInitiative: "/sparkdream.rep.v1.MsgUnassignInitiative",
+  CloseInitiative: "/sparkdream.rep.v1.MsgCloseInitiative",
   CompleteInitiative: "/sparkdream.rep.v1.MsgCompleteInitiative",
   Stake: "/sparkdream.rep.v1.MsgStake",
   Unstake: "/sparkdream.rep.v1.MsgUnstake",

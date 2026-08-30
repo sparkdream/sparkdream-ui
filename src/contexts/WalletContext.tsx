@@ -275,60 +275,48 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // chain commit 4ad8e38) is in the registry but not the amino map. Two
       // scalar fields (creator, uint64 hide_record_id emitted as a string),
       // so the statics are safe here too.
-      // And 0.0.33: MsgCancelInitiative (rep — project creator / ops committee
-      // retires an OPEN, unassigned initiative) ships in the registry but not
-      // the amino map. Three scalar fields (creator, uint64 initiative_id
-      // emitted as a string, reason), no repeated fields, so the statics are
-      // safe. See [[sparkdreamjs-amino-converter-gap]].
+      // 0.0.38 closed the rep half of this gap — MsgCancelUnbondRole is in the
+      // generated map now, and MsgCancelInitiative is gone entirely, renamed to
+      // MsgCloseInitiative (chain commit 50c6fb6) and shipped with a converter.
+      // Importing the old name here would have resolved to undefined and thrown
+      // on the first amino signature of any message, so the entry is dropped
+      // rather than renamed. The two below are still missing theirs.
+      //
+      // 0.0.38's commons (recurring spend) and session (grant/allowance) maps
+      // have the same gap, left unpatched on purpose: this app signs none of
+      // those messages, and a converter nothing exercises is a converter whose
+      // staleness nobody would notice. Add them here if a view starts sending
+      // one.
       const { MsgSetThreadProposalsLock: ForumSetThreadProposalsLock } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/forum/v1/tx");
-      const { MsgCancelUnbondRole: RepCancelUnbondRole, MsgCancelInitiative: RepCancelInitiative } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
       const { MsgUnhideContent: CollectUnhideContent } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/tx");
       const latestMsgAmino = {
         "/sparkdream.forum.v1.MsgSetThreadProposalsLock": { aminoType: "sparkdream/x/forum/MsgSetThreadProposalsLock", toAmino: ForumSetThreadProposalsLock.toAmino, fromAmino: ForumSetThreadProposalsLock.fromAmino },
-        "/sparkdream.rep.v1.MsgCancelUnbondRole": { aminoType: "sparkdream/x/rep/MsgCancelUnbondRole", toAmino: RepCancelUnbondRole.toAmino, fromAmino: RepCancelUnbondRole.fromAmino },
-        "/sparkdream.rep.v1.MsgCancelInitiative": { aminoType: "sparkdream/x/rep/MsgCancelInitiative", toAmino: RepCancelInitiative.toAmino, fromAmino: RepCancelInitiative.fromAmino },
         "/sparkdream.collect.v1.MsgUnhideContent": { aminoType: "sparkdream/x/collect/MsgUnhideContent", toAmino: CollectUnhideContent.toAmino, fromAmino: CollectUnhideContent.fromAmino },
       };
 
-      // 0.0.36 (chain commits 70dce72 / 32f2cee) ships the bonded-reviewer,
-      // jury-summons and review-bounty messages in the registry, and once again
-      // omits every one of them from the generated AminoConverter map. See
-      // [[sparkdreamjs-amino-converter-gap]].
+      // 0.0.38 finally ships the whole rep AminoConverter map: every
+      // bonded-reviewer, jury-summons and review-bounty message that 0.0.36
+      // left out now has a generated entry, including MsgSubmitInitiativeReview
+      // with the correct undefined-when-empty criteria_votes. Those shadows are
+      // gone; the two below stay, because they are the other failure mode from
+      // [[sparkdreamjs-amino-converter-gap]] — the package's HAND-WRITTEN
+      // overrides, which are not regenerated and so go stale silently. Both are
+      // still wrong in 0.0.38, verified against the package source:
       //
-      // Two of them can't just delegate to the telescope statics:
+      //   - MsgCreateInitiative still emits the removed template_id and drops
+      //     acceptance_criteria entirely, so any initiative created WITH
+      //     criteria signs bytes the chain never reconstructs.
+      //   - MsgCreateChallenge still predates the criteria_id the challenger
+      //     cites, so a challenge naming a criterion signs without it. (A
+      //     free-form challenge signs fine either way, which is what makes this
+      //     the kind of bug that ships.)
       //
-      //   - MsgSubmitInitiativeReview has a repeated criteria_votes. The
-      //     generated toAmino emits `[]` for an empty list where the chain's
-      //     aminojson omits the key, so a verdict filed without per-criterion
-      //     votes (the common case, since acceptance_criteria is optional)
-      //     would fail sigverify. Patched to return undefined when empty,
-      //     mirroring the package's own hand-written overrides.
-      //   - MsgCreateInitiative gained repeated acceptance_criteria, and the
-      //     package's hand-written override still predates it: it emits the
-      //     removed template_id and drops acceptance_criteria entirely, so any
-      //     initiative created WITH criteria would sign bytes the chain never
-      //     reconstructs. Replaced here rather than left to the package.
-      //   - MsgCreateChallenge is stale the same way: its override predates the
-      //     criteria_id the challenger cites, so a challenge naming a criterion
-      //     would sign without it. (A free-form challenge signs fine either
-      //     way, which is what makes this the kind of bug that ships.)
-      //
-      // The rest are scalars only. MsgResolveReviewEscalation.resolution is an
-      // enum the converter emits as a plain int (matching aminojson), and
-      // MsgSetVerificationPolicy's nested policy is non-nullable, so it is
-      // always emitted — both delegate safely.
+      // Re-check both on the next bump: a fixed package override and this
+      // shadow agreeing is the only safe way to drop them.
       const {
-        MsgSubmitInitiativeReview: RepSubmitInitiativeReview,
         MsgCreateInitiative: RepCreateInitiative,
         MsgCreateChallenge: RepCreateChallenge,
-        MsgSetVerificationPolicy: RepSetVerificationPolicy,
-        MsgResolveReviewEscalation: RepResolveReviewEscalation,
-        MsgFundReviewBounty: RepFundReviewBounty,
-        MsgReclaimReviewBounty: RepReclaimReviewBounty,
-        MsgAcceptJuryDuty: RepAcceptJuryDuty,
-        MsgDeclineJuryDuty: RepDeclineJuryDuty,
       } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
-      const { CriteriaVote: RepCriteriaVote } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/jury_review");
       const { VerificationCriteria: RepVerificationCriteria } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/acceptance_criteria");
       const reviewAmino = {
         "/sparkdream.rep.v1.MsgCreateInitiative": {
@@ -363,27 +351,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           }),
           fromAmino: RepCreateChallenge.fromAmino,
         },
-        "/sparkdream.rep.v1.MsgSubmitInitiativeReview": {
-          aminoType: "sparkdream/x/rep/MsgSubmitInitiativeReview",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          toAmino: (message: any) => ({
-            reviewer: message.reviewer === "" ? undefined : message.reviewer,
-            initiative_id: message.initiativeId !== BigInt(0) ? message.initiativeId?.toString() : undefined,
-            approved: message.approved === false ? undefined : message.approved,
-            criteria_votes: (message.criteriaVotes?.length ?? 0) > 0
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ? message.criteriaVotes.map((e: any) => RepCriteriaVote.toAmino(e))
-              : undefined,
-            comments: message.comments === "" ? undefined : message.comments,
-          }),
-          fromAmino: RepSubmitInitiativeReview.fromAmino,
-        },
-        "/sparkdream.rep.v1.MsgSetVerificationPolicy": { aminoType: "sparkdream/x/rep/MsgSetVerificationPolicy", toAmino: RepSetVerificationPolicy.toAmino, fromAmino: RepSetVerificationPolicy.fromAmino },
-        "/sparkdream.rep.v1.MsgResolveReviewEscalation": { aminoType: "sparkdream/x/rep/MsgResolveReviewEscalation", toAmino: RepResolveReviewEscalation.toAmino, fromAmino: RepResolveReviewEscalation.fromAmino },
-        "/sparkdream.rep.v1.MsgFundReviewBounty": { aminoType: "sparkdream/x/rep/MsgFundReviewBounty", toAmino: RepFundReviewBounty.toAmino, fromAmino: RepFundReviewBounty.fromAmino },
-        "/sparkdream.rep.v1.MsgReclaimReviewBounty": { aminoType: "sparkdream/x/rep/MsgReclaimReviewBounty", toAmino: RepReclaimReviewBounty.toAmino, fromAmino: RepReclaimReviewBounty.fromAmino },
-        "/sparkdream.rep.v1.MsgAcceptJuryDuty": { aminoType: "sparkdream/x/rep/MsgAcceptJuryDuty", toAmino: RepAcceptJuryDuty.toAmino, fromAmino: RepAcceptJuryDuty.fromAmino },
-        "/sparkdream.rep.v1.MsgDeclineJuryDuty": { aminoType: "sparkdream/x/rep/MsgDeclineJuryDuty", toAmino: RepDeclineJuryDuty.toAmino, fromAmino: RepDeclineJuryDuty.fromAmino },
       };
 
       // Telescope's auto-generated amino converters don't recursively decode

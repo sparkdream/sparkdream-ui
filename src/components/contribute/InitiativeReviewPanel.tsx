@@ -158,7 +158,30 @@ export default function InitiativeReviewPanel({
   const criteria = initiative.acceptance_criteria ?? [];
   const rounds = reviews?.rounds ?? [];
   const currentRound = reviews?.current_round ?? initiative.review_round ?? 0;
-  const required = reviews?.required ?? initiative.required_verifiers ?? 0;
+  // How many approving verdicts this initiative needs, or `null` when that is
+  // genuinely not known.
+  //
+  // The live query computes RequiredVerifiersFor, which is the max of the
+  // project's policy floor and the chain-wide review_required_above_budget
+  // threshold. Only the policy half is snapshotted onto the initiative — the
+  // threshold is deliberately read live chain-side — so a snapshot of 0 does
+  // NOT mean no verdict is required, it means the snapshot cannot answer. A
+  // positive snapshot is still a sound lower bound and worth keeping.
+  //
+  // `null` rather than a guessed 0 or 1: 0 would claim a gate is absent (and
+  // hide this whole panel via the early return below), while 1 would invite a
+  // reviewer to bond DREAM on a verdict that may not be wanted. Everything
+  // downstream tests `verdictRequired`, which is false on null.
+  const snapshotRequired = initiative.required_verifiers ?? 0;
+  const required: number | null =
+    reviews?.required !== undefined
+      ? reviews.required
+      : snapshotRequired > 0
+        ? snapshotRequired
+        : null;
+  // Known to be on. Unknown reads false, so nothing downstream renders a round,
+  // a deadline, or a verdict-filing affordance for a gate that may not exist.
+  const verdictRequired = required !== null && required > 0;
   const approvals = reviews?.approvals ?? 0;
   const satisfied = reviews?.satisfied ?? false;
   const escalation = initiative.review_escalation;
@@ -179,7 +202,7 @@ export default function InitiativeReviewPanel({
 
   const canFileVerdict =
     openForReview &&
-    required > 0 &&
+    verdictRequired &&
     !!address &&
     !isConflicted &&
     !alreadyReviewed &&
@@ -314,6 +337,8 @@ export default function InitiativeReviewPanel({
   // that neither declares criteria, needs a verdict, nor holds a bounty.
   if (!supported) return null;
   if (loading && !reviews) return null;
+  // Note `=== 0`, not falsy: an unknown requirement keeps the panel mounted so
+  // the gate reads "unavailable" rather than silently disappearing.
   if (required === 0 && criteria.length === 0 && !hasBounty && rounds.length === 0) return null;
 
   const pastDeadline =
@@ -328,7 +353,14 @@ export default function InitiativeReviewPanel({
         <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
           Reviewer gate
         </h4>
-        {required > 0 ? (
+        {required === null ? (
+          <span
+            title="The reviewer-gate query did not answer, and this initiative's snapshot only records its project's policy — not the chain-wide budget threshold. Reload to check."
+            className="rounded bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-500"
+          >
+            Verdict requirement unavailable
+          </span>
+        ) : verdictRequired ? (
           <span
             className={`rounded px-1.5 py-0.5 text-xs ${
               satisfied
@@ -343,7 +375,7 @@ export default function InitiativeReviewPanel({
             No verdict required
           </span>
         )}
-        {openForReview && required > 0 && (
+        {openForReview && verdictRequired && (
           <span className="text-xs text-zinc-500">Round {currentRound + 1}</span>
         )}
         {escalation && escalation !== ReviewEscalation.NONE && (
@@ -356,7 +388,7 @@ export default function InitiativeReviewPanel({
       {/* The window, and what happens at the end of it. Committee silence
           rejects the round, so the deadline is a real event rather than a
           formality. */}
-      {openForReview && required > 0 && initiative.review_deadline &&
+      {openForReview && verdictRequired && initiative.review_deadline &&
         initiative.review_deadline !== "0" && (
         <p className="mt-1.5 text-xs text-zinc-500">
           {pastDeadline ? "Review window closed at " : "Review window closes at "}
@@ -448,7 +480,7 @@ export default function InitiativeReviewPanel({
 
       {/* Review bounty. Shown whenever review is on the table, because the
           point of a bounty is to be visible before anyone has looked. */}
-      {(required > 0 || hasBounty) && (
+      {(verdictRequired || hasBounty) && (
         <div className="mt-3 border-t border-zinc-800 pt-3">
           <div className="flex flex-wrap items-center gap-2">
             <h5 className="text-xs font-semibold text-zinc-400">Review bounty</h5>
@@ -642,7 +674,7 @@ export default function InitiativeReviewPanel({
       )}
 
       {/* Why the file button is absent, for someone who expected it. */}
-      {openForReview && required > 0 && !canFileVerdict && !!address && (
+      {openForReview && verdictRequired && !canFileVerdict && !!address && (
         <p className="mt-3 text-xs text-zinc-500">
           {alreadyReviewed
             ? "Your verdict on this round is filed."

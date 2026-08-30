@@ -449,15 +449,26 @@ const MODULES: Record<string, ModuleDef> = {
       { group: "Verifiers", key: "verifierRecoveryThreshold", apiKey: "verifier_recovery_threshold", label: "Verifier Recovery Threshold", kind: "dream" },
       { group: "Verifiers", key: "verifierSlashAmount", apiKey: "verifier_slash_amount", label: "Verifier Slash Amount", kind: "dream" },
       { group: "Verifiers", key: "verificationWindow", apiKey: "verification_window", label: "Verification Window", kind: "duration", unit: "hours", unitDivisor: 3600 },
-      { group: "Verifiers", key: "minEpochVerifications", apiKey: "min_epoch_verifications", label: "Min Epoch Verifications", kind: "number" },
-      { group: "Verifiers", key: "minVerifierAccuracy", apiKey: "min_verifier_accuracy", label: "Min Verifier Accuracy", kind: "dec" },
       { group: "Verifiers", key: "verifierDemotionCooldown", apiKey: "verifier_demotion_cooldown", label: "Verifier Demotion Cooldown", kind: "duration", unit: "hours", unitDivisor: 3600 },
       { group: "Verifiers", key: "verifierOverturnBaseCooldown", apiKey: "verifier_overturn_base_cooldown", label: "Verifier Overturn Base Cooldown", kind: "duration", unit: "hours", unitDivisor: 3600 },
       { group: "Verifiers", key: "upheldToResetOverturns", apiKey: "upheld_to_reset_overturns", label: "Upheld To Reset Overturns", kind: "number" },
       { group: "Verifiers", key: "verifierUnbondCooldown", apiKey: "verifier_unbond_cooldown", label: "Verifier Unbond Cooldown", kind: "duration", unit: "hours", unitDivisor: 3600 },
-      { group: "Verifiers", key: "operatorRewardShare", apiKey: "operator_reward_share", label: "Operator Reward Share", kind: "dec" },
-      { group: "Verifiers", key: "verifierDreamReward", apiKey: "verifier_dream_reward", label: "Verifier Reward", kind: "dream" },
-      { group: "Verifiers", key: "maxVerifierDreamMintPerEpoch", apiKey: "max_verifier_dream_mint_per_epoch", label: "Max Verifier Mint / Epoch", kind: "dream" },
+      // What a verifier is PAID moved to x/rep in chain commit 9033c4e
+      // (min_epoch_verifications, min_verifier_accuracy, verifier_dream_reward,
+      // max_verifier_dream_mint_per_epoch), leaving eligibility and slashing
+      // here. Edit those under Rep > Verifier Rewards. operator_reward_share
+      // went with them, replaced by the bridge-operator pool below.
+
+      // Bridge operators. Relaying is real infrastructure cost that the old
+      // operator_reward_share never actually paid, so operators now draw from
+      // their own SPARK pool on the same inflation-share skim the rep bonded
+      // roles use, gated on submissions that verifiers went on to verify.
+      { group: "Bridge Operators", key: "operatorRewardInflationShare", apiKey: "operator_reward_inflation_share", label: "Operator Reward Inflation Share", kind: "dec", hint: "Share of the community pool's inflation income drawn per day; 0 disables the skim" },
+      { group: "Bridge Operators", key: "maxOperatorRewardPool", apiKey: "max_operator_reward_pool", label: "Max Operator Reward Pool", kind: "amount" },
+      { group: "Bridge Operators", key: "operatorRewardPoolOverflowBurnRatio", apiKey: "operator_reward_pool_overflow_burn_ratio", label: "Operator Pool Overflow Burn Ratio", kind: "dec" },
+      { group: "Bridge Operators", key: "operatorRewardEpochBlocks", apiKey: "operator_reward_epoch_blocks", label: "Operator Reward Epoch (blocks)", kind: "bigint" },
+      { group: "Bridge Operators", key: "minEpochVerifiedSubmissions", apiKey: "min_epoch_verified_submissions", label: "Min Epoch Verified Submissions", kind: "number", hint: "Submissions a verifier went on to verify, below which an operator draws nothing" },
+      { group: "Bridge Operators", key: "maxUnverifiedRate", apiKey: "max_unverified_rate", label: "Max Unverified Rate", kind: "dec", hint: "Share of an operator's submissions that may go unverified before pay is withheld" },
 
       // Challenges & arbitration
       { group: "Challenges & Arbitration", key: "challengeWindow", apiKey: "challenge_window", label: "Challenge Window", kind: "duration", unit: "hours", unitDivisor: 3600 },
@@ -921,6 +932,38 @@ const MODULES: Record<string, ModuleDef> = {
       { group: "Reviewer Rewards", key: "reviewerRewardEpochBlocks", apiKey: "reviewer_reward_epoch_blocks", label: "Reviewer Reward Epoch (blocks)", kind: "bigint" },
       { group: "Reviewer Rewards", key: "minReviewerAccuracy", apiKey: "min_reviewer_accuracy", label: "Min Reviewer Accuracy", kind: "dec" },
       { group: "Reviewer Rewards", key: "reviewerAccuracyWindowEpochs", apiKey: "reviewer_accuracy_window_epochs", label: "Reviewer Accuracy Window (epochs)", kind: "bigint" },
+
+      // Reviewer bonded-role policy (chain commit f853356). Before this, the
+      // reviewer was the one bonded role no module owned, so its BondedRoleConfig
+      // was reachable only by editing genesis. These params are now the source
+      // of truth and are written through to rep's enforcement state, the same
+      // way x/forum owns the sentinel's and x/collect the curator's.
+      //
+      // The bond floor is a low barrier to entry, not a measure of what a bad
+      // verdict costs: per-verdict exposure is the reserve above, which scales
+      // with the initiative's budget. Reviewers scale up by bonding more.
+      { group: "Reviewers", key: "minReviewerBond", apiKey: "min_reviewer_bond", label: "Min Reviewer Bond", kind: "dream", hint: "Entry floor only. Per-verdict liability is the bond reserve rate against the budget" },
+      { group: "Reviewers", key: "reviewerDemotionThreshold", apiKey: "reviewer_demotion_threshold", label: "Reviewer Demotion Threshold", kind: "dream", hint: "Free bond below which a reviewer is demoted out of the role. Conventionally half the floor" },
+      { group: "Reviewers", key: "minReviewerTrustLevel", apiKey: "min_reviewer_trust_level", label: "Min Reviewer Trust Level", kind: "string", hint: "Required: an empty value skips the trust check entirely, opening the one role whose approvals mint DREAM" },
+      { group: "Reviewers", key: "minReviewerRepTier", apiKey: "min_reviewer_rep_tier", label: "Min Reviewer Rep Tier", kind: "bigint" },
+      { group: "Reviewers", key: "minReviewerAgeBlocks", apiKey: "min_reviewer_age_blocks", label: "Min Reviewer Age (blocks)", kind: "bigint" },
+      { group: "Reviewers", key: "reviewerDemotionCooldown", apiKey: "reviewer_demotion_cooldown", label: "Reviewer Demotion Cooldown (blocks)", kind: "bigint" },
+      { group: "Reviewers", key: "reviewerUnbondCooldown", apiKey: "reviewer_unbond_cooldown", label: "Reviewer Unbond Cooldown (blocks)", kind: "bigint", hint: "Bond stays slashable this long after an unbond request, so open verdicts can still be charged" },
+
+      // Federation verifier pay, moved here from x/federation (chain commit
+      // 9033c4e) when the verifier's accountability record moved onto the
+      // shared RoleActivity. x/federation keeps the verifier's eligibility and
+      // slashing terms; what a verifier is PAID is a bonded-role reward
+      // question, so it is funded from the same capped community-pool skim as
+      // the sentinel, curator and reviewer pools.
+      { group: "Verifier Rewards", key: "maxVerifierRewardPool", apiKey: "max_verifier_reward_pool", label: "Max Verifier Reward Pool", kind: "amount" },
+      { group: "Verifier Rewards", key: "verifierRewardPoolOverflowBurnRatio", apiKey: "verifier_reward_pool_overflow_burn_ratio", label: "Verifier Pool Overflow Burn Ratio", kind: "dec" },
+      { group: "Verifier Rewards", key: "verifierRewardEpochBlocks", apiKey: "verifier_reward_epoch_blocks", label: "Verifier Reward Epoch (blocks)", kind: "bigint" },
+      { group: "Verifier Rewards", key: "minVerifierAccuracy", apiKey: "min_verifier_accuracy", label: "Min Verifier Accuracy", kind: "dec" },
+      { group: "Verifier Rewards", key: "verifierAccuracyWindowEpochs", apiKey: "verifier_accuracy_window_epochs", label: "Verifier Accuracy Window (epochs)", kind: "bigint" },
+      { group: "Verifier Rewards", key: "minEpochVerifications", apiKey: "min_epoch_verifications", label: "Min Epoch Verifications", kind: "number" },
+      { group: "Verifier Rewards", key: "verifierDreamReward", apiKey: "verifier_dream_reward", label: "Verifier DREAM Reward", kind: "dream" },
+      { group: "Verifier Rewards", key: "maxVerifierDreamMintPerEpoch", apiKey: "max_verifier_dream_mint_per_epoch", label: "Max Verifier DREAM Mint / Epoch", kind: "dream" },
 
       // Shared bonded-role funding. One capped claim on the community pool for
       // the whole module, divided internally by each pool's headroom.

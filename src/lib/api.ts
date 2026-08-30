@@ -76,6 +76,7 @@ import type {
   AvailableInitiativesResponse,
   InitiativesByAssigneeResponse,
   InitiativesByCreatorResponse,
+  InitiativeConvictionResponse,
   InitiativeReviewsResponse,
   GetChallengeResponse,
   ListChallengeResponse,
@@ -979,6 +980,25 @@ export async function challengesByInitiative(
 export async function initiativeReviews(initiativeId: string): Promise<InitiativeReviewsResponse> {
   return get<InitiativeReviewsResponse>(
     `/sparkdream/rep/v1/initiative_reviews/${initiativeId}`
+  );
+}
+
+/**
+ * Live conviction for one initiative.
+ *
+ * The list and detail reads return the chain's last *stored* recompute, which
+ * lags on purpose: EndBlocker refreshes conviction from a due-time queue under a
+ * per-block work budget, so a stake placed a moment ago may not be reflected yet
+ * (x/rep/keeper/conviction_queue.go). This query calls UpdateInitiativeConvictionLazy
+ * first, so it is the only read that never serves a stale figure — at the cost
+ * of a full stake walk for that one initiative, which is why it is asked for a
+ * card someone is actually looking at rather than for a page of rows.
+ */
+export async function initiativeConviction(
+  initiativeId: string
+): Promise<InitiativeConvictionResponse> {
+  return get<InitiativeConvictionResponse>(
+    `/sparkdream/rep/v1/initiative_conviction/${initiativeId}`
   );
 }
 
