@@ -50,3 +50,7 @@ next-env.d.ts
 AGENTS.md
 CLAUDE.md
 GEMINI.md
+# syncthing
+/.stfolder/
+/.stignore
+/.stversions/
