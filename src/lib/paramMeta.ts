@@ -302,7 +302,12 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "minSentinelTrustLevel", apiKey: "min_sentinel_trust_level", label: "Min Sentinel Trust Level", kind: "string" },
       { key: "minSentinelAgeBlocks", apiKey: "min_sentinel_age_blocks", label: "Min Sentinel Age (blocks)", kind: "bigint" },
       { key: "sentinelDemotionCooldown", apiKey: "sentinel_demotion_cooldown", label: "Sentinel Demotion Cooldown (blocks)", kind: "bigint" },
-      { key: "sentinelDemotionThreshold", apiKey: "sentinel_demotion_threshold", label: "Sentinel Demotion Threshold", kind: "dec" },
+      // udream math.Int, not a Dec: the sibling of Min Sentinel Bond, not a
+      // fraction of it. Rendering it raw put a council edit six orders of
+      // magnitude out — the same units slip the chain fixed in genesis
+      // (commit 7553c87), where a 250 udream threshold against a 500 DREAM
+      // floor left every underfunded sentinel parked in RECOVERY.
+      { key: "sentinelDemotionThreshold", apiKey: "sentinel_demotion_threshold", label: "Sentinel Demotion Threshold", kind: "dream", hint: "Bond floor below which a sentinel drops from RECOVERY to DEMOTED. Conventionally half the bond floor" },
       { key: "sentinelUnhideWindow", apiKey: "sentinel_unhide_window", label: "Sentinel Unhide Window (blocks)", kind: "bigint" },
       { key: "sentinelUnbondCooldown", apiKey: "sentinel_unbond_cooldown", label: "Sentinel Unbond Cooldown (seconds)", kind: "bigint", hint: "0 = immediate withdrawal; otherwise bond stays locked + slashable for this many seconds after MsgUnbondRole" },
       { key: "convictionRenewalThreshold", apiKey: "conviction_renewal_threshold", label: "Conviction Renewal Threshold", kind: "dec" },
@@ -790,7 +795,7 @@ export const MODULES: Record<string, ModuleDef> = {
 
       // Conviction
       { group: "Conviction", key: "convictionHalfLifeEpochs", apiKey: "conviction_half_life_epochs", label: "Conviction Half-Life (epochs)", kind: "bigint" },
-      { group: "Conviction", key: "externalConvictionRatio", apiKey: "external_conviction_ratio", label: "External Conviction Ratio", kind: "dec" },
+      { group: "Conviction", key: "externalConvictionRatio", apiKey: "external_conviction_ratio", label: "External Conviction Ratio", kind: "dec", hint: "Fraction of the threshold that must come from members unaffiliated with the work. Divided by the per-member cap, it is the minimum number of distinct stakers" },
       { group: "Conviction", key: "convictionPerDream", apiKey: "conviction_per_dream", label: "Conviction Per DREAM", kind: "dec" },
 
       // Review periods
@@ -857,6 +862,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "Extended Staking", key: "minStakeDurationSeconds", apiKey: "min_stake_duration_seconds", label: "Min Stake Duration (seconds)", kind: "bigint" },
       { group: "Extended Staking", key: "allowSelfMemberStake", apiKey: "allow_self_member_stake", label: "Allow Self Member Stake", kind: "boolean" },
       { group: "Extended Staking", key: "maxInitiativeStakePerMember", apiKey: "max_initiative_stake_per_member", label: "Max Initiative Stake / Member", kind: "dream", hint: "Anti-whale cap on single-initiative stake" },
+      { group: "Extended Staking", key: "minStakeAmount", apiKey: "min_stake_amount", label: "Min Stake Amount", kind: "dream", hint: "Anti-dust floor on every stake; below it an epoch's yield truncates to zero" },
 
       // Gifts
       { group: "Gifts", key: "giftCooldownBlocks", apiKey: "gift_cooldown_blocks", label: "Gift Cooldown (blocks)", kind: "bigint" },
@@ -869,7 +875,12 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "Content Conviction", key: "authorBondSlashOnModeration", apiKey: "author_bond_slash_on_moderation", label: "Slash Author Bond on Moderation", kind: "boolean" },
       { group: "Content Conviction", key: "contentChallengeRewardShare", apiKey: "content_challenge_reward_share", label: "Content Challenge Reward Share", kind: "dec" },
       { group: "Content Conviction", key: "convictionPropagationRatio", apiKey: "conviction_propagation_ratio", label: "Conviction Propagation Ratio", kind: "dec" },
-      { group: "Content Conviction", key: "maxConvictionSharePerMember", apiKey: "max_conviction_share_per_member", label: "Max Conviction Share / Member", kind: "dec" },
+      // The cap and the two conviction ratios jointly set how many distinct
+      // members an initiative needs: a gate at `ratio` takes
+      // ceil(ratio / cap) stakers. Only the cap is council-tunable, so
+      // Params.Validate holds it inside [1/3, 0.375) to stop an ops-only edit
+      // retuning a floor governance set (chain commit 7ab3c3b).
+      { group: "Content Conviction", key: "maxConvictionSharePerMember", apiKey: "max_conviction_share_per_member", label: "Max Conviction Share / Member", kind: "dec", hint: "At least 1/3 and under 0.375. Below that three stakers cannot cover the full threshold; at or above it two clear the self-assigned floor and that safeguard collapses" },
 
       // Tag anti-gaming
       { group: "Tags", key: "maxTagsPerInitiative", apiKey: "max_tags_per_initiative", label: "Max Tags / Initiative", kind: "number" },
@@ -882,6 +893,10 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "Seasonal Staking", key: "maxStakingRewardsPerSeason", apiKey: "max_staking_rewards_per_season", label: "Max Staking Rewards / Season", kind: "dream" },
       { group: "Seasonal Staking", key: "stakedDecayRate", apiKey: "staked_decay_rate", label: "Staked Decay Rate (per epoch)", kind: "dec" },
       { group: "Seasonal Staking", key: "newMemberDecayGraceEpochs", apiKey: "new_member_decay_grace_epochs", label: "New-Member Decay Grace (epochs)", kind: "bigint" },
+      { group: "Seasonal Staking", key: "stakingRewardYieldPerEpoch", apiKey: "staking_reward_yield_per_epoch", label: "Staking Reward Yield / Epoch", kind: "dec", hint: "Cap on the epoch's reward slice as a yield on total staked. Keeps a dust-staked pool from handing the whole season budget to whoever happens to be staked" },
+      { group: "Seasonal Staking", key: "stakingPoolMintShare", apiKey: "staking_pool_mint_share", label: "Staking Pool Mint Share", kind: "dec", hint: "Share of last season's non-staking mints that sizes the incoming season's staking budget" },
+      { group: "Seasonal Staking", key: "stakingPoolCapBase", apiKey: "staking_pool_cap_base", label: "Staking Pool Cap Base", kind: "dream", hint: "Schedule anchor (the chain's genesis DREAM supply); the schedule ceiling is base × (season + 1) × cap rate" },
+      { group: "Seasonal Staking", key: "stakingPoolCapRate", apiKey: "staking_pool_cap_rate", label: "Staking Pool Cap Rate", kind: "dec", hint: "Schedule rate per season elapsed; bounds the pool's growth even on a mint spike" },
 
       // Treasury
       { group: "Treasury", key: "maxTreasuryBalance", apiKey: "max_treasury_balance", label: "Max Treasury Balance", kind: "dream" },
@@ -897,7 +912,7 @@ export const MODULES: Record<string, ModuleDef> = {
 
       // Self-assignment safeguards
       { group: "Self-Assignment", key: "selfAssignedBondRate", apiKey: "self_assigned_bond_rate", label: "Self-Assigned Bond Rate", kind: "dec", hint: "Fraction of budget locked as bond when the assignee authored the initiative or its project; 0 disables" },
-      { group: "Self-Assignment", key: "selfAssignedExternalConvictionRatio", apiKey: "self_assigned_external_conviction_ratio", label: "Self-Assigned External Conviction Ratio", kind: "dec", hint: ">= External Conviction Ratio and <= 1" },
+      { group: "Self-Assignment", key: "selfAssignedExternalConvictionRatio", apiKey: "self_assigned_external_conviction_ratio", label: "Self-Assigned External Conviction Ratio", kind: "dec", hint: ">= External Conviction Ratio and <= 1. Set above it, this must demand more distinct stakers than ordinary work at the current per-member cap, or the msg is rejected" },
       { group: "Self-Assignment", key: "selfAssignedChallengeMultiplier", apiKey: "self_assigned_challenge_multiplier", label: "Self-Assigned Challenge Multiplier", kind: "bigint", hint: "Challenge window multiplier for self-assigned initiatives; >= 1" },
       { group: "Self-Assignment", key: "permissionlessSelfAssignedBondRate", apiKey: "permissionless_self_assigned_bond_rate", label: "Permissionless Self-Assigned Bond Rate", kind: "dec", hint: "Higher than the funded rate: permissionless work mints DREAM nobody approved" },
 
@@ -989,6 +1004,7 @@ export const MODULES: Record<string, ModuleDef> = {
 
       // Initiative payouts
       { group: "Initiatives", key: "initiativeCompletionBonusRate", apiKey: "initiative_completion_bonus_rate", label: "Initiative Completion Bonus Rate", kind: "dec", hint: "Conviction-weighted bonus to external stakers on completion" },
+      { group: "Initiatives", key: "maxCompletionBonusStakeMultiple", apiKey: "max_completion_bonus_stake_multiple", label: "Max Completion Bonus / Stake", kind: "dec", hint: "Caps the completion bonus at this multiple of the external stake behind it; 0 disables the bonus" },
     ],
   },
 };

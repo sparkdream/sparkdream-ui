@@ -293,13 +293,18 @@ type ConvictionParams = {
 const LIVE_CONVICTION_POLL_MS = 60_000;
 
 // Chain defaults (conviction_half_life_epochs 3 x epoch_blocks 300 x ~6s per
-// block; max_conviction_share_per_member 0.33). Used until rep params load, and
+// block; max_conviction_share_per_member 0.35). Used until rep params load, and
 // as the fallback on an older node that doesn't return them.
+//
+// Keep these in step with x/rep DefaultParams. A stale fallback here is not
+// cosmetic: the self-assigned ratio sat at 1 long after the chain moved to
+// 0.75, so every card rendered before params arrived showed a harsher gate
+// than the one the chain actually enforces.
 const DEFAULT_CONVICTION_PARAMS: ConvictionParams = {
   halfLifeSeconds: 3 * 300 * 6,
-  maxSharePerMember: 0.33,
+  maxSharePerMember: 0.35,
   externalRatio: 0.5,
-  selfAssignedExternalRatio: 1,
+  selfAssignedExternalRatio: 0.75,
 };
 
 // Weight of one stake at `nowSeconds`: 0 when just placed, 1 once held for two
@@ -569,7 +574,7 @@ export default function InitiativeList() {
   // figure below. See useConvictionClock for why this is not a per-row interval.
   const clockSeconds = useConvictionClock();
   const [expanded, setExpanded] = useState<string | null>(null);
-  // Conviction recomputed on demand for the expanded card only.
+  // Conviction recomputed on demand, keyed by initiative id.
   //
   // The list read carries the chain's last *stored* recompute, which lags by
   // design — EndBlocker drains a due-time queue under a per-block work budget,
@@ -578,12 +583,14 @@ export default function InitiativeList() {
   // model this UI has to survive at thousands of initiatives. Exactly one card
   // is expanded at a time, so this is one request per poll, whatever the list
   // holds.
-  const [liveConviction, setLiveConviction] = useState<{
-    id: string;
-    total: number;
-    external: number;
-    threshold: number;
-  } | null>(null);
+  //
+  // Recomputes are kept after the card collapses rather than dropped. Falling
+  // back to the stored figure made the row's meter jump backwards on collapse
+  // (2,100 conviction while open, 82 once shut), which reads as a bug in the
+  // chain rather than a lagging cache.
+  const [liveConviction, setLiveConviction] = useState<
+    Record<string, { total: number; external: number; threshold: number }>
+  >({});
   // Bumped by anything that moves conviction from this tab (stake, unstake), to
   // re-read without waiting out the poll interval.
   const [convictionNonce, setConvictionNonce] = useState(0);
@@ -1373,10 +1380,7 @@ export default function InitiativeList() {
   // hidden, and a slow cadence is enough because the numbers between polls are
   // interpolated locally by the conviction clock rather than fetched.
   useEffect(() => {
-    if (!expanded) {
-      setLiveConviction(null);
-      return;
-    }
+    if (!expanded) return;
     let cancelled = false;
     let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -1384,16 +1388,18 @@ export default function InitiativeList() {
       try {
         const res = await initiativeConviction(expanded);
         if (cancelled) return;
-        setLiveConviction({
-          id: expanded,
-          total: parseFloat(res.total_conviction || "0"),
-          external: parseFloat(res.external_conviction || "0"),
-          threshold: parseFloat(res.threshold || "0"),
-        });
+        setLiveConviction((prev) => ({
+          ...prev,
+          [expanded]: {
+            total: parseFloat(res.total_conviction || "0"),
+            external: parseFloat(res.external_conviction || "0"),
+            threshold: parseFloat(res.threshold || "0"),
+          },
+        }));
       } catch {
-        // Older nodes don't serve this endpoint. Leave the stored figures from
-        // the list read in place rather than blanking a card that was fine.
-        if (!cancelled) setLiveConviction(null);
+        // Older nodes don't serve this endpoint. Leave whatever the card is
+        // already showing — the stored figures from the list read, or an
+        // earlier recompute — rather than blanking a card that was fine.
       }
     };
 
@@ -2001,9 +2007,11 @@ export default function InitiativeList() {
             const yoursMicro = mineStakes.reduce((s, x) => s + BigInt(x.amount || "0"), BigInt(0));
             const poolMicro = info ? BigInt(info.poolTotal) : undefined;
             const hasStake = yoursMicro > BigInt(0);
-            // Prefer the on-demand recompute when this is the expanded card and
-            // the node served it; otherwise the stored figure from the list.
-            const live = liveConviction?.id === ini.id ? liveConviction : null;
+            // Prefer the on-demand recompute once this card has been opened
+            // and the node served it; otherwise the stored figure from the
+            // list. The recompute outlives the card being collapsed so the
+            // meter reads the same open or shut.
+            const live = liveConviction[ini.id] ?? null;
             const curConv = live ? live.total : parseFloat(ini.current_conviction || "0");
             const reqConv =
               live && live.threshold > 0
