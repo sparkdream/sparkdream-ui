@@ -13,7 +13,7 @@ import { RepMsgTypeUrls } from "@/lib/tx";
 import { formatSpark, parseDreamToUdream, truncateAddress } from "@/lib/utils";
 import { isMissingEndpoint } from "@/lib/errors";
 import { useDisplayName } from "@/hooks/useDisplayName";
-import BlockTime from "@/components/BlockTime";
+import BlockEta from "@/components/BlockEta";
 import type {
   Initiative,
   InitiativeReview,
@@ -395,7 +395,10 @@ export default function InitiativeReviewPanel({
           block {initiative.review_deadline}
           <span className="text-zinc-600">
             {" "}
-            (<BlockTime height={initiative.review_deadline} />)
+            {/* BlockEta reads as the committed time once the deadline is
+                behind us, and as a countdown while it is ahead — which is the
+                half a reviewer with work still to do actually needs. */}
+            (<BlockEta height={initiative.review_deadline} fallback="timing unknown" />)
           </span>
           . {escalated
             ? "This round is with the Operations Committee; silence rejects it."

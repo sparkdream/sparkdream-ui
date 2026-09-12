@@ -17,7 +17,7 @@ import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { formatSpark } from "@/lib/utils";
 import NumberInput from "@/components/NumberInput";
-import BlockTime from "@/components/BlockTime";
+import BlockEta from "@/components/BlockEta";
 import ErrorState from "@/components/ErrorState";
 import JuryDutyPanel from "@/components/contribute/JuryDutyPanel";
 import { isMissingEndpoint } from "@/lib/errors";
@@ -605,7 +605,7 @@ export default function ReviewerPanel() {
                 <span className="ml-2 text-xs text-zinc-500">
                   round {e.round + 1} · decide by block {e.review_deadline}
                   {" ("}
-                  <BlockTime height={e.review_deadline} />
+                  <BlockEta height={e.review_deadline} fallback="timing unknown" />
                   {")"}
                 </span>
               </li>
@@ -631,9 +631,13 @@ export default function ReviewerPanel() {
                 <span className="ml-2 text-xs text-zinc-500">
                   {formatSpark(i.budget)} DREAM
                   {i.required_verifiers ? ` · needs ${i.required_verifiers}` : ""}
-                  {i.review_deadline && i.review_deadline !== "0"
-                    ? ` · by block ${i.review_deadline}`
-                    : ""}
+                  {i.review_deadline && i.review_deadline !== "0" && (
+                    <>
+                      {` · by block ${i.review_deadline} (`}
+                      <BlockEta height={i.review_deadline} fallback="timing unknown" />
+                      {")"}
+                    </>
+                  )}
                 </span>
               </li>
             ))}

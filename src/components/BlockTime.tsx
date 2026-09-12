@@ -11,6 +11,10 @@ interface BlockTimeProps {
   height?: string;
   // Render relative ("2h ago") instead of an absolute date.
   relative?: boolean;
+  // Rendered when the height cannot be resolved (not yet produced, pruned, or
+  // the node is unreachable). Empty by default: a bare date in a sentence is
+  // better absent than guessed at.
+  fallback?: string;
 }
 
 // Resolves a block height to its committed time and renders it as plain text
@@ -18,7 +22,7 @@ interface BlockTimeProps {
 // nothing until the lookup resolves, or if the height is unset / unresolvable
 // — which avoids the Dec 31 1969 artifact from treating a small block height
 // as unix seconds.
-export default function BlockTime({ height, relative }: BlockTimeProps) {
+export default function BlockTime({ height, relative, fallback }: BlockTimeProps) {
   // Keyed by height so a stale resolution from a previous height never shows.
   const [resolved, setResolved] = useState<{ height: string; time: string } | null>(null);
 
@@ -35,8 +39,8 @@ export default function BlockTime({ height, relative }: BlockTimeProps) {
 
   if (!height || height === "0") return null;
   const time = resolved?.height === height ? resolved.time : "";
-  if (!time) return null;
+  if (!time) return fallback ? <>{fallback}</> : null;
   const label = relative ? timeAgo(time) : formatTime(time);
-  if (!label) return null;
+  if (!label) return fallback ? <>{fallback}</> : null;
   return <>{label}</>;
 }

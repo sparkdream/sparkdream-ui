@@ -14,7 +14,7 @@ import { formatSpark, parseDreamToUdream, truncateAddress } from "@/lib/utils";
 import { isMissingEndpoint } from "@/lib/errors";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
-import BlockTime from "@/components/BlockTime";
+import BlockEta from "@/components/BlockEta";
 import type { Challenge, Initiative } from "@/types/rep";
 import {
   CHALLENGE_STATUS_LABELS,
@@ -335,8 +335,8 @@ export default function InitiativeChallengePanel({ initiative, onChanged }: Prop
                   ) : (
                     <p className="mt-1 text-zinc-500">
                       Unanswered by block {c.response_deadline} (
-                      <BlockTime height={c.response_deadline} />) and it is upheld without a
-                      jury.
+                      <BlockEta height={c.response_deadline} fallback="timing unknown" />) and it
+                      is upheld without a jury.
                     </p>
                   ))}
                 {c.status === ChallengeStatus.UPHELD && (

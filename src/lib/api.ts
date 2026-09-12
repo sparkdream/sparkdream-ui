@@ -646,7 +646,7 @@ interface LatestBlockResponse {
 // for height 0/empty (unset) or on any transport error.
 export async function getBlockTime(height: string): Promise<string> {
   if (!height || height === "0") return "";
-  return cachedFetch(
+  const time = await cachedFetch(
     `blockTime|${height}`,
     async () => {
       try {
@@ -660,6 +660,12 @@ export async function getBlockTime(height: string): Promise<string> {
     },
     { ttl: 86_400_000 }
   );
+  // A deadline block that has not been produced yet answers 404, and the ""
+  // that caches is only correct until the chain reaches that height. Drop the
+  // entry so the lookup retries, rather than rendering nothing for a day after
+  // the deadline actually lands. Real times are immutable and stay cached.
+  if (!time) invalidate(`blockTime|${height}`);
+  return time;
 }
 
 // Latest block height (decimal string). Falls back to throwing on transport errors.
@@ -675,6 +681,70 @@ export async function getLatestBlockHeight(): Promise<string> {
       return res.block.header.height;
     },
     { ttl: 5_000 }
+  );
+}
+
+/**
+ * A sample of the chain's clock: one committed block, plus how fast blocks are
+ * arriving around it. Lets the UI turn a future block height (a review
+ * deadline, a challenge window's end) into an expected wall-clock time, which
+ * getBlockTime cannot do because the block does not exist yet.
+ */
+export interface BlockClock {
+  /** Latest committed height at the time of the sample. */
+  height: bigint;
+  /** That block's header time, in epoch ms. */
+  time: number;
+  /** Average seconds per block over the sample window. */
+  secondsPerBlock: number;
+}
+
+// Blocks to average the interval over. One block gap swings with proposer
+// timing and would make a countdown jitter by minutes between polls; a few
+// hundred blocks smooths that out and still tracks a genuine slowdown.
+const BLOCK_CLOCK_SAMPLE = 200;
+// Used when the chain is too young to sample, or the sample is nonsense.
+const FALLBACK_SECONDS_PER_BLOCK = 5;
+
+/**
+ * Latest height plus the recent average block interval. Returns null if the
+ * chain is unreachable, so callers can fall back to showing the raw block
+ * number. Two requests at most, and the historical one is permanently cached.
+ */
+export async function getBlockClock(): Promise<BlockClock | null> {
+  return cachedFetch(
+    "blockClock",
+    async () => {
+      try {
+        const res = await get<LatestBlockResponse>(
+          "/cosmos/base/tendermint/v1beta1/blocks/latest"
+        );
+        const height = BigInt(res.block.header.height);
+        const time = res.block.header.time ? Date.parse(res.block.header.time) : NaN;
+        if (height <= BigInt(0) || !Number.isFinite(time)) return null;
+
+        let secondsPerBlock = FALLBACK_SECONDS_PER_BLOCK;
+        const span = height > BigInt(BLOCK_CLOCK_SAMPLE)
+          ? BLOCK_CLOCK_SAMPLE
+          : Number(height) - 1;
+        if (span > 0) {
+          const earlier = await getBlockTime((height - BigInt(span)).toString());
+          const earlierMs = earlier ? Date.parse(earlier) : NaN;
+          if (Number.isFinite(earlierMs) && time > earlierMs) {
+            const sampled = (time - earlierMs) / 1000 / span;
+            // Guard against a pruned or clock-skewed sample producing an
+            // interval that would render an absurd countdown.
+            if (sampled > 0.1 && sampled < 600) secondsPerBlock = sampled;
+          }
+        }
+        return { height, time, secondsPerBlock };
+      } catch {
+        return null;
+      }
+    },
+    // Short enough that a countdown stays honest, long enough that a list of
+    // initiatives all asking at once costs one request.
+    { ttl: 15_000, swr: true }
   );
 }
 

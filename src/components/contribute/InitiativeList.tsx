@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import type { InitiativeSortKey } from "@/lib/api";
 import { truncateAddress, formatDurationApprox } from "@/lib/utils";
+import { useBlockClock, formatBlockEta } from "@/hooks/useBlockClock";
 import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
@@ -89,6 +90,70 @@ const CLOSABLE_STATUSES = new Set<string>([
   InitiativeStatus.SUBMITTED,
   InitiativeStatus.IN_REVIEW,
 ]);
+
+// When an IN_REVIEW initiative pays out, and how long that is from now.
+//
+// This is the one point in the lifecycle the chain puts a clock on. The
+// EndBlocker completes every IN_REVIEW initiative whose challenge_period_end
+// it has reached (x/rep/keeper/abci.go, step 3), so the block is scheduled
+// rather than inferred. Every other transition waits on a person: OPEN waits
+// for someone to take the work, ASSIGNED for them to submit, SUBMITTED for
+// conviction to clear its thresholds, and none of those has a deadline to
+// show. The review deadline and a challenge's response deadline are real
+// clocks too, but they belong to the panels that know whether they still
+// apply — the gate may already be satisfied, the challenge already answered.
+//
+// Conditional on nobody challenging first, which is what the window is for;
+// the wording says so rather than promising a payout.
+function CompletionSchedule({
+  initiative,
+  detail,
+}: {
+  initiative: Initiative;
+  detail?: boolean;
+}) {
+  const clock = useBlockClock();
+  const end = initiative.challenge_period_end;
+  if (initiative.status !== InitiativeStatus.IN_REVIEW || !end || end === "0") return null;
+
+  const eta = formatBlockEta(clock, end);
+  // Reached but not yet swept: the EndBlocker runs at the end of the block, and
+  // a stale clock can sit a poll behind, so "due" covers both.
+  const due = clock !== null && !eta;
+  const block = `block ${Number(end).toLocaleString()}`;
+
+  if (detail) {
+    return (
+      <p className="mt-3 rounded-lg border border-indigo-500/20 bg-indigo-500/[0.06] px-3 py-2 text-xs text-indigo-200/90">
+        {due ? (
+          <>Completing now. The next block pays out the budget and releases every stake.</>
+        ) : (
+          <>
+            Completes {eta || `at ${block}`}
+            {eta ? ` (${block})` : ""}, when the challenge window closes. That block pays out
+            the budget and releases every stake, unless someone challenges the work first.
+          </>
+        )}
+      </p>
+    );
+  }
+
+  return (
+    <>
+      <span className="text-zinc-700">·</span>
+      <span
+        className={due ? "text-amber-400" : "text-indigo-300/90"}
+        title={
+          due
+            ? `The challenge window closed at ${block}. The next block completes this initiative and pays out.`
+            : `Unchallenged, the chain completes this initiative and pays out at ${block}.`
+        }
+      >
+        {due ? "Completing now" : eta ? `Completes ${eta}` : `Completes at ${block}`}
+      </span>
+    </>
+  );
+}
 
 function statusColor(status: string): string {
   switch (status) {
@@ -2026,10 +2091,22 @@ export default function InitiativeList() {
             // anything is the conviction one, below.
             const poolStr =
               poolMicro !== undefined ? `of ${formatDream(poolMicro.toString())} staked` : "";
-            const canManageStake = !CLOSED_STATUSES.has(ini.status);
+            // Adding is for live work only. Withdrawing is not: of the three
+            // terminal statuses, only COMPLETED releases anything. CLOSED and
+            // REJECTED settle the accrued rewards and then leave the principal
+            // locked and the stake record in place (settleInitiativeStakes in
+            // x/rep/keeper/initiative.go), and the chain's RemoveStake carries
+            // no status gate at all. Gating both buttons on "not terminal" left
+            // those rows rendering a YOU pill over DREAM whose owner had no way
+            // to reach it.
+            const canAddStake = !CLOSED_STATUSES.has(ini.status);
             // Completion unlocks and deletes every stake, so a COMPLETED
             // initiative has an empty pool by design rather than by neglect.
             const stakesReleased = ini.status === InitiativeStatus.COMPLETED;
+            const canWithdrawStake = hasStake && !stakesReleased;
+            // A withdrawal from terminal work is a plain refund: conviction no
+            // longer decides anything, so the panel's projections are noise.
+            const terminalWithdrawal = !canAddStake && !stakesReleased;
             // The external-conviction gate the chain checks alongside the total.
             // A self-assigned initiative (assignee is the project creator) needs
             // the whole threshold from unaffiliated members.
@@ -2222,6 +2299,10 @@ export default function InitiativeList() {
                         <span className="truncate">Assigned <AssigneeName address={ini.assignee} /></span>
                       </>
                     )}
+                    {/* The next scheduled transition, for the one status that
+                        has one. Visible without expanding, because "when does
+                        this land" is the question an in-review row raises. */}
+                    <CompletionSchedule initiative={ini} />
                   </div>
                 </div>
 
@@ -2242,38 +2323,44 @@ export default function InitiativeList() {
                       when you hold none, Add + Unstake when you do. Both open
                       the shared amount panel below — unstaking supports partial
                       withdrawals, so it takes an amount, not a confirmation. */}
-                  {canManageStake && (
+                  {(canAddStake || canWithdrawStake) && (
                     <div className="flex shrink-0 items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openStakePanel(ini.id, "stake");
-                        }}
-                        disabled={!canStake}
-                        title={
-                          !address
-                            ? "Connect a wallet to stake"
-                            : isMember === false
-                            ? "Only existing members can stake"
-                            : positionCapsAlone
-                            ? "Add to your stake. Your position already reaches the per-member conviction cap, so more DREAM earns rewards rather than adding progress"
-                            : hasStake
-                            ? "Add to your stake"
-                            : "Stake DREAM toward this initiative's conviction"
-                        }
-                        className="rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-1.5 text-xs font-semibold text-indigo-300 transition-colors hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {hasStake ? "Add" : "Stake"}
-                      </button>
-                      {hasStake && (
+                      {canAddStake && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openStakePanel(ini.id, "stake");
+                          }}
+                          disabled={!canStake}
+                          title={
+                            !address
+                              ? "Connect a wallet to stake"
+                              : isMember === false
+                              ? "Only existing members can stake"
+                              : positionCapsAlone
+                              ? "Add to your stake. Your position already reaches the per-member conviction cap, so more DREAM earns rewards rather than adding progress"
+                              : hasStake
+                              ? "Add to your stake"
+                              : "Stake DREAM toward this initiative's conviction"
+                          }
+                          className="rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-1.5 text-xs font-semibold text-indigo-300 transition-colors hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {hasStake ? "Add" : "Stake"}
+                        </button>
+                      )}
+                      {canWithdrawStake && (
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             openStakePanel(ini.id, "unstake");
                           }}
-                          title="Withdraw some or all of your stake"
+                          title={
+                            terminalWithdrawal
+                              ? "This initiative is closed. Withdraw your stake to unlock the DREAM"
+                              : "Withdraw some or all of your stake"
+                          }
                           className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-zinc-200"
                         >
                           Unstake
@@ -2417,7 +2504,19 @@ export default function InitiativeList() {
                     </div>
                   )}
                   <p className="mt-2 text-xs leading-relaxed text-zinc-500">
-                    {isUnstakePanel ? (
+                    {isUnstakePanel && terminalWithdrawal ? (
+                      // Conviction decides nothing on ended work, so projecting
+                      // it here would be arithmetic about a threshold that can
+                      // no longer be reached. What the staker needs to know is
+                      // that the DREAM is theirs and only a withdrawal moves it.
+                      <>
+                        This initiative has ended, so the stake earns nothing further. Rewards were settled when
+                        it closed. Withdrawing returns the principal to your balance.
+                        {amountOk && remainingMicro > BigInt(0)
+                          ? ` ${formatDreamExact(remainingMicro.toString())} DREAM stays locked until you withdraw it too.`
+                          : ""}
+                      </>
+                    ) : isUnstakePanel ? (
                       <>
                         {yoursConvAfter >= yoursConvNow ? (
                           <>
@@ -2634,25 +2733,35 @@ export default function InitiativeList() {
                                     : ""}
                                 </span>
                               )}
-                              <span>Withdraw any amount, up to the full position.</span>
+                              <span>
+                                {terminalWithdrawal
+                                  ? "This initiative has ended. Closing does not return staked DREAM, so withdraw to unlock it."
+                                  : "Withdraw any amount, up to the full position."}
+                              </span>
                             </div>
-                            {canManageStake && (
+                            {(canAddStake || canWithdrawStake) && (
                               <div className="mt-3 flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => openStakePanel(ini.id, "stake")}
-                                  disabled={!canStake}
-                                  className="flex-1 rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-300 transition-colors hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  Add stake
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => openStakePanel(ini.id, "unstake")}
-                                  className="rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-zinc-200"
-                                >
-                                  Unstake
-                                </button>
+                                {canAddStake && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openStakePanel(ini.id, "stake")}
+                                    disabled={!canStake}
+                                    className="flex-1 rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-300 transition-colors hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    Add stake
+                                  </button>
+                                )}
+                                {canWithdrawStake && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openStakePanel(ini.id, "unstake")}
+                                    className={`rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-zinc-200 ${
+                                      canAddStake ? "" : "flex-1"
+                                    }`}
+                                  >
+                                    Unstake
+                                  </button>
+                                )}
                               </div>
                             )}
                           </>
@@ -2662,7 +2771,7 @@ export default function InitiativeList() {
                               You haven&apos;t staked here. Backing an initiative signals it should be built and is
                               refundable until it&apos;s accepted.
                             </p>
-                            {canManageStake && (
+                            {canAddStake && (
                               <button
                                 type="button"
                                 onClick={() => openStakePanel(ini.id, "stake")}
@@ -2678,6 +2787,10 @@ export default function InitiativeList() {
                       </div>
                     </div>
                   </div>
+
+                  {/* The same schedule the row summarises, spelled out: what
+                      the block actually does when it arrives. */}
+                  <CompletionSchedule initiative={ini} detail />
 
                   {/* The bonded-reviewer gate: verdicts filed on the deliverable,
                       the bounty bidding for reviewer attention, and the actions a
