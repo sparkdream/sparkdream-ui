@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   getCurrentSeason,
   getLatestBlockHeight,
+  listFutarchyMarkets,
   listGovProposals,
   listProposals,
 } from "@/lib/api";
@@ -13,6 +14,7 @@ import type { GovProposal } from "@/types/gov";
 import { GovProposalStatus } from "@/types/gov";
 import type { Proposal } from "@/types/commons";
 import { ProposalStatus } from "@/types/commons";
+import { MarketStatus, type Market } from "@/types/futarchy";
 import { describeProposalMessages, timeRemaining } from "@/lib/utils";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 
@@ -143,13 +145,50 @@ function proposalItems(gov: GovProposal[], community: Proposal[], dream: string)
   ];
 }
 
+// Live futarchy line: the largest active market plus the active-set TVL.
+// Returns null when nothing is live — the marquee drops the slot entirely
+// rather than padding it with a placeholder.
+function futarchyItem(markets: Market[], displayDenom: string): ReactNode | null {
+  const active = markets.filter((m) => m.status === MarketStatus.ACTIVE);
+  if (active.length === 0) return null;
+  // BigInt literals need ES2020; this project targets ES2017 — use the
+  // constructor form (same pattern as WalletContext's deposit-floor math).
+  let tvl = BigInt(0);
+  let top = active[0];
+  let topLiq = BigInt(-1);
+  for (const m of active) {
+    const ini = BigInt(m.initial_liquidity || "0");
+    const wd = BigInt(m.liquidity_withdrawn || "0");
+    const rem = ini > wd ? ini - wd : BigInt(0);
+    tvl += rem;
+    if (rem > topLiq) {
+      topLiq = rem;
+      top = m;
+    }
+  }
+  const tvlWhole = Number(tvl) / 1_000_000;
+  return (
+    <Link className="sd-ticker-link" href="/futarchy">
+      Futarchy · {top.symbol || `market #${top.index}`} ·{" "}
+      {active.length} live ·{" "}
+      <b className="hot">
+        {tvlWhole.toLocaleString("en-US", { maximumFractionDigits: 2 })}{" "}
+        {displayDenom} TVL
+      </b>
+    </Link>
+  );
+}
+
 function buildItems(
   height: string | null,
   season: CurrentSeasonResponse | null,
   gov: GovProposal[],
   community: Proposal[],
-  dream: string
+  futMarkets: Market[],
+  dream: string,
+  displayDenom: string
 ): ReactNode[] {
+  const fut = futarchyItem(futMarkets, displayDenom);
   return [
     <>Block <b>{height ?? "—"}</b></>,
     seasonItem(season),
@@ -157,7 +196,7 @@ function buildItems(
     ...proposalItems(gov, community, dream),
     <>Naming dispute #3 · resolved</>,
     <>12 active session keys</>,
-    <>Futarchy market: treasury allocation · $2,840 TVL</>,
+    ...(fut ? [fut] : []),
     <>Reveal round closes in <b className="hot">3h 42m</b></>,
     <>Federation · 4 peer chains online</>,
   ];
@@ -178,6 +217,7 @@ export default function Ticker() {
   const [season, setSeason] = useState<CurrentSeasonResponse | null>(null);
   const [govProposals, setGovProposals] = useState<GovProposal[]>([]);
   const [communityProposals, setCommunityProposals] = useState<Proposal[]>([]);
+  const [futMarkets, setFutMarkets] = useState<Market[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -202,15 +242,20 @@ export default function Ticker() {
     // Independent settles: one endpoint being down shouldn't blank the other
     // kind of proposal, and a failed poll keeps the last good list.
     const fetchProposals = async () => {
-      const [gov, community] = await Promise.allSettled([
+      const [gov, community, futarchy] = await Promise.allSettled([
         listGovProposals(undefined, { reverse: true, limit: "20" }),
         listProposals(undefined, { reverse: true, limit: "20" }),
+        // 100 to match the futarchy page's own ceiling: the slot presents a
+        // live count and a TVL total, so a smaller sample than the page it
+        // links to would quietly disagree with it.
+        listFutarchyMarkets({ limit: "100", reverse: true }),
       ]);
       if (cancelled) return;
       if (gov.status === "fulfilled") setGovProposals(gov.value.proposals || []);
       if (community.status === "fulfilled") {
         setCommunityProposals(community.value.proposals || []);
       }
+      if (futarchy.status === "fulfilled") setFutMarkets(futarchy.value.market || []);
     };
     fetchProposals();
     const id = setInterval(fetchProposals, PROPOSAL_POLL_MS);
@@ -310,7 +355,7 @@ export default function Ticker() {
     };
   }, [config.rpcEndpoint]);
 
-  const items = buildItems(height, season, govProposals, communityProposals, config.dreamDisplayDenom);
+  const items = buildItems(height, season, govProposals, communityProposals, futMarkets, config.dreamDisplayDenom, config.displayDenom);
 
   return (
     <div className="sd-ticker" aria-label="Onchain ticker">

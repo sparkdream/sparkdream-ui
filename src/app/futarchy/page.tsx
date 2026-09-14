@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   listFutarchyMarkets,
   getFutarchyParams,
@@ -39,6 +39,18 @@ type KindFilter = "any" | "confidence" | "general";
 type SortKey = "ending" | "volume" | "subsidy" | "extreme";
 
 const APPROX_BLOCK_TIME_S = 6;
+
+// Background refresh cadences. Markets settle in the chain's EndBlocker at
+// their end block, with no tx from this page involved, so the board has to
+// re-read itself or an ACTIVE row stays ACTIVE until someone reloads.
+const MARKET_POLL_MS = 60_000;
+const MARKET_POLL_NEAR_END_MS = 10_000;
+// Within this many blocks of the soonest end block, a status flip can land on
+// any block, so we switch to the brisk cadence. ~10 minutes of blocks.
+const NEAR_END_BLOCKS = BigInt(100);
+// The height drives every countdown on the page; a sample this often keeps
+// them honest without out-polling getLatestBlockHeight's own 5s cache.
+const HEIGHT_POLL_MS = 15_000;
 
 // Confidence-vote markets are linked to a Commons Group via x/commons'
 // MarketToGroup map (see x/commons/keeper/hooks.go). That mapping isn't
@@ -92,29 +104,52 @@ export default function FutarchyPage() {
   const [withdrawTarget, setWithdrawTarget] = useState<Market | null>(null);
   const [cancelProposalTarget, setCancelProposalTarget] = useState<Market | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    setMarketsLoading(true);
-    listFutarchyMarkets({ limit: "100", reverse: true })
-      .then((res) => {
-        if (cancelled) return;
-        // Fall back to DEMO_MARKETS when the chain has no markets yet so the
-        // page still communicates the feature surface. Real data takes
-        // precedence the moment any market exists.
-        const real = res.market || [];
-        setMarkets(real.length > 0 ? real : DEMO_MARKETS);
-        setMarketsError(null);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setMarkets(DEMO_MARKETS);
+  // A modal holds the market as it looked when it was opened. Re-point it at
+  // the polled copy so a settlement that lands mid-session takes effect in
+  // the open modal too, rather than letting it act on a status the chain has
+  // already moved past.
+  const liveMarket = useCallback(
+    (m: Market): Market => markets.find((x) => x.index === m.index) || m,
+    [markets]
+  );
+
+  // Sequence guard: a background poll and a post-tx refresh can be in flight
+  // at once, and the slower one must not overwrite the newer list.
+  const marketReq = useRef(0);
+  // The spinner is owned by foreground loads alone, so it needs its own
+  // marker. Clearing it on `marketReq` would strand it on forever whenever a
+  // poll starts mid-load: the superseded foreground read skips the clear and
+  // the poll that bumped the sequence never sets the flag in the first place.
+  const marketFgReq = useRef(0);
+
+  const loadMarkets = useCallback(async (background = false) => {
+    const seq = ++marketReq.current;
+    if (!background) {
+      marketFgReq.current = seq;
+      setMarketsLoading(true);
+    }
+    try {
+      const res = await listFutarchyMarkets({ limit: "100", reverse: true });
+      if (seq !== marketReq.current) return;
+      setMarkets(res.market || []);
+      setMarketsError(null);
+    } catch (err) {
+      if (seq !== marketReq.current) return;
+      // A failed poll keeps the last good board on screen — a slightly stale
+      // list beats blanking one that was fine. Only a foreground load (first
+      // paint, post-tx refresh) reports the failure.
+      if (!background) {
+        setMarkets([]);
         setMarketsError(err instanceof Error ? err.message : "Failed to load markets");
-      })
-      .finally(() => !cancelled && setMarketsLoading(false));
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshKey]);
+      }
+    } finally {
+      if (!background && seq === marketFgReq.current) setMarketsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadMarkets();
+  }, [loadMarkets, refreshKey]);
 
   useEffect(() => {
     getFutarchyParams()
@@ -122,13 +157,38 @@ export default function FutarchyPage() {
       .catch(() => setParams(null));
   }, []);
 
+  // Chain height, sampled on a timer so countdowns tick down on their own and
+  // the market poll below knows how close the next end block is.
   useEffect(() => {
-    getLatestBlockHeight()
-      .then((h) => setCurrentBlock(BigInt(h)))
-      // When the chain is unreachable we use a synthetic "now" block so the
-      // demo markets show meaningful "ends in Nd Nh" countdowns rather than
-      // bare block numbers.
-      .catch(() => setCurrentBlock(DEMO_NOW_BLOCK));
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const read = () => {
+      getLatestBlockHeight()
+        .then((h) => setCurrentBlock(BigInt(h)))
+        .catch(() => { /* keep the last sample: countdowns drift, they don't blank */ });
+    };
+    const start = () => {
+      if (timer === null) timer = setInterval(read, HEIGHT_POLL_MS);
+    };
+    const stop = () => {
+      if (timer === null) return;
+      clearInterval(timer);
+      timer = null;
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        stop();
+      } else {
+        read();
+        start();
+      }
+    };
+    read();
+    if (document.visibilityState !== "hidden") start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   // Pull share balances (f/{id}/yes, f/{id}/no) for the connected wallet so
@@ -151,6 +211,59 @@ export default function FutarchyPage() {
       cancelled = true;
     };
   }, [address, refreshKey]);
+
+  // Blocks until the soonest pending settlement, as of the last height
+  // sample. Zero or negative means a market is already past its end block and
+  // the EndBlocker is due to settle it, which counts as imminent too. Null
+  // when nothing is active, or before the first height sample lands.
+  const blocksToNextSettlement = useMemo(() => {
+    if (currentBlock === null) return null;
+    let soonest: bigint | null = null;
+    for (const m of markets) {
+      if (m.status !== MarketStatus.ACTIVE) continue;
+      if (!m.end_block || !/^\d+$/.test(m.end_block)) continue;
+      const end = BigInt(m.end_block);
+      if (soonest === null || end < soonest) soonest = end;
+    }
+    if (soonest === null) return null;
+    return soonest - currentBlock;
+  }, [markets, currentBlock]);
+
+  const marketPollMs =
+    blocksToNextSettlement !== null && blocksToNextSettlement <= NEAR_END_BLOCKS
+      ? MARKET_POLL_NEAR_END_MS
+      : MARKET_POLL_MS;
+
+  // Re-read the board on a timer so a market that settles on-chain flips here
+  // on its own. Two bounds keep this cheap: the poll stops while the tab is
+  // hidden (and catches up in one read when it comes back), and the brisk
+  // cadence only applies while a settlement is actually near.
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const poll = () => void loadMarkets(true);
+    const start = () => {
+      if (timer === null) timer = setInterval(poll, marketPollMs);
+    };
+    const stop = () => {
+      if (timer === null) return;
+      clearInterval(timer);
+      timer = null;
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        stop();
+      } else {
+        poll();
+        start();
+      }
+    };
+    if (document.visibilityState !== "hidden") start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [loadMarkets, marketPollMs]);
 
   // Counts derived from raw market list
   const counts = useMemo(() => {
@@ -484,6 +597,7 @@ export default function FutarchyPage() {
           markets={filteredMarkets}
           loading={marketsLoading}
           error={marketsError}
+          hasAny={markets.length > 0}
           currentBlock={currentBlock}
           shareBalances={shareBalances}
           canAct={!!address}
@@ -543,7 +657,7 @@ export default function FutarchyPage() {
 
       {tradeTarget && (
         <TradeModal
-          market={tradeTarget.market}
+          market={liveMarket(tradeTarget.market)}
           initialOutcome={tradeTarget.outcome}
           params={params}
           onClose={() => setTradeTarget(null)}
@@ -552,11 +666,11 @@ export default function FutarchyPage() {
             refresh();
           }}
           onProposeCancel={
-            tradeTarget.market.status === MarketStatus.ACTIVE
+            liveMarket(tradeTarget.market).status === MarketStatus.ACTIVE
               ? () => {
                   // Hand off to the cancel-proposal modal. Close trade first
                   // so we never have two modal layers stacked.
-                  const m = tradeTarget.market;
+                  const m = liveMarket(tradeTarget.market);
                   setTradeTarget(null);
                   setCancelProposalTarget(m);
                 }
@@ -566,7 +680,7 @@ export default function FutarchyPage() {
       )}
       {redeemTarget && (
         <RedeemModal
-          market={redeemTarget.market}
+          market={liveMarket(redeemTarget.market)}
           yesShares={redeemTarget.yes}
           noShares={redeemTarget.no}
           onClose={() => setRedeemTarget(null)}
@@ -578,7 +692,7 @@ export default function FutarchyPage() {
       )}
       {withdrawTarget && (
         <WithdrawLiquidityModal
-          market={withdrawTarget}
+          market={liveMarket(withdrawTarget)}
           onClose={() => setWithdrawTarget(null)}
           onWithdrawn={() => {
             setWithdrawTarget(null);
@@ -588,7 +702,7 @@ export default function FutarchyPage() {
       )}
       {cancelProposalTarget && (
         <CancelMarketProposalModal
-          market={cancelProposalTarget}
+          market={liveMarket(cancelProposalTarget)}
           onClose={() => setCancelProposalTarget(null)}
           onSubmitted={() => {
             setCancelProposalTarget(null);
@@ -679,7 +793,7 @@ function FeaturedHero({
 
           <div className="meta-row">
             <span className="m">Subsidy <b>{liq} {config.displayDenom}</b></span>
-            <span className="m">b-value <b>{formatDecPlain(market.b_value)}</b></span>
+            <span className="m">b-value <b>{formatDecPlain(microToWholeDec(market.b_value))} {config.displayDenom}</b></span>
             <span className="m">Min tick <b>{market.min_tick} {config.denom}</b></span>
             <span className="m">
               Ends <b className={ends.urgent ? "urgent" : ""}>{ends.label}</b>
@@ -843,6 +957,7 @@ function MarketsTable({
   markets,
   loading,
   error,
+  hasAny,
   currentBlock,
   shareBalances,
   canAct,
@@ -851,6 +966,9 @@ function MarketsTable({
   markets: Market[];
   loading: boolean;
   error: string | null;
+  /** Whether the chain has any markets at all — distinguishes a genuinely
+      empty chain ("create the first one") from a filter that matched none. */
+  hasAny: boolean;
   currentBlock: bigint | null;
   shareBalances: BankBalance[];
   canAct: boolean;
@@ -873,7 +991,11 @@ function MarketsTable({
   if (markets.length === 0) {
     return (
       <div className="sd-markets-table">
-        <div className="row empty">No markets match this filter.</div>
+        <div className="row empty">
+          {hasAny
+            ? "No markets match this filter."
+            : "No markets exist on-chain yet. Create the first one."}
+        </div>
       </div>
     );
   }
@@ -1577,6 +1699,15 @@ function formatDecPlain(s: string | undefined | null): string {
   return n.toFixed(2).replace(/\.?0+$/, "");
 }
 
+// b_value is a LegacyDec in micro units (it derives from the micro-unit
+// subsidy), so divide by 1e6 before showing it beside whole-token amounts.
+function microToWholeDec(s: string | undefined | null): string | null {
+  if (!s) return null;
+  const n = parseLegacyDec(s);
+  if (!isFinite(n)) return s;
+  return String(n / 1_000_000);
+}
+
 function formatIntCompact(s: string | undefined | null): string {
   if (!s || s === "0") return "0";
   let n: bigint;
@@ -1666,120 +1797,3 @@ function parseShareDenom(denom: string): { marketId: string; outcome: "yes" | "n
   return { marketId, outcome };
 }
 
-// ───────────────────────── Demo data ─────────────────────────
-
-// Synthetic "current block" used to render meaningful countdowns ("ends in
-// 2d 14h") on demo markets when the chain RPC is unreachable.
-const DEMO_NOW_BLOCK = BigInt(1_302_000);
-
-// Pool sizes here are picked to make lmsrYesProb produce the labelled YES%
-// at b_value = 1000:  prob = 1 / (1 + e^((qNo - qYes)/b))
-// 68% → qY-qN ≈ 754 ; 41% → qY-qN ≈ -364 ; 82% → qY-qN ≈ 1516 ; 23% → qY-qN ≈ -1207
-const DEMO_MARKETS: Market[] = [
-  makeMarket({
-    index: "1248",
-    symbol: "CONF-Commons-1248k",
-    question: "Should the Commons Council retain the public's confidence at block 1,248,000?",
-    creator: "sprkdrm1commonscouncil00000000000000000000",
-    poolYes: "1500", poolNo: "746", b: "1000",
-    initialLiquidity: "1000000000", liquidityWithdrawn: "0",
-    endBlock: "1324800", // ~2d 14h after DEMO_NOW
-    status: MarketStatus.ACTIVE,
-  }),
-  makeMarket({
-    index: "1305",
-    symbol: "REVEAL-R4-SHIP",
-    question: "Will Reveal round 4 ship a passing tranche before block 1,375,200?",
-    creator: "sprkdrm1nightingale00000000000000000000000",
-    poolYes: "500", poolNo: "864", b: "1000",
-    initialLiquidity: "500000000", liquidityWithdrawn: "0",
-    endBlock: "1375200", // ~5d 02h
-    status: MarketStatus.ACTIVE,
-  }),
-  makeMarket({
-    index: "1289",
-    symbol: "FED-NIGHT-PASS",
-    question: "Will the council approve federation peer nightingale-1 by block 1,500,000?",
-    creator: "sprkdrm1ymoderator0000000000000000000000000",
-    poolYes: "2000", poolNo: "484", b: "1000",
-    initialLiquidity: "250000000", liquidityWithdrawn: "0",
-    endBlock: "1500000", // ~13d 18h
-    status: MarketStatus.ACTIVE,
-  }),
-  makeMarket({
-    index: "1276",
-    symbol: "SEASON-5-LAUNCH",
-    question: "Will Season 5 commitments exceed 50,000 SPARK before block 1,434,000?",
-    creator: "sprkdrm1seasonjudge000000000000000000000000",
-    poolYes: "500", poolNo: "1707", b: "1000",
-    initialLiquidity: "800000000", liquidityWithdrawn: "0",
-    endBlock: "1434000", // ~9d 04h
-    status: MarketStatus.ACTIVE,
-  }),
-  makeMarket({
-    index: "1180",
-    symbol: "CONF-Ops-1180k",
-    question: "Should the Operations Committee retain its mandate at block 1,180,000?",
-    creator: "sprkdrm1commonscouncil00000000000000000000",
-    poolYes: "4100", poolNo: "0", b: "1000",
-    initialLiquidity: "1000000000", liquidityWithdrawn: "0",
-    endBlock: "1180000",
-    status: MarketStatus.RESOLVED_YES,
-  }),
-  makeMarket({
-    index: "1219",
-    symbol: "SLASH-POLICY-V2",
-    question: "Will the proposed slashing-policy v2 hard-fork pass governance?",
-    creator: "sprkdrm1policydraft0000000000000000000000",
-    poolYes: "200", poolNo: "1400", b: "1000",
-    initialLiquidity: "320000000", liquidityWithdrawn: "0",
-    endBlock: "1272400",
-    status: MarketStatus.RESOLVED_NO,
-    settlementPriceYes: "0.120000000000000000",
-  }),
-  makeMarket({
-    index: "1156",
-    symbol: "BRIDGE-MASTODON",
-    question: "Will mastodon.social bridge submit ≥ 100 verified posts in epoch 14?",
-    creator: "sprkdrm1bridgeops00000000000000000000000",
-    poolYes: "92", poolNo: "92", b: "1000",
-    initialLiquidity: "200000000", liquidityWithdrawn: "0",
-    endBlock: "1228500",
-    status: MarketStatus.RESOLVED_INVALID,
-    settlementPriceYes: "0.500000000000000000",
-  }),
-];
-
-function makeMarket(p: {
-  index: string;
-  symbol: string;
-  question: string;
-  creator: string;
-  poolYes: string;
-  poolNo: string;
-  b: string;
-  initialLiquidity: string;
-  liquidityWithdrawn: string;
-  endBlock: string;
-  status: string;
-  settlementPriceYes?: string;
-}): Market {
-  return {
-    index: p.index,
-    creator: p.creator,
-    symbol: p.symbol,
-    question: p.question,
-    denom: "uspark",
-    min_tick: "1000",
-    end_block: p.endBlock,
-    redemption_blocks: "0",
-    resolution_height: p.status === MarketStatus.ACTIVE ? "0" : p.endBlock,
-    status: p.status,
-    b_value: p.b,
-    pool_yes: p.poolYes,
-    pool_no: p.poolNo,
-    initial_liquidity: p.initialLiquidity,
-    liquidity_withdrawn: p.liquidityWithdrawn,
-    settlement_price_yes: p.settlementPriceYes ?? "",
-  };
-}

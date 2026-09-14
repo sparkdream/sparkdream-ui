@@ -2042,17 +2042,22 @@ export async function listFutarchyMarkets(
   );
 }
 
-// Quote a YES or NO trade for a given amount. Pass amountIn as the base-denom
-// integer string (e.g. "1000" for 1k uspark). Pass empty string to fetch the
-// current marginal price only.
+// Current marginal price of a YES or NO share.
+//
+// Size-specific quotes are not available from this endpoint: the request's
+// `amount` field carries `customtype math.Int`, which the grpc-gateway
+// refuses to populate from a query string ("field type *math.Int is not
+// supported in query parameters", HTTP 400), and any other spelling is
+// dropped as an unknown param. Either way the keeper quotes against its
+// 1000-unit default (x/futarchy/keeper/query_market_price.go), so
+// `shares_out` only ever describes a 1000-unit trade. Callers that need a
+// quote for a real size compute it locally — see TradeModal.
 export async function getFutarchyMarketPrice(
   marketId: string,
-  isYes: boolean,
-  amountIn: string = ""
+  isYes: boolean
 ): Promise<GetMarketPriceResponse> {
   const params = new URLSearchParams();
   params.set("is_yes", isYes ? "true" : "false");
-  if (amountIn) params.set("amount", amountIn);
   return get<GetMarketPriceResponse>(
     `/sparkdream/futarchy/v1/market/${marketId}/price`,
     params
