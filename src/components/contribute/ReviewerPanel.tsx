@@ -38,6 +38,7 @@ import type {
   RoleActivity,
   RoleRewardPoolStatus,
 } from "@/types/rep";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 const REVIEWER_ROLE = RoleType.INITIATIVE_REVIEWER;
 // The pool key x/rep reports for this role in RoleRewardPools.
@@ -118,6 +119,7 @@ function windowedAccuracy(activity: RoleActivity | null): { pct: number; resolve
  * and never per approval, and their bond is slashed when a jury overturns them.
  */
 export default function ReviewerPanel() {
+  const dream = useDreamDenom();
   const { address, connected, signAndBroadcast } = useWallet();
   const isMember = useIsRepMember(address);
   const cannotBond = address ? isMember === false : false;
@@ -322,11 +324,11 @@ export default function ReviewerPanel() {
       {!isReviewer && (
         <div className="sd-hull-tile rounded-xl p-6">
           <p className="mb-2 text-sm text-zinc-400">
-            You do not hold the reviewer role. Bond DREAM to review submitted initiative work
+            You do not hold the reviewer role. Bond {dream} to review submitted initiative work
             against its acceptance criteria.
           </p>
           <div className="mb-4 space-y-0.5 text-xs text-zinc-500">
-            {config && <p>Minimum bond: {formatSpark(config.min_bond)} DREAM</p>}
+            {config && <p>Minimum bond: {formatSpark(config.min_bond)} {dream}</p>}
             {config?.min_age_blocks && config.min_age_blocks !== "0" && (
               <p>
                 Must stay bonded {Number(config.min_age_blocks).toLocaleString()} blocks before
@@ -409,12 +411,12 @@ export default function ReviewerPanel() {
               <NumberInput
                 value={bondAmount}
                 onChange={(e) => setBondAmount(e.target.value)}
-                placeholder="Amount (DREAM)"
+                placeholder={`Amount (${dream})`}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
               />
               {belowMinBond && (
                 <p className="text-xs text-amber-400">
-                  A first bond has to reach the {formatSpark(config?.min_bond ?? "0")} DREAM minimum.
+                  A first bond has to reach the {formatSpark(config?.min_bond ?? "0")} {dream} minimum.
                 </p>
               )}
               <div className="flex gap-2">
@@ -458,16 +460,16 @@ export default function ReviewerPanel() {
             </div>
             <div>
               <p className="text-xs text-zinc-500">Current bond</p>
-              <p className="font-medium text-zinc-200">{formatSpark(currentBond)} DREAM</p>
+              <p className="font-medium text-zinc-200">{formatSpark(currentBond)} {dream}</p>
             </div>
             <div>
               <p className="text-xs text-zinc-500">Free for new verdicts</p>
-              <p className="font-medium text-zinc-200">{formatSpark(available)} DREAM</p>
+              <p className="font-medium text-zinc-200">{formatSpark(available)} {dream}</p>
             </div>
             <div>
               <p className="text-xs text-zinc-500">Rewards</p>
               <p className="font-medium" style={{ color: "var(--amber)" }}>
-                {formatSpark(bond?.cumulative_rewards || "0")} DREAM
+                {formatSpark(bond?.cumulative_rewards || "0")} {dream}
               </p>
             </div>
           </div>
@@ -517,7 +519,7 @@ export default function ReviewerPanel() {
             <NumberInput
               value={bondAmount}
               onChange={(e) => setBondAmount(e.target.value)}
-              placeholder="Amount (DREAM)"
+              placeholder={`Amount (${dream})`}
               className="w-40 rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
             />
             <button
@@ -532,7 +534,7 @@ export default function ReviewerPanel() {
               type="button"
               onClick={() => bondAmount.trim() && bondTx(RepMsgTypeUrls.UnbondRole, toMicro(bondAmount), "unbond")}
               disabled={!bondAmount.trim() || !!actionLoading}
-              title="Unbonded DREAM stays slashable through the cooldown"
+              title={`Unbonded ${dream} stays slashable through the cooldown`}
               className="sd-btn sd-btn-secondary"
             >
               {actionLoading === "unbond" ? "Unbonding..." : "Unbond"}
@@ -629,7 +631,7 @@ export default function ReviewerPanel() {
                   #{i.id} {i.title}
                 </Link>
                 <span className="ml-2 text-xs text-zinc-500">
-                  {formatSpark(i.budget)} DREAM
+                  {formatSpark(i.budget)} {dream}
                   {i.required_verifiers ? ` · needs ${i.required_verifiers}` : ""}
                   {i.review_deadline && i.review_deadline !== "0" && (
                     <>

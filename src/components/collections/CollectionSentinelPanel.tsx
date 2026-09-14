@@ -30,6 +30,7 @@ import {
 import type { BondedRole, BondedRoleConfig } from "@/types/rep";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface Props {
   onViewCollection?: (collectionId: string) => void;
@@ -100,6 +101,7 @@ function isItemType(targetType: string): boolean {
  * so this is a dedicated panel rather than the forum one.
  */
 export default function CollectionSentinelPanel({ onViewCollection }: Props) {
+  const dream = useDreamDenom();
   const { address, connected, signAndBroadcast } = useWallet();
   const isMember = useIsRepMember(address);
   const cannotBond = address ? isMember === false : false;
@@ -315,13 +317,13 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
       ) : !isSentinel ? (
         <div className="sd-hull-tile rounded-xl p-6">
           <p className="mb-2 text-sm text-zinc-400">
-            You are not a sentinel. Bond DREAM tokens to become a sentinel and help moderate
+            You are not a sentinel. Bond {dream} tokens to become a sentinel and help moderate
             collections. The same bond also lets you moderate{" "}
             <Link href="/swarm" className="text-indigo-400 underline hover:text-indigo-300">Swarm</Link>.
           </p>
           {config && (
             <p className="mb-4 text-xs text-zinc-500">
-              Minimum bond: {formatAmount(config.min_bond)} DREAM
+              Minimum bond: {formatAmount(config.min_bond)} {dream}
               {config.min_trust_level && config.min_trust_level !== "TRUST_LEVEL_UNSPECIFIED" &&
                 ` · Min trust: ${config.min_trust_level.replace("TRUST_LEVEL_", "")}`}
             </p>
@@ -350,7 +352,7 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
               <NumberInput
                 value={bondAmount}
                 onChange={(e) => setBondAmount(e.target.value)}
-                placeholder="Amount (DREAM)"
+                placeholder={`Amount (${dream})`}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
               />
               <div className="flex gap-2">
@@ -383,7 +385,7 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
             {bondStatus === BondedRoleStatus.UNBONDING && bond?.unbond_completion_time && (
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-800/50 bg-amber-900/15 px-3 py-2 text-xs text-amber-300">
                 <span>
-                  Unbond in progress. <b>{formatAmount(bond.pending_unbond_amount || "0")} DREAM</b> stays locked + slashable for {formatCooldownRemaining(bond.unbond_completion_time) || "—"}. You keep acting as a sentinel while your staying bond covers the minimum.
+                  Unbond in progress. <b>{formatAmount(bond.pending_unbond_amount || "0")} {dream}</b> stays locked + slashable for {formatCooldownRemaining(bond.unbond_completion_time) || "—"}. You keep acting as a sentinel while your staying bond covers the minimum.
                 </span>
                 {bond.pending_unbond_amount && bond.pending_unbond_amount !== "0" && (
                   <button
@@ -412,16 +414,16 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
               </div>
               <div>
                 <p className="text-xs text-zinc-500">Current bond</p>
-                <p className="font-medium text-zinc-200">{formatAmount(currentBond)} DREAM</p>
+                <p className="font-medium text-zinc-200">{formatAmount(currentBond)} {dream}</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-500">Available</p>
-                <p className="font-medium text-zinc-200">{formatAmount(availableBond)} DREAM</p>
+                <p className="font-medium text-zinc-200">{formatAmount(availableBond)} {dream}</p>
               </div>
               {bond?.cumulative_rewards && bond.cumulative_rewards !== "0" && (
                 <div>
                   <p className="text-xs text-zinc-500">Rewards</p>
-                  <p className="font-medium text-amber-400">{formatAmount(bond.cumulative_rewards)} DREAM</p>
+                  <p className="font-medium text-amber-400">{formatAmount(bond.cumulative_rewards)} {dream}</p>
                 </div>
               )}
             </div>
@@ -429,11 +431,11 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
               <div className="mt-3 grid grid-cols-2 gap-3 border-t border-zinc-800/60 pt-3 text-xs text-zinc-500 sm:grid-cols-4">
                 <div>
                   <span className="text-zinc-600">Min bond: </span>
-                  <span className="text-zinc-400">{formatAmount(config.min_bond)} DREAM</span>
+                  <span className="text-zinc-400">{formatAmount(config.min_bond)} {dream}</span>
                 </div>
                 <div>
                   <span className="text-zinc-600">Demotion floor: </span>
-                  <span className="text-zinc-400">{formatAmount(config.demotion_threshold)} DREAM</span>
+                  <span className="text-zinc-400">{formatAmount(config.demotion_threshold)} {dream}</span>
                 </div>
                 {config.unbond_cooldown && config.unbond_cooldown !== "0" && (
                   <div>
@@ -465,7 +467,7 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
                   <NumberInput
                     value={bondAmount}
                     onChange={(e) => setBondAmount(e.target.value)}
-                    placeholder="Amount (DREAM)"
+                    placeholder={`Amount (${dream})`}
                     wrapperClassName="w-32"
                     className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
                   />
@@ -513,10 +515,10 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
             if (threshold !== null) rows.push({ label: "Flags to enter queue", value: threshold.toLocaleString() });
             if (maxFlags !== null) rows.push({ label: "Flags / day", value: maxFlags.toLocaleString() });
             if (maxHides !== null) rows.push({ label: "Hides / day", value: maxHides.toLocaleString() });
-            if (commit !== null) rows.push({ label: "Commit / hide", value: `${commit} DREAM`, amber: true });
+            if (commit !== null) rows.push({ label: "Commit / hide", value: `${commit} ${dream}`, amber: true });
             if (hideExpiry !== null) rows.push({ label: "Hide expiry", value: `${hideExpiry.toLocaleString()} blocks` });
             if (unhideWindow !== null) rows.push({ label: "Self-correct window", value: `${unhideWindow.toLocaleString()} blocks` });
-            if (appealFee !== null) rows.push({ label: "Appeal fee", value: `${appealFee} DREAM`, amber: true });
+            if (appealFee !== null) rows.push({ label: "Appeal fee", value: `${appealFee} ${dream}`, amber: true });
             if (appealDeadline !== null) rows.push({ label: "Appeal deadline", value: `${appealDeadline.toLocaleString()} blocks` });
             if (appealCooldown !== null) rows.push({ label: "Appeal cooldown", value: `${appealCooldown.toLocaleString()} blocks` });
             if (rows.length === 0) return null;
@@ -604,7 +606,7 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
                         <p className="mt-0.5 text-[10px] text-zinc-600">
                           Hidden <BlockTime height={r.hidden_at} relative />
                           {r.committed_amount && r.committed_amount !== "0" && (
-                            <> · {formatAmount(r.committed_amount)} DREAM committed</>
+                            <> · {formatAmount(r.committed_amount)} {dream} committed</>
                           )}
                         </p>
                       </div>

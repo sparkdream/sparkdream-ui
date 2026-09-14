@@ -15,6 +15,8 @@ export async function GET() {
     explorerUrl:  process.env.EXPLORER_URL  || process.env.NEXT_PUBLIC_EXPLORER_URL  || "https://explorer-testnet.sparkdream.io/sparkdream",
     denom:        process.env.CHAIN_DENOM   || process.env.NEXT_PUBLIC_DENOM         || "uspark.sparkdreamtest",
     displayDenom: process.env.DISPLAY_DENOM || process.env.NEXT_PUBLIC_DISPLAY_DENOM || "SPARK",
+    dreamDisplayDenom:
+      process.env.DREAM_DISPLAY_DENOM || process.env.NEXT_PUBLIC_DREAM_DISPLAY_DENOM || "DREAM",
     bech32Prefix: process.env.BECH32_PREFIX || process.env.NEXT_PUBLIC_BECH32_PREFIX || "sprkdrm",
     remoteManifestUrl:
       process.env.REMOTE_MANIFEST_URL || process.env.NEXT_PUBLIC_REMOTE_MANIFEST_URL || "",

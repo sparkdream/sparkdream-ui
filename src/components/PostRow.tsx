@@ -8,6 +8,7 @@ import { timeAgo, countToNum, formatSpark } from "@/lib/utils";
 import { getReactionCounts } from "@/lib/api";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import CopyableAddress from "@/components/CopyableAddress";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 const AVATAR_GRADIENTS = [
   "linear-gradient(135deg, #6366f1, #f472b6)",
@@ -48,6 +49,7 @@ export default function PostRow({
       in the row header when set (used by the Bonded feed filter). */
   bondAmount?: string;
 }) {
+  const dream = useDreamDenom();
   const [counts, setCounts] = useState<ReactionCounts | null>(null);
   const { name } = useDisplayName(post.creator);
 
@@ -104,9 +106,9 @@ export default function PostRow({
               <span
                 className="sd-pill"
                 style={{ background: "var(--amber-soft)", color: "var(--amber)" }}
-                title="DREAM locked by the author as a bond on this dream"
+                title={`${dream} locked by the author as a bond on this dream`}
               >
-                {formatSpark(bondAmount)} DREAM bond
+                {formatSpark(bondAmount)} {dream} bond
               </span>
             </>
           )}

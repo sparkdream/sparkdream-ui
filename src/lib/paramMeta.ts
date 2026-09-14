@@ -839,6 +839,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "Interim Compensation", key: "expertComplexityBudget", apiKey: "expert_complexity_budget", label: "Expert Complexity Budget", kind: "dream" },
       { group: "Interim Compensation", key: "soloExpertBonusRate", apiKey: "solo_expert_bonus_rate", label: "Solo Expert Bonus Rate", kind: "dec" },
       { group: "Interim Compensation", key: "interimDeadlineEpochs", apiKey: "interim_deadline_epochs", label: "Interim Deadline (epochs)", kind: "bigint" },
+      { group: "Interim Compensation", key: "maxInterimRewardsPerSeason", apiKey: "max_interim_rewards_per_season", label: "Max Interim Rewards / Season", kind: "dream", hint: "Season cap on DREAM minted for interim work. Interims are self-assigned and self-completed, so the per-member active cap alone does not bound the total" },
 
       // Rate limits
       { group: "Rate Limits", key: "maxActiveChallengesPerCommittee", apiKey: "max_active_challenges_per_committee", label: "Max Active Challenges / Committee", kind: "number" },
@@ -871,6 +872,7 @@ export const MODULES: Record<string, ModuleDef> = {
       // Content conviction staking
       { group: "Content Conviction", key: "contentConvictionHalfLifeEpochs", apiKey: "content_conviction_half_life_epochs", label: "Content Conviction Half-Life (epochs)", kind: "bigint" },
       { group: "Content Conviction", key: "maxContentStakePerMember", apiKey: "max_content_stake_per_member", label: "Max Content Stake / Member", kind: "dream" },
+      { group: "Content Conviction", key: "maxTotalContentStakePerMember", apiKey: "max_total_content_stake_per_member", label: "Max Total Content Stake / Member", kind: "dream", hint: "Aggregate ceiling across every content stake a member holds, on top of the per-item cap. Content stakes neither decay nor earn, so without this they are a decay-free store of value. Must be >= the per-item cap" },
       { group: "Content Conviction", key: "maxAuthorBondPerContent", apiKey: "max_author_bond_per_content", label: "Max Author Bond / Content", kind: "dream" },
       { group: "Content Conviction", key: "authorBondSlashOnModeration", apiKey: "author_bond_slash_on_moderation", label: "Slash Author Bond on Moderation", kind: "boolean" },
       { group: "Content Conviction", key: "contentChallengeRewardShare", apiKey: "content_challenge_reward_share", label: "Content Challenge Reward Share", kind: "dec" },
@@ -929,6 +931,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "Sentinel Rewards", key: "sentinelRewardEpochBlocks", apiKey: "sentinel_reward_epoch_blocks", label: "Sentinel Reward Epoch (blocks)", kind: "bigint" },
       { group: "Sentinel Rewards", key: "minSentinelAccuracy", apiKey: "min_sentinel_accuracy", label: "Min Sentinel Accuracy", kind: "dec" },
       { group: "Sentinel Rewards", key: "minAppealsForAccuracy", apiKey: "min_appeals_for_accuracy", label: "Min Appeals For Accuracy", kind: "bigint" },
+      { group: "Sentinel Rewards", key: "sentinelAccuracyWindowEpochs", apiKey: "sentinel_accuracy_window_epochs", label: "Sentinel Accuracy Window (epochs)", kind: "bigint", hint: "Rolling window over which reward accuracy is measured. Recent overturns move the ratio; inactivity ages a sentinel out" },
       { group: "Sentinel Rewards", key: "minEpochActivityForReward", apiKey: "min_epoch_activity_for_reward", label: "Min Epoch Activity For Reward", kind: "bigint" },
       { group: "Sentinel Rewards", key: "minAppealRate", apiKey: "min_appeal_rate", label: "Min Appeal Rate", kind: "dec" },
 

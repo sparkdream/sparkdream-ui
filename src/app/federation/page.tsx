@@ -31,6 +31,7 @@ import {
   type FederatedContent,
   type OutboundAttestation,
 } from "@/types/federation";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 // View slot in the sidebar. The current scope of the page is the overview
 // (network constellation + peers + identity links + verification queue) — the
@@ -56,6 +57,7 @@ const APPROX_PEER_TYPE: Record<string, Transport> = {
 };
 
 export default function FederationPage() {
+  const dream = useDreamDenom();
   const { config } = useChainConfig();
   const { address } = useWallet();
 
@@ -231,7 +233,7 @@ export default function FederationPage() {
         myLinks={displayLinks.length}
         linksDelta={`${linkBreakdown.verified} verified · ${linkBreakdown.pending} pending`}
         roleLabel="Member"
-        roleDelta="Eligible: Verifier · 500 DREAM"
+        roleDelta={`Eligible: Verifier · 500 ${dream}`}
       />
 
       <Section title="Network" meta={`My chain · ${config.chainId} · ${counts.total} peer${counts.total === 1 ? "" : "s"} · last activity 2m ago`}>
@@ -789,15 +791,16 @@ function AttestationsList({ attestations }: { attestations: OutboundAttestation[
 // ───────────────────────── Roles strip ─────────────────────────
 
 function RolesStrip() {
+  const dream = useDreamDenom();
   return (
     <div className="sd-fut-roles">
       <RoleCard
-        label="DREAM-bonded"
+        label={`${dream}-bonded`}
         title="Become a verifier"
-        body="Independently fetch federated content, hash it, and confirm matches. Earn SPARK + DREAM per epoch. Slashed if proven wrong."
+        body={`Independently fetch federated content, hash it, and confirm matches. Earn SPARK + ${dream} per epoch. Slashed if proven wrong.`}
         reqs={[
           <>trust ≥ <b>ESTABLISHED</b></>,
-          <>bond <b>500 DREAM</b></>,
+          <>bond <b>500 {dream}</b></>,
           <>~10 epochs to recover</>,
         ]}
       />

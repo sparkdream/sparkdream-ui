@@ -6,6 +6,7 @@ import { useTrustRank } from "@/hooks/useTrustRank";
 import { ForumMsgTypeUrls } from "@/lib/tx";
 import { getForumParams } from "@/lib/api";
 import type { PostConvictionStake } from "@/types/forum";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 // ESTABLISHED trust rank (see useTrustRank): the chain requires ESTABLISHED+
 // to open a post-conviction stake.
@@ -38,6 +39,7 @@ interface Props {
 }
 
 export default function PostConvictionControl({ postId, author, stakes, onChanged }: Props) {
+  const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
   const rank = useTrustRank(address);
 
@@ -84,7 +86,7 @@ export default function PostConvictionControl({ postId, author, stakes, onChange
     if (!address) return;
     const dream = parseFloat(amount);
     if (!Number.isFinite(dream) || dream <= 0) {
-      setNotice("Enter a DREAM amount greater than zero.");
+      setNotice(`Enter a ${dream} amount greater than zero.`);
       return;
     }
     const udream = BigInt(Math.round(dream * UDREAM)).toString();
@@ -139,12 +141,12 @@ export default function PostConvictionControl({ postId, author, stakes, onChange
             disabled={loading || !unlocked}
             title={
               unlocked
-                ? `Release your ${formatDream(s.amount)} DREAM conviction stake`
+                ? `Release your ${formatDream(s.amount)} ${dream} conviction stake`
                 : `Locked for ~${mins >= 60 ? `${Math.ceil(mins / 60)}h` : `${mins}m`} more`
             }
             className="rounded border border-emerald-700/50 px-2 py-0.5 text-xs text-emerald-400 transition-colors hover:bg-emerald-900/20 disabled:opacity-50"
           >
-            {unlocked ? `Release ${formatDream(s.amount)} DREAM` : `Staked ${formatDream(s.amount)} DREAM (locked)`}
+            {unlocked ? `Release ${formatDream(s.amount)} ${dream}` : `Staked ${formatDream(s.amount)} ${dream} (locked)`}
           </button>
         );
       })}
@@ -153,7 +155,7 @@ export default function PostConvictionControl({ postId, author, stakes, onChange
         <button
           onClick={openForm}
           disabled={!eligible}
-          title={eligible ? "Lock DREAM to stream reputation to this author" : "Requires Established trust level or higher"}
+          title={eligible ? `Lock ${dream} to stream reputation to this author` : "Requires Established trust level or higher"}
           className="text-xs text-zinc-400 transition-colors hover:text-emerald-400 disabled:opacity-50"
         >
           Back author
@@ -166,10 +168,10 @@ export default function PostConvictionControl({ postId, author, stakes, onChange
             step="any"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder={minStake ? `min ${formatDream(minStake)}` : "DREAM"}
+            placeholder={minStake ? `min ${formatDream(minStake)}` : dream}
             className="w-24 rounded border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-xs text-zinc-200 focus:border-emerald-700 focus:outline-none"
           />
-          <span className="text-xs text-zinc-500">DREAM</span>
+          <span className="text-xs text-zinc-500">{dream}</span>
           <button
             onClick={handleStake}
             disabled={loading}

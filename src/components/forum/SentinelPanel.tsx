@@ -26,6 +26,7 @@ import type { BondedRole, BondedRoleConfig } from "@/types/rep";
 import NumberInput from "@/components/NumberInput";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 const SENTINEL_ROLE = RoleType.CONTENT_SENTINEL;
 
@@ -133,6 +134,7 @@ function accuracySeries(
 
 export default function SentinelPanel() {
   const { address, signAndBroadcast } = useWallet();
+  const dream = useDreamDenom();
   const isMember = useIsRepMember(address);
   const cannotBond = address ? isMember === false : false;
   const { isOpsCommitteeMember } = useCommonsCouncil(address);
@@ -377,11 +379,11 @@ export default function SentinelPanel() {
       {!isSentinel && (
         <div className="sd-hull-tile rounded-xl p-6">
           <p className="mb-2 text-sm text-zinc-400">
-            You are not a sentinel. Bond DREAM tokens to become a sentinel and help moderate the forum.
+            You are not a sentinel. Bond {dream} tokens to become a sentinel and help moderate the forum.
           </p>
           {config && (
             <p className="mb-4 text-xs text-zinc-500">
-              Minimum bond: {formatAmount(config.min_bond)} DREAM
+              Minimum bond: {formatAmount(config.min_bond)} {dream}
               {config.min_trust_level && config.min_trust_level !== "TRUST_LEVEL_UNSPECIFIED" &&
                 ` · Min trust: ${config.min_trust_level.replace("TRUST_LEVEL_", "")}`}
             </p>
@@ -410,7 +412,7 @@ export default function SentinelPanel() {
               <NumberInput
                 value={bondAmount}
                 onChange={(e) => setBondAmount(e.target.value)}
-                placeholder="Amount (DREAM)"
+                placeholder={`Amount (${dream})`}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
               />
               <div className="flex gap-2">
@@ -451,7 +453,7 @@ export default function SentinelPanel() {
             {bondStatus === BondedRoleStatus.UNBONDING && bond?.unbond_completion_time && (
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-800/50 bg-amber-900/15 px-3 py-2 text-xs text-amber-300">
                 <span>
-                  Unbond in progress. <b>{formatAmount(bond.pending_unbond_amount || "0")} DREAM</b> stays locked + slashable for {formatCooldownRemaining(bond.unbond_completion_time) || "—"}. You keep acting as a sentinel while your staying bond covers the minimum.
+                  Unbond in progress. <b>{formatAmount(bond.pending_unbond_amount || "0")} {dream}</b> stays locked + slashable for {formatCooldownRemaining(bond.unbond_completion_time) || "—"}. You keep acting as a sentinel while your staying bond covers the minimum.
                 </span>
                 {bond.pending_unbond_amount && bond.pending_unbond_amount !== "0" && (
                   <button
@@ -480,11 +482,11 @@ export default function SentinelPanel() {
               </div>
               <div>
                 <p className="text-xs text-zinc-500">Current bond</p>
-                <p className="font-medium text-zinc-200">{formatAmount(currentBond)} DREAM</p>
+                <p className="font-medium text-zinc-200">{formatAmount(currentBond)} {dream}</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-500">Available</p>
-                <p className="font-medium text-zinc-200">{formatAmount(availableBond)} DREAM</p>
+                <p className="font-medium text-zinc-200">{formatAmount(availableBond)} {dream}</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-500">Reward accuracy</p>
@@ -511,11 +513,11 @@ export default function SentinelPanel() {
               <div className="mt-3 grid grid-cols-2 gap-3 border-t border-zinc-800/60 pt-3 text-xs text-zinc-500 sm:grid-cols-4">
                 <div>
                   <span className="text-zinc-600">Min bond: </span>
-                  <span className="text-zinc-400">{formatAmount(config.min_bond)} DREAM</span>
+                  <span className="text-zinc-400">{formatAmount(config.min_bond)} {dream}</span>
                 </div>
                 <div>
                   <span className="text-zinc-600">Demotion floor: </span>
-                  <span className="text-zinc-400">{formatAmount(config.demotion_threshold)} DREAM</span>
+                  <span className="text-zinc-400">{formatAmount(config.demotion_threshold)} {dream}</span>
                 </div>
                 {config.unbond_cooldown && config.unbond_cooldown !== "0" && (
                   <div>
@@ -528,7 +530,7 @@ export default function SentinelPanel() {
                 {bond?.cumulative_rewards && bond.cumulative_rewards !== "0" && (
                   <div>
                     <span className="text-zinc-600">Rewards: </span>
-                    <span className="text-amber-400">{formatAmount(bond.cumulative_rewards)} DREAM</span>
+                    <span className="text-amber-400">{formatAmount(bond.cumulative_rewards)} {dream}</span>
                   </div>
                 )}
                 {bond?.last_active_epoch && (
@@ -598,7 +600,7 @@ export default function SentinelPanel() {
                   <NumberInput
                     value={bondAmount}
                     onChange={(e) => setBondAmount(e.target.value)}
-                    placeholder="Amount (DREAM)"
+                    placeholder={`Amount (${dream})`}
                     wrapperClassName="w-32"
                     className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
                   />
@@ -665,7 +667,7 @@ export default function SentinelPanel() {
                   </div>
                   <div>
                     <p className="text-zinc-500">Slash / overturn</p>
-                    <p className="text-amber-400">{slash.display} DREAM{def(slash.isDefault)}</p>
+                    <p className="text-amber-400">{slash.display} {dream}{def(slash.isDefault)}</p>
                   </div>
                   <div>
                     <p className="text-zinc-500">Lock bond</p>
@@ -673,7 +675,7 @@ export default function SentinelPanel() {
                   </div>
                   <div>
                     <p className="text-zinc-500">Lock backing</p>
-                    <p className="text-zinc-200">{lockBacking.display} DREAM{def(lockBacking.isDefault)}</p>
+                    <p className="text-zinc-200">{lockBacking.display} {dream}{def(lockBacking.isDefault)}</p>
                   </div>
                   <div>
                     <p className="text-zinc-500">Lock rep tier</p>
@@ -685,7 +687,7 @@ export default function SentinelPanel() {
                     <p className="text-zinc-500">Curation reward</p>
                     <p className="text-amber-400">
                       {forumParams.curation_dream_reward && forumParams.curation_dream_reward !== "0"
-                        ? `${formatAmount(forumParams.curation_dream_reward)} DREAM`
+                        ? `${formatAmount(forumParams.curation_dream_reward)} ${dream}`
                         : "disabled"}
                     </p>
                   </div>

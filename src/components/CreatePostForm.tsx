@@ -10,6 +10,7 @@ import { parseDreamToUdream } from "@/lib/utils";
 import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
 import NumberInput from "@/components/NumberInput";
 import TagPicker from "@/components/contribute/TagPicker";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface CreatePostFormProps {
   onCreated?: () => void;
@@ -29,6 +30,7 @@ function formatMicroDream(amount: string): string {
 }
 
 export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormProps = {}) {
+  const dream = useDreamDenom();
   const router = useRouter();
   const { address, connected, signAndBroadcast } = useWallet();
   const [title, setTitle] = useState("");
@@ -171,7 +173,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
         />
         {canCreateTags && (
           <p className="mt-1 text-xs text-zinc-600">
-            New tags burn a small DREAM fee per tag and are added to the shared registry.
+            New tags burn a small {dream} fee per tag and are added to the shared registry.
           </p>
         )}
       </div>
@@ -210,7 +212,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
 
           <div>
             <label htmlFor="authorBond" className="mb-1.5 block text-sm font-medium text-zinc-300">
-              Author bond (DREAM)
+              Author bond ({dream})
             </label>
             <NumberInput
               id="authorBond"
@@ -221,8 +223,8 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
               className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
             <p className="mt-1 text-xs text-zinc-600">
-              Optional DREAM amount to lock as an author bond. No minimum
-              {maxBond && `; up to ${formatMicroDream(maxBond)} DREAM`}.
+              Optional {dream} amount to lock as an author bond. No minimum
+              {maxBond && `; up to ${formatMicroDream(maxBond)} ${dream}`}.
             </p>
           </div>
         </div>

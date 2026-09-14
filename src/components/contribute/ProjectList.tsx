@@ -29,6 +29,7 @@ import {
 import { projectCategoryFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/project";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 // Chain defaults (x/rep params) — used as fallbacks if the params query
 // hasn't completed when the form renders.
@@ -127,6 +128,7 @@ const SCOPES: { key: Scope; label: string }[] = [
 ];
 
 export default function ProjectList() {
+  const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
   // Ops committee members may set any project's verification policy, not just
   // one they created.
@@ -318,7 +320,7 @@ export default function ProjectList() {
       // Guard: an all-zero request-funding submit would silently take the
       // permissionless path on-chain. Surface that to the user instead.
       if (budgetAmount === "0" && sparkAmount === "0") {
-        setCreateError("Request-funding mode requires a non-zero DREAM or SPARK amount.");
+        setCreateError(`Request-funding mode requires a non-zero ${dream} or SPARK amount.`);
         return;
       }
       council = formCouncil.trim();
@@ -518,21 +520,21 @@ export default function ProjectList() {
 
           {formMode === "self-publish" ? (
             <div className="mb-3 rounded-lg border border-emerald-900/50 bg-emerald-900/10 px-3 py-2 text-xs text-emerald-300/90">
-              Burns <span className="font-medium text-emerald-200">{creationFeeDream} DREAM</span>{" "}
+              Burns <span className="font-medium text-emerald-200">{creationFeeDream} {dream}</span>{" "}
               and the project activates immediately — no committee or council
               approval needed. Requires{" "}
               <span className="font-medium text-emerald-200">{minTrustLabel}</span>{" "}trust level or
-              higher. You&apos;ll then be able to add initiatives (capped at 500 DREAM each on the
+              higher. You&apos;ll then be able to add initiatives (capped at 500 {dream} each on the
               permissionless path) that the community can stake to complete.
             </div>
           ) : (
             <div className="mb-3 rounded-lg border border-amber-900/50 bg-amber-900/10 px-3 py-2 text-xs text-amber-300/90">
               Sent to the council you pick below for approval. If approved,
-              completing initiatives under this project mints DREAM (and SPARK)
+              completing initiatives under this project mints {dream} (and SPARK)
               up to your requested cap — they&apos;re the spending authority.
               Up to{" "}
               <span className="font-medium text-amber-200">
-                {largeProjectThresholdDream} DREAM
+                {largeProjectThresholdDream} {dream}
               </span>{" "}
               can be approved by an individual operations-committee member of
               the picked council; larger budgets require a passed council or
@@ -592,7 +594,7 @@ export default function ProjectList() {
                 <div className="grid grid-cols-2 gap-3">
                   <input
                     type="text"
-                    placeholder="Requested budget (DREAM)"
+                    placeholder={`Requested budget (${dream})`}
                     value={formBudget}
                     onChange={(e) => setFormBudget(e.target.value)}
                     className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
@@ -622,7 +624,7 @@ export default function ProjectList() {
                 {submitting
                   ? "Submitting..."
                   : formMode === "self-publish"
-                  ? `Self-publish (burn ${creationFeeDream} DREAM)`
+                  ? `Self-publish (burn ${creationFeeDream} ${dream})`
                   : "Submit for approval"}
               </button>
               <button
@@ -744,7 +746,7 @@ export default function ProjectList() {
                   <div className="mt-0.5 flex items-center gap-3 text-xs text-zinc-500">
                     <span>{PROJECT_CATEGORY_LABELS[p.category] || p.category}</span>
                     {p.council && <span>Council: {p.council}</span>}
-                    <span>Budget: {formatDream(p.approved_budget)} DREAM</span>
+                    <span>Budget: {formatDream(p.approved_budget)} {dream}</span>
                     {/* Show expiry only while still PROPOSED — once the project
                         transitions out (Active/Cancelled/Expired) the chain
                         clears expiry_block_height to 0. The amber/red colors
@@ -774,11 +776,11 @@ export default function ProjectList() {
                   <dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3">
                     <div>
                       <dt className="text-xs text-zinc-500">Allocated</dt>
-                      <dd className="text-zinc-300">{formatDream(p.allocated_budget)} DREAM</dd>
+                      <dd className="text-zinc-300">{formatDream(p.allocated_budget)} {dream}</dd>
                     </div>
                     <div>
                       <dt className="text-xs text-zinc-500">Spent</dt>
-                      <dd className="text-zinc-300">{formatDream(p.spent_budget)} DREAM</dd>
+                      <dd className="text-zinc-300">{formatDream(p.spent_budget)} {dream}</dd>
                     </div>
                     <div>
                       <dt className="text-xs text-zinc-500">SPARK approved</dt>

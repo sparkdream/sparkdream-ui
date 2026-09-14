@@ -9,6 +9,7 @@ import type { RepMember } from "@/types/rep";
 import { TRUST_LEVEL_LABELS, MEMBER_STATUS_LABELS, TrustLevel } from "@/types/rep";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 function trustLevelColor(level: string): string {
   switch (level) {
@@ -31,6 +32,7 @@ function formatDream(amount: string): string {
 }
 
 export default function MemberProfile() {
+  const dream = useDreamDenom();
   const { address } = useWallet();
   const [member, setMember] = useState<RepMember | null>(null);
   const [loading, setLoading] = useState(true);
@@ -112,11 +114,11 @@ export default function MemberProfile() {
 
         <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
           <div>
-            <p className="text-xs text-zinc-500">Liquid DREAM</p>
+            <p className="text-xs text-zinc-500">Liquid {dream}</p>
             <p className="mt-0.5 text-lg font-semibold text-white">{formatDream(member.dream_balance)}</p>
           </div>
           <div>
-            <p className="text-xs text-zinc-500">Staked DREAM</p>
+            <p className="text-xs text-zinc-500">Staked {dream}</p>
             <p className="mt-0.5 text-lg font-semibold text-white">{formatDream(member.staked_dream)}</p>
           </div>
           <div>

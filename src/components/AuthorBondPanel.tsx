@@ -16,6 +16,7 @@ import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useSessionPermits } from "@/hooks/useSessionPermits";
 import CopyableAddress from "./CopyableAddress";
 import NumberInput from "./NumberInput";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 // StakeTargetType numeric value for x/blog author bonds (Imaginarium posts).
 const BLOG_AUTHOR_BOND = 7;
@@ -40,6 +41,7 @@ export default function AuthorBondPanel({
   noun?: string;
 }) {
   const { address, connected, signAndBroadcast } = useWallet();
+  const dreamDenom = useDreamDenom();
   const isMember = useIsRepMember(address);
   const permits = useSessionPermits();
 
@@ -223,7 +225,7 @@ export default function AuthorBondPanel({
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
             <path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4z" />
           </svg>
-          Author bond: {formatSpark(bond?.bond_amount ?? "0")} DREAM
+          Author bond: {formatSpark(bond?.bond_amount ?? "0")} {dreamDenom}
         </span>
         {activeChallenge && (
           <span className="rounded bg-amber-900/30 px-2 py-0.5 text-xs text-amber-400">
@@ -260,8 +262,8 @@ export default function AuthorBondPanel({
       </div>
 
       <p className="mt-1.5 text-xs text-zinc-600">
-        The author locked DREAM behind this {noun}. The bond is burned if the content is
-        moderated, and any member can challenge it by staking DREAM of their own.
+        The author locked {dreamDenom} behind this {noun}. The bond is burned if the content is
+        moderated, and any member can challenge it by staking {dreamDenom} of their own.
       </p>
 
       {activeChallenge && (
@@ -270,7 +272,7 @@ export default function AuthorBondPanel({
             <span>Challenged by</span>
             <CopyableAddress className="font-mono" address={activeChallenge.challenger} resolveName />
             <span>&middot;</span>
-            <span>{formatSpark(activeChallenge.staked_dream)} DREAM staked</span>
+            <span>{formatSpark(activeChallenge.staked_dream)} {dreamDenom} staked</span>
             {activeChallenge.status === ContentChallengeStatus.ACTIVE && (
               <>
                 <span>&middot;</span>
@@ -346,7 +348,7 @@ export default function AuthorBondPanel({
           </div>
           <div>
             <label htmlFor="challengeStake" className="mb-1 block text-xs font-medium text-zinc-400">
-              Stake (DREAM)
+              Stake ({dreamDenom})
             </label>
             <NumberInput
               id="challengeStake"
@@ -359,7 +361,7 @@ export default function AuthorBondPanel({
             />
             {minChallengeStake && (
               <p className="mt-1 text-xs text-zinc-600">
-                Minimum {formatSpark(minChallengeStake)} DREAM. Lost if the challenge is
+                Minimum {formatSpark(minChallengeStake)} {dreamDenom}. Lost if the challenge is
                 rejected, rewarded from the bond if upheld.
               </p>
             )}

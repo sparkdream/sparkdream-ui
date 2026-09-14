@@ -19,6 +19,7 @@ import { stakeTargetTypeFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/
 import SearchableSelect from "@/components/contribute/SearchableSelect";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface TargetOption {
   value: string;
@@ -58,6 +59,7 @@ const ID_FREEFORM_TYPES = new Set<string>([
 ]);
 
 export default function StakingPanel() {
+  const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
   const isMember = useIsRepMember(address);
   const canStake = isMember === true;
@@ -329,7 +331,7 @@ export default function StakingPanel() {
 
       {showForm && canStake && (
         <div className="mb-4 rounded-xl sd-hull-tile p-4">
-          <h3 className="mb-3 text-sm font-semibold text-zinc-200">Stake DREAM</h3>
+          <h3 className="mb-3 text-sm font-semibold text-zinc-200">Stake {dream}</h3>
           <div className="space-y-3">
             <select
               value={formTargetType}
@@ -403,7 +405,7 @@ export default function StakingPanel() {
             <input
               type="text"
               inputMode="decimal"
-              placeholder="Amount (DREAM)"
+              placeholder={`Amount (${dream})`}
               value={formAmount}
               onChange={(e) => {
                 const v = e.target.value;
@@ -439,7 +441,7 @@ export default function StakingPanel() {
         <div className="rounded-xl sd-hull-tile p-12 text-center">
           <p className="text-zinc-400">No active stakes</p>
           <p className="mt-1 text-xs text-zinc-500">
-            Stake DREAM on initiatives, projects, members, or tags to earn rewards
+            Stake {dream} on initiatives, projects, members, or tags to earn rewards
           </p>
         </div>
       ) : (
@@ -457,7 +459,7 @@ export default function StakingPanel() {
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-zinc-500">
-                    Staked: {formatDream(s.amount)} DREAM
+                    Staked: {formatDream(s.amount)} {dream}
                   </p>
                 </div>
                 <div className="flex gap-1.5">

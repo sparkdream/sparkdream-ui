@@ -11,6 +11,7 @@ import {
   type FieldDef,
   type ModuleDef,
 } from "@/lib/paramMeta";
+import { withDreamDenom } from "@/hooks/useDreamDenom";
 
 /**
  * Before/after view of a governance `MsgUpdateParams`.
@@ -95,7 +96,7 @@ export default function ParamChangeDiff({
 
   const rows =
     current && !failed
-      ? diffParams(match.module, current, proposed, config.displayDenom)
+      ? diffParams(match.module, current, proposed, config.displayDenom, config.dreamDisplayDenom)
       : [];
 
   const visible = showAll ? rows : rows.slice(0, 6);
@@ -167,7 +168,8 @@ function diffParams(
   module: ModuleDef,
   current: Record<string, unknown>,
   proposed: Record<string, unknown>,
-  displayDenom: string
+  displayDenom: string,
+  dreamDenom: string
 ): ParamDiffRow[] {
   const paths = new Set<string>();
   collectLeafPaths(current, "", paths);
@@ -182,10 +184,10 @@ function diffParams(
     const field = findFieldByApiKey(module, path);
     rows.push({
       path,
-      label: field ? field.label : humanizePath(path),
+      label: field ? withDreamDenom(field.label, dreamDenom) : humanizePath(path),
       unlabeled: !field,
-      from: formatParam(field, a, displayDenom),
-      to: formatParam(field, b, displayDenom),
+      from: formatParam(field, a, displayDenom, dreamDenom),
+      to: formatParam(field, b, displayDenom, dreamDenom),
     });
   }
 
@@ -244,7 +246,8 @@ function isZeroish(v: unknown): boolean {
 function formatParam(
   field: FieldDef | undefined,
   raw: unknown,
-  displayDenom: string
+  displayDenom: string,
+  dreamDenom: string
 ): string {
   if (!field) {
     if (raw === undefined || raw === null) return "unset";
@@ -253,9 +256,9 @@ function formatParam(
   }
 
   const shown = trimDecimal(displayValue(field, raw));
-  if (shown === "") return defaultForKind(field, displayDenom);
+  if (shown === "") return defaultForKind(field, displayDenom, dreamDenom);
 
-  const unit = unitLabel(field, displayDenom);
+  const unit = unitLabel(field, displayDenom, dreamDenom);
   return unit ? `${shown} ${unit}` : shown;
 }
 
@@ -268,14 +271,14 @@ function trimDecimal(value: string): string {
 
 /** What an absent field means on the wire, by kind: protobuf JSON drops zero
  * values, so "missing" is a zero, not an unknown. */
-function defaultForKind(field: FieldDef, displayDenom: string): string {
+function defaultForKind(field: FieldDef, displayDenom: string, dreamDenom: string): string {
   if (field.kind === "boolean") return "false";
   if (field.kind === "string") return "unset";
-  const unit = unitLabel(field, displayDenom);
+  const unit = unitLabel(field, displayDenom, dreamDenom);
   return unit ? `0 ${unit}` : "0";
 }
 
-function unitLabel(field: FieldDef, displayDenom: string): string {
+function unitLabel(field: FieldDef, displayDenom: string, dreamDenom: string): string {
   switch (field.kind) {
     case "duration":
       return field.unit || "seconds";
@@ -284,7 +287,7 @@ function unitLabel(field: FieldDef, displayDenom: string): string {
     case "coins":
       return displayDenom;
     case "dream":
-      return "DREAM";
+      return dreamDenom;
     default:
       return "";
   }

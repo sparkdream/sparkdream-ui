@@ -7,6 +7,7 @@ import type { RepMember } from "@/types/rep";
 import { TRUST_LEVEL_LABELS, MEMBER_STATUS_LABELS, MemberStatus, TrustLevel } from "@/types/rep";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 function trustLevelBadge(level: string) {
   const colors: Record<string, string> = {
@@ -54,6 +55,7 @@ const TRUST_LEVEL_NUM: Record<string, number> = {
 };
 
 export default function MemberList() {
+  const dream = useDreamDenom();
   const [members, setMembers] = useState<RepMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -163,7 +165,7 @@ export default function MemberList() {
                     {trustLevelBadge(m.trust_level)}
                   </div>
                   <div className="flex items-center gap-3 text-xs text-zinc-500 sm:ml-auto">
-                    <span>{formatDream(m.dream_balance)} DREAM</span>
+                    <span>{formatDream(m.dream_balance)} {dream}</span>
                     {m.status !== MemberStatus.ACTIVE && (
                       <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-400">
                         {MEMBER_STATUS_LABELS[m.status] || m.status}
@@ -184,7 +186,7 @@ export default function MemberList() {
                   <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
                     <div>
                       <dt className="text-xs text-zinc-500">Staked</dt>
-                      <dd className="text-zinc-300">{formatDream(m.staked_dream)} DREAM</dd>
+                      <dd className="text-zinc-300">{formatDream(m.staked_dream)} {dream}</dd>
                     </div>
                     <div>
                       <dt className="text-xs text-zinc-500">Lifetime earned</dt>

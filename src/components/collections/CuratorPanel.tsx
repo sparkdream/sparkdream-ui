@@ -28,6 +28,7 @@ import {
 import type { CuratorActivity, CurationReview } from "@/types/collect";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 const CURATOR_ROLE = RoleType.COLLECT_CURATOR;
 
@@ -61,6 +62,7 @@ function strParam(params: Record<string, unknown> | null, key: string): string |
 }
 
 export default function CuratorPanel() {
+  const dream = useDreamDenom();
   const { address, connected, signAndBroadcast } = useWallet();
   const isMember = useIsRepMember(address);
   const cannotBond = address ? isMember === false : false;
@@ -211,11 +213,11 @@ export default function CuratorPanel() {
       {!isCurator && (
         <div className="sd-hull-tile rounded-xl p-6">
           <p className="mb-2 text-sm text-zinc-400">
-            You are not a curator. Bond DREAM to become a collection curator and help rate which
+            You are not a curator. Bond {dream} to become a collection curator and help rate which
             public collections deserve to be surfaced.
           </p>
           <div className="mb-4 space-y-0.5 text-xs text-zinc-500">
-            {config && <p>Minimum bond: {formatAmount(config.min_bond)} DREAM</p>}
+            {config && <p>Minimum bond: {formatAmount(config.min_bond)} {dream}</p>}
             {minTrust && minTrust !== "TRUST_LEVEL_UNSPECIFIED" && (
               <p>Minimum trust: {minTrust.replace("TRUST_LEVEL_", "")}</p>
             )}
@@ -247,7 +249,7 @@ export default function CuratorPanel() {
               <NumberInput
                 value={bondAmount}
                 onChange={(e) => setBondAmount(e.target.value)}
-                placeholder="Amount (DREAM)"
+                placeholder={`Amount (${dream})`}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
               />
               <div className="flex gap-2">
@@ -279,7 +281,7 @@ export default function CuratorPanel() {
             {bondStatus === BondedRoleStatus.UNBONDING && bond?.unbond_completion_time && (
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-800/50 bg-amber-900/15 px-3 py-2 text-xs text-amber-300">
                 <span>
-                  Unbond in progress. <b>{formatAmount(bond.pending_unbond_amount || "0")} DREAM</b> stays
+                  Unbond in progress. <b>{formatAmount(bond.pending_unbond_amount || "0")} {dream}</b> stays
                   locked + slashable for {formatCooldownRemaining(bond.unbond_completion_time) || "—"}.
                   Curators cannot rate collections while unbonding.
                 </span>
@@ -310,15 +312,15 @@ export default function CuratorPanel() {
               </div>
               <div>
                 <p className="text-xs text-zinc-500">Current bond</p>
-                <p className="font-medium text-zinc-200">{formatAmount(currentBond)} DREAM</p>
+                <p className="font-medium text-zinc-200">{formatAmount(currentBond)} {dream}</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-500">Available</p>
-                <p className="font-medium text-zinc-200">{formatAmount(availableBond)} DREAM</p>
+                <p className="font-medium text-zinc-200">{formatAmount(availableBond)} {dream}</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-500">Rewards</p>
-                <p className="font-medium text-amber-400">{formatAmount(bond?.cumulative_rewards || "0")} DREAM</p>
+                <p className="font-medium text-amber-400">{formatAmount(bond?.cumulative_rewards || "0")} {dream}</p>
               </div>
             </div>
 
@@ -326,11 +328,11 @@ export default function CuratorPanel() {
               <div className="mt-3 grid grid-cols-2 gap-3 border-t border-zinc-800/60 pt-3 text-xs text-zinc-500 sm:grid-cols-4">
                 <div>
                   <span className="text-zinc-600">Min bond: </span>
-                  <span className="text-zinc-400">{formatAmount(config.min_bond)} DREAM</span>
+                  <span className="text-zinc-400">{formatAmount(config.min_bond)} {dream}</span>
                 </div>
                 <div>
                   <span className="text-zinc-600">Demotion floor: </span>
-                  <span className="text-zinc-400">{formatAmount(config.demotion_threshold)} DREAM</span>
+                  <span className="text-zinc-400">{formatAmount(config.demotion_threshold)} {dream}</span>
                 </div>
                 {config.unbond_cooldown && config.unbond_cooldown !== "0" && (
                   <div>
@@ -360,7 +362,7 @@ export default function CuratorPanel() {
                   <NumberInput
                     value={bondAmount}
                     onChange={(e) => setBondAmount(e.target.value)}
-                    placeholder="Amount (DREAM)"
+                    placeholder={`Amount (${dream})`}
                     wrapperClassName="w-32"
                     className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
                   />

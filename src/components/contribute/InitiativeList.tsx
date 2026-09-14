@@ -55,6 +55,7 @@ import InitiativeChallengePanel from "@/components/contribute/InitiativeChalleng
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 type Tab = "all" | "available" | "mine" | "authored";
 
@@ -129,9 +130,9 @@ function CompletionSchedule({
           <>Completing now. The next block pays out the budget and releases every stake.</>
         ) : (
           <>
-            Completes {eta || `at ${block}`}
-            {eta ? ` (${block})` : ""}, when the challenge window closes. That block pays out
-            the budget and releases every stake, unless someone challenges the work first.
+            Completes {eta ? `${eta}, ` : ""}when the challenge window closes at {block}. That
+            block pays out the budget and releases every stake, unless someone challenges the
+            work first.
           </>
         )}
       </p>
@@ -509,6 +510,7 @@ function ConvictionMeter({
   budgetMicro?: bigint;
   released?: boolean;
 }) {
+  const dream = useDreamDenom();
   const fmtConv = (n: number) => Math.round(n).toLocaleString();
   const fmtDream = (n: bigint) => formatDream(n.toString());
   if (released) {
@@ -541,8 +543,8 @@ function ConvictionMeter({
   const textColor = met ? "text-emerald-400" : totalMet ? "text-amber-400" : "text-indigo-300";
   const backing =
     poolMicro !== undefined
-      ? ` · backed by ${fmtDream(poolMicro)} DREAM${
-          budgetMicro > BigInt(0) ? ` toward a ${fmtDream(budgetMicro)} DREAM budget` : ""
+      ? ` · backed by ${fmtDream(poolMicro)} ${dream}${
+          budgetMicro > BigInt(0) ? ` toward a ${fmtDream(budgetMicro)} ${dream} budget` : ""
         }`
       : "";
   const externalNote =
@@ -623,6 +625,7 @@ function AssigneeName({ address }: { address: string }) {
 }
 
 export default function InitiativeList() {
+  const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1740,7 +1743,7 @@ export default function InitiativeList() {
                   return (
                     <option key={val} value={val}>
                       {cfg
-                        ? `${label} · up to ${formatDream(cfg.maxBudgetMicro.toString())} DREAM · ${fmtRep(cfg.minRep)} rep`
+                        ? `${label} · up to ${formatDream(cfg.maxBudgetMicro.toString())} ${dream} · ${fmtRep(cfg.minRep)} rep`
                         : label}
                     </option>
                   );
@@ -1767,7 +1770,7 @@ export default function InitiativeList() {
               />
               <input
                 type="text"
-                placeholder="Budget (DREAM)"
+                placeholder={`Budget (${dream})`}
                 value={formBudget}
                 onChange={(e) => setFormBudget(e.target.value)}
                 className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
@@ -1884,9 +1887,9 @@ export default function InitiativeList() {
               if (cfg.maxBudgetMicro > BigInt(0) && budgetMicro > cfg.maxBudgetMicro) {
                 return (
                   <p className="text-xs leading-relaxed text-red-400">
-                    A {formatDream(budgetMicro.toString())} DREAM budget exceeds the{" "}
+                    A {formatDream(budgetMicro.toString())} {dream} budget exceeds the{" "}
                     {tierLabel} tier maximum of {formatDream(cfg.maxBudgetMicro.toString())}{" "}
-                    DREAM. Creating it will be rejected. Raise the tier or lower the budget.
+                    {dream}. Creating it will be rejected. Raise the tier or lower the budget.
                   </p>
                 );
               }
@@ -1922,7 +1925,7 @@ export default function InitiativeList() {
                       {formatDream(
                         ((budgetMicro * BigInt(Math.round(minBountyRate * 1e6))) / BigInt(1e6)).toString(),
                       )}{" "}
-                      DREAM
+                      {dream}
                     </span>{" "}
                     of yours as a review bounty, so the review is paid for by whoever
                     commissions the mint.
@@ -2270,7 +2273,7 @@ export default function InitiativeList() {
                         className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/[0.13] px-2 py-0.5 font-mono text-[10px] font-semibold text-indigo-300"
                       >
                         <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />
-                        YOU {formatDream(yoursMicro.toString())} DREAM
+                        YOU {formatDream(yoursMicro.toString())} {dream}
                       </span>
                     )}
                   </div>
@@ -2292,7 +2295,7 @@ export default function InitiativeList() {
                     <span className="text-zinc-700">·</span>
                     <span>{INITIATIVE_CATEGORY_LABELS[ini.category] || ini.category}</span>
                     <span className="text-zinc-700">·</span>
-                    <span className="font-mono">{formatDream(ini.budget)} DREAM</span>
+                    <span className="font-mono">{formatDream(ini.budget)} {dream}</span>
                     {ini.assignee && (
                       <>
                         <span className="text-zinc-700">·</span>
@@ -2339,10 +2342,10 @@ export default function InitiativeList() {
                               : isMember === false
                               ? "Only existing members can stake"
                               : positionCapsAlone
-                              ? "Add to your stake. Your position already reaches the per-member conviction cap, so more DREAM earns rewards rather than adding progress"
+                              ? `Add to your stake. Your position already reaches the per-member conviction cap, so more ${dream} earns rewards rather than adding progress`
                               : hasStake
                               ? "Add to your stake"
-                              : "Stake DREAM toward this initiative's conviction"
+                              : `Stake ${dream} toward this initiative's conviction`
                           }
                           className="rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-1.5 text-xs font-semibold text-indigo-300 transition-colors hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                         >
@@ -2358,7 +2361,7 @@ export default function InitiativeList() {
                           }}
                           title={
                             terminalWithdrawal
-                              ? "This initiative is closed. Withdraw your stake to unlock the DREAM"
+                              ? `This initiative is closed. Withdraw your stake to unlock the ${dream}`
                               : "Withdraw some or all of your stake"
                           }
                           className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-zinc-200"
@@ -2394,7 +2397,7 @@ export default function InitiativeList() {
                 <div className="mx-4 mb-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
                   <div className="mb-1.5 flex items-center justify-between gap-2">
                     <label className="block text-xs text-zinc-400">
-                      {isUnstakePanel ? "Withdraw DREAM from your stake" : "Stake DREAM toward conviction"}
+                      {isUnstakePanel ? `Withdraw ${dream} from your stake` : `Stake ${dream} toward conviction`}
                     </label>
                     {isUnstakePanel && (
                       <span className="shrink-0 font-mono text-[10px] text-zinc-500">
@@ -2407,7 +2410,7 @@ export default function InitiativeList() {
                       type="text"
                       inputMode="decimal"
                       autoFocus
-                      placeholder="Amount (DREAM)"
+                      placeholder={`Amount (${dream})`}
                       value={stakeAmount}
                       onChange={(e) => {
                         const v = e.target.value;
@@ -2436,11 +2439,11 @@ export default function InitiativeList() {
                   {stakeAmount !== "" && !amountOk && (
                     <p className="mt-1.5 text-xs text-red-400">
                       {overPosition
-                        ? `Enter at most ${maxDreamStr} DREAM`
+                        ? `Enter at most ${maxDreamStr} ${dream}`
                         : overStakeCap
                         ? `One member may stake at most ${formatDream(
                             (maxStakePerMemberMicro ?? BigInt(0)).toString(),
-                          )} DREAM on an initiative. You can add ${stakeHeadroomStr} more.`
+                          )} ${dream} on an initiative. You can add ${stakeHeadroomStr} more.`
                         : /[,\s]/.test(stakeAmount.trim())
                         ? // parseFloat used to read "1,000" as 1 and stake a
                           // thousandth of what was meant, silently. Rejecting it
@@ -2468,15 +2471,15 @@ export default function InitiativeList() {
                             <span className="font-semibold">
                               This adds no conviction.
                             </span>{" "}
-                            Your {formatDreamExact(yoursMicro.toString())} DREAM already reaches your
+                            Your {formatDreamExact(yoursMicro.toString())} {dream} already reaches your
                             per-member cap, so the meter won&apos;t move however much you add.
                           </>
                         ) : (
                           <>
                             <span className="font-semibold">
-                              Only {formatDreamFloor(capHeadroomMicro)} DREAM of this adds conviction.
+                              Only {formatDreamFloor(capHeadroomMicro)} {dream} of this adds conviction.
                             </span>{" "}
-                            The remaining {formatDreamCeil(surplusMicro)} DREAM is past your per-member cap.
+                            The remaining {formatDreamCeil(surplusMicro)} {dream} is past your per-member cap.
                             {capHeadroomMicro >= 10_000 && (
                               /* Fills the headroom to the last micro-DREAM, not
                                  the two-decimal figure in the label. Rounding
@@ -2492,7 +2495,7 @@ export default function InitiativeList() {
                                 }
                                 title={`Fills the exact remaining headroom, ${formatDreamExact(
                                   String(Math.floor(capHeadroomMicro)),
-                                )} DREAM`}
+                                )} ${dream}`}
                                 className="ml-1.5 rounded border border-amber-700/60 px-1.5 py-0.5 font-medium text-amber-200 transition-colors hover:border-amber-600 hover:bg-amber-900/30"
                               >
                                 Use {formatDreamFloor(capHeadroomMicro)}
@@ -2513,7 +2516,7 @@ export default function InitiativeList() {
                         This initiative has ended, so the stake earns nothing further. Rewards were settled when
                         it closed. Withdrawing returns the principal to your balance.
                         {amountOk && remainingMicro > BigInt(0)
-                          ? ` ${formatDreamExact(remainingMicro.toString())} DREAM stays locked until you withdraw it too.`
+                          ? ` ${formatDreamExact(remainingMicro.toString())} ${dream} stays locked until you withdraw it too.`
                           : ""}
                       </>
                     ) : isUnstakePanel ? (
@@ -2533,7 +2536,7 @@ export default function InitiativeList() {
                           </>
                         )}
                         {amountOk && remainingMicro > BigInt(0)
-                          ? ` ${formatDreamExact(remainingMicro.toString())} DREAM stays staked.`
+                          ? ` ${formatDreamExact(remainingMicro.toString())} ${dream} stays staked.`
                           : amountOk
                           ? " Withdrawing everything returns the full amount and you'd stake again from zero."
                           : ""}
@@ -2556,7 +2559,7 @@ export default function InitiativeList() {
                               {formatConviction(reqConv * convictionParams.maxSharePerMember)}
                             </span>{" "}
                             of the {formatConviction(reqConv)} conviction this initiative needs, which{" "}
-                            {formatDreamCeil(capPositionMicro)} DREAM already reaches. Staking more still raises
+                            {formatDreamCeil(capPositionMicro)} {dream} already reaches. Staking more still raises
                             your share of the rewards paid out on completion. To move the meter, ask another
                             member to stake.
                           </>
@@ -2576,7 +2579,7 @@ export default function InitiativeList() {
                             reaches full weight over {formatDurationApprox(maturitySeconds)}, so the meter
                             won&apos;t move the moment you stake.
                             {addHitsCap && !overstaking
-                              ? ` That is the most one member can contribute, and ${formatDreamCeil(capPositionMicro)} DREAM staked here is exactly what reaches it.`
+                              ? ` That is the most one member can contribute, and ${formatDreamCeil(capPositionMicro)} ${dream} staked here is exactly what reaches it.`
                               : ""}
                           </>
                         )}
@@ -2585,7 +2588,7 @@ export default function InitiativeList() {
                       <>
                         Your position already reaches the per-member cap of{" "}
                         {formatConviction(reqConv * convictionParams.maxSharePerMember)}{" "}
-                        conviction, the most one member can contribute here. More DREAM raises your share of the
+                        conviction, the most one member can contribute here. More {dream} raises your share of the
                         completion rewards rather than this initiative&apos;s progress. To raise the conviction, ask another member to stake.
                       </>
                     ) : (
@@ -2661,7 +2664,7 @@ export default function InitiativeList() {
                           {ini.self_assign_bond && ini.self_assign_bond !== "0" && (
                             <div>
                               <dt className="text-xs text-zinc-500">Self-assign bond</dt>
-                              <dd style={{ color: "var(--amber)" }}>{formatDream(ini.self_assign_bond)} DREAM</dd>
+                              <dd style={{ color: "var(--amber)" }}>{formatDream(ini.self_assign_bond)} {dream}</dd>
                             </div>
                           )}
                           {ini.deliverable_uri && (
@@ -2713,7 +2716,7 @@ export default function InitiativeList() {
                               <span className="font-mono text-2xl font-semibold text-zinc-100">
                                 {formatDream(yoursMicro.toString())}
                               </span>
-                              <span className="text-xs text-zinc-500">DREAM {poolStr}</span>
+                              <span className="text-xs text-zinc-500">{dream} {poolStr}</span>
                             </div>
                             <div className="mt-2.5 flex flex-col gap-1 font-mono text-[10.5px] text-zinc-500">
                               <span>{mineStakes.length} stake{mineStakes.length === 1 ? "" : "s"}</span>
@@ -2735,7 +2738,7 @@ export default function InitiativeList() {
                               )}
                               <span>
                                 {terminalWithdrawal
-                                  ? "This initiative has ended. Closing does not return staked DREAM, so withdraw to unlock it."
+                                  ? `This initiative has ended. Closing does not return staked ${dream}, so withdraw to unlock it.`
                                   : "Withdraw any amount, up to the full position."}
                               </span>
                             </div>
@@ -2779,7 +2782,7 @@ export default function InitiativeList() {
                                 title={isMember === false ? "Only existing members can stake" : undefined}
                                 className="sd-btn sd-btn-primary mt-3 w-full justify-center"
                               >
-                                Stake DREAM
+                                Stake {dream}
                               </button>
                             )}
                           </>

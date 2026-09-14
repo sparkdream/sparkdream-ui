@@ -5,6 +5,7 @@ import Modal from "@/components/futarchy/Modal";
 import { useWallet } from "@/contexts/WalletContext";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { invalidateTags } from "@/lib/api";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface CreateTagFormProps {
   /** Existing tag names, lowercased, used to block duplicates client-side. */
@@ -21,6 +22,7 @@ interface CreateTagFormProps {
  * useSessionPermits, so this form assumes the signer is allowed to create tags.
  */
 export default function CreateTagForm({ existing, onClose, onCreated }: CreateTagFormProps) {
+  const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -95,7 +97,7 @@ export default function CreateTagForm({ existing, onClose, onCreated }: CreateTa
             <p className="mt-1 text-xs text-amber-500">#{normalized} already exists.</p>
           ) : (
             <p className="mt-1 text-xs text-zinc-600">
-              Burns a small DREAM fee and is added to the shared registry.
+              Burns a small {dream} fee and is added to the shared registry.
             </p>
           )}
         </div>

@@ -310,16 +310,22 @@ const MSG_TYPE_LABELS: Record<string, string> = {
   "/sparkdream.rep.v1.MsgUnbondRole": "Unbond Role",
 };
 
-export function messageTypeLabel(typeUrl: string): string {
-  if (MSG_TYPE_LABELS[typeUrl]) return MSG_TYPE_LABELS[typeUrl];
+// The table above spells the internal token "DREAM"; `dreamDenom` swaps in the
+// ticker the chain this UI points at actually prints (see useDreamDenom).
+export function messageTypeLabel(typeUrl: string, dreamDenom = "DREAM"): string {
+  const known = MSG_TYPE_LABELS[typeUrl];
+  if (known) return dreamDenom === "DREAM" ? known : known.replace(/\bDREAM\b/g, dreamDenom);
   // Fallback: extract the last segment and remove "Msg" prefix
   const parts = typeUrl.split(".");
   return parts[parts.length - 1].replace("Msg", "");
 }
 
 export function describeProposalMessages(
-  msgs: { type_url?: string; "@type"?: string }[]
+  msgs: { type_url?: string; "@type"?: string }[],
+  dreamDenom = "DREAM"
 ): string {
   if (!msgs?.length) return "General Vote";
-  return msgs.map((m) => messageTypeLabel(m.type_url || m["@type"] || "")).join(", ");
+  return msgs
+    .map((m) => messageTypeLabel(m.type_url || m["@type"] || "", dreamDenom))
+    .join(", ");
 }

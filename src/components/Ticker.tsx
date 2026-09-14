@@ -99,11 +99,11 @@ function shorten(text: string): string {
     : t;
 }
 
-function govItem(p: GovProposal): ReactNode {
+function govItem(p: GovProposal, dream: string): ReactNode {
   const depositing = GOV_DEPOSIT_STATUSES.has(p.status);
   // Proposers usually set a title; fall back to the inner message types so a
   // title-less proposal still says what it would do (e.g. "Rep Param Change").
-  const what = shorten(p.title || describeProposalMessages(p.messages));
+  const what = shorten(p.title || describeProposalMessages(p.messages, dream));
   const left = timeRemaining(
     depositing ? p.deposit_end_time : p.voting_end_time
   );
@@ -116,8 +116,8 @@ function govItem(p: GovProposal): ReactNode {
   );
 }
 
-function commonsItem(p: Proposal): ReactNode {
-  const what = shorten(describeProposalMessages(p.messages));
+function commonsItem(p: Proposal, dream: string): ReactNode {
+  const what = shorten(describeProposalMessages(p.messages, dream));
   const left = timeRemaining(p.voting_deadline);
   return (
     <Link className="sd-ticker-link" href="/governance?view=community-proposals">
@@ -130,16 +130,16 @@ function commonsItem(p: Proposal): ReactNode {
 // Only proposals a reader can still act on. Nothing open means no proposal
 // items at all — the ticker just carries its other lines rather than padding
 // itself out with settled votes or a placeholder.
-function proposalItems(gov: GovProposal[], community: Proposal[]): ReactNode[] {
+function proposalItems(gov: GovProposal[], community: Proposal[], dream: string): ReactNode[] {
   return [
     ...gov
       .filter((p) => OPEN_GOV_STATUSES.has(p.status))
       .slice(0, MAX_PROPOSALS_PER_KIND)
-      .map(govItem),
+      .map((p) => govItem(p, dream)),
     ...community
       .filter((p) => OPEN_COMMONS_STATUSES.has(p.status))
       .slice(0, MAX_PROPOSALS_PER_KIND)
-      .map(commonsItem),
+      .map((p) => commonsItem(p, dream)),
   ];
 }
 
@@ -147,13 +147,14 @@ function buildItems(
   height: string | null,
   season: CurrentSeasonResponse | null,
   gov: GovProposal[],
-  community: Proposal[]
+  community: Proposal[],
+  dream: string
 ): ReactNode[] {
   return [
     <>Block <b>{height ?? "—"}</b></>,
     seasonItem(season),
     <>14 posts in last 24h</>,
-    ...proposalItems(gov, community),
+    ...proposalItems(gov, community, dream),
     <>Naming dispute #3 · resolved</>,
     <>12 active session keys</>,
     <>Futarchy market: treasury allocation · $2,840 TVL</>,
@@ -309,7 +310,7 @@ export default function Ticker() {
     };
   }, [config.rpcEndpoint]);
 
-  const items = buildItems(height, season, govProposals, communityProposals);
+  const items = buildItems(height, season, govProposals, communityProposals, config.dreamDisplayDenom);
 
   return (
     <div className="sd-ticker" aria-label="Onchain ticker">

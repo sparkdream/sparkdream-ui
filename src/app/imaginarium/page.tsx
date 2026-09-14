@@ -26,6 +26,7 @@ import { useDisplayName } from "@/hooks/useDisplayName";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import ErrorState from "@/components/ErrorState";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 type SortOption = "newest" | "oldest";
 type FilterOption = "my-posts" | "members" | "all";
@@ -61,6 +62,7 @@ export default function ImaginariumPage() {
 }
 
 function ImaginariumPageInner() {
+  const dream = useDreamDenom();
   const router = useRouter();
   const searchParams = useSearchParams();
   // The URL `?post=<id>` mirrors the open dream so a reload/share/deep-link keeps
@@ -381,7 +383,7 @@ function ImaginariumPageInner() {
           type="button"
           className={`sd-side-item dream-item${bondedOnly ? " active" : ""}`}
           onClick={() => setBondedOnly((v) => !v)}
-          title="Dreams whose author locked a DREAM bond"
+          title={`Dreams whose author locked a ${dream} bond`}
         >
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
             <path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4z" />

@@ -30,6 +30,7 @@ import {
   ReviewEscalationValue,
   RoleType,
 } from "@/types/rep";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface Props {
   initiative: Initiative;
@@ -75,6 +76,7 @@ export default function InitiativeReviewPanel({
   isOpsCommitteeMember,
   onChanged,
 }: Props) {
+  const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
 
   const [reviews, setReviews] = useState<InitiativeReviewsResponse | null>(null);
@@ -265,7 +267,7 @@ export default function InitiativeReviewPanel({
     if (!address) return;
     const micro = parseDreamToUdream(bountyAmount);
     if (!micro || micro === "0") {
-      setActionError("Enter a DREAM amount above zero");
+      setActionError(`Enter a ${dream} amount above zero`);
       return;
     }
     try {
@@ -453,7 +455,7 @@ export default function InitiativeReviewPanel({
                       </span>
                       {r.bond_reserved && r.bond_reserved !== "0" && (
                         <span style={{ color: "var(--amber)" }}>
-                          {formatSpark(r.bond_reserved)} DREAM bonded
+                          {formatSpark(r.bond_reserved)} {dream} bonded
                         </span>
                       )}
                       {r.settled && <span className="text-zinc-600">settled</span>}
@@ -488,7 +490,7 @@ export default function InitiativeReviewPanel({
           <div className="flex flex-wrap items-center gap-2">
             <h5 className="text-xs font-semibold text-zinc-400">Review bounty</h5>
             <span style={{ color: "var(--amber)" }} className="text-xs">
-              {formatSpark(bountyTotal)} DREAM escrowed
+              {formatSpark(bountyTotal)} {dream} escrowed
             </span>
             {bounty?.bounty?.committed && (
               <span className="text-xs text-zinc-500">committed to the filed verdicts</span>
@@ -503,7 +505,7 @@ export default function InitiativeReviewPanel({
               <input
                 type="text"
                 inputMode="decimal"
-                placeholder="DREAM"
+                placeholder={dream}
                 value={bountyAmount}
                 onChange={(e) => setBountyAmount(e.target.value)}
                 className="w-28 rounded-lg border border-zinc-700 bg-zinc-800/50 px-2 py-1 text-xs text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"

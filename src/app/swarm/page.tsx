@@ -27,6 +27,7 @@ import { useIsEligibleSentinel } from "@/hooks/useIsEligibleSentinel";
 import { PostStatus } from "@/types/forum";
 import type { ForumPost } from "@/types/forum";
 import type { Category } from "@/types/commons";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 type View =
   | "all-threads"
@@ -69,6 +70,7 @@ export default function SwarmPage() {
 }
 
 function SwarmPageInner() {
+  const dream = useDreamDenom();
   const router = useRouter();
   const searchParams = useSearchParams();
   // The URL `?thread=<id>` mirrors the open spark so a reload/share/deep-link
@@ -286,7 +288,7 @@ function SwarmPageInner() {
           type="button"
           className={`sd-side-item spark-item${effectiveView === "bonded" ? " active" : ""}`}
           onClick={() => switchView("bonded")}
-          title="Sparks whose author locked a DREAM bond"
+          title={`Sparks whose author locked a ${dream} bond`}
         >
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
             <path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4z" />

@@ -70,6 +70,7 @@ All configuration is read at runtime. Set these as environment variables in the 
 | `NEXT_PUBLIC_RPC_ENDPOINT` | `https://rpc-test.sparkdream.io` | Tendermint RPC |
 | `NEXT_PUBLIC_DENOM` | `uspark` | Base denomination |
 | `NEXT_PUBLIC_DISPLAY_DENOM` | `SPARK` | Display denomination |
+| `NEXT_PUBLIC_DREAM_DISPLAY_DENOM` | `DREAM` | Display ticker of the internal DREAM token, per-chain like the bond denom. The launcher renders this from the launch spec's `token.dreamDisplayDenom`, the same field it writes into the chain's `x/identity` genesis record. |
 | `NEXT_PUBLIC_BECH32_PREFIX` | `sprkdrm` | Bech32 address prefix |
 | `NEXT_PUBLIC_CHAIN_NAME` | `Spark Dream` | Chain display name |
 | `NEXT_PUBLIC_REMOTE_MANIFEST_URL` | _(unset)_ | Optional. URL of `manifests.json` hosted in object storage. When set, the `/archive` picker reads from there instead of the local filesystem — lets you add snapshots after deploy without rebuilding the image. |

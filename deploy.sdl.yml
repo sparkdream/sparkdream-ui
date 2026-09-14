@@ -21,6 +21,10 @@ services:
       - RPC_ENDPOINT=https://rpc-test.sparkdream.io
       - CHAIN_DENOM=uspark.sparkdreamtest
       - DISPLAY_DENOM=SPARK
+      # Ticker of the internal DREAM token. Launcher-deployed fleets get this
+      # rendered from the launch spec (token.dreamDisplayDenom, the same field
+      # that seeds x/identity); set it by hand for a manual deploy.
+      - DREAM_DISPLAY_DENOM=DREAM
       - BECH32_PREFIX=sprkdrm
       - CHAIN_NAME=Spark Dream
       # Optional: point at a manifests.json hosted in object storage

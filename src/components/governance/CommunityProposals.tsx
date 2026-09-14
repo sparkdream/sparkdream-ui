@@ -16,6 +16,7 @@ import { useDisplayName } from "@/hooks/useDisplayName";
 import { canSpendTreasury } from "@/lib/commons";
 import NewCommunityProposal, { type ProposalType } from "./NewCommunityProposal";
 import { CouncilTreasuryBanner } from "./CouncilTreasury";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface CommunityProposalsProps {
   group: Group;
@@ -368,6 +369,7 @@ function CommonsProposalCard({
   onVote: (id: string, option: number) => void;
   onExecute: (id: string) => void;
 }) {
+  const dreamDenom = useDreamDenom();
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<{
     votes: { voter: string; option: number }[];
@@ -396,7 +398,7 @@ function CommonsProposalCard({
   const isVoting = proposal.status === ProposalStatus.SUBMITTED;
   const isAccepted = proposal.status === ProposalStatus.ACCEPTED;
 
-  const typeLabel = describeProposalMessages(proposal.messages);
+  const typeLabel = describeProposalMessages(proposal.messages, dreamDenom);
   const remaining =
     isVoting && proposal.voting_deadline && proposal.voting_deadline !== "0"
       ? timeRemaining(proposal.voting_deadline, now)

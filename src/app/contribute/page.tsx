@@ -12,6 +12,7 @@ import DelegationPanel from "@/components/contribute/DelegationPanel";
 import InvitationPanel from "@/components/contribute/InvitationPanel";
 import ReviewerPanel from "@/components/contribute/ReviewerPanel";
 import ConnectPrompt from "@/components/layout/ConnectPrompt";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 type View = "profile" | "staking" | "delegate" | "invitations" | "review" | "members" | "projects" | "initiatives";
 
@@ -33,6 +34,7 @@ export default function ReputationPage() {
 }
 
 function ReputationPageInner() {
+  const dream = useDreamDenom();
   const { connected, ready } = useWallet();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -259,7 +261,7 @@ function ReputationPageInner() {
     <div className="sd-page">
       <header className="sd-page-header">
         <h1>Contribute</h1>
-        <p>DREAM tokens, reputation scores, and community work</p>
+        <p>{dream} tokens, reputation scores, and community work</p>
       </header>
 
       {/* Mobile sidebar toggle */}

@@ -12,6 +12,7 @@ import { invalidatePost, invalidatePostsLists, invalidateReplies } from "@/lib/a
 import { parseDreamToUdream } from "@/lib/utils";
 import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
 import NumberInput from "@/components/NumberInput";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface ReplyFormProps {
   postId: string;
@@ -50,6 +51,7 @@ export default function ReplyForm({
   postCreator,
 }: ReplyFormProps) {
   const { address, connected, signAndBroadcast } = useWallet();
+  const dream = useDreamDenom();
   const isReadOnly = useIsReadOnly();
   const isMember = useIsRepMember(address);
   const trustRank = useTrustRank(address);
@@ -255,7 +257,7 @@ export default function ReplyForm({
               min="0"
               value={authorBond}
               onChange={(e) => setAuthorBond(e.target.value)}
-              placeholder="Author bond (DREAM)"
+              placeholder={`Author bond (${dream})`}
               className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 text-xs text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none"
             />
           )}

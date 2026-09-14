@@ -17,6 +17,7 @@ import { PostStatus, PostStatusValue, POST_STATUS_LABELS } from "@/types/forum";
 import type { Category } from "@/types/commons";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 function statusBadge(status: string) {
   const colors: Record<string, string> = {
@@ -49,6 +50,7 @@ interface ThreadListProps {
 }
 
 export default function ThreadList({ mode, category, onSelectThread, tagFilter, trustAddresses, onCreate }: ThreadListProps) {
+  const dream = useDreamDenom();
   const { address } = useWallet();
   const [threads, setThreads] = useState<ForumPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -365,9 +367,9 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
                         <span
                           className="sd-pill"
                           style={{ background: "var(--amber-soft)", color: "var(--amber)" }}
-                          title="DREAM locked by the author as a bond"
+                          title={`${dream} locked by the author as a bond`}
                         >
-                          {formatSpark(bondAmounts.get(post.post_id)!)} DREAM bond
+                          {formatSpark(bondAmounts.get(post.post_id)!)} {dream} bond
                         </span>
                       )}
                       {flagInfo.has(post.post_id) && (() => {

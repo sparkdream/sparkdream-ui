@@ -38,6 +38,7 @@ import NewChainProposal from "./NewChainProposal";
 import ParamChangeDiff from "./ParamChangeDiff";
 import NumberInput from "@/components/NumberInput";
 import ErrorState from "@/components/ErrorState";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 export default function ChainProposals() {
   const { address, connected, signAndBroadcast } = useWallet();
@@ -676,6 +677,7 @@ function GovProposalCard({
   onVote: (id: string, option: number) => void;
   onDeposit: (id: string, amount: string) => void;
 }) {
+  const dreamDenom = useDreamDenom();
   const [expanded, setExpanded] = useState(false);
   const [tally, setTally] = useState<GovTallyResult | null>(null);
   const [votes, setVotes] = useState<GovVote[] | null>(null);
@@ -786,7 +788,7 @@ function GovProposalCard({
   const isDeposit = proposal.status === GovProposalStatus.DEPOSIT_PERIOD;
   const isVoting = proposal.status === GovProposalStatus.VOTING_PERIOD;
 
-  const typeLabel = describeProposalMessages(proposal.messages);
+  const typeLabel = describeProposalMessages(proposal.messages, dreamDenom);
   const decodedMsgs = decodeGovMessages(proposal.messages, displayDenom);
 
   // Time remaining

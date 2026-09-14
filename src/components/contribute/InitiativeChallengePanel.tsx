@@ -21,6 +21,7 @@ import {
   ChallengeStatus,
   InitiativeStatus,
 } from "@/types/rep";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface Props {
   initiative: Initiative;
@@ -65,6 +66,7 @@ function statusColor(status: string): string {
  * action costs before offering the button.
  */
 export default function InitiativeChallengePanel({ initiative, onChanged }: Props) {
+  const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
   const isMember = useIsRepMember(address);
 
@@ -156,11 +158,11 @@ export default function InitiativeChallengePanel({ initiative, onChanged }: Prop
     if (!address) return;
     const micro = parseDreamToUdream(stake);
     if (!micro || micro === "0") {
-      setError("Enter the DREAM you are staking on this claim");
+      setError(`Enter the ${dream} you are staking on this claim`);
       return;
     }
     if (minStakeMicro !== null && BigInt(micro) < minStakeMicro) {
-      setError(`The minimum stake is ${formatSpark(minStakeMicro.toString())} DREAM`);
+      setError(`The minimum stake is ${formatSpark(minStakeMicro.toString())} ${dream}`);
       return;
     }
     if (!reason.trim()) {
@@ -234,10 +236,13 @@ export default function InitiativeChallengePanel({ initiative, onChanged }: Prop
     initiative.status === InitiativeStatus.SUBMITTED ||
     initiative.status === InitiativeStatus.IN_REVIEW;
   const isAssignee = !!address && address === initiative.assignee;
-  // Membership is the real gate: the stake is locked on the member record, so a
-  // non-member's challenge fails at LockDREAM. The assignee is left out because
-  // disputing your own submission only costs you the stake or your own payout,
-  // not because the chain refuses it.
+  // Two gates, both enforced on-chain. Membership: the stake is locked on the
+  // member record, so a non-member's challenge fails at LockDREAM. Assignee:
+  // CreateChallenge rejects a self-challenge outright (ErrSelfChallenge, 1408),
+  // closing the loop where an assignee who had decided to fail could dispute
+  // their own work, auto-uphold it by responding with nothing, and collect the
+  // minted challenger reward. The project creator is deliberately not gated
+  // here: they may challenge work they did not assign to themselves.
   const canChallenge = openToChallenge && !!address && isMember === true && !isAssignee;
   const activeChallenge = challenges.find((c) => c.status === ChallengeStatus.ACTIVE);
 
@@ -247,7 +252,7 @@ export default function InitiativeChallengePanel({ initiative, onChanged }: Prop
   if (challenges.length === 0 && !canChallenge) return null;
 
   const minStakeLabel =
-    minStakeMicro !== null ? `${formatSpark(minStakeMicro.toString())} DREAM` : null;
+    minStakeMicro !== null ? `${formatSpark(minStakeMicro.toString())} ${dream}` : null;
   const rewardLabel =
     rewardRate !== null && initiative.budget
       ? formatSpark(
@@ -306,7 +311,7 @@ export default function InitiativeChallengePanel({ initiative, onChanged }: Prop
                     <ChallengerName address={c.challenger} />
                   </span>
                   <span style={{ color: "var(--amber)" }}>
-                    {formatSpark(c.staked_dream)} DREAM staked
+                    {formatSpark(c.staked_dream)} {dream} staked
                   </span>
                 </div>
                 {c.reason && <p className="mt-1 text-zinc-300">{c.reason}</p>}
@@ -459,7 +464,7 @@ export default function InitiativeChallengePanel({ initiative, onChanged }: Prop
             <input
               type="text"
               inputMode="decimal"
-              placeholder="Stake (DREAM)"
+              placeholder={`Stake (${dream})`}
               value={stake}
               onChange={(e) => setStake(e.target.value)}
               className="w-32 rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
@@ -471,7 +476,7 @@ export default function InitiativeChallengePanel({ initiative, onChanged }: Prop
 
           <p className="mt-2 text-xs leading-relaxed text-zinc-500">
             Your stake is locked while the dispute runs. If a jury upholds you it comes back
-            {rewardLabel ? ` with about ${rewardLabel} DREAM` : " with a reward"} and the work
+            {rewardLabel ? ` with about ${rewardLabel} ${dream}` : " with a reward"} and the work
             is rejected. If the jury sides with the assignee, the stake is burned. Filing also
             pauses completion: the initiative moves to challenged until this resolves.
           </p>

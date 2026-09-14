@@ -45,6 +45,7 @@ import {
   MODERATION_REASON_LABELS,
 } from "@/types/collect";
 import ErrorState from "@/components/ErrorState";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface CollectionDetailProps {
   collectionId: string;
@@ -66,6 +67,7 @@ function linkHostname(uri: string): string | null {
 }
 
 export default function CollectionDetail({ collectionId, onBack }: CollectionDetailProps) {
+  const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
   const isMember = useIsRepMember(address);
   const cannotUpvote = address ? isMember === false : false;
@@ -795,7 +797,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
             <button
               onClick={handleDownvote}
               disabled={actionLoading === "downvote" || cannotUpvote}
-              title={cannotUpvote ? "Only existing members can downvote" : "Downvoting costs DREAM"}
+              title={cannotUpvote ? "Only existing members can downvote" : `Downvoting costs ${dream}`}
               className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-red-400 disabled:opacity-50"
             >
               {actionLoading === "downvote" ? "..." : `-${collection.downvote_count || 0}`}

@@ -27,6 +27,7 @@ import type {
 } from "@/types/reveal";
 import NumberInput from "@/components/NumberInput";
 import ErrorState from "@/components/ErrorState";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface TrancheTally {
   yes_weight: string;
@@ -41,6 +42,7 @@ export default function ContributionDetail({
   contributionId: string;
   onBack: () => void;
 }) {
+  const dream = useDreamDenom();
   const { address } = useWallet();
   const [contribution, setContribution] = useState<Contribution | null>(null);
   const [loading, setLoading] = useState(true);
@@ -122,9 +124,9 @@ export default function ContributionDetail({
             )}
             <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-xs text-zinc-400 sm:grid-cols-4">
               <Metric label="Contributor" value={<CopyableAddress address={contribution.contributor} resolveName />} mono={!contributorName} />
-              <Metric label="Total valuation" value={`${formatDream(contribution.total_valuation)} DREAM`} />
-              <Metric label="Bond" value={`${formatDream(contribution.bond_remaining)} / ${formatDream(contribution.bond_amount)} DREAM`} />
-              <Metric label="Holdback" value={`${formatDream(contribution.holdback_amount)} DREAM`} />
+              <Metric label="Total valuation" value={`${formatDream(contribution.total_valuation)} ${dream}`} />
+              <Metric label="Bond" value={`${formatDream(contribution.bond_remaining)} / ${formatDream(contribution.bond_amount)} ${dream}`} />
+              <Metric label="Holdback" value={`${formatDream(contribution.holdback_amount)} ${dream}`} />
               <Metric label="Initial license" value={contribution.initial_license || "—"} />
               <Metric label="Final license" value={contribution.final_license || "—"} />
               {contribution.created_at && contribution.created_at !== "0" && (
@@ -189,6 +191,7 @@ function TrancheCard({
   onChanged: () => void;
   refreshKey: number;
 }) {
+  const dream = useDreamDenom();
   const { address } = useWallet();
   const [tally, setTally] = useState<TrancheTally | null>(null);
   const [stakes, setStakes] = useState<RevealStake[]>([]);
@@ -268,7 +271,7 @@ function TrancheCard({
       <div className="mt-3 space-y-2">
         <div className="flex items-center justify-between text-xs text-zinc-400">
           <span>
-            {formatDream(tranche.dream_staked)} / {formatDream(tranche.stake_threshold)} DREAM
+            {formatDream(tranche.dream_staked)} / {formatDream(tranche.stake_threshold)} {dream}
           </span>
           <span>{stakedPct.toFixed(1)}%</span>
         </div>
@@ -282,8 +285,8 @@ function TrancheCard({
 
       {tally && (
         <div className="mt-3 grid grid-cols-3 gap-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3 text-xs">
-          <Metric label="YES weight" value={`${formatDream(tally.yes_weight)} DREAM`} />
-          <Metric label="NO weight" value={`${formatDream(tally.no_weight)} DREAM`} />
+          <Metric label="YES weight" value={`${formatDream(tally.yes_weight)} ${dream}`} />
+          <Metric label="NO weight" value={`${formatDream(tally.no_weight)} ${dream}`} />
           <Metric label="Votes" value={String(tally.vote_count)} />
         </div>
       )}
@@ -382,6 +385,7 @@ function StakeRow({
   trancheStatus: string;
   onChanged: () => void;
 }) {
+  const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -414,7 +418,7 @@ function StakeRow({
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-zinc-900/60 px-2 py-1 text-xs">
       <CopyableAddress className="font-mono text-zinc-300" address={stake.staker} resolveName />
-      <span className="text-zinc-200">{formatDream(stake.amount)} DREAM</span>
+      <span className="text-zinc-200">{formatDream(stake.amount)} {dream}</span>
       <span className="text-zinc-500">{timeAgo(stake.staked_at)}</span>
       {canWithdraw && (
         <button
@@ -444,6 +448,7 @@ function TrancheActions({
   isStaker: boolean;
   onChanged: () => void;
 }) {
+  const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
   const isMember = useIsRepMember(address);
   const [open, setOpen] = useState<null | "stake" | "reveal" | "verify">(null);
@@ -477,7 +482,7 @@ function TrancheActions({
     if (!address) return;
     const micro = dreamToMicro(stakeAmount);
     if (!micro) {
-      setErr("Enter a positive DREAM amount");
+      setErr(`Enter a positive ${dream} amount`);
       return;
     }
     setErr(null);
@@ -579,7 +584,7 @@ function TrancheActions({
             onClick={() => setOpen(open === "stake" ? null : "stake")}
             className="sd-btn sd-btn-primary"
           >
-            Stake DREAM
+            Stake {dream}
           </button>
         )}
         {canReveal && (
@@ -604,7 +609,7 @@ function TrancheActions({
 
       {open === "stake" && (
         <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
-          <label className="block text-xs text-zinc-400">Amount (DREAM)</label>
+          <label className="block text-xs text-zinc-400">Amount ({dream})</label>
           <NumberInput
             step="any"
             min="0"

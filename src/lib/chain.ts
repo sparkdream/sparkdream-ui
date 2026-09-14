@@ -10,6 +10,10 @@ export interface ChainConfig {
   explorerUrl: string;
   denom: string;
   displayDenom: string;
+  // Display ticker of the internal DREAM token, which is per-chain like
+  // SPARK itself (e.g. "DRMZ" on sparkdream-dev-1). UI copy that names the
+  // internal token should use this instead of hardcoding "DREAM".
+  dreamDisplayDenom: string;
   bech32Prefix: string;
   remoteManifestUrl: string;
 }
@@ -22,6 +26,7 @@ export const defaults: ChainConfig = {
   explorerUrl: process.env.NEXT_PUBLIC_EXPLORER_URL || "https://explorer-testnet.sparkdream.io/sparkdream",
   denom: process.env.NEXT_PUBLIC_DENOM || "uspark.sparkdreamtest",
   displayDenom: process.env.NEXT_PUBLIC_DISPLAY_DENOM || "SPARK",
+  dreamDisplayDenom: process.env.NEXT_PUBLIC_DREAM_DISPLAY_DENOM || "DREAM",
   bech32Prefix: process.env.NEXT_PUBLIC_BECH32_PREFIX || "sprkdrm",
   remoteManifestUrl: process.env.NEXT_PUBLIC_REMOTE_MANIFEST_URL || "",
 };

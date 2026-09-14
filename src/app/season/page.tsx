@@ -39,6 +39,7 @@ import type {
   RetroRewardRecord,
 } from "@/types/season";
 import ErrorState from "@/components/ErrorState";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 type View =
   | "overview"
@@ -1649,11 +1650,12 @@ function formatDream(amount: string | undefined): string {
 // interim payouts / retro-PGF rewards (when the matching flags are on).
 // `balance` is the live DREAM balance the treasury can pay from.
 function TreasuryCard({ treasury }: { treasury: QueryTreasuryStatusResponse }) {
+  const dream = useDreamDenom();
   return (
     <div className="sd-rail-card">
       <h5>Treasury</h5>
       <div style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>
-        {formatDream(treasury.balance)} DREAM
+        {formatDream(treasury.balance)} {dream}
         {treasury.max_balance && treasury.max_balance !== "0" && (
           <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 400, color: "var(--ink-mute)" }}>
             / {formatDream(treasury.max_balance)}
@@ -1686,7 +1688,7 @@ function TreasuryCard({ treasury }: { treasury: QueryTreasuryStatusResponse }) {
       </div>
       {treasury.season_burned && treasury.season_burned !== "0" && (
         <div style={{ marginTop: 8, fontSize: 11, color: "var(--ink-mute)" }}>
-          Burned this season: {formatDream(treasury.season_burned)} DREAM
+          Burned this season: {formatDream(treasury.season_burned)} {dream}
         </div>
       )}
     </div>
@@ -2080,6 +2082,7 @@ function IdentityView({
   onSetDisplayName: (name: string) => void;
   onSetUsername: (username: string) => void;
 }) {
+  const dream = useDreamDenom();
   const [name, setName] = useState(profile?.display_name || "");
   const [uname, setUname] = useState(profile?.username || "");
 
@@ -2147,7 +2150,7 @@ function IdentityView({
 
       <FormCard
         title="Username"
-        hint={`${unameMin}–${unameMax} chars · cooldown ${unameCooldown} epochs · costs ${formatNum(unameCost)} DREAM to change`}
+        hint={`${unameMin}–${unameMax} chars · cooldown ${unameCooldown} epochs · costs ${formatNum(unameCost)} ${dream} to change`}
       >
         <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
           <input
@@ -3207,6 +3210,7 @@ function NominationCard({
   onStake: (id: string, amount: string) => void;
   onUnstake: (id: string) => void;
 }) {
+  const dream = useDreamDenom();
   const canStake = isRepMember === true;
   const [stakeInput, setStakeInput] = useState("");
   const conviction = Number(nomination.conviction || 0);
@@ -3267,7 +3271,7 @@ function NominationCard({
         <div>
           <div style={{ color: "var(--ink-mute)" }}>Staked</div>
           <div style={{ color: "var(--ink)", fontWeight: 600 }}>
-            {formatDec(nomination.total_staked)} DREAM
+            {formatDec(nomination.total_staked)} {dream}
           </div>
         </div>
         <div>
@@ -3337,6 +3341,7 @@ function NominateForm({
   txPending: boolean;
   onNominate: (contentRef: string, rationale: string) => void;
 }) {
+  const dream = useDreamDenom();
   const [contentRef, setContentRef] = useState("");
   const [rationale, setRationale] = useState("");
   const maxLen = Number(params?.nomination_rationale_max_length || 500);
@@ -3379,7 +3384,7 @@ function NominateForm({
         Nominate a contribution
       </h3>
       <div style={{ fontSize: 12, color: "var(--ink-mute)", lineHeight: 1.55 }}>
-        Point to a past contribution that deserves retroactive DREAM rewards. Other members stake
+        Point to a past contribution that deserves retroactive {dream} rewards. Other members stake
         conviction on nominations; top-conviction picks share the season&apos;s retro budget.
       </div>
 
@@ -3437,7 +3442,7 @@ function NominateForm({
           <div>
             <div>Min stake (for stakers)</div>
             <div style={{ color: "var(--ink-soft)", fontWeight: 500 }}>
-              {formatDec(String(minStake))} DREAM
+              {formatDec(String(minStake))} {dream}
             </div>
           </div>
         )}
@@ -3464,6 +3469,7 @@ function RetroRewardsView({
   records: RetroRewardRecord[];
   currentSeason: string;
 }) {
+  const dream = useDreamDenom();
   if (records.length === 0) {
     return (
       <div
@@ -3543,7 +3549,7 @@ function RetroRewardsView({
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: 11, color: "var(--ink-mute)" }}>Reward</div>
               <div style={{ color: "var(--green)", fontWeight: 600 }}>
-                {formatDec(r.reward_amount)} DREAM
+                {formatDec(r.reward_amount)} {dream}
               </div>
             </div>
           </div>

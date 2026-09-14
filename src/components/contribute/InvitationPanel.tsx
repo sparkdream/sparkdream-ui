@@ -14,6 +14,7 @@ import type { Invitation, RequiredInvitationStakeResponse } from "@/types/rep";
 import { INVITATION_STATUS_LABELS, InvitationStatus, TRUST_LEVEL_LABELS } from "@/types/rep";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 function statusColor(status: string): string {
   switch (status) {
@@ -29,6 +30,7 @@ interface InvitationPanelProps {
 }
 
 export default function InvitationPanel({ defaultShowForm = false }: InvitationPanelProps) {
+  const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
   const isMember = useIsRepMember(address);
   const canInvite = isMember === true;
@@ -278,7 +280,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
                 <input
                   type="text"
                   inputMode="decimal"
-                  placeholder="Stake amount (DREAM)"
+                  placeholder={`Stake amount (${dream})`}
                   value={formStake}
                   onChange={(e) => {
                     const v = e.target.value;
@@ -305,15 +307,15 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
                 const totalCredits = requiredStake.credits_used + requiredStake.credits_remaining;
                 return (
                   <p className="text-xs text-zinc-600">
-                    Chain minimum for your next invitation: <span className="text-zinc-300">{formatDream(requiredStake.required_stake)} DREAM</span>.
-                    {" "}Computed on-chain as base {formatDream(requiredStake.base_stake)} DREAM × {multStr}^{requiredStake.credits_used}, where {multStr} is the cost multiplier and {requiredStake.credits_used} is how many invitation credits you have used this season.
+                    Chain minimum for your next invitation: <span className="text-zinc-300">{formatDream(requiredStake.required_stake)} {dream}</span>.
+                    {" "}Computed on-chain as base {formatDream(requiredStake.base_stake)} {dream} × {multStr}^{requiredStake.credits_used}, where {multStr} is the cost multiplier and {requiredStake.credits_used} is how many invitation credits you have used this season.
                     {" "}You have {requiredStake.credits_remaining} of {totalCredits} credits left at {trustLabel} trust. Each successive invite costs more to deter sybil farming.
                   </p>
                 );
               })()}
               <p className="text-xs text-zinc-600">
                 {canCreateTags
-                  ? "New tags burn a small DREAM fee per tag and are added to the shared registry."
+                  ? `New tags burn a small ${dream} fee per tag and are added to the shared registry.`
                   : "Tag creation requires Established trust. Pick from existing tags only."}
               </p>
               <div className="flex items-center gap-3">
@@ -341,7 +343,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
           <div className="rounded-xl sd-hull-tile p-12 text-center">
             <p className="text-zinc-400">No invitations sent</p>
             <p className="mt-1 text-xs text-zinc-500">
-              Invite new members to the reputation system by staking DREAM
+              Invite new members to the reputation system by staking {dream}
             </p>
           </div>
         ) : (

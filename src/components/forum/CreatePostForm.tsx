@@ -9,6 +9,7 @@ import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags
 import { parseDreamToUdream } from "@/lib/utils";
 import TagPicker from "@/components/contribute/TagPicker";
 import NumberInput from "@/components/NumberInput";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface CreatePostFormProps {
   mode: "thread" | "reply";
@@ -26,6 +27,7 @@ export default function CreatePostForm({
   onCreated,
   onCancel,
 }: CreatePostFormProps) {
+  const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
   const isMember = useIsRepMember(address);
   const { ttl: ephemeralTtl } = useEphemeralTtl("forum");
@@ -107,7 +109,7 @@ export default function CreatePostForm({
             />
             {canCreateTags && (
               <p className="mt-1 text-xs text-zinc-600">
-                New tags burn a small DREAM fee per tag and are added to the shared registry.
+                New tags burn a small {dream} fee per tag and are added to the shared registry.
               </p>
             )}
           </div>
@@ -115,7 +117,7 @@ export default function CreatePostForm({
         {isMember === true && (
           <div>
             <label htmlFor="forumAuthorBond" className="mb-1 block text-sm text-zinc-400">
-              Author bond (DREAM)
+              Author bond ({dream})
             </label>
             <NumberInput
               id="forumAuthorBond"
@@ -126,7 +128,7 @@ export default function CreatePostForm({
               className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
             />
             <p className="mt-1 text-xs text-zinc-600">
-              Optional DREAM to lock behind this {mode === "thread" ? "spark" : "reply"}. It signals
+              Optional {dream} to lock behind this {mode === "thread" ? "spark" : "reply"}. It signals
               conviction, is slashed if the content is moderated, and makes it challengeable.
             </p>
           </div>

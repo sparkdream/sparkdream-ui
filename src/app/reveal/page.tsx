@@ -20,6 +20,7 @@ import CopyableAddress from "@/components/CopyableAddress";
 import { formatDecPercent, formatDream } from "@/lib/reveal-fmt";
 import { CONTRIBUTION_STATUS_LABELS } from "@/types/reveal";
 import type { Contribution, RevealParams } from "@/types/reveal";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 type View =
   | "all"
@@ -279,6 +280,7 @@ function SidebarItem({
 }
 
 function ParamList({ params }: { params: RevealParams }) {
+  const dream = useDreamDenom();
   const rows = useMemo(
     () => [
       ["Stake deadline", `${params.stake_deadline_epochs} blocks`],
@@ -288,14 +290,14 @@ function ParamList({ params }: { params: RevealParams }) {
       ["Verification threshold", formatDecPercent(params.verification_threshold)],
       ["Min votes", String(params.min_verification_votes)],
       ["Max tranches", String(params.max_tranches)],
-      ["Max tranche valuation", `${formatDream(params.max_tranche_valuation)} DREAM`],
-      ["Max total valuation", `${formatDream(params.max_total_valuation)} DREAM`],
+      ["Max tranche valuation", `${formatDream(params.max_tranche_valuation)} ${dream}`],
+      ["Max total valuation", `${formatDream(params.max_total_valuation)} ${dream}`],
       ["Bond rate", formatDecPercent(params.bond_rate)],
-      ["Min stake", `${formatDream(params.min_stake_amount)} DREAM`],
+      ["Min stake", `${formatDream(params.min_stake_amount)} ${dream}`],
       ["Holdback rate", formatDecPercent(params.payout_holdback_rate)],
       ["Cooldown", `${params.proposal_cooldown_epochs} blocks`],
     ],
-    [params]
+    [params, dream]
   );
   return (
     <div className="space-y-1 px-2 py-1 text-[11px]">

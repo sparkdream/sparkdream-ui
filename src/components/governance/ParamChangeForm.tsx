@@ -11,6 +11,7 @@ import {
   type FieldDef,
   type ModuleDef,
 } from "@/lib/paramMeta";
+import { withDreamDenom } from "@/hooks/useDreamDenom";
 
 
 // ── Component ───────────────────────────────────────────────────────
@@ -137,7 +138,7 @@ export default function ParamChangeForm({ onMessage }: ParamChangeFormProps) {
             <div key={section.group ?? `_ungrouped_${idx}`} className="space-y-1.5">
               {section.group && (
                 <h5 className="mt-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  {section.group}
+                  {withDreamDenom(section.group, config.dreamDisplayDenom)}
                 </h5>
               )}
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -147,6 +148,7 @@ export default function ParamChangeForm({ onMessage }: ParamChangeFormProps) {
                     field={field}
                     value={editedValues[field.key] || ""}
                     displayDenom={config.displayDenom}
+                    dreamDenom={config.dreamDisplayDenom}
                     onChange={(val) =>
                       setEditedValues((prev) => ({ ...prev, [field.key]: val }))
                     }
@@ -167,18 +169,24 @@ function ParamField({
   field,
   value,
   displayDenom,
+  dreamDenom,
   onChange,
 }: {
   field: FieldDef;
   value: string;
   displayDenom: string;
+  dreamDenom: string;
   onChange: (v: string) => void;
 }) {
+  // The param table is a module-level constant, so its labels, group headings
+  // and hints spell the token "DREAM" and get the chain's ticker swapped in
+  // here rather than at their definition.
+  const fieldLabel = withDreamDenom(field.label, dreamDenom);
   if (field.kind === "boolean") {
     return (
       <div className="flex items-center justify-between rounded-lg border border-zinc-700/50 bg-zinc-800/30 px-3 py-2">
         <label className="text-xs font-medium text-zinc-400">
-          {field.label}
+          {fieldLabel}
         </label>
         <button
           type="button"
@@ -198,12 +206,12 @@ function ParamField({
   }
 
   const label = field.unit
-    ? `${field.label} (${field.unit})`
+    ? `${fieldLabel} (${field.unit})`
     : field.kind === "coin" || field.kind === "coins" || field.kind === "amount"
-      ? `${field.label} (${displayDenom})`
+      ? `${fieldLabel} (${displayDenom})`
       : field.kind === "dream"
-        ? `${field.label} (DREAM)`
-        : field.label;
+        ? `${fieldLabel} (${dreamDenom})`
+        : fieldLabel;
 
   return (
     <div>
@@ -222,7 +230,9 @@ function ParamField({
         className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 text-xs text-white placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
       />
       {field.hint && (
-        <p className="mt-0.5 text-[10px] text-zinc-600">{field.hint}</p>
+        <p className="mt-0.5 text-[10px] text-zinc-600">
+          {withDreamDenom(field.hint, dreamDenom)}
+        </p>
       )}
     </div>
   );

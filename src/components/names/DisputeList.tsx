@@ -8,8 +8,10 @@ import CopyableAddress from "@/components/CopyableAddress";
 import type { Dispute, NameParams } from "@/types/name";
 import { isMissingEndpoint } from "@/lib/errors";
 import ErrorState from "@/components/ErrorState";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 export default function DisputeList() {
+  const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
   const [disputes, setDisputes] = useState<Dispute[]>([]);
   const [params, setParams] = useState<NameParams | null>(null);
@@ -184,7 +186,7 @@ export default function DisputeList() {
                 Cancel
               </button>
               <span className="text-xs text-zinc-500">
-                Requires {disputeStake} DREAM stake
+                Requires {disputeStake} {dream} stake
               </span>
             </div>
           </div>
@@ -229,7 +231,7 @@ export default function DisputeList() {
                     </div>
                     <div className="mt-2 space-y-1 text-xs text-zinc-400">
                       <p>Claimant: <CopyableAddress address={d.claimant} /></p>
-                      <p>Stake: {d.stake_amount} DREAM</p>
+                      <p>Stake: {d.stake_amount} {dream}</p>
                       <p>Filed at block: {d.filed_at}</p>
                       {isContested && d.contested_at !== "0" && (
                         <p>Contested at block: {d.contested_at}</p>
@@ -270,7 +272,7 @@ export default function DisputeList() {
                     />
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-zinc-500">
-                        Requires {contestStake} DREAM stake &middot; triggers jury review
+                        Requires {contestStake} {dream} stake &middot; triggers jury review
                       </span>
                       <button
                         onClick={() => handleContest(d.name)}

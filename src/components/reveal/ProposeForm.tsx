@@ -5,6 +5,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { RevealMsgTypeUrls } from "@/lib/tx";
 import { dreamToMicro } from "@/lib/reveal-fmt";
 import NumberInput from "@/components/NumberInput";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface TrancheInput {
   name: string;
@@ -29,6 +30,7 @@ export default function ProposeForm({
   onProposed: () => void;
   onCancel: () => void;
 }) {
+  const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
   const [projectName, setProjectName] = useState("");
   const [description, setDescription] = useState("");
@@ -134,7 +136,7 @@ export default function ProposeForm({
           />
         </Field>
         <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Total valuation (DREAM)">
+          <Field label={`Total valuation (${dream})`}>
             <NumberInput
               step="any"
               min="0"
@@ -167,7 +169,7 @@ export default function ProposeForm({
           </h3>
           <div className="text-xs text-zinc-500">
             Sum: <span className={sumMatches ? "text-emerald-400" : "text-amber-400"}>{trancheSum}</span>{" "}
-            / {totalValuation || "0"} DREAM
+            / {totalValuation || "0"} {dream}
           </div>
         </div>
 
@@ -193,7 +195,7 @@ export default function ProposeForm({
                   onChange={(e) => updateTranche(idx, { name: e.target.value })}
                 />
               </Field>
-              <Field label="Stake threshold (DREAM)">
+              <Field label={`Stake threshold (${dream})`}>
                 <NumberInput
                   step="any"
                   min="0"

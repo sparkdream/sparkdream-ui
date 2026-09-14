@@ -19,6 +19,7 @@ import type { Contribution } from "@/types/reveal";
 import { formatDream } from "@/lib/reveal-fmt";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 type Mode = "all" | "by-contributor" | "by-status";
 
@@ -112,6 +113,7 @@ function ContributionCard({
   contribution: Contribution;
   onSelect: (c: Contribution) => void;
 }) {
+  const dream = useDreamDenom();
   const statusLabel = CONTRIBUTION_STATUS_LABELS[contribution.status] || contribution.status;
   const trancheCount = contribution.tranches?.length || 0;
   const verifiedCount = (contribution.tranches || []).filter(
@@ -147,7 +149,7 @@ function ContributionCard({
               {verifiedCount}/{trancheCount} tranche{trancheCount === 1 ? "" : "s"} verified
             </span>
             <span>·</span>
-            <span>{formatDream(contribution.total_valuation)} DREAM total</span>
+            <span>{formatDream(contribution.total_valuation)} {dream} total</span>
             {contribution.created_at && contribution.created_at !== "0" && (
               <>
                 <span>·</span>
