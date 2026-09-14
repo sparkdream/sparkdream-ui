@@ -97,11 +97,13 @@ function txRequiresProposalFee(msgs: readonly { typeUrl: string; value: unknown 
 /**
  * Parse a `sdk.Coins`-formatted string like "5000000uspark" or
  * "100uspark,200uother" into discrete `{denom, amount}` entries.
+ * Denoms may contain `.` (per-chain x/identity denoms like
+ * `usparz.sparkdreamdev`) and IBC-style `ibc/<hash>` separators.
  */
 function parseCoinsString(s: string): Array<{ denom: string; amount: string }> {
   if (!s.trim()) return [];
   return s.split(",").map((chunk) => {
-    const m = chunk.trim().match(/^(\d+)([a-zA-Z][a-zA-Z0-9/]*)$/);
+    const m = chunk.trim().match(/^(\d+)([a-zA-Z][a-zA-Z0-9/:._-]*)$/);
     if (!m) throw new Error(`invalid coin string: ${chunk}`);
     return { amount: m[1], denom: m[2] };
   });

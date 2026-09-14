@@ -44,7 +44,9 @@ export interface Proposal {
 
 export interface Vote {
   voter: string;
-  option: number;
+  // Enum name as the LCD serializes it ("VOTE_OPTION_YES"), not the proto
+  // number. Run it through `parseVoteOption` before comparing or labelling.
+  option: string;
   metadata: string;
   submit_time: string;
 }
@@ -92,6 +94,25 @@ export const VOTE_OPTION_LABELS: Record<number, string> = {
   [VoteOption.ABSTAIN]: "Abstain",
   [VoteOption.NO_WITH_VETO]: "No with Veto",
 };
+
+const VOTE_OPTION_BY_NAME: Record<string, number> = {
+  VOTE_OPTION_UNSPECIFIED: VoteOption.UNSPECIFIED,
+  VOTE_OPTION_YES: VoteOption.YES,
+  VOTE_OPTION_NO: VoteOption.NO,
+  VOTE_OPTION_ABSTAIN: VoteOption.ABSTAIN,
+  VOTE_OPTION_NO_WITH_VETO: VoteOption.NO_WITH_VETO,
+};
+
+/**
+ * Map a vote option as returned by the LCD to its proto number. The REST API
+ * serializes the enum as its string name (`VOTE_OPTION_YES`) while the rest of
+ * the UI keys off the numbers, so `Vote.option` has to come through here before
+ * it can pick a label or a color. Unknown names fall back to UNSPECIFIED,
+ * which renders as "?" rather than mislabelling the vote.
+ */
+export function parseVoteOption(option: string): number {
+  return VOTE_OPTION_BY_NAME[option] ?? VoteOption.UNSPECIFIED;
+}
 
 // API response types
 

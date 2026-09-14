@@ -197,9 +197,11 @@ export default function NewCommunityProposal({
   }, [type, existingCategories.length]);
 
   // Fetch sibling groups once and derive two relationships from the result:
-  //  - childGroups: groups this one oversees (parent_policy_address points
-  //    here, or it's our designated electoral committee) — drives the
-  //    update-config picker.
+  //  - childGroups: groups this one oversees via the PARENT relationship
+  //    (parent_policy_address points here) — drives the update-config picker.
+  //    The chain's MsgUpdateGroupConfig authorizes only the target's parent
+  //    policy or x/gov, so the electoral relationship must NOT be included
+  //    here (it authorizes membership changes only, via UpdateGroupMembers).
   //  - electoralFor: the group THIS one is the electoral authority for
   //    (i.e. some group's `electoral_policy_address` equals our policy
   //    address) — drives the invite/remove "managed" target toggle.
@@ -218,8 +220,7 @@ export default function NewCommunityProposal({
         const children = groups.filter(
           (g) =>
             g.policy_address !== group.policy_address &&
-            (g.parent_policy_address === group.policy_address ||
-             g.policy_address === group.electoral_policy_address)
+            g.parent_policy_address === group.policy_address
         );
         const managed = groups.find(
           (g) =>
@@ -237,7 +238,7 @@ export default function NewCommunityProposal({
     }
     loadGroups();
     return () => { cancelled = true; };
-  }, [group.policy_address, group.electoral_policy_address]);
+  }, [group.policy_address]);
 
   // Hide proposal types whose inner message the group's policy isn't
   // authorized for (Technical groups have no MsgCreateCategory, governance

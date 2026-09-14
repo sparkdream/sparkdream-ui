@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Group, Proposal, Member } from "@/types/commons";
-import { ProposalStatus, VoteOption, VOTE_OPTION_LABELS } from "@/types/commons";
+import type { Group, Proposal, Member, Vote, TallyResult } from "@/types/commons";
+import { ProposalStatus, VoteOption, VOTE_OPTION_LABELS, parseVoteOption } from "@/types/commons";
 import { getProposal } from "@/lib/api";
 import { CommonsMsgTypeUrls } from "@/lib/tx";
 import { useWallet } from "@/contexts/WalletContext";
@@ -336,16 +336,17 @@ function TallyBar({
  * when they have one (the address is still the tooltip and the copied value),
  * falling back to the truncated bech32.
  */
-function VoteRow({ voter, option }: { voter: string; option: number }) {
+function VoteRow({ voter, option }: { voter: string; option: string }) {
   const { name } = useDisplayName(voter);
+  const opt = parseVoteOption(option);
   return (
     <div className="flex items-center gap-2 text-xs">
       <NameOrAddress
         address={voter}
         className={name ? "text-zinc-300" : "font-mono text-zinc-400"}
       />
-      <span className={voteColor(option)}>
-        {VOTE_OPTION_LABELS[option] || "?"}
+      <span className={voteColor(opt)}>
+        {VOTE_OPTION_LABELS[opt] || "?"}
       </span>
     </div>
   );
@@ -372,13 +373,8 @@ function CommonsProposalCard({
   const dreamDenom = useDreamDenom();
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<{
-    votes: { voter: string; option: number }[];
-    tally: {
-      yes_weight: string;
-      no_weight: string;
-      abstain_weight: string;
-      no_with_veto_weight: string;
-    };
+    votes: Vote[];
+    tally: TallyResult;
   } | null>(null);
 
   const loadDetail = async () => {

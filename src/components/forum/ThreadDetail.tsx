@@ -65,6 +65,14 @@ const MODERATION_REASONS = [
 ] as const;
 const REASON_OTHER = 12;
 
+// Tooltip for the up/down vote buttons, which are disabled for the post's own
+// author (the chain rejects self-votes) and for visitors with no wallet.
+function voteTitle(isAuthor: boolean, connected: boolean, action: string): string {
+  if (isAuthor) return "You can't vote on your own post";
+  if (!connected) return "Connect a wallet to vote";
+  return action;
+}
+
 interface ThreadDetailProps {
   threadId: string;
   onBack: () => void;
@@ -916,16 +924,22 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
 
         {/* Post actions */}
         <div className="mt-3 flex items-center gap-2 border-t border-zinc-800 pt-3">
+          {/* The chain rejects self-votes ("cannot vote on your own post"),
+              so disable the buttons up front rather than failing at broadcast.
+              handleVote is also a no-op without a wallet, so gate on that too
+              rather than offering a button that silently does nothing. */}
           <button
             onClick={() => handleVote(post.post_id, "up")}
-            disabled={actionLoading === `vote-${post.post_id}`}
+            disabled={actionLoading === `vote-${post.post_id}` || isAuthor || !address}
+            title={voteTitle(isAuthor, !!address, "Upvote")}
             className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-emerald-700 hover:text-emerald-400 disabled:opacity-50"
           >
             +{post.upvote_count || 0}
           </button>
           <button
             onClick={() => handleVote(post.post_id, "down")}
-            disabled={actionLoading === `vote-${post.post_id}`}
+            disabled={actionLoading === `vote-${post.post_id}` || isAuthor || !address}
+            title={voteTitle(isAuthor, !!address, "Downvote")}
             className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-red-700 hover:text-red-400 disabled:opacity-50"
           >
             -{post.downvote_count || 0}
