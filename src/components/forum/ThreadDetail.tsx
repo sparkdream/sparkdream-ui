@@ -31,6 +31,8 @@ import type { Category } from "@/types/commons";
 import type { ForumPost, ThreadMetadata, Bounty, PostConvictionStake } from "@/types/forum";
 import { PostStatus, BountyStatus } from "@/types/forum";
 import ErrorState from "@/components/ErrorState";
+import ActionBanner from "@/components/ActionBanner";
+import { useTxAction } from "@/hooks/useTxAction";
 
 // Promoting an ephemeral post to permanent is a member action gated on
 // make_permanent_min_trust_level (default PROVISIONAL). Pinning a thread,
@@ -95,7 +97,10 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const [myStakes, setMyStakes] = useState<PostConvictionStake[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const { pending: actionLoading, error: actionError, clearError, run } = useTxAction();
+  // Success acknowledgement for actions that leave no visible trace on the
+  // page (currently only Flag).
+  const [notice, setNotice] = useState<string | null>(null);
   const [showReplyForm, setShowReplyForm] = useState(false);
   const [replyToId, setReplyToId] = useState<string>(threadId);
   const [category, setCategory] = useState<Category | null>(null);
@@ -296,8 +301,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
 
   const handleVote = async (postId: string, direction: "up" | "down") => {
     if (!address) return;
-    setActionLoading(`vote-${postId}`);
-    try {
+    await run(`vote-${postId}`, async () => {
       const typeUrl = direction === "up"
         ? ForumMsgTypeUrls.UpvotePost
         : ForumMsgTypeUrls.DownvotePost;
@@ -306,17 +310,12 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
         value: { creator: address, postId: BigInt(postId) },
       }]);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Vote failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Vote failed");
   };
 
   const handleFollow = async () => {
     if (!address) return;
-    setActionLoading("follow");
-    try {
+    await run("follow", async () => {
       const typeUrl = isFollowing
         ? ForumMsgTypeUrls.UnfollowThread
         : ForumMsgTypeUrls.FollowThread;
@@ -327,27 +326,18 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       setIsFollowing(!isFollowing);
       const res = await getThreadFollowCount(threadId).catch(() => null);
       if (res) setFollowCount(res.thread_follow_count?.follower_count || "0");
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Follow action failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Follow action failed");
   };
 
   const handleDelete = async (postId: string) => {
     if (!address || !confirm("Delete this spark? This cannot be undone.")) return;
-    setActionLoading(`delete-${postId}`);
-    try {
+    await run(`delete-${postId}`, async () => {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.DeletePost,
         value: { creator: address, postId: BigInt(postId) },
       }]);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Delete failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Delete failed");
   };
 
   // Sentinel moderation: hide a spark with a stated reason. The chain reserves
@@ -356,7 +346,6 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   // sentinel_unhide_window.
   const handleHide = async (postId: string) => {
     if (!address || !hideReason) return;
-    setActionLoading(`hide-${postId}`);
     // Send the authority explicitly so the chain never has to guess: a council
     // member who is also a sentinel defaults to the sentinel path and only
     // gov-hides when they opt in. Sentinel-only and council-only accounts get
@@ -368,7 +357,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       : isEligibleSentinel
         ? ModerationAuthority.SENTINEL
         : ModerationAuthority.COUNCIL;
-    try {
+    await run(`hide-${postId}`, async () => {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.HidePost,
         // post_id/reason_code are uint64; pass BigInt so the amino override's
@@ -386,11 +375,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       setHideReasonText("");
       setHideAsCouncil(false);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Hide failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Hide failed");
   };
 
   // Community flag: any member reports a spark for moderator review with a
@@ -401,8 +386,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   // surface as broadcast errors rather than being pre-checked here.
   const handleFlag = async (postId: string) => {
     if (!address || !flagCategory) return;
-    setActionLoading(`flag-${postId}`);
-    try {
+    const ok = await run(`flag-${postId}`, async () => {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.FlagPost,
         // post_id/category are uint64; pass BigInt so the amino override's
@@ -414,23 +398,22 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
           reason: flagReasonText.trim(),
         },
       }]);
-      setFlagFormId(null);
-      setFlagCategory(0);
-      setFlagReasonText("");
-      alert("Flag submitted for moderator review.");
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Flag failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Flag failed");
+    if (!ok) return;
+    setFlagFormId(null);
+    setFlagCategory(0);
+    setFlagReasonText("");
+    // A flag leaves no visible trace on the post -- it only accrues weight
+    // toward flag_review_threshold -- so without an explicit acknowledgement
+    // the action looks like it did nothing.
+    setNotice("Flag submitted for moderator review.");
   };
 
   // Lock a thread (root only) so no new replies can be posted. Reason is
   // optional. rootId is the root post's id.
   const handleLock = async (rootId: string) => {
     if (!address) return;
-    setActionLoading(`lock-${rootId}`);
-    try {
+    await run(`lock-${rootId}`, async () => {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.LockThread,
         // root_id is uint64; BigInt keeps the amino override's omit-zero check sound.
@@ -454,35 +437,25 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       setLockReason("");
       setLockAsCouncil(false);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Lock failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Lock failed");
   };
 
   const handleUnlock = async (rootId: string) => {
     if (!address) return;
-    setActionLoading(`unlock-${rootId}`);
-    try {
+    await run(`unlock-${rootId}`, async () => {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.UnlockThread,
         value: { creator: address, rootId: BigInt(rootId) },
       }]);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Unlock failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Unlock failed");
   };
 
   // Move a thread to another category. The chain requires a reason and rejects
   // moving a thread that carries a reserved tag.
   const handleMove = async (rootId: string) => {
     if (!address || !moveCategoryId || !moveReason.trim()) return;
-    setActionLoading(`move-${rootId}`);
-    try {
+    await run(`move-${rootId}`, async () => {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.MoveThread,
         // root_id / new_category_id are uint64; BigInt for the omit-zero check.
@@ -505,19 +478,14 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       setMoveReason("");
       setMoveAsCouncil(false);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Move failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Move failed");
   };
 
   // Pin/Unpin are display-only "feature" markers requiring a permanent target;
   // the chain rejects pinning an ephemeral post (ErrCannotPinEphemeral).
   const handlePin = async (postId: string, pin: boolean) => {
     if (!address) return;
-    setActionLoading(`pin-${postId}`);
-    try {
+    await run(`pin-${postId}`, async () => {
       await signAndBroadcast([{
         typeUrl: pin ? ForumMsgTypeUrls.PinPost : ForumMsgTypeUrls.UnpinPost,
         // MsgPinPost carries a pin_priority (higher sorts first); 0 keeps the
@@ -527,29 +495,20 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
           : { creator: address, postId: BigInt(postId) },
       }]);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : pin ? "Pin failed" : "Unpin failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, pin ? "Pin failed" : "Unpin failed");
   };
 
   // Promote an ephemeral post to permanent — separate lifecycle action from
   // pinning, on the lower make_permanent_min_trust_level gate.
   const handleMakePermanent = async (postId: string) => {
     if (!address) return;
-    setActionLoading(`permanent-${postId}`);
-    try {
+    await run(`permanent-${postId}`, async () => {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.MakePostPermanent,
         value: { creator: address, postId: BigInt(postId) },
       }]);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Make permanent failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Make permanent failed");
   };
 
   // Assign a bounty share to a reply (bounty creator only). Funds stay in
@@ -557,8 +516,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   // which point the chain splits the escrow equally among all assigned awards.
   const handleAssignBounty = async (postId: string) => {
     if (!address) return;
-    setActionLoading(`bounty-assign-${postId}`);
-    try {
+    await run(`bounty-assign-${postId}`, async () => {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.AssignBountyToReply,
         value: {
@@ -571,11 +529,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       setBountyAssignId(null);
       setBountyReason("");
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Bounty award failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Bounty award failed");
   };
 
   // Dispute a sentinel's reply pin (thread author only). Opens a jury appeal
@@ -585,8 +539,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   // pinned reply. The chain rejects disputing governance pins and re-disputes.
   const handleDisputePin = async (replyId: string) => {
     if (!address || !disputeReason.trim()) return;
-    setActionLoading(`dispute-${replyId}`);
-    try {
+    await run(`dispute-${replyId}`, async () => {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.DisputePin,
         // thread_id / reply_id are uint64; BigInt keeps the amino omit-zero
@@ -601,11 +554,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       setDisputeFormId(null);
       setDisputeReason("");
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Dispute failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Dispute failed");
   };
 
   // Accepted-reply curation (chain commit c8be748, sparkdreamjs 0.0.25). One
@@ -614,8 +563,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   // confirms/rejects or that auto-confirms after accept_proposal_timeout.
   const handleMarkAccepted = async (replyId: string, asProposal: boolean) => {
     if (!address) return;
-    setActionLoading(`accept-${replyId}`);
-    try {
+    await run(`accept-${replyId}`, async () => {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.MarkAcceptedReply,
         // thread_id / reply_id are uint64; BigInt keeps the amino omit-zero
@@ -627,19 +575,14 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
         },
       }]);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : asProposal ? "Proposal failed" : "Accept failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, asProposal ? "Proposal failed" : "Accept failed");
   };
 
   // Thread author clears the accepted reply (chain commit b991fc9). Same message
   // with reply_id 0; the author's direct choice supersedes any pending proposal.
   const handleClearAccepted = async () => {
     if (!address) return;
-    setActionLoading("clear-accepted");
-    try {
+    await run("clear-accepted", async () => {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.MarkAcceptedReply,
         value: {
@@ -649,11 +592,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
         },
       }]);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Clear failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Clear failed");
   };
 
   // Thread author opens/closes the thread to sentinel accepted-reply proposals
@@ -662,8 +601,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   // forced into an irreversible acceptance.
   const handleSetProposalsLock = async (locked: boolean) => {
     if (!address) return;
-    setActionLoading("proposals-lock");
-    try {
+    await run("proposals-lock", async () => {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.SetThreadProposalsLock,
         value: {
@@ -673,36 +611,26 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
         },
       }]);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to update curation lock");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Failed to update curation lock");
   };
 
   // Thread author confirms the pending sentinel proposal, promoting the proposed
   // reply to the accepted answer and crediting the proposing sentinel.
   const handleConfirmProposed = async () => {
     if (!address) return;
-    setActionLoading("confirm-proposal");
-    try {
+    await run("confirm-proposal", async () => {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.ConfirmProposedReply,
         value: { creator: address, threadId: BigInt(threadId) },
       }]);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Confirm failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Confirm failed");
   };
 
   // Thread author rejects the pending sentinel proposal. A reason is recorded.
   const handleRejectProposed = async () => {
     if (!address || !rejectReason.trim()) return;
-    setActionLoading("reject-proposal");
-    try {
+    await run("reject-proposal", async () => {
       await signAndBroadcast([{
         typeUrl: ForumMsgTypeUrls.RejectProposedReply,
         value: { creator: address, threadId: BigInt(threadId), reason: rejectReason.trim() },
@@ -710,11 +638,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       setRejectFormOpen(false);
       setRejectReason("");
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Reject failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Reject failed");
   };
 
   const handleReplyCreated = () => {
@@ -1587,6 +1511,16 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
         </svg>
         Back
       </button>
+
+      <ActionBanner message={actionError} onDismiss={clearError} className="mb-4" />
+      <ActionBanner
+        // A later failure supersedes an earlier success: showing both at once
+        // reads as though the failed action succeeded.
+        message={actionError ? null : notice}
+        tone="success"
+        onDismiss={() => setNotice(null)}
+        className="mb-4"
+      />
 
       {/* Thread header with follow / bounty info */}
       <div className="mb-4 flex flex-wrap items-center gap-3">

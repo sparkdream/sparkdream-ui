@@ -45,6 +45,8 @@ import {
   MODERATION_REASON_LABELS,
 } from "@/types/collect";
 import ErrorState from "@/components/ErrorState";
+import ActionBanner from "@/components/ActionBanner";
+import { useTxAction } from "@/hooks/useTxAction";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface CollectionDetailProps {
@@ -97,8 +99,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const [error, setError] = useState<unknown>(null);
   const [tab, setTab] = useState<"items" | "collaborators" | "curation">("items");
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const { pending: actionLoading, error: actionError, clearError, run } = useTxAction();
 
   // Curator review form (curation tab).
   const [showRateForm, setShowRateForm] = useState(false);
@@ -255,8 +256,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
 
   const handleAddItem = async () => {
     if (!address || !newItemTitle.trim() || !isRefReady()) return;
-    setActionLoading("add-item");
-    try {
+    await run("add-item", async () => {
       const value: Record<string, unknown> = {
         creator: address,
         // collection_id is uint64; pass BigInt so sparkdreamjs's amino
@@ -310,17 +310,12 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
       resetItemForm();
       setShowAddItem(false);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to add item");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Failed to add item");
   };
 
   const handleRemoveItem = async (itemId: string) => {
     if (!address) return;
-    setActionLoading(`remove-${itemId}`);
-    try {
+    await run(`remove-${itemId}`, async () => {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.RemoveItem,
         // item id is uint64; same Number-vs-BigInt normalization rationale
@@ -328,17 +323,12 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         value: { creator: address, id: BigInt(itemId) },
       }]);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to remove item");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Failed to remove item");
   };
 
   const handleAddCollaborator = async () => {
     if (!address || !newCollabAddress.trim()) return;
-    setActionLoading("add-collab");
-    try {
+    await run("add-collab", async () => {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.AddCollaborator,
         value: {
@@ -352,20 +342,14 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
       setNewCollabAddress("");
       setShowAddCollab(false);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to add collaborator");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Failed to add collaborator");
   };
 
   // Promote/demote a collaborator (MsgUpdateCollaboratorRole). Only the owner
   // may grant or revoke ADMIN; admins can manage EDITOR roles among non-admins.
   const handleUpdateCollaboratorRole = async (collabAddress: string, role: string) => {
     if (!address) return;
-    setActionLoading(`role-${collabAddress}`);
-    setActionError(null);
-    try {
+    await run(`role-${collabAddress}`, async () => {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.UpdateCollaboratorRole,
         value: {
@@ -376,33 +360,23 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         },
       }]);
       await fetchData();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to update role");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Failed to update role");
   };
 
   const handleRemoveCollaborator = async (collabAddress: string) => {
     if (!address) return;
-    setActionLoading(`remove-collab-${collabAddress}`);
-    try {
+    await run(`remove-collab-${collabAddress}`, async () => {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.RemoveCollaborator,
         value: { creator: address, collectionId: BigInt(collectionId), address: collabAddress },
       }]);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to remove collaborator");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Failed to remove collaborator");
   };
 
   const handleUpvote = async () => {
     if (!address) return;
-    setActionLoading("upvote");
-    try {
+    await run("upvote", async () => {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.UpvoteContent,
         // target_id is uint64; pass BigInt. target_type is int32 enum (1 =
@@ -410,79 +384,55 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         value: { creator: address, targetId: BigInt(collectionId), targetType: 1 },
       }]);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to upvote");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Failed to upvote");
   };
 
   const handleDeleteCollection = async () => {
     if (!address || !confirm("Delete this collection? This cannot be undone.")) return;
-    setActionLoading("delete");
-    try {
+    await run("delete", async () => {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.DeleteCollection,
         value: { creator: address, id: BigInt(collectionId) },
       }]);
       onBack();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to delete collection");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Failed to delete collection");
   };
 
   // Pin/Unpin are display-only "feature" markers requiring a permanent
   // collection; the chain rejects pinning an ephemeral one (ErrCannotPinEphemeral).
   const handlePin = async (pin: boolean) => {
     if (!address) return;
-    setActionLoading("pin");
-    try {
+    await run("pin", async () => {
       await signAndBroadcast([{
         typeUrl: pin ? CollectMsgTypeUrls.PinCollection : CollectMsgTypeUrls.UnpinCollection,
         value: { creator: address, collectionId: BigInt(collectionId) },
       }]);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : pin ? "Failed to pin" : "Failed to unpin");
-    } finally {
-      setActionLoading(null);
-    }
+    }, pin ? "Failed to pin" : "Failed to unpin");
   };
 
   // Promote an ephemeral collection to permanent (burns the deposit). Separate
   // lifecycle action from pinning, on the lower make_permanent_min_trust_level.
   const handleMakePermanent = async () => {
     if (!address || !confirm("Make this collection permanent? Its deposit is burned and it will no longer expire.")) return;
-    setActionLoading("permanent");
-    try {
+    await run("permanent", async () => {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.MakeCollectionPermanent,
         value: { creator: address, collectionId: BigInt(collectionId) },
       }]);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to make permanent");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Failed to make permanent");
   };
 
   const handleDownvote = async () => {
     if (!address) return;
-    setActionLoading("downvote");
-    try {
+    await run("downvote", async () => {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.DownvoteContent,
         value: { creator: address, targetId: BigInt(collectionId), targetType: FlagTargetType.COLLECTION },
       }]);
       await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to downvote");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Failed to downvote");
   };
 
   // Submit a curator verdict (MsgRateCollection). Gated chain-side on a bonded
@@ -490,9 +440,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   // the collection being ACTIVE with community feedback enabled.
   const handleRate = async () => {
     if (!address) return;
-    setActionLoading("rate");
-    setActionError(null);
-    try {
+    await run("rate", async () => {
       const tags = rateTags
         .split(",")
         .map((t) => t.trim())
@@ -513,20 +461,14 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
       setRateTags("");
       setRateComment("");
       await fetchData();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to submit review");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Failed to submit review");
   };
 
   // Challenge a curator's review (MsgChallengeReview). Locks challenge_deposit
   // DREAM; open to any member except the review's own curator.
   const handleChallenge = async (reviewId: string) => {
     if (!address || !challengeReason.trim()) return;
-    setActionLoading(`challenge-${reviewId}`);
-    setActionError(null);
-    try {
+    await run(`challenge-${reviewId}`, async () => {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.ChallengeReview,
         value: { creator: address, reviewId: BigInt(reviewId), reason: challengeReason.trim() },
@@ -534,11 +476,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
       setChallengeReviewId(null);
       setChallengeReason("");
       await fetchData();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to challenge review");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Failed to challenge review");
   };
 
   // Flag (member) or hide (sentinel) a collection or item. targetType is the
@@ -546,9 +484,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const submitFlagOrHide = async (targetId: string, targetType: number) => {
     if (!address) return;
     const key = `${flagMode}-${targetType}:${targetId}`;
-    setActionLoading(key);
-    setActionError(null);
-    try {
+    await run(key, async () => {
       if (flagMode === "flag") {
         await signAndBroadcast([{
           typeUrl: CollectMsgTypeUrls.FlagContent,
@@ -587,29 +523,19 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
       setFlagTarget(null);
       setFlagReasonText("");
       await fetchData();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Action failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Action failed");
   };
 
   // Owner/adder appeals a sentinel hide (MsgAppealHide). Escrows appeal_fee.
   const handleAppeal = async (hideRecordId: string) => {
     if (!address) return;
-    setActionLoading("appeal");
-    setActionError(null);
-    try {
+    await run("appeal", async () => {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.AppealHide,
         value: { creator: address, hideRecordId: BigInt(hideRecordId) },
       }]);
       await fetchData();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to appeal");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Failed to appeal");
   };
 
   // Shared flag/hide reason form, rendered inline for collection or item rows.
@@ -956,12 +882,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         {flagTarget === `${FlagTargetType.COLLECTION}:${collection.id}` &&
           renderFlagForm(FlagTargetType.COLLECTION, collection.id)}
 
-        {actionError && (
-          <div className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-400">
-            <span className="break-all">{actionError}</span>
-            <button onClick={() => setActionError(null)} className="shrink-0 text-red-300 hover:text-red-100" aria-label="Dismiss">✕</button>
-          </div>
-        )}
+        <ActionBanner message={actionError} onDismiss={clearError} className="mt-3" />
       </div>
 
       {/* Tabs */}
@@ -1468,11 +1389,8 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
               </div>
             )}
 
-            {actionError && tab === "curation" && (
-              <div className="flex items-start justify-between gap-3 rounded-lg border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-400">
-                <span className="break-all">{actionError}</span>
-                <button onClick={() => setActionError(null)} className="shrink-0 text-red-300 hover:text-red-100" aria-label="Dismiss">✕</button>
-              </div>
+            {tab === "curation" && (
+              <ActionBanner message={actionError} onDismiss={clearError} />
             )}
 
             {curation ? (

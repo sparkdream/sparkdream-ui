@@ -29,6 +29,8 @@ import {
 } from "@/types/rep";
 import type { BondedRole, BondedRoleConfig } from "@/types/rep";
 import ErrorState from "@/components/ErrorState";
+import ActionBanner from "@/components/ActionBanner";
+import { useTxAction } from "@/hooks/useTxAction";
 import { isMissingEndpoint } from "@/lib/errors";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 
@@ -114,7 +116,7 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
 
   const [showBondForm, setShowBondForm] = useState(false);
   const [bondAmount, setBondAmount] = useState("");
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const { pending: actionLoading, busy, error: actionError, clearError, run } = useTxAction();
 
   // Collect moderation params + live height (hide/appeal params are
   // block-denominated, so appeal windows resolve against the current height).
@@ -211,40 +213,32 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
 
   const handleBond = async () => {
     if (!address || !bondAmount.trim()) return;
-    setActionLoading("bond");
-    try {
+    const ok = await run("bond", async () => {
       const amountUdream = BigInt(Math.floor(parseFloat(bondAmount) * 1_000_000)).toString();
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.BondRole,
         value: { creator: address, roleType: SENTINEL_ROLE, amount: amountUdream },
       }]);
-      setBondAmount("");
-      setShowBondForm(false);
-      await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Bond failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Bond failed");
+    if (!ok) return;
+    setBondAmount("");
+    setShowBondForm(false);
+    await fetchData();
   };
 
   const handleUnbond = async () => {
     if (!address || !bondAmount.trim()) return;
-    setActionLoading("unbond");
-    try {
+    const ok = await run("unbond", async () => {
       const amountUdream = BigInt(Math.floor(parseFloat(bondAmount) * 1_000_000)).toString();
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.UnbondRole,
         value: { creator: address, roleType: SENTINEL_ROLE, amount: amountUdream },
       }]);
-      setBondAmount("");
-      setShowBondForm(false);
-      await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Unbond failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Unbond failed");
+    if (!ok) return;
+    setBondAmount("");
+    setShowBondForm(false);
+    await fetchData();
   };
 
   // Cancel (reduce) an in-flight unbond, returning the cancelled DREAM to
@@ -253,8 +247,7 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
   // authority immediately. Cancels the full pending amount.
   const handleCancelUnbond = async () => {
     if (!address || !bond?.pending_unbond_amount || bond.pending_unbond_amount === "0") return;
-    setActionLoading("cancel-unbond");
-    try {
+    const ok = await run("cancel-unbond", async () => {
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.CancelUnbondRole,
         value: {
@@ -263,12 +256,8 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
           amount: bond.pending_unbond_amount,
         },
       }]);
-      await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Cancel unbond failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Cancel unbond failed");
+    if (ok) await fetchData();
   };
 
   // Sentinel self-correct (MsgUnhideContent, chain commit 4ad8e38): the hiding
@@ -277,18 +266,13 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
   // committed sentinel bond stays reserved until the original appeal_deadline.
   const handleUnhide = async (hideRecordId: string) => {
     if (!address) return;
-    setActionLoading(`unhide-${hideRecordId}`);
-    try {
+    const ok = await run(`unhide-${hideRecordId}`, async () => {
       await signAndBroadcast([{
         typeUrl: CollectMsgTypeUrls.UnhideContent,
         value: { creator: address, hideRecordId: BigInt(hideRecordId) },
       }]);
-      await fetchModeration();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Unhide failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Unhide failed");
+    if (ok) await fetchModeration();
   };
 
   if (!connected) return null;
@@ -309,6 +293,8 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold text-white">Sentinel status</h2>
+
+      <ActionBanner message={actionError} onDismiss={clearError} />
 
       {loading ? (
         <div className="h-32 animate-pulse sd-hull-tile rounded-xl" />
@@ -391,7 +377,7 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
                   <button
                     type="button"
                     onClick={handleCancelUnbond}
-                    disabled={!!actionLoading}
+                    disabled={busy}
                     title="Return the pending amount to active bond without waiting out the cooldown"
                     className="shrink-0 rounded-md border border-amber-700/60 px-2.5 py-1 font-medium text-amber-200 hover:bg-amber-900/30 disabled:opacity-50"
                   >
@@ -474,7 +460,7 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
                   <button
                     type="button"
                     onClick={handleBond}
-                    disabled={!bondAmount.trim() || !!actionLoading || cannotBond}
+                    disabled={!bondAmount.trim() || busy || cannotBond}
                     title={cannotBond ? "Only existing members can bond" : undefined}
                     className="sd-btn sd-btn-primary"
                   >
@@ -482,7 +468,7 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
                   </button>
                   <button
                     onClick={handleUnbond}
-                    disabled={!bondAmount.trim() || !!actionLoading}
+                    disabled={!bondAmount.trim() || busy}
                     className="rounded-lg border border-red-800/50 px-3 py-1.5 text-xs text-red-400 transition-colors hover:border-red-700 disabled:opacity-50"
                   >
                     {actionLoading === "unbond" ? "..." : "Unbond"}
@@ -615,7 +601,7 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
                           <button
                             type="button"
                             onClick={() => handleUnhide(r.id)}
-                            disabled={!canUnhide || !!actionLoading}
+                            disabled={!canUnhide || busy}
                             title={
                               r.appealed
                                 ? "An appeal was filed; the jury decides this hide"

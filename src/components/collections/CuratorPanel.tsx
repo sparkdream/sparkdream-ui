@@ -27,6 +27,8 @@ import {
 } from "@/types/collect";
 import type { CuratorActivity, CurationReview } from "@/types/collect";
 import ErrorState from "@/components/ErrorState";
+import ActionBanner from "@/components/ActionBanner";
+import { useTxAction } from "@/hooks/useTxAction";
 import { isMissingEndpoint } from "@/lib/errors";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 
@@ -79,7 +81,7 @@ export default function CuratorPanel() {
 
   const [showBondForm, setShowBondForm] = useState(false);
   const [bondAmount, setBondAmount] = useState("");
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const { pending: actionLoading, busy, error: actionError, clearError, run } = useTxAction();
 
   const fetchData = useCallback(async () => {
     if (!address) {
@@ -141,20 +143,16 @@ export default function CuratorPanel() {
 
   const bondTx = async (typeUrl: string, amountUdream: string, key: string) => {
     if (!address) return;
-    setActionLoading(key);
-    try {
+    const ok = await run(key, async () => {
       await signAndBroadcast([{
         typeUrl,
         value: { creator: address, roleType: CURATOR_ROLE, amount: amountUdream },
       }]);
-      setBondAmount("");
-      setShowBondForm(false);
-      await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Transaction failed");
-    } finally {
-      setActionLoading(null);
-    }
+    });
+    if (!ok) return;
+    setBondAmount("");
+    setShowBondForm(false);
+    await fetchData();
   };
 
   const handleBond = () => {
@@ -209,6 +207,8 @@ export default function CuratorPanel() {
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold text-white">Curator status</h2>
+
+      <ActionBanner message={actionError} onDismiss={clearError} />
 
       {!isCurator && (
         <div className="sd-hull-tile rounded-xl p-6">
@@ -289,7 +289,7 @@ export default function CuratorPanel() {
                   <button
                     type="button"
                     onClick={handleCancelUnbond}
-                    disabled={!!actionLoading}
+                    disabled={busy}
                     title="Return the pending amount to active bond without waiting out the cooldown"
                     className="shrink-0 rounded-md border border-amber-700/60 px-2.5 py-1 font-medium text-amber-200 hover:bg-amber-900/30 disabled:opacity-50"
                   >
@@ -369,14 +369,14 @@ export default function CuratorPanel() {
                   <button
                     type="button"
                     onClick={handleBond}
-                    disabled={!bondAmount.trim() || !!actionLoading || cannotBond}
+                    disabled={!bondAmount.trim() || busy || cannotBond}
                     className="sd-btn sd-btn-primary"
                   >
                     {actionLoading === "bond" ? "..." : "Bond"}
                   </button>
                   <button
                     onClick={handleUnbond}
-                    disabled={!bondAmount.trim() || !!actionLoading}
+                    disabled={!bondAmount.trim() || busy}
                     className="rounded-lg border border-red-800/50 px-3 py-1.5 text-xs text-red-400 transition-colors hover:border-red-700 disabled:opacity-50"
                   >
                     {actionLoading === "unbond" ? "..." : "Unbond"}

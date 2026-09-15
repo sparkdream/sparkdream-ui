@@ -7,6 +7,8 @@ import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags
 import { CollectionType, CollectionVisibility } from "@/types/collect";
 import { collectionTypeFromJSON, visibilityFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/types";
 import TagPicker from "@/components/contribute/TagPicker";
+import ActionBanner from "@/components/ActionBanner";
+import { useTxAction } from "@/hooks/useTxAction";
 
 interface CreateCollectionFormProps {
   onCreated: () => void;
@@ -21,7 +23,7 @@ export default function CreateCollectionForm({ onCreated, onCancel }: CreateColl
   const [collectionType, setCollectionType] = useState<string>(CollectionType.MIXED);
   const [visibility, setVisibility] = useState<string>(CollectionVisibility.PUBLIC);
   const [tags, setTags] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, error: submitError, clearError, run } = useTxAction();
   const canCreateTags = useCanCreateTags(address);
   const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
 
@@ -29,8 +31,7 @@ export default function CreateCollectionForm({ onCreated, onCancel }: CreateColl
     e.preventDefault();
     if (!address || !name.trim()) return;
 
-    setLoading(true);
-    try {
+    await run("create", async () => {
       // x/collect rejects MsgCreateCollection with ErrTagNotFound for any tag
       // not in the x/rep registry, so prepend MsgCreateTag for everything the
       // user typed that doesn't already exist — same pattern as ProjectList /
@@ -65,11 +66,7 @@ export default function CreateCollectionForm({ onCreated, onCancel }: CreateColl
       setCoverUri("");
       setTags([]);
       onCreated();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to create collection");
-    } finally {
-      setLoading(false);
-    }
+    }, "Failed to create collection");
   };
 
   return (
@@ -158,6 +155,8 @@ export default function CreateCollectionForm({ onCreated, onCancel }: CreateColl
             allowCreate={canCreateTags}
           />
         </div>
+
+        <ActionBanner message={submitError} onDismiss={clearError} />
 
         <button
           type="submit"

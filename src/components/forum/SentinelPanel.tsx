@@ -25,6 +25,8 @@ import {
 import type { BondedRole, BondedRoleConfig } from "@/types/rep";
 import NumberInput from "@/components/NumberInput";
 import ErrorState from "@/components/ErrorState";
+import ActionBanner from "@/components/ActionBanner";
+import { useTxAction } from "@/hooks/useTxAction";
 import { isMissingEndpoint } from "@/lib/errors";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 
@@ -148,7 +150,7 @@ export default function SentinelPanel() {
 
   const [showBondForm, setShowBondForm] = useState(false);
   const [bondAmount, setBondAmount] = useState("");
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const { pending: actionLoading, busy, error: actionError, clearError, run } = useTxAction();
 
   // All currently-hidden posts (one HideRecord each) + sentinel self-correct
   // window (in seconds, from forum params). Listed via the global hide_record
@@ -158,7 +160,6 @@ export default function SentinelPanel() {
   const [allHides, setAllHides] = useState<HideRecord[]>([]);
   const [unhideWindow, setUnhideWindow] = useState<number | null>(null);
   const [forumParams, setForumParams] = useState<ForumParams | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
   // Rep params + chain height drive the reward-accuracy window: the reference
   // reward epoch is height / sentinel_reward_epoch_blocks (NOT the forum epoch),
   // and the window length / min sample come from rep params.
@@ -232,8 +233,7 @@ export default function SentinelPanel() {
 
   const handleBond = async () => {
     if (!address || !bondAmount.trim()) return;
-    setActionLoading("bond");
-    try {
+    const ok = await run("bond", async () => {
       const amountUdream = (BigInt(Math.floor(parseFloat(bondAmount) * 1_000_000))).toString();
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.BondRole,
@@ -243,41 +243,34 @@ export default function SentinelPanel() {
           amount: amountUdream,
         },
       }]);
-      setBondAmount("");
-      setShowBondForm(false);
-      await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Bond failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Bond failed");
+    if (!ok) return;
+    setBondAmount("");
+    setShowBondForm(false);
+    await fetchData();
   };
 
   const handleUnhide = async (postId: string) => {
     if (!address) return;
-    setActionLoading(`unhide-${postId}`);
-    setActionError(null);
-    try {
-      await signAndBroadcast([{
-        typeUrl: ForumMsgTypeUrls.UnhidePost,
-        value: {
-          creator: address,
-          postId: BigInt(postId),
-        },
-      }]);
-      await fetchData();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setActionError(`Unhide of post #${postId} failed: ${msg}`);
-    } finally {
-      setActionLoading(null);
-    }
+    const ok = await run(
+      `unhide-${postId}`,
+      async () => {
+        await signAndBroadcast([{
+          typeUrl: ForumMsgTypeUrls.UnhidePost,
+          value: {
+            creator: address,
+            postId: BigInt(postId),
+          },
+        }]);
+      },
+      (raw) => `Unhide of post #${postId} failed: ${raw}`
+    );
+    if (ok) await fetchData();
   };
 
   const handleUnbond = async () => {
     if (!address || !bondAmount.trim()) return;
-    setActionLoading("unbond");
-    try {
+    const ok = await run("unbond", async () => {
       const amountUdream = (BigInt(Math.floor(parseFloat(bondAmount) * 1_000_000))).toString();
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.UnbondRole,
@@ -287,14 +280,11 @@ export default function SentinelPanel() {
           amount: amountUdream,
         },
       }]);
-      setBondAmount("");
-      setShowBondForm(false);
-      await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Unbond failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Unbond failed");
+    if (!ok) return;
+    setBondAmount("");
+    setShowBondForm(false);
+    await fetchData();
   };
 
   // Cancel (reduce) an in-flight unbond, returning the cancelled DREAM to active
@@ -304,8 +294,7 @@ export default function SentinelPanel() {
   // amount; the amount field is the cap.
   const handleCancelUnbond = async () => {
     if (!address || !bond?.pending_unbond_amount || bond.pending_unbond_amount === "0") return;
-    setActionLoading("cancel-unbond");
-    try {
+    const ok = await run("cancel-unbond", async () => {
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.CancelUnbondRole,
         value: {
@@ -314,12 +303,8 @@ export default function SentinelPanel() {
           amount: bond.pending_unbond_amount,
         },
       }]);
-      await fetchData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Cancel unbond failed");
-    } finally {
-      setActionLoading(null);
-    }
+    }, "Cancel unbond failed");
+    if (ok) await fetchData();
   };
 
   if (loading) {
@@ -459,7 +444,7 @@ export default function SentinelPanel() {
                   <button
                     type="button"
                     onClick={handleCancelUnbond}
-                    disabled={!!actionLoading}
+                    disabled={busy}
                     title="Return the pending amount to active bond without waiting out the cooldown"
                     className="shrink-0 rounded-md border border-amber-700/60 px-2.5 py-1 font-medium text-amber-200 hover:bg-amber-900/30 disabled:opacity-50"
                   >
@@ -607,7 +592,7 @@ export default function SentinelPanel() {
                   <button
                     type="button"
                     onClick={handleBond}
-                    disabled={!bondAmount.trim() || !!actionLoading || cannotBond}
+                    disabled={!bondAmount.trim() || busy || cannotBond}
                     title={cannotBond ? "Only existing members can bond" : undefined}
                     className="sd-btn sd-btn-primary"
                   >
@@ -615,7 +600,7 @@ export default function SentinelPanel() {
                   </button>
                   <button
                     onClick={handleUnbond}
-                    disabled={!bondAmount.trim() || !!actionLoading}
+                    disabled={!bondAmount.trim() || busy}
                     className="rounded-lg border border-red-800/50 px-3 py-1.5 text-xs text-red-400 transition-colors hover:border-red-700 disabled:opacity-50"
                   >
                     {actionLoading === "unbond" ? "..." : "Unbond"}
@@ -809,19 +794,7 @@ export default function SentinelPanel() {
                 </span>
               )}
             </div>
-            {actionError && (
-              <div className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-400">
-                <span className="break-all">{actionError}</span>
-                <button
-                  type="button"
-                  onClick={() => setActionError(null)}
-                  className="shrink-0 text-red-300 hover:text-red-100"
-                  aria-label="Dismiss error"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
+            <ActionBanner message={actionError} onDismiss={clearError} className="mb-3" />
             {myHides.length === 0 ? (
               <p className="text-xs text-zinc-500">No active hides on file.</p>
             ) : (

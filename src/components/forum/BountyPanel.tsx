@@ -7,6 +7,8 @@ import { useSessionPermits } from "@/hooks/useSessionPermits";
 import { ForumMsgTypeUrls } from "@/lib/tx";
 import { formatSpark, parseSparkToUspark, timeRemaining } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
+import ActionBanner from "@/components/ActionBanner";
+import { useTxAction } from "@/hooks/useTxAction";
 import type { Bounty } from "@/types/forum";
 import { BountyStatus } from "@/types/forum";
 
@@ -59,7 +61,7 @@ export default function BountyPanel({ threadId, bounty, isThreadAuthor, onChange
   const [form, setForm] = useState<"create" | "increase" | null>(null);
   const [amountInput, setAmountInput] = useState("");
   const [durationDays, setDurationDays] = useState(14);
-  const [busy, setBusy] = useState<string | null>(null);
+  const { pending: busy, error: actionError, clearError, run } = useTxAction();
 
   useEffect(() => {
     let cancelled = false;
@@ -83,17 +85,13 @@ export default function BountyPanel({ threadId, bounty, isThreadAuthor, onChange
 
   const broadcast = async (label: string, typeUrl: string, value: Record<string, unknown>) => {
     if (!address) return;
-    setBusy(label);
-    try {
+    const ok = await run(label, async () => {
       await signAndBroadcast([{ typeUrl, value }]);
-      setForm(null);
-      setAmountInput("");
-      onChanged();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : `${label} failed`);
-    } finally {
-      setBusy(null);
-    }
+    }, `${label} failed`);
+    if (!ok) return;
+    setForm(null);
+    setAmountInput("");
+    onChanged();
   };
 
   const handleCreate = () => {
@@ -185,6 +183,7 @@ export default function BountyPanel({ threadId, bounty, isThreadAuthor, onChange
     if (!isThreadAuthor || !bountiesEnabled || !permits(ForumMsgTypeUrls.CreateBounty)) return null;
     return (
       <div className="mb-4">
+        <ActionBanner message={actionError} onDismiss={clearError} className="mb-2" />
         {form !== "create" ? (
           <button
             onClick={() => { setForm("create"); setAmountInput(""); }}
@@ -207,6 +206,7 @@ export default function BountyPanel({ threadId, bounty, isThreadAuthor, onChange
 
   return (
     <div className="mb-4 rounded-xl border border-amber-700/50 bg-amber-900/10 p-3">
+      <ActionBanner message={actionError} onDismiss={clearError} className="mb-2" />
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1.5">
           <svg className="h-4 w-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

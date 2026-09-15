@@ -9,6 +9,8 @@ import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags
 import { parseDreamToUdream } from "@/lib/utils";
 import TagPicker from "@/components/contribute/TagPicker";
 import NumberInput from "@/components/NumberInput";
+import ActionBanner from "@/components/ActionBanner";
+import { useTxAction } from "@/hooks/useTxAction";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface CreatePostFormProps {
@@ -36,15 +38,14 @@ export default function CreatePostForm({
   const [content, setContent] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [authorBond, setAuthorBond] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const { busy: submitting, error: submitError, clearError, run } = useTxAction();
 
   const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
   const canCreateTags = useCanCreateTags(address);
 
   const handleSubmit = async () => {
     if (!address || !content.trim()) return;
-    setSubmitting(true);
-    try {
+    await run("submit", async () => {
       const value: Record<string, unknown> = {
         creator: address,
         categoryId: BigInt(categoryId),
@@ -71,11 +72,7 @@ export default function CreatePostForm({
       setTags([]);
       setAuthorBond("");
       onCreated();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to send spark");
-    } finally {
-      setSubmitting(false);
-    }
+    }, "Failed to send spark");
   };
 
   return (
@@ -133,6 +130,7 @@ export default function CreatePostForm({
             </p>
           </div>
         )}
+        <ActionBanner message={submitError} onDismiss={clearError} />
         <div className="flex gap-2">
           <button
             onClick={handleSubmit}
