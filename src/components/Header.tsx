@@ -8,6 +8,7 @@ import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import CopyableAddress from "@/components/CopyableAddress";
 import SessionModeSwitcher from "@/components/SessionModeSwitcher";
+import WalletBalances from "@/components/WalletBalances";
 
 type NavLeaf = {
   href: string;
@@ -404,6 +405,7 @@ export default function Header() {
           {connected && (
             <>
               <SessionModeSwitcher />
+              <WalletBalances />
               <div className="sd-identity">
                 {name && <div className="name">{name}</div>}
                 <CopyableAddress

@@ -44,6 +44,7 @@ export function useTxPhase(): TxPhaseTracker {
 
   const buttonLabel = (idleLabel: string): string => {
     if (phase === "signing") return "Signing...";
+    if (phase === "retrying") return "Re-signing...";
     if (phase === "broadcasting") return "Broadcasting...";
     if (phase === "confirming") return `Confirming (${elapsed}s)...`;
     return idleLabel;
@@ -52,7 +53,9 @@ export function useTxPhase(): TxPhaseTracker {
   const hint =
     phase === "confirming"
       ? `Waiting for chain inclusion (${elapsed}s) — typically takes around 90s on this network, occasionally longer.`
-      : null;
+      : phase === "retrying"
+        ? "The node expected a different account sequence, so the transaction has to be signed again. Approve the new prompt in your wallet."
+        : null;
 
   return { phase, setPhase, elapsed, buttonLabel, hint };
 }

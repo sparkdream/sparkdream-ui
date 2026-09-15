@@ -8,6 +8,11 @@ import {
   listFutarchyMarkets,
   listGovProposals,
   listProposals,
+  listPosts,
+  listForumPosts,
+  listDisputes,
+  listContributions,
+  listFederationPeers,
 } from "@/lib/api";
 import type { CurrentSeasonResponse } from "@/types/season";
 import type { GovProposal } from "@/types/gov";
@@ -15,6 +20,11 @@ import { GovProposalStatus } from "@/types/gov";
 import type { Proposal } from "@/types/commons";
 import { ProposalStatus } from "@/types/commons";
 import { MarketStatus, type Market } from "@/types/futarchy";
+import type { Post } from "@/types/blog";
+import type { ForumPost } from "@/types/forum";
+import type { Dispute } from "@/types/name";
+import type { Contribution } from "@/types/reveal";
+import type { Peer } from "@/types/federation";
 import { describeProposalMessages, timeRemaining } from "@/lib/utils";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 
@@ -179,26 +189,108 @@ function futarchyItem(markets: Market[], displayDenom: string): ReactNode | null
   );
 }
 
+// Posts (blog + forum) published in the last 24h, counted from the created_at
+// stamps of the newest pages. Null while the fetches haven't settled.
+function postsItem(blog: Post[], forum: ForumPost[]): ReactNode {
+  const cutoff = Date.now() / 1000 - 86_400;
+  let n = 0;
+  for (const p of blog) if (Number(p.created_at) >= cutoff) n++;
+  for (const p of forum) if (Number(p.created_at) >= cutoff) n++;
+  return <>Posts 24h · <b>{n.toLocaleString("en-US")}</b></>;
+}
+
+// Open x/name disputes. `ListDispute` paginates the whole collection and
+// resolution only flips `active` to false (the record is kept for history),
+// so the list has to be filtered or every dispute ever filed reads as open.
+// The slot is dropped entirely when there are none — the marquee carries no
+// placeholder history.
+function disputesItem(disputes: Dispute[]): ReactNode | null {
+  const open = disputes.filter((d) => d.active).length;
+  if (open === 0) return null;
+  return <>Name disputes · <b className="hot">{open} open</b></>;
+}
+
+// Nearest deadline across in-progress reveal tranches, expressed against the
+// live height. Deadlines are block heights; ~2s/block matches this
+// devnet-family chain. Only the deadline that matches the tranche's current
+// status is considered (a REVEALED tranche's long-gone stake deadline is
+// meaningless). Dropped when nothing is in progress.
+function revealItem(
+  contributions: Contribution[],
+  height: string | null
+): ReactNode | null {
+  // The marquee's height state is locale-formatted ("118,743"); strip the
+  // separators before arithmetic or Number() yields NaN.
+  const now = Number(String(height ?? "").replace(/[^0-9]/g, ""));
+  if (!Number.isFinite(now) || now <= 0) return null;
+  let best: { label: string; blocks: number } | null = null;
+  for (const c of contributions) {
+    if (c.status !== "CONTRIBUTION_STATUS_IN_PROGRESS") continue;
+    for (const t of c.tranches || []) {
+      let kind: string | null = null;
+      let raw: string | undefined;
+      if (t.status === "TRANCHE_STATUS_STAKING") {
+        kind = "stake close";
+        raw = t.stake_deadline;
+      } else if (t.status === "TRANCHE_STATUS_BACKED") {
+        kind = "reveal close";
+        raw = t.reveal_deadline;
+      } else if (t.status === "TRANCHE_STATUS_REVEALED") {
+        kind = "verify close";
+        raw = t.verification_deadline;
+      }
+      if (!kind) continue;
+      const deadline = Number(raw || 0);
+      if (!Number.isFinite(deadline) || deadline <= 0) continue;
+      const blocks = deadline - now;
+      if (!Number.isFinite(blocks) || blocks <= 0) continue;
+      if (!best || blocks < best.blocks) best = { label: `${kind} · #${c.id}/${t.id}`, blocks };
+    }
+  }
+  if (!best) return null;
+  const hours = (best.blocks * 2) / 3600;
+  const when =
+    hours >= 24
+      ? `≈${Math.round(hours / 24)}d`
+      : hours >= 1
+        ? `≈${Math.round(hours)}h`
+        : `≈${Math.max(1, Math.round((best.blocks * 2) / 60))}m`;
+  return <>Reveal · {best.label} · <b className="hot">{when}</b></>;
+}
+
+// Active federation peers. Zero peers drops the slot.
+function federationItem(peers: Peer[]): ReactNode | null {
+  const active = peers.filter((p) => p.status === "PEER_STATUS_ACTIVE").length;
+  if (active === 0) return null;
+  return <>Federation · <b>{active}</b> peer{active === 1 ? "" : "s"} online</>;
+}
+
 function buildItems(
   height: string | null,
   season: CurrentSeasonResponse | null,
   gov: GovProposal[],
   community: Proposal[],
   futMarkets: Market[],
+  posts: { blog: Post[]; forum: ForumPost[] },
+  disputes: Dispute[],
+  reveal: Contribution[],
+  peers: Peer[],
   dream: string,
   displayDenom: string
 ): ReactNode[] {
   const fut = futarchyItem(futMarkets, displayDenom);
+  const disp = disputesItem(disputes);
+  const rev = revealItem(reveal, height);
+  const fed = federationItem(peers);
   return [
     <>Block <b>{height ?? "—"}</b></>,
     seasonItem(season),
-    <>14 posts in last 24h</>,
+    postsItem(posts.blog, posts.forum),
     ...proposalItems(gov, community, dream),
-    <>Naming dispute #3 · resolved</>,
-    <>12 active session keys</>,
+    ...(disp ? [disp] : []),
     ...(fut ? [fut] : []),
-    <>Reveal round closes in <b className="hot">3h 42m</b></>,
-    <>Federation · 4 peer chains online</>,
+    ...(rev ? [rev] : []),
+    ...(fed ? [fed] : []),
   ];
 }
 
@@ -218,6 +310,10 @@ export default function Ticker() {
   const [govProposals, setGovProposals] = useState<GovProposal[]>([]);
   const [communityProposals, setCommunityProposals] = useState<Proposal[]>([]);
   const [futMarkets, setFutMarkets] = useState<Market[]>([]);
+  const [posts, setPosts] = useState<{ blog: Post[]; forum: ForumPost[] }>({ blog: [], forum: [] });
+  const [disputes, setDisputes] = useState<Dispute[]>([]);
+  const [revealContribs, setRevealContribs] = useState<Contribution[]>([]);
+  const [peers, setPeers] = useState<Peer[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -242,13 +338,20 @@ export default function Ticker() {
     // Independent settles: one endpoint being down shouldn't blank the other
     // kind of proposal, and a failed poll keeps the last good list.
     const fetchProposals = async () => {
-      const [gov, community, futarchy] = await Promise.allSettled([
+      const [gov, community, futarchy, blog, forum, nameDisputes, reveal, fedPeers] = await Promise.allSettled([
         listGovProposals(undefined, { reverse: true, limit: "20" }),
         listProposals(undefined, { reverse: true, limit: "20" }),
         // 100 to match the futarchy page's own ceiling: the slot presents a
         // live count and a TVL total, so a smaller sample than the page it
         // links to would quietly disagree with it.
         listFutarchyMarkets({ limit: "100", reverse: true }),
+        // 24h post counts: newest-first pages are enough — anything older
+        // than the first out-of-window entry can't re-enter the window.
+        listPosts({ limit: "100", reverse: true }),
+        listForumPosts({ limit: "100", reverse: true }),
+        listDisputes({ limit: "50", reverse: true }),
+        listContributions({ limit: "50", reverse: true }),
+        listFederationPeers({ limit: "100", reverse: true }),
       ]);
       if (cancelled) return;
       if (gov.status === "fulfilled") setGovProposals(gov.value.proposals || []);
@@ -256,6 +359,11 @@ export default function Ticker() {
         setCommunityProposals(community.value.proposals || []);
       }
       if (futarchy.status === "fulfilled") setFutMarkets(futarchy.value.market || []);
+      if (blog.status === "fulfilled") setPosts((prev) => ({ ...prev, blog: blog.value.post || [] }));
+      if (forum.status === "fulfilled") setPosts((prev) => ({ ...prev, forum: forum.value.post || [] }));
+      if (nameDisputes.status === "fulfilled") setDisputes(nameDisputes.value.dispute || []);
+      if (reveal.status === "fulfilled") setRevealContribs(reveal.value.contributions || []);
+      if (fedPeers.status === "fulfilled") setPeers(fedPeers.value.peers || []);
     };
     fetchProposals();
     const id = setInterval(fetchProposals, PROPOSAL_POLL_MS);
@@ -355,7 +463,7 @@ export default function Ticker() {
     };
   }, [config.rpcEndpoint]);
 
-  const items = buildItems(height, season, govProposals, communityProposals, futMarkets, config.dreamDisplayDenom, config.displayDenom);
+  const items = buildItems(height, season, govProposals, communityProposals, futMarkets, posts, disputes, revealContribs, peers, config.dreamDisplayDenom, config.displayDenom);
 
   return (
     <div className="sd-ticker" aria-label="Onchain ticker">

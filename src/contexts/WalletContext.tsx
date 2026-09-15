@@ -13,7 +13,9 @@ import { CommonsMsgTypeUrls, SessionMsgTypeUrls } from "@/lib/tx";
  *  - "broadcasting": signed; sending to the RPC mempool
  *  - "confirming":   accepted by mempool; polling for block inclusion
  */
-export type TxPhase = "signing" | "broadcasting" | "confirming";
+// "retrying" precedes the re-sign after a sequence mismatch, so the UI can
+// explain the extra wallet prompt instead of silently popping Keplr again.
+export type TxPhase = "signing" | "broadcasting" | "confirming" | "retrying";
 
 interface WalletState {
   /** Returns the granter address when session mode is active, otherwise the connected wallet address. */
@@ -109,6 +111,91 @@ function parseCoinsString(s: string): Array<{ denom: string; amount: string }> {
   });
 }
 
+/**
+ * Extract the mempool-authoritative sequence from a CheckTx
+ * "account sequence mismatch" error; null for every other error. Typical
+ * shape: "account sequence mismatch, expected 54, got 53: incorrect account
+ * sequence". Used to re-sign with the sequence the node actually wants after
+ * a prior broadcast wedged in the mempool (see signAndBroadcast).
+ */
+function parseExpectedSequence(err: unknown): number | null {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (!msg.includes("account sequence mismatch")) return null;
+  const m = msg.match(/expected (\d+), got \d+/);
+  if (!m) return null;
+  const expected = parseInt(m[1], 10);
+  return Number.isFinite(expected) ? expected : null;
+}
+
+/** A tx CheckTx accepted but that we never saw reach a block. */
+interface PendingTx {
+  hash: string;
+  /** Wall-clock ms at broadcast; drives the TTL prune below. */
+  broadcastAt: number;
+}
+
+// How long a remembered hash keeps blocking the sequence retry. CheckTx
+// acceptance is not a guarantee of inclusion: a tx can be evicted from the
+// mempool and never land, and `getTx` then returns null for it forever. With
+// no expiry that single hash would refuse every future retry for the address
+// with no way for the user to clear it. 30 minutes is well past the 300s
+// confirm ceiling in signAndBroadcast and past any realistic mempool TTL.
+const PENDING_TX_TTL_MS = 30 * 60 * 1000;
+
+// Backstop on entries per address, bounding what we write to localStorage if
+// broadcasts wedge faster than the TTL retires them. The TTL prune runs
+// first, so this only bites in a pathological run; dropping the oldest then
+// is safe because the fresher entries it keeps still block the retry.
+const PENDING_TX_LIMIT = 50;
+
+function pendingTxKey(address: string): string {
+  return `unconfirmed_tx:${address}`;
+}
+
+/** Drop TTL-expired entries, then trim oldest-first to PENDING_TX_LIMIT. */
+function prunePendingTxs(entries: readonly PendingTx[], now: number): PendingTx[] {
+  const fresh = entries
+    .filter((e) => now - e.broadcastAt < PENDING_TX_TTL_MS)
+    .sort((a, b) => a.broadcastAt - b.broadcastAt);
+  return fresh.slice(Math.max(0, fresh.length - PENDING_TX_LIMIT));
+}
+
+function loadPendingTxs(address: string): PendingTx[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(pendingTxKey(address));
+    if (!raw) return [];
+    const arr: unknown = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    const now = Date.now();
+    return arr.flatMap((entry): PendingTx[] => {
+      // Tolerate the pre-TTL format (bare hash strings) by treating them as
+      // just broadcast: erring toward still blocking the retry beats
+      // forgetting a genuinely outstanding tx.
+      if (typeof entry === "string") return [{ hash: entry, broadcastAt: now }];
+      if (typeof entry !== "object" || entry === null) return [];
+      const { hash, broadcastAt } = entry as Partial<PendingTx>;
+      if (typeof hash !== "string" || typeof broadcastAt !== "number") return [];
+      return [{ hash, broadcastAt }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function storePendingTxs(address: string, entries: readonly PendingTx[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (entries.length === 0) {
+      window.localStorage.removeItem(pendingTxKey(address));
+    } else {
+      window.localStorage.setItem(pendingTxKey(address), JSON.stringify(entries));
+    }
+  } catch {
+    // Storage unavailable — in-memory tracking still covers this session.
+  }
+}
+
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const { config, chainInfo } = useChainConfig();
   const [rawAddress, setRawAddress] = useState<string | null>(null);
@@ -117,6 +204,82 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [isLedger, setIsLedger] = useState(false);
   const [ready, setReady] = useState(false);
   const needsSessionRestore = useRef(false);
+  // Hashes of txs CheckTx accepted but that we never saw committed (the
+  // confirm poll timed out), keyed by signing address. While any is
+  // outstanding, the sequence auto-retry below must not fire for that
+  // address: the mismatch it would "fix" is most likely one of those txs
+  // still sitting in the mempool, and re-signing at the next sequence turns
+  // an accidental resubmit into two executed transactions.
+  //
+  // A list (not a single slot) survives concurrent broadcasts from racing
+  // flows, and it is mirrored to localStorage per address so a page reload —
+  // or a crash mid-confirm — does not lose track of a wedged mempool entry
+  // from a previous session. Entries age out after PENDING_TX_TTL_MS so an
+  // evicted tx that will never land cannot block the retry forever.
+  const pendingTxs = useRef<Map<string, PendingTx[]>>(new Map());
+
+  // Read-through accessor: every mutator below goes through this and then
+  // through `writePendingTxs`, so there is exactly one live array per address.
+  // (An earlier revision let the sweep iterate one array loaded from storage
+  // while `forgetPendingTx` mutated a second copy of it.)
+  const readPendingTxs = useCallback((address: string): PendingTx[] => {
+    let entries = pendingTxs.current.get(address);
+    if (!entries) {
+      entries = loadPendingTxs(address);
+      pendingTxs.current.set(address, entries);
+    }
+    return entries;
+  }, []);
+
+  const writePendingTxs = useCallback((address: string, entries: PendingTx[]) => {
+    pendingTxs.current.set(address, entries);
+    storePendingTxs(address, entries);
+  }, []);
+
+  const rememberPendingTx = useCallback(
+    (address: string, hash: string) => {
+      const now = Date.now();
+      const entries = readPendingTxs(address).filter((e) => e.hash !== hash);
+      entries.push({ hash, broadcastAt: now });
+      writePendingTxs(address, prunePendingTxs(entries, now));
+    },
+    [readPendingTxs, writePendingTxs],
+  );
+
+  const forgetPendingTx = useCallback(
+    (address: string, hash: string) => {
+      const entries = readPendingTxs(address);
+      const remaining = entries.filter((e) => e.hash !== hash);
+      if (remaining.length === entries.length) return;
+      writePendingTxs(address, remaining);
+    },
+    [readPendingTxs, writePendingTxs],
+  );
+
+  // Re-check every remembered hash for this address. Landed ones (any code)
+  // leave the set — they are no longer a double-execution risk; so do
+  // TTL-expired ones, without a lookup. Still-missing hashes are returned so
+  // the caller can refuse the retry.
+  const sweepPendingTxs = useCallback(
+    async (address: string, isLanded: (hash: string) => Promise<boolean>): Promise<string[]> => {
+      const entries = prunePendingTxs(readPendingTxs(address), Date.now());
+      // In parallel: this runs on an error path with the user already waiting
+      // out a stalled broadcast, and serial round trips would add to that.
+      const landed = await Promise.all(
+        entries.map(async (e) => {
+          try {
+            return await isLanded(e.hash);
+          } catch {
+            return false; // can't prove it landed — treat as outstanding
+          }
+        }),
+      );
+      const outstanding = entries.filter((_, i) => !landed[i]);
+      writePendingTxs(address, outstanding);
+      return outstanding.map((e) => e.hash);
+    },
+    [readPendingTxs, writePendingTxs],
+  );
 
   // Session mode state
   const [activeSession, setActiveSession] = useState<Session | null>(null);
@@ -618,41 +781,109 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // `signAndBroadcast` polls internally with a 60s default and surfaces a
       // timeout as a hard error even when the tx actually landed — see commit
       // tied to the delegate-modal UX work.
-      onPhase?.("signing");
-      const txRaw = await client.sign(rawAddress, finalMsgs as readonly EncodeObject[], fee, memo);
       const { TxRaw } = await import("cosmjs-types/cosmos/tx/v1beta1/tx");
-      const txBytes = TxRaw.encode(txRaw).finish();
 
-      onPhase?.("broadcasting");
-      const hash = await client.broadcastTxSync(txBytes);
-      onPhase?.("confirming", hash);
+      // Sign + broadcast with up to `maxSequenceRetries` re-signs on
+      // "account sequence mismatch". When a previous broadcast was accepted
+      // into the mempool but never included (chain stall, CheckTx eviction),
+      // the account query still returns the committed sequence while the
+      // node's mempool expects the next one — every naive retry bounces with
+      // "expected N, got M". The CheckTx error names the sequence the node
+      // actually wants, so re-sign with it explicitly (the 5th `sign`
+      // argument overrides the internal account query). Seen repeatedly on
+      // the devnet stalls of 2026-09-14/15; manual `--sequence N` recovery
+      // worked every time.
+      const maxSequenceRetries = 3;
+      let explicitSequence: number | null = null;
+      let accountNumber: bigint | null = null;
+      for (let attempt = 0; attempt <= maxSequenceRetries; attempt++) {
+        // Each retry re-prompts the wallet, so announce it as its own phase
+        // rather than letting a second Keplr popup arrive unexplained.
+        onPhase?.(attempt === 0 ? "signing" : "retrying");
+        const txRaw = explicitSequence !== null && accountNumber !== null
+          ? await client.sign(
+              rawAddress,
+              finalMsgs as readonly EncodeObject[],
+              fee,
+              memo,
+              { accountNumber, sequence: explicitSequence, chainId: config.chainId },
+            )
+          : await client.sign(rawAddress, finalMsgs as readonly EncodeObject[], fee, memo);
+        const txBytes = TxRaw.encode(txRaw).finish();
 
-      // Poll for inclusion ourselves with a much longer ceiling than cosmjs's
-      // 60s default. Typical inclusion on this chain is ~90s, so 300s leaves
-      // comfortable headroom; if a tx is going to be rejected by CheckTx that's
-      // already been raised by broadcastTxSync.
-      const timeoutMs = 300_000;
-      const pollIntervalMs = 3_000;
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        const indexed = await client.getTx(hash);
-        if (indexed) {
-          if (indexed.code !== 0) {
-            // `rawLog` is deprecated in favor of `events`, but for a failed
-            // tx it's still the only source of the chain's formatted error
-            // string (e.g. "insufficient fees: got X, expected Y") — `events`
-            // doesn't include it in a structured way for human display.
-            throw new Error(`Transaction failed: ${indexed.rawLog}`);
+        onPhase?.("broadcasting");
+        let hash: string;
+        try {
+          hash = await client.broadcastTxSync(txBytes);
+        } catch (err) {
+          const expected = parseExpectedSequence(err);
+          if (expected !== null) {
+            // Sweep every remembered unconfirmed hash for this address: the
+            // mismatch may be caused by one of our own txs still sitting in
+            // the mempool, and re-signing at the next sequence would execute
+            // both. Landed (or provably gone) entries clear their slot; any
+            // still-missing one blocks the retry.
+            const stillMissing = await sweepPendingTxs(rawAddress, async (h) => {
+              const tx = await client.getTx(h);
+              return tx !== null;
+            });
+            if (stillMissing.length > 0) {
+              throw new Error(
+                `Transaction ${stillMissing[0]} was broadcast earlier and has not been confirmed yet, ` +
+                  `so this one was not resubmitted. Sending it now would likely execute both. ` +
+                  `Check that hash on a block explorer before retrying.`
+              );
+            }
+            if (attempt < maxSequenceRetries) {
+              if (accountNumber === null) {
+                const account = await client.getAccount(rawAddress);
+                if (!account) throw new Error("Account not found while retrying sequence");
+                accountNumber = account.accountNumber;
+              }
+              explicitSequence = expected;
+              continue;
+            }
           }
-          return indexed.hash;
+          throw err;
         }
-        await new Promise((r) => setTimeout(r, pollIntervalMs));
+
+        rememberPendingTx(rawAddress, hash);
+        onPhase?.("confirming", hash);
+
+        // Poll for inclusion ourselves with a much longer ceiling than cosmjs's
+        // 60s default. Typical inclusion on this chain is ~90s, so 300s leaves
+        // comfortable headroom; if a tx is going to be rejected by CheckTx that's
+        // already been raised by broadcastTxSync.
+        const timeoutMs = 300_000;
+        const pollIntervalMs = 3_000;
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          const indexed = await client.getTx(hash);
+          if (indexed) {
+            // It reached a block; whether it succeeded or not, it is no longer
+            // an outstanding mempool entry the retry has to worry about.
+            forgetPendingTx(rawAddress, hash);
+            if (indexed.code !== 0) {
+              // `rawLog` is deprecated in favor of `events`, but for a failed
+              // tx it's still the only source of the chain's formatted error
+              // string (e.g. "insufficient fees: got X, expected Y") — `events`
+              // doesn't include it in a structured way for human display.
+              throw new Error(`Transaction failed: ${indexed.rawLog}`);
+            }
+            return indexed.hash;
+          }
+          await new Promise((r) => setTimeout(r, pollIntervalMs));
+        }
+        throw new Error(
+          `Transaction ${hash} was broadcast but not yet found on the chain after ${Math.round(timeoutMs / 1000)}s. It may still confirm — check a block explorer for the hash.`,
+        );
       }
-      throw new Error(
-        `Transaction ${hash} was broadcast but not yet found on the chain after ${Math.round(timeoutMs / 1000)}s. It may still confirm — check a block explorer for the hash.`,
-      );
+      // Unreachable: every path through the loop returns, throws, or
+      // `continue`s, and the final attempt falls through to `throw err`.
+      // Kept because TypeScript cannot see that the loop never exits normally.
+      throw new Error("Transaction failed after sequence retries");
     },
-    [rawAddress, activeSession, config.chainId, config.rpcEndpoint, config.denom, chainInfo.feeCurrencies]
+    [rawAddress, activeSession, config.chainId, config.rpcEndpoint, config.denom, chainInfo.feeCurrencies, rememberPendingTx, forgetPendingTx, sweepPendingTxs]
   );
 
   const activateSession = useCallback((session: Session) => {
@@ -664,6 +895,39 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setActiveSession(null);
     localStorage.removeItem("session_granter");
   }, []);
+
+  // Retire remembered unconfirmed hashes once per connected address. The
+  // sequence-mismatch path re-checks them too, but only when a mismatch
+  // happens — without this a tx that timed out in the confirm poll and landed
+  // a minute later would sit in localStorage until the next mismatch, and a
+  // run of them would push older entries out under PENDING_TX_LIMIT.
+  useEffect(() => {
+    if (!rawAddress) return;
+    // Local prune first: TTL-expired entries are dropped without a lookup, so
+    // an address whose entries have all aged out costs no RPC connection.
+    const known = readPendingTxs(rawAddress);
+    const outstanding = prunePendingTxs(known, Date.now());
+    if (outstanding.length !== known.length) writePendingTxs(rawAddress, outstanding);
+    if (outstanding.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { StargateClient } = await import("@cosmjs/stargate");
+        const client = await StargateClient.connect(config.rpcEndpoint);
+        try {
+          if (cancelled) return;
+          await sweepPendingTxs(rawAddress, async (h) => (await client.getTx(h)) !== null);
+        } finally {
+          client.disconnect();
+        }
+      } catch {
+        // Best-effort housekeeping; the retry path re-checks before it fires.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [rawAddress, config.rpcEndpoint, readPendingTxs, writePendingTxs, sweepPendingTxs]);
 
   // Fetch available sessions (where this wallet is the grantee)
   useEffect(() => {

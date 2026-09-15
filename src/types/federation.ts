@@ -182,6 +182,32 @@ export interface ListOutboundAttestationsResponse {
   pagination: Pagination;
 }
 
+export interface GetPeerPolicyResponse {
+  policy: PeerPolicy;
+}
+
+// Subset of x/federation Params the UI displays. Durations arrive as
+// protobuf-seconds strings ("86400s"); integers as decimal strings.
+export interface FederationParams {
+  max_bridges_per_peer: string;
+  known_content_types: string[];
+  max_inbound_per_block: string;
+  global_max_trust_credit: number;
+  trust_discount_rate: string;
+  max_identity_links_per_user: number;
+  min_verifier_trust_level: number;
+  min_verifier_bond: string;
+  verification_window: string;
+  challenge_window: string;
+  ibc_port: string;
+  ibc_channel_version: string;
+  [key: string]: unknown;
+}
+
+export interface FederationParamsResponse {
+  params: FederationParams;
+}
+
 // --- Helpers ---
 
 // Pretty labels for peer status pills

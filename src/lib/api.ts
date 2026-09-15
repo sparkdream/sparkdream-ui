@@ -191,6 +191,8 @@ import type {
   ListFederatedContentResponse,
   ListIdentityLinksResponse,
   ListOutboundAttestationsResponse,
+  GetPeerPolicyResponse,
+  FederationParamsResponse,
 } from "@/types/federation";
 import type {
   ListValidatorsResponse,
@@ -2101,6 +2103,24 @@ export async function listFederationPeers(
     "/sparkdream/federation/v1/list_peers",
     paginationParams(pagination)
   );
+}
+
+// Bilateral content/reputation policy for one peer. Registered peers start
+// with an empty default policy; the council fills it via MsgUpdatePeerPolicy
+// (see the multichain suite's setup_policies.sh).
+export async function getFederationPeerPolicy(
+  peerId: string
+): Promise<GetPeerPolicyResponse> {
+  return get<GetPeerPolicyResponse>(
+    `/sparkdream/federation/v1/get_peer_policy/${encodeURIComponent(peerId)}`
+  );
+}
+
+// Module params. The page surfaces several of them: verifier bond
+// (min_verifier_bond), the identity-link cap (max_identity_links_per_user),
+// and the discounting figures for the reputation card.
+export async function getFederationParams(): Promise<FederationParamsResponse> {
+  return get<FederationParamsResponse>("/sparkdream/federation/v1/params");
 }
 
 // Post-0747637, federation only owns the per-(operator, peer) binding —

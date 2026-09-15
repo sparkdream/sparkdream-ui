@@ -39,3 +39,12 @@ export function loadRepMember(addr: string): Promise<RepMember | null> {
   pending.set(addr, p);
   return p;
 }
+
+// Overwrite the cached record for `addr`. For callers that poll the endpoint
+// themselves on a cadence faster than CACHE_TTL (the header balance chip):
+// without this, their fresh read is invisible to every hook still being
+// served the stale entry, and the chip and the page disagree for minutes.
+export function primeRepMember(addr: string, member: RepMember | null): void {
+  cache.set(addr, member);
+  cacheTs.set(addr, Date.now());
+}

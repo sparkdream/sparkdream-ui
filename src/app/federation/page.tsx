@@ -18,6 +18,8 @@ import {
   listFederatedContent,
   listFederationIdentityLinks,
   listFederationOutboundAttestations,
+  getFederationPeerPolicy,
+  getFederationParams,
 } from "@/lib/api";
 import {
   PeerType,
@@ -26,6 +28,8 @@ import {
   IdentityLinkStatus,
   FederatedContentStatus,
   type Peer,
+  type PeerPolicy,
+  type FederationParams,
   type BridgeOperator,
   type IdentityLink,
   type FederatedContent,
@@ -78,7 +82,17 @@ export default function FederationPage() {
   const [bridges, setBridges] = useState<BridgeOperator[]>([]);
   const [identityLinks, setIdentityLinks] = useState<IdentityLink[]>([]);
   const [content, setContent] = useState<FederatedContent[]>([]);
+  // Inbound content received in the last 24h, for the KPI tile. Counted when
+  // the fetch lands rather than during render: `received_at` is unix seconds
+  // (BlockTime().Unix(), not a height), and reading the clock in render trips
+  // the purity rule. The fetch is capped at the newest 100, so a very busy day
+  // floors at 100 rather than overcounting, the opposite of the all-time
+  // number this tile used to show.
+  const [content24h, setContent24h] = useState(0);
   const [attestations, setAttestations] = useState<OutboundAttestation[]>([]);
+  // peer_id → bilateral policy, loaded after the peer list lands.
+  const [policies, setPolicies] = useState<Record<string, PeerPolicy>>({});
+  const [fedParams, setFedParams] = useState<FederationParams | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,6 +107,8 @@ export default function FederationPage() {
       setPeers(p);
       setBridges(b);
       setContent(c);
+      const cutoff = Date.now() / 1000 - 86_400;
+      setContent24h(c.filter((x) => Number(x.received_at) >= cutoff).length);
       setIdentityLinks(l);
       setAttestations(a);
     });
@@ -101,46 +117,70 @@ export default function FederationPage() {
     };
   }, []);
 
+  useEffect(() => {
+    getFederationParams()
+      .then((res) => setFedParams(res.params))
+      .catch(() => setFedParams(null));
+  }, []);
+
+  // Pull each peer's bilateral policy so the peer cards describe the real
+  // relationship (allowlists, rate limits, reputation credit) instead of a
+  // fixed sample. Best-effort — a missing policy just renders defaults.
+  useEffect(() => {
+    if (peers.length === 0) return;
+    let cancelled = false;
+    Promise.allSettled(
+      peers.slice(0, 50).map((p) => getFederationPeerPolicy(p.id))
+    ).then((results) => {
+      if (cancelled) return;
+      const byId: Record<string, PeerPolicy> = {};
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled" && r.value.policy) {
+          byId[peers[i].id] = r.value.policy;
+        }
+      });
+      setPolicies(byId);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [peers]);
+
   // Filter live identity links to the connected wallet (the "my" view).
   const myIdentityLinks = useMemo(() => {
     if (!address) return [];
     return identityLinks.filter((l) => l.local_address === address);
   }, [identityLinks, address]);
 
-  // Demo fallbacks — when the chain is unreachable or has no real data yet,
-  // we render representative placeholder rows so the page communicates the
-  // feature surface instead of looking dead. Real data takes precedence the
-  // moment any module endpoint returns rows.
-  const displayPeers = peers.length > 0 ? peers : DEMO_PEERS;
-  const displayContent = content.length > 0 ? content : DEMO_CONTENT;
-  const displayLinks =
-    myIdentityLinks.length > 0 ? myIdentityLinks : DEMO_IDENTITY_LINKS;
-  const displayAttestations =
-    attestations.length > 0 ? attestations : DEMO_ATTESTATIONS;
-  const isDemoLinks = myIdentityLinks.length === 0;
-  const isDemoContent = content.length === 0;
-
-  // Counts per peer status used by the KPI strip — drawn from displayPeers
-  // so the strip doesn't read 0/0/0/0 against an unreachable chain.
+  // Counts per peer status used by the KPI strip.
   const counts = useMemo(() => {
     const byStatus: Record<string, number> = {};
     const byTransport: Record<Transport, number> = { ibc: 0, ap: 0, at: 0 };
-    for (const p of displayPeers) {
+    for (const p of peers) {
       byStatus[p.status] = (byStatus[p.status] || 0) + 1;
       const t = APPROX_PEER_TYPE[p.type];
       if (t) byTransport[t]++;
     }
     return {
-      total: displayPeers.length,
+      total: peers.length,
       active: byStatus[PeerStatus.ACTIVE] || 0,
       pending: byStatus[PeerStatus.PENDING] || 0,
       byTransport,
     };
-  }, [displayPeers]);
+  }, [peers]);
 
-  // Approximate "recent" inbound content; uses displayContent so we surface
-  // a representative number when chain queries return empty.
-  const recentContent = displayContent.length;
+  // Most recent peer activity, for the Network section caption. Computed
+  // from the live last_activity stamps; null when nothing has happened yet.
+  const lastActivity = useMemo(() => {
+    let latest: string | null = null;
+    for (const p of peers) {
+      if (!p.last_activity || p.last_activity === "0") continue;
+      if (latest === null || Number(p.last_activity) > Number(latest)) {
+        latest = p.last_activity;
+      }
+    }
+    return latest;
+  }, [peers]);
 
   // Verification queue partitioning — pending = waiting on a verifier;
   // verified = fresh confirmations; disputed = challenged.
@@ -148,24 +188,30 @@ export default function FederationPage() {
     const pending: FederatedContent[] = [];
     const verified: FederatedContent[] = [];
     const disputed: FederatedContent[] = [];
-    for (const c of displayContent) {
+    for (const c of content) {
       if (c.status === FederatedContentStatus.PENDING_VERIFICATION) pending.push(c);
       else if (c.status === FederatedContentStatus.VERIFIED || c.status === FederatedContentStatus.ACTIVE) verified.push(c);
       else if (c.status === FederatedContentStatus.DISPUTED || c.status === FederatedContentStatus.CHALLENGED) disputed.push(c);
     }
     return { pending, verified, disputed };
-  }, [displayContent]);
+  }, [content]);
 
   // Identity-link verification breakdown for the KPI subtitle.
   const linkBreakdown = useMemo(() => {
     let verified = 0;
     let pending = 0;
-    for (const l of displayLinks) {
+    for (const l of myIdentityLinks) {
       if (l.status === IdentityLinkStatus.VERIFIED) verified++;
       else if (l.status === IdentityLinkStatus.UNVERIFIED) pending++;
     }
     return { verified, pending };
-  }, [displayLinks]);
+  }, [myIdentityLinks]);
+
+  // Whole-token verifier bond from params (µ → display), for the role KPI.
+  const verifierBondWhole = fedParams
+    ? Number(fedParams.min_verifier_bond || 0) / 1_000_000
+    : null;
+  const maxLinks = fedParams?.max_identity_links_per_user ?? null;
 
   const sidebar = (
     <>
@@ -227,39 +273,39 @@ export default function FederationPage() {
 
       <KpiStrip
         peerCount={counts.total}
-        peerDelta={`▲ ${counts.pending || 1} this week`}
-        content24h={recentContent}
-        contentDelta="▲ 18% vs prior"
-        myLinks={displayLinks.length}
+        peerDelta={counts.pending > 0 ? `${counts.pending} pending` : `${counts.active} active`}
+        content24h={content24h}
+        contentDelta={`${queue.pending.length} awaiting verification`}
+        myLinks={myIdentityLinks.length}
         linksDelta={`${linkBreakdown.verified} verified · ${linkBreakdown.pending} pending`}
         roleLabel="Member"
-        roleDelta={`Eligible: Verifier · 500 ${dream}`}
+        roleDelta={verifierBondWhole !== null ? `Eligible: Verifier · ${verifierBondWhole} ${dream}` : `Eligible: Verifier`}
       />
 
-      <Section title="Network" meta={`My chain · ${config.chainId} · ${counts.total} peer${counts.total === 1 ? "" : "s"} · last activity 2m ago`}>
-        <Constellation peers={displayPeers} chainName={config.chainId} />
+      <Section title="Network" meta={`My chain · ${config.chainId} · ${counts.total} peer${counts.total === 1 ? "" : "s"}${lastActivity ? ` · last activity ${timeAgo(lastActivity)}` : ""}`}>
+        <Constellation peers={peers} chainName={config.chainId} />
       </Section>
 
       <Section
         title="Peers"
         meta={`Bilateral relationships · ${counts.active} active · ${counts.pending} pending`}
       >
-        <PeersGrid peers={displayPeers} />
+        <PeersGrid peers={peers} policies={policies} />
       </Section>
 
       <Section
         title="My identity links"
-        meta={`Voluntary cross-network bindings · ${displayLinks.length} of 10 used`}
+        meta={`Voluntary cross-network bindings${maxLinks !== null ? ` · ${myIdentityLinks.length} of ${maxLinks} used` : ` · ${myIdentityLinks.length} linked`}`}
       >
-        <IdentityLinkTable links={displayLinks} address={address} isDemo={isDemoLinks} />
+        <IdentityLinkTable links={myIdentityLinks} address={address} />
       </Section>
 
-      <Section title="Verification queue" meta={`Inbound bridge content · verifier window 24h${isDemoContent ? " · demo" : ""}`}>
+      <Section title="Verification queue" meta="Inbound bridge content · verifier window 24h">
         <VerificationQueue queue={queue} />
       </Section>
 
       <Section title="Recent attestations" meta="IBC packets & bridge submissions">
-        <AttestationsList attestations={displayAttestations} />
+        <AttestationsList attestations={attestations} />
       </Section>
 
       <BridgeBindingsSection bindings={bridges} />
@@ -523,7 +569,13 @@ function Constellation({ peers, chainName }: { peers: Peer[]; chainName: string 
 
 // ───────────────────────── Peers grid ─────────────────────────
 
-function PeersGrid({ peers }: { peers: Peer[] }) {
+function PeersGrid({
+  peers,
+  policies,
+}: {
+  peers: Peer[];
+  policies: Record<string, PeerPolicy>;
+}) {
   if (peers.length === 0) {
     return (
       <div className="sd-positions-empty">
@@ -536,13 +588,28 @@ function PeersGrid({ peers }: { peers: Peer[] }) {
   return (
     <div className="sd-fed-peers-grid">
       {peers.map((p) => (
-        <PeerCard key={p.id} peer={p} />
+        <PeerCard key={p.id} peer={p} policy={policies[p.id]} />
       ))}
     </div>
   );
 }
 
-function PeerCard({ peer }: { peer: Peer }) {
+// x/rep TrustLevel values as stored in PeerPolicy.min_outbound_trust_level.
+const TRUST_LEVEL_LABELS: Record<number, string> = {
+  0: "any",
+  1: "PROV",
+  2: "EST",
+  3: "TRUSTED",
+  4: "CORE",
+};
+
+function PeerCard({
+  peer,
+  policy,
+}: {
+  peer: Peer;
+  policy?: PeerPolicy;
+}) {
   const t = APPROX_PEER_TYPE[peer.type] || "ibc";
   const statusClass =
     peer.status === PeerStatus.ACTIVE
@@ -550,6 +617,22 @@ function PeerCard({ peer }: { peer: Peer }) {
       : peer.status === PeerStatus.PENDING
         ? "pending"
         : "suspended";
+  // Bilateral policy as configured on-chain. A freshly registered peer
+  // carries the empty default policy — render that honestly ("none") rather
+  // than implying a configured relationship. A policy we never loaded (the
+  // query failed, or the peer fell past the fetch cap) is a different thing
+  // and renders "—": "none"/"off" would read as a deliberately blocked peer.
+  const outTypes = policy?.outbound_content_types ?? [];
+  const inTypes = policy?.inbound_content_types ?? [];
+  const minTrust = policy
+    ? TRUST_LEVEL_LABELS[policy.min_outbound_trust_level] ?? String(policy.min_outbound_trust_level)
+    : "—";
+  // The default policy carries "0" (unlimited) — render that as unset.
+  const rateLimitRaw = policy?.inbound_rate_limit_per_epoch;
+  const rateLimit = rateLimitRaw && rateLimitRaw !== "0" ? rateLimitRaw : null;
+  // Reputation credit is IBC-only, capped by the policy's max_trust_credit.
+  const repCap = policy?.max_trust_credit ?? 0;
+  const repAllowed = t === "ibc" && (policy?.accept_reputation_attestations ?? false);
   return (
     <div className={`sd-fed-peer-card type-${t}`}>
       <div className="head">
@@ -568,17 +651,19 @@ function PeerCard({ peer }: { peer: Peer }) {
         </span>
       </div>
       <div className="policy-grid">
-        <PolicyRow arrow="→" label="Out" v="scrolls, forum" />
-        <PolicyRow arrow="←" label="In" v="scrolls, forum" />
-        <PolicyRow arrow="⊣" label="Min trust" v="EST" />
-        <PolicyRow arrow="⏱" label="Rate" v="—" />
+        <PolicyRow arrow="→" label="Out" v={!policy ? "—" : outTypes.length > 0 ? outTypes.join(", ") : "none"} />
+        <PolicyRow arrow="←" label="In" v={!policy ? "—" : inTypes.length > 0 ? inTypes.join(", ") : "none"} />
+        <PolicyRow arrow="⊣" label="Min trust" v={minTrust} />
+        <PolicyRow arrow="⏱" label="Rate" v={rateLimit ? `${rateLimit}/epoch` : "—"} />
       </div>
       <div className="trust-credit no-rep">
         <span>{t === "ibc" ? "Rep credit cap" : `No reputation bridging (${t === "ap" ? "ActivityPub" : "AT Protocol"})`}</span>
         <div className="bar">
-          <i style={{ width: t === "ibc" ? "40%" : 0 }} />
+          <i style={{ width: t === "ibc" ? `${Math.min(100, repCap * 25)}%` : 0 }} />
         </div>
-        {t === "ibc" && <span>EST</span>}
+        {t === "ibc" && (
+          <span>{!policy ? "—" : repAllowed ? TRUST_LEVEL_LABELS[repCap] ?? `L${repCap}` : "off"}</span>
+        )}
       </div>
       <div className="foot">
         <span className="stat">
@@ -605,11 +690,9 @@ function PolicyRow({ arrow, label, v }: { arrow: string; label: string; v: strin
 function IdentityLinkTable({
   links,
   address,
-  isDemo,
 }: {
   links: IdentityLink[];
   address: string | null;
-  isDemo: boolean;
 }) {
   if (links.length === 0) {
     return (
@@ -622,19 +705,12 @@ function IdentityLinkTable({
   }
   return (
     <div className="sd-fed-id-links">
-      {isDemo && (
-        <div className="row demo-note">
-          <span className="local" style={{ gridColumn: "1 / -1", color: "var(--ink-mute)", fontFamily: "var(--font-mono), monospace", fontSize: 11 }}>
-            Demo links shown — connect a wallet to see your real bindings.
-          </span>
-        </div>
-      )}
       {links.map((l) => {
         const t = peerMarkClass(l.peer_id);
         return (
           <div key={`${l.local_address}-${l.peer_id}-${l.remote_identity}`} className="row">
             <div className="me">{(l.local_address.slice(-2) || "K").toUpperCase()}</div>
-            <span className="local"><CopyableAddress address={l.local_address} /> · King of Bitchain</span>
+            <span className="local"><CopyableAddress address={l.local_address} /></span>
             <span className="arrow">→</span>
             <span className="remote">
               <span className={`peer-mark ${t}`} />
@@ -981,153 +1057,4 @@ function Glyph({
         </svg>
       );
   }
-}
-
-// ───────────────────────── Demo data (renders before chain has peers) ─────────────────────────
-
-// Minimal placeholder peers used when the federation queries return an empty
-// list — keeps the constellation and peer grid populated so the page stays
-// instructive on a fresh chain. Replaced by real data the moment any peer is
-// registered via MsgRegisterPeer.
-// Demo data uses live-relative timestamps (computed at module evaluation)
-// so timeAgo() reads "18h ago" / "2m ago" rather than empty strings.
-const NOW_S = Math.floor(Date.now() / 1000);
-const minsAgo = (m: number) => String(NOW_S - m * 60);
-const hrsAgo = (h: number) => String(NOW_S - h * 3600);
-const daysAgo = (d: number) => String(NOW_S - d * 86400);
-
-const DEMO_PEERS: Peer[] = [
-  makePeer("sparkdream-2", "sparkdream-2", PeerType.SPARK_DREAM, "channel-04", PeerStatus.ACTIVE, 8, 60),
-  makePeer("nightingale-1", "nightingale-1", PeerType.SPARK_DREAM, "channel-pending", PeerStatus.PENDING, 2, 4),
-  makePeer("embertown-1", "embertown-1", PeerType.SPARK_DREAM, "channel-09", PeerStatus.ACTIVE, 1, 90),
-  makePeer("mastodon.social", "mastodon.social", PeerType.ACTIVITYPUB, "", PeerStatus.ACTIVE, 14, 180),
-  makePeer("hachyderm.io", "hachyderm.io", PeerType.ACTIVITYPUB, "", PeerStatus.ACTIVE, 9, 70),
-  makePeer("bsky.network", "bsky.network", PeerType.ATPROTO, "", PeerStatus.ACTIVE, 4, 45),
-  makePeer("whtwnd.com", "whtwnd.com", PeerType.ATPROTO, "", PeerStatus.ACTIVE, 22, 30),
-];
-
-function makePeer(
-  id: string,
-  name: string,
-  type: string,
-  channel: string,
-  status: string = PeerStatus.ACTIVE,
-  lastActivityMin = 0,
-  registeredDaysAgo = 0,
-): Peer {
-  return {
-    id,
-    display_name: name,
-    type,
-    status,
-    ibc_channel_id: channel,
-    registered_at: registeredDaysAgo ? daysAgo(registeredDaysAgo) : "0",
-    last_activity: lastActivityMin ? minsAgo(lastActivityMin) : "0",
-    registered_by: "",
-    metadata: "",
-    removed_at: "0",
-  };
-}
-
-// Plausible federated content rows for the verification queue when chain
-// queries return empty. Exact strings come from the design mockup so the
-// layout reads correctly to anyone reviewing against it.
-const DEMO_CONTENT: FederatedContent[] = [
-  makeContent("3a7fbe12", "mastodon.social", "@clarissa", "On the topology of trust networks — a meditation", FederatedContentStatus.PENDING_VERIFICATION, hrsAgo(18)),
-  makeContent("9d11a04f", "whtwnd.com", "adelaide.bsky.social", "Why x/reveal won't kill open source", FederatedContentStatus.PENDING_VERIFICATION, hrsAgo(11)),
-  makeContent("22c0bb39", "hachyderm.io", "@morpho", "Bridge ops weekly digest #14", FederatedContentStatus.PENDING_VERIFICATION, hrsAgo(4)),
-  makeContent("0188a902", "sparkdream-2", "krown.ofbits", "Federation v2 review & futarchy market dump", FederatedContentStatus.VERIFIED, hrsAgo(20)),
-  makeContent("bf9177c1", "mastodon.social", "@nessa", "Spark and dream — economy notes", FederatedContentStatus.VERIFIED, hrsAgo(22)),
-  makeContent("4f1e2b6d", "bsky.network", "ramble.bsky.social", "Reveal mechanics under partial information", FederatedContentStatus.VERIFIED, daysAgo(2)),
-  makeContent("xxxxffff", "hachyderm.io", "@ghost", "Allegedly leaked council memo — see attached", FederatedContentStatus.DISPUTED, daysAgo(11)),
-];
-
-function makeContent(
-  id: string,
-  peerId: string,
-  creator: string,
-  title: string,
-  status: string,
-  receivedAt: string,
-): FederatedContent {
-  return {
-    id,
-    peer_id: peerId,
-    remote_content_id: id,
-    content_type: "scroll",
-    creator_identity: creator,
-    creator_name: creator,
-    title,
-    body: "",
-    content_uri: "",
-    protocol_metadata: "",
-    remote_created_at: "0",
-    received_at: receivedAt,
-    submitted_by: "",
-    status,
-    expires_at: "0",
-    content_hash: "",
-  };
-}
-
-// Three placeholder identity bindings that mirror the mockup so the section
-// renders meaningfully before the user (or chain) has any real links.
-const DEMO_IDENTITY_LINKS: IdentityLink[] = [
-  {
-    local_address: "sprkdrm1phsxr47",
-    peer_id: "sparkdream-2",
-    remote_identity: "krown.ofbits",
-    status: IdentityLinkStatus.VERIFIED,
-    linked_at: daysAgo(40),
-    verified_at: daysAgo(38),
-    challenge: "",
-  },
-  {
-    local_address: "sprkdrm1phsxr47",
-    peer_id: "mastodon.social",
-    remote_identity: "@kingofbits@mastodon.social",
-    status: IdentityLinkStatus.VERIFIED,
-    linked_at: daysAgo(20),
-    verified_at: daysAgo(20),
-    challenge: "",
-  },
-  {
-    local_address: "sprkdrm1phsxr47",
-    peer_id: "bsky.network",
-    remote_identity: "kingofbits.bsky.social",
-    status: IdentityLinkStatus.UNVERIFIED,
-    linked_at: hrsAgo(2),
-    verified_at: "",
-    challenge: "",
-  },
-];
-
-// Recent attestations timeline — IBC ACKs and bridge submissions. Mirrors
-// the design's "Recent attestations" panel.
-const DEMO_ATTESTATIONS: OutboundAttestation[] = [
-  makeAtt("att-1", "sparkdream-2", "scroll", "rep-query", "sprkdrm1abc", minsAgo(2)),
-  makeAtt("att-2", "mastodon.social", "scroll", "cb18", "sprkdrm1phsxr47", minsAgo(8)),
-  makeAtt("att-3", "bsky.network", "scroll", "41e200aa", "bridge-relay", minsAgo(14)),
-  makeAtt("att-4", "bsky.network", "identity", "kingofbits", "sprkdrm1phsxr47", minsAgo(31)),
-  makeAtt("att-5", "embertown-1", "reputation", "EST-prov", "sprkdrm1phsxr47", hrsAgo(1)),
-  makeAtt("att-6", "sparkdream-2", "scroll", "verify-morpho", "morpho-relay", hrsAgo(2)),
-];
-
-function makeAtt(
-  id: string,
-  peerId: string,
-  contentType: string,
-  localContentId: string,
-  submittedBy: string,
-  publishedAt: string,
-): OutboundAttestation {
-  return {
-    id,
-    peer_id: peerId,
-    content_type: contentType,
-    local_content_id: localContentId,
-    creator: "",
-    submitted_by: submittedBy,
-    published_at: publishedAt,
-  };
 }

@@ -11,8 +11,8 @@ import { RevealMsgTypeUrls } from "@/lib/tx";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import CouncilActions from "@/components/reveal/CouncilActions";
 import { useDisplayName } from "@/hooks/useDisplayName";
-import { formatTime, timeAgo } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
+import BlockTime from "@/components/BlockTime";
 import { dreamToMicro, formatDream } from "@/lib/reveal-fmt";
 import {
   CONTRIBUTION_STATUS_LABELS,
@@ -130,10 +130,10 @@ export default function ContributionDetail({
               <Metric label="Initial license" value={contribution.initial_license || "—"} />
               <Metric label="Final license" value={contribution.final_license || "—"} />
               {contribution.created_at && contribution.created_at !== "0" && (
-                <Metric label="Created" value={formatTime(contribution.created_at)} />
+                <Metric label="Created" value={<BlockTime height={contribution.created_at} />} />
               )}
               {contribution.approved_at && contribution.approved_at !== "0" && (
-                <Metric label="Approved" value={formatTime(contribution.approved_at)} />
+                <Metric label="Approved" value={<BlockTime height={contribution.approved_at} />} />
               )}
             </div>
           </div>
@@ -419,7 +419,7 @@ function StakeRow({
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-zinc-900/60 px-2 py-1 text-xs">
       <CopyableAddress className="font-mono text-zinc-300" address={stake.staker} resolveName />
       <span className="text-zinc-200">{formatDream(stake.amount)} {dream}</span>
-      <span className="text-zinc-500">{timeAgo(stake.staked_at)}</span>
+      <span className="text-zinc-500"><BlockTime height={stake.staked_at} relative /></span>
       {canWithdraw && (
         <button
           type="button"
