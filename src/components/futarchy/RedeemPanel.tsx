@@ -6,9 +6,9 @@ import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { FutarchyMsgTypeUrls } from "@/lib/tx";
 import { formatDream } from "@/lib/reveal-fmt";
 import { MarketStatus, MARKET_STATUS_LABELS, type Market } from "@/types/futarchy";
-import Modal from "./Modal";
+import ActionPanel from "./ActionPanel";
 
-export default function RedeemModal({
+export default function RedeemPanel({
   market,
   yesShares,
   noShares,
@@ -95,7 +95,7 @@ export default function RedeemModal({
     status === MarketStatus.CANCELLED;
 
   return (
-    <Modal
+    <ActionPanel
       title={`Redeem · #${market.index}`}
       subtitle={market.question || market.symbol}
       onClose={onClose}
@@ -150,7 +150,7 @@ export default function RedeemModal({
           out {config.displayDenom} in a single tx.
         </p>
       )}
-    </Modal>
+    </ActionPanel>
   );
 }
 

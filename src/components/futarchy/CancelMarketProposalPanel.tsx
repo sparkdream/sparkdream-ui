@@ -7,7 +7,7 @@ import { GovMsgTypeUrls, FutarchyMsgTypeUrls } from "@/lib/tx";
 import { getGovModuleAddress } from "@/lib/gov";
 import { dreamToMicro } from "@/lib/reveal-fmt";
 import type { Market } from "@/types/futarchy";
-import Modal from "./Modal";
+import ActionPanel from "./ActionPanel";
 import NumberInput from "@/components/NumberInput";
 
 /**
@@ -23,7 +23,7 @@ import NumberInput from "@/components/NumberInput";
  * MsgCancelMarket broadcast. See the chain-side TODO note in
  * x/futarchy/keeper/msg_server_cancel_market.go.
  */
-export default function CancelMarketProposalModal({
+export default function CancelMarketProposalPanel({
   market,
   onClose,
   onSubmitted,
@@ -98,7 +98,7 @@ export default function CancelMarketProposalModal({
   };
 
   return (
-    <Modal
+    <ActionPanel
       title="Propose market cancellation"
       subtitle="MsgCancelMarket is gov-authority-only. This wraps it in MsgSubmitProposal — if the proposal passes, x/gov executes the cancel and refunds the creator."
       onClose={onClose}
@@ -185,6 +185,6 @@ export default function CancelMarketProposalModal({
           Proposals need to reach the min deposit before voting begins. Others can deposit too.
         </span>
       </div>
-    </Modal>
+    </ActionPanel>
   );
 }

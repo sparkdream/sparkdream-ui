@@ -26,10 +26,10 @@ import {
   type FutarchyParams,
 } from "@/types/futarchy";
 import CreateMarketForm from "@/components/futarchy/CreateMarketForm";
-import TradeModal from "@/components/futarchy/TradeModal";
-import RedeemModal from "@/components/futarchy/RedeemModal";
-import WithdrawLiquidityModal from "@/components/futarchy/WithdrawLiquidityModal";
-import CancelMarketProposalModal from "@/components/futarchy/CancelMarketProposalModal";
+import TradePanel from "@/components/futarchy/TradePanel";
+import RedeemPanel from "@/components/futarchy/RedeemPanel";
+import WithdrawLiquidityPanel from "@/components/futarchy/WithdrawLiquidityPanel";
+import CancelMarketProposalPanel from "@/components/futarchy/CancelMarketProposalPanel";
 
 // Sidebar view selectors. Each maps to a different filter/projection over the
 // same underlying market list.
@@ -477,6 +477,12 @@ export default function FutarchyPage() {
     </>
   );
 
+  // The active action (trade / redeem / withdraw / cancel proposal) replaces
+  // the content pane — the Imaginarium panel-swap pattern — instead of
+  // stacking a dialog over the board. Exactly one can be open at a time; the
+  // trade -> cancel-proposal handoff swaps targets in place.
+  const actionOpen = !!(tradeTarget || redeemTarget || withdrawTarget || cancelProposalTarget);
+
   return (
     <ContentPageLayout
       title="Futarchy"
@@ -484,6 +490,67 @@ export default function FutarchyPage() {
       sidebar={sidebar}
       railCards={<RolesStrip params={params} />}
     >
+      {actionOpen ? (
+        <>
+          {tradeTarget && (
+            <TradePanel
+              market={liveMarket(tradeTarget.market)}
+              initialOutcome={tradeTarget.outcome}
+              params={params}
+              onClose={() => setTradeTarget(null)}
+              onTraded={() => {
+                setTradeTarget(null);
+                refresh();
+              }}
+              onProposeCancel={
+                liveMarket(tradeTarget.market).status === MarketStatus.ACTIVE
+                  ? () => {
+                      // Hand off to the cancel-proposal panel — a plain panel
+                      // swap now, no layering to avoid.
+                      const m = liveMarket(tradeTarget.market);
+                      setTradeTarget(null);
+                      setCancelProposalTarget(m);
+                    }
+                  : undefined
+              }
+            />
+          )}
+          {redeemTarget && (
+            <RedeemPanel
+              market={liveMarket(redeemTarget.market)}
+              yesShares={redeemTarget.yes}
+              noShares={redeemTarget.no}
+              onClose={() => setRedeemTarget(null)}
+              onRedeemed={() => {
+                setRedeemTarget(null);
+                refresh();
+              }}
+            />
+          )}
+          {withdrawTarget && (
+            <WithdrawLiquidityPanel
+              market={liveMarket(withdrawTarget)}
+              onClose={() => setWithdrawTarget(null)}
+              onWithdrawn={() => {
+                setWithdrawTarget(null);
+                refresh();
+              }}
+            />
+          )}
+          {cancelProposalTarget && (
+            <CancelMarketProposalPanel
+              market={liveMarket(cancelProposalTarget)}
+              onClose={() => setCancelProposalTarget(null)}
+              onSubmitted={() => {
+                setCancelProposalTarget(null);
+                // The proposal is in voting; markets won't change yet, so no
+                // refresh — just return to the board.
+              }}
+            />
+          )}
+        </>
+      ) : (
+      <>
       <PageHead
         onToggleCreate={() => setCreateOpen((v) => !v)}
         canCreate={!!address}
@@ -654,62 +721,7 @@ export default function FutarchyPage() {
         </div>
         <LMSRCard params={params} />
       </section>
-
-      {tradeTarget && (
-        <TradeModal
-          market={liveMarket(tradeTarget.market)}
-          initialOutcome={tradeTarget.outcome}
-          params={params}
-          onClose={() => setTradeTarget(null)}
-          onTraded={() => {
-            setTradeTarget(null);
-            refresh();
-          }}
-          onProposeCancel={
-            liveMarket(tradeTarget.market).status === MarketStatus.ACTIVE
-              ? () => {
-                  // Hand off to the cancel-proposal modal. Close trade first
-                  // so we never have two modal layers stacked.
-                  const m = liveMarket(tradeTarget.market);
-                  setTradeTarget(null);
-                  setCancelProposalTarget(m);
-                }
-              : undefined
-          }
-        />
-      )}
-      {redeemTarget && (
-        <RedeemModal
-          market={liveMarket(redeemTarget.market)}
-          yesShares={redeemTarget.yes}
-          noShares={redeemTarget.no}
-          onClose={() => setRedeemTarget(null)}
-          onRedeemed={() => {
-            setRedeemTarget(null);
-            refresh();
-          }}
-        />
-      )}
-      {withdrawTarget && (
-        <WithdrawLiquidityModal
-          market={liveMarket(withdrawTarget)}
-          onClose={() => setWithdrawTarget(null)}
-          onWithdrawn={() => {
-            setWithdrawTarget(null);
-            refresh();
-          }}
-        />
-      )}
-      {cancelProposalTarget && (
-        <CancelMarketProposalModal
-          market={liveMarket(cancelProposalTarget)}
-          onClose={() => setCancelProposalTarget(null)}
-          onSubmitted={() => {
-            setCancelProposalTarget(null);
-            // The proposal is in voting; markets won't change yet, so no
-            // refresh — but we don't want to leave the modal open.
-          }}
-        />
+      </>
       )}
     </ContentPageLayout>
   );

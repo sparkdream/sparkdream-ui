@@ -6,10 +6,10 @@ import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { FutarchyMsgTypeUrls } from "@/lib/tx";
 import { dreamToMicro, formatDream } from "@/lib/reveal-fmt";
 import { MarketStatus, MARKET_STATUS_LABELS, type Market, type FutarchyParams } from "@/types/futarchy";
-import Modal from "./Modal";
+import ActionPanel from "./ActionPanel";
 import NumberInput from "@/components/NumberInput";
 
-export default function TradeModal({
+export default function TradePanel({
   market,
   initialOutcome = "yes",
   params,
@@ -135,7 +135,7 @@ export default function TradeModal({
   };
 
   return (
-    <Modal
+    <ActionPanel
       title={`Trade · #${market.index}`}
       subtitle={market.question || market.symbol}
       onClose={onClose}
@@ -239,7 +239,7 @@ export default function TradeModal({
           </span>
         </div>
       </div>
-    </Modal>
+    </ActionPanel>
   );
 }
 

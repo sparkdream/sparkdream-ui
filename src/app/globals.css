@@ -2205,8 +2205,8 @@ body > * { position: relative; z-index: 1; }
   text-wrap: pretty;
   margin-bottom: 4px;
 }
-/* Tertiary modal action — small text link aligned to the left of the
-   Cancel/primary button cluster. Used by TradeModal for "Propose
+/* Tertiary panel action — small text link aligned to the left of the
+   Cancel/primary button cluster. Used by the futarchy TradePanel for "Propose
    cancellation" so the action is discoverable without crowding the buttons. */
 .sd-modal-tertiary {
   margin-right: auto;

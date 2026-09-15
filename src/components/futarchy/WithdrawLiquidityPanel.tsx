@@ -7,7 +7,7 @@ import { FutarchyMsgTypeUrls } from "@/lib/tx";
 import { formatDream } from "@/lib/reveal-fmt";
 import { MarketStatus, MARKET_STATUS_LABELS, type Market } from "@/types/futarchy";
 import CopyableAddress from "@/components/CopyableAddress";
-import Modal from "./Modal";
+import ActionPanel from "./ActionPanel";
 
 /**
  * Creator-only flow for pulling the residual subsidy back out after a market
@@ -19,7 +19,7 @@ import Modal from "./Modal";
  *   - The keeper computes the LMSR-correct residual server-side; we only
  *     surface the bounds so the user knows what they're agreeing to.
  */
-export default function WithdrawLiquidityModal({
+export default function WithdrawLiquidityPanel({
   market,
   onClose,
   onWithdrawn,
@@ -71,7 +71,7 @@ export default function WithdrawLiquidityModal({
   };
 
   return (
-    <Modal
+    <ActionPanel
       title={`Withdraw subsidy · #${market.index}`}
       subtitle={market.question || market.symbol}
       onClose={onClose}
@@ -143,7 +143,7 @@ export default function WithdrawLiquidityModal({
           additional to withdraw.
         </p>
       )}
-    </Modal>
+    </ActionPanel>
   );
 }
 
