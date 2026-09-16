@@ -374,6 +374,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const { load: loadSeason } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/season/v1/tx.registry");
       const { load: loadReveal } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/reveal/v1/tx.registry");
       const { load: loadFutarchy } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/futarchy/v1/tx.registry");
+      const { load: loadFederation } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx.registry");
       // Gov v1 + upgrade types (not in defaultRegistryTypes which only has v1beta1)
       const { MsgSubmitProposal: GovV1MsgSubmitProposal } = await import("cosmjs-types/cosmos/gov/v1/tx");
       const { MsgSoftwareUpgrade, MsgCancelUpgrade } = await import("cosmjs-types/cosmos/upgrade/v1beta1/tx");
@@ -392,6 +393,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       loadSeason(registry);
       loadReveal(registry);
       loadFutarchy(registry);
+      loadFederation(registry);
 
       const { AminoConverter: blogAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx.amino");
       const { AminoConverter: sessionAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx.amino");
@@ -403,6 +405,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const { AminoConverter: seasonAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/season/v1/tx.amino");
       const { AminoConverter: revealAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/reveal/v1/tx.amino");
       const { AminoConverter: futarchyAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/futarchy/v1/tx.amino");
+      // 0.0.39 ships a complete federation AminoConverter map (25 entries).
+      // The four the federation page signs -- MsgLinkIdentity,
+      // MsgUnlinkIdentity, and MsgRegisterPeer / MsgResumePeer / MsgSuspendPeer
+      // as council proposal inner messages -- were checked against the protos:
+      // all generated (no stale hand-written overrides), amino names match each
+      // `option (amino.name)`, no repeated fields, and no uint64. The one enum,
+      // MsgRegisterPeer.type, is emitted as a plain int, which is what the
+      // chain's aminojson renders. No shadowing needed.
+      const { AminoConverter: federationAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx.amino");
 
       // The published sparkdreamjs (0.0.19) ships the registry + proto codecs
       // for the new Pin/MakePermanent-separation and forum post-conviction
@@ -665,7 +676,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         },
       };
 
-      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...pinSeparationAmino, ...latestMsgAmino, ...reviewAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
+      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...federationAmino, ...pinSeparationAmino, ...latestMsgAmino, ...reviewAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
       // Cast: cosmjs's `lookupType` returns `GeneratedType` (union of TsProto +
       // Pbjs); the override only ever encounters TsProto types here.
       configureNestedAminoConverter({ registry: registry as unknown as Parameters<typeof configureNestedAminoConverter>[0]["registry"], aminoTypes });

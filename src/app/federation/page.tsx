@@ -20,7 +20,9 @@ import {
   listFederationOutboundAttestations,
   getFederationPeerPolicy,
   getFederationParams,
+  listServiceTypes,
 } from "@/lib/api";
+import type { ServiceTypeConfig } from "@/types/service";
 import {
   PeerType,
   PeerStatus,
@@ -36,11 +38,14 @@ import {
   type OutboundAttestation,
 } from "@/types/federation";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import { useTxAction } from "@/hooks/useTxAction";
+import ActionBanner from "@/components/ActionBanner";
+import { FederationMsgTypeUrls } from "@/lib/tx";
+import LinkIdentityForm from "@/components/federation/LinkIdentityForm";
+import PeerProposalForm, { type PeerAction } from "@/components/federation/PeerProposalForm";
 
-// View slot in the sidebar. The current scope of the page is the overview
-// (network constellation + peers + identity links + verification queue) — the
-// other slots are scaffolded so future drilldowns slot into the same sidebar
-// without re-architecting the layout.
+// View slot in the sidebar. "overview" stacks every section; the rest narrow
+// the page down to one slice. See VIEW_SECTIONS below for the mapping.
 type View =
   | "overview"
   | "peers"
@@ -50,14 +55,79 @@ type View =
   | "content"
   | "moderation";
 
-// Transport buckets for the side legend / filter — these reflect the proto
-// PeerType enum.
-type Transport = "ibc" | "ap" | "at";
+// Transport buckets for the side legend / filter — one per proto PeerType.
+// Keep these in sync with the enum: an unmapped type falls through to the IBC
+// styling and silently drops out of the transport counts.
+type Transport = "ibc" | "ap" | "at" | "nostr" | "lens";
 
 const APPROX_PEER_TYPE: Record<string, Transport> = {
   [PeerType.SPARK_DREAM]: "ibc",
   [PeerType.ACTIVITYPUB]: "ap",
   [PeerType.ATPROTO]: "at",
+  [PeerType.NOSTR]: "nostr",
+  [PeerType.LENS]: "lens",
+};
+
+// Protocol name per transport, for copy that has to name the wire format.
+const TRANSPORT_LABELS: Record<Transport, string> = {
+  ibc: "IBC",
+  ap: "ActivityPub",
+  at: "AT Protocol",
+  nostr: "Nostr",
+  lens: "Lens",
+};
+
+// Single-letter mark class shared by the constellation legend, the identity
+// link rows and the queue cards.
+const TRANSPORT_MARK: Record<Transport, string> = {
+  ibc: "s",
+  ap: "a",
+  at: "t",
+  nostr: "n",
+  lens: "l",
+};
+
+// Which sections each sidebar view renders. The overview shows everything;
+// the rest narrow the page to the slice the sidebar item names, so clicking
+// an item actually changes the page.
+type SectionKey =
+  | "network"
+  | "peers"
+  | "identity"
+  | "queue"
+  | "content"
+  | "attestations"
+  | "bridges";
+
+// Federation timestamps are unix seconds (BlockTime().Unix()), and an unset
+// one arrives as "0", not "". "0" is truthy, so a bare `ts ? timeAgo(ts) : "-"`
+// takes the truthy branch and timeAgo returns "" for it, printing a blank where
+// the dash belongs. Route every stamp through here.
+function stamp(ts: string | undefined, fallback = "—"): string {
+  if (!ts || ts === "0") return fallback;
+  return timeAgo(ts) || fallback;
+}
+
+// Protobuf durations arrive from the LCD as seconds strings ("3600s"). Render
+// the largest whole unit; anything unparseable passes straight through.
+function formatDurationParam(d: string): string {
+  const m = /^(\d+)s$/.exec(d);
+  if (!m) return d;
+  const secs = Number(m[1]);
+  if (secs >= 86_400) return `${+(secs / 86_400).toFixed(1)}d`;
+  if (secs >= 3_600) return `${+(secs / 3_600).toFixed(1)}h`;
+  if (secs >= 60) return `${Math.round(secs / 60)}m`;
+  return `${secs}s`;
+}
+
+const VIEW_SECTIONS: Record<View, SectionKey[]> = {
+  overview: ["network", "peers", "identity", "queue", "attestations", "bridges"],
+  peers: ["network", "peers"],
+  identity: ["identity"],
+  bridges: ["bridges"],
+  verifiers: ["queue"],
+  content: ["content", "attestations"],
+  moderation: ["queue"],
 };
 
 export default function FederationPage() {
@@ -66,6 +136,18 @@ export default function FederationPage() {
   const { address } = useWallet();
 
   const [view, setView] = useState<View>("overview");
+  // Which compose form is open, if any. Both are council/wallet gated inside
+  // the form rather than here, so the button always explains itself.
+  const [composer, setComposer] = useState<null | "link" | "peer">(null);
+  const [peerAction, setPeerAction] = useState<PeerAction>("register");
+  const [peerActionTarget, setPeerActionTarget] = useState("");
+  // Bumped every time the composer is opened, and used as the form's `key`, so
+  // opening it from a peer card re-seeds the action and target even when the
+  // form is already on screen.
+  const [composerNonce, setComposerNonce] = useState(0);
+  // Bumped after a broadcast so the lists refetch without a page reload.
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = () => setReloadKey((k) => k + 1);
   const [federationOpen, setFederationOpen] = useLocalStorageBoolean(
     "fed-section-open",
     true,
@@ -75,9 +157,12 @@ export default function FederationPage() {
     true,
   );
 
-  // Live data — best-effort. Federation queries are new; if a node hasn't
-  // exposed them yet we fall back to empty arrays and the UI still renders
-  // the structure (KPIs read 0, sections show empty states).
+  // Live data. Each list is fetched independently and a failure degrades to an
+  // empty array, but we record which queries failed: a node that hasn't exposed
+  // an endpoint yet and a genuinely empty federation are very different things,
+  // and rendering "no peers registered yet" for the first is a lie.
+  const [loading, setLoading] = useState(true);
+  const [failedQueries, setFailedQueries] = useState<string[]>([]);
   const [peers, setPeers] = useState<Peer[]>([]);
   const [bridges, setBridges] = useState<BridgeOperator[]>([]);
   const [identityLinks, setIdentityLinks] = useState<IdentityLink[]>([]);
@@ -93,17 +178,35 @@ export default function FederationPage() {
   // peer_id → bilateral policy, loaded after the peer list lands.
   const [policies, setPolicies] = useState<Record<string, PeerPolicy>>({});
   const [fedParams, setFedParams] = useState<FederationParams | null>(null);
+  // The bridge bond and unbonding period live on x/service, one config per
+  // `federation-bridge-<protocol>` service type. They are seeded identically,
+  // so the first one stands in for the requirement the roles card states.
+  const [bridgeConfig, setBridgeConfig] = useState<ServiceTypeConfig | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      listFederationPeers({ limit: "100", reverse: true }).then((r) => r.peers || []).catch(() => [] as Peer[]),
-      listFederationBridgeOperators({ limit: "100", reverse: true }).then((r) => r.bridge_bindings || []).catch(() => [] as BridgeOperator[]),
-      listFederatedContent({ limit: "100", reverse: true }).then((r) => r.content || []).catch(() => [] as FederatedContent[]),
-      listFederationIdentityLinks({ limit: "100", reverse: true }).then((r) => r.links || []).catch(() => [] as IdentityLink[]),
-      listFederationOutboundAttestations({ limit: "20", reverse: true }).then((r) => r.attestations || []).catch(() => [] as OutboundAttestation[]),
-    ]).then(([p, b, c, l, a]) => {
+    // No setLoading(true) here: the effect runs once, and `loading` already
+    // starts true. Setting it synchronously in the effect body just cascades
+    // a render.
+    Promise.allSettled([
+      listFederationPeers({ limit: "100", reverse: true }).then((r) => r.peers || []),
+      listFederationBridgeOperators({ limit: "100", reverse: true }).then((r) => r.bridge_bindings || []),
+      listFederatedContent({ limit: "100", reverse: true }).then((r) => r.content || []),
+      listFederationIdentityLinks({ limit: "100", reverse: true }).then((r) => r.links || []),
+      listFederationOutboundAttestations({ limit: "20", reverse: true }).then((r) => r.attestations || []),
+    ]).then(([pr, br, cr, lr, ar]) => {
       if (cancelled) return;
+      const failed: string[] = [];
+      const take = <T,>(r: PromiseSettledResult<T>, label: string, empty: T): T => {
+        if (r.status === "fulfilled") return r.value;
+        failed.push(label);
+        return empty;
+      };
+      const p = take(pr, "peers", [] as Peer[]);
+      const b = take(br, "bridge bindings", [] as BridgeOperator[]);
+      const c = take(cr, "federated content", [] as FederatedContent[]);
+      const l = take(lr, "identity links", [] as IdentityLink[]);
+      const a = take(ar, "outbound attestations", [] as OutboundAttestation[]);
       setPeers(p);
       setBridges(b);
       setContent(c);
@@ -111,16 +214,29 @@ export default function FederationPage() {
       setContent24h(c.filter((x) => Number(x.received_at) >= cutoff).length);
       setIdentityLinks(l);
       setAttestations(a);
+      setFailedQueries(failed);
+      setLoading(false);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   useEffect(() => {
     getFederationParams()
       .then((res) => setFedParams(res.params))
       .catch(() => setFedParams(null));
+  }, []);
+
+  useEffect(() => {
+    listServiceTypes({ limit: "100" })
+      .then((res) => {
+        const cfg = (res.configs || []).find((c) =>
+          c.service_type.startsWith("federation-bridge-")
+        );
+        setBridgeConfig(cfg ?? null);
+      })
+      .catch(() => setBridgeConfig(null));
   }, []);
 
   // Pull each peer's bilateral policy so the peer cards describe the real
@@ -155,7 +271,7 @@ export default function FederationPage() {
   // Counts per peer status used by the KPI strip.
   const counts = useMemo(() => {
     const byStatus: Record<string, number> = {};
-    const byTransport: Record<Transport, number> = { ibc: 0, ap: 0, at: 0 };
+    const byTransport: Record<Transport, number> = { ibc: 0, ap: 0, at: 0, nostr: 0, lens: 0 };
     for (const p of peers) {
       byStatus[p.status] = (byStatus[p.status] || 0) + 1;
       const t = APPROX_PEER_TYPE[p.type];
@@ -167,6 +283,18 @@ export default function FederationPage() {
       pending: byStatus[PeerStatus.PENDING] || 0,
       byTransport,
     };
+  }, [peers]);
+
+  // peer_id → transport, so every row that carries a peer id (identity links,
+  // queue cards) can mark it from the peer's real PeerType instead of guessing
+  // from substrings in the id.
+  const peerTransports = useMemo(() => {
+    const byId: Record<string, Transport> = {};
+    for (const p of peers) {
+      const t = APPROX_PEER_TYPE[p.type];
+      if (t) byId[p.id] = t;
+    }
+    return byId;
   }, [peers]);
 
   // Most recent peer activity, for the Network section caption. Computed
@@ -212,6 +340,17 @@ export default function FederationPage() {
     ? Number(fedParams.min_verifier_bond || 0) / 1_000_000
     : null;
   const maxLinks = fedParams?.max_identity_links_per_user ?? null;
+
+  // Window the verifier gets to confirm inbound content, straight from params
+  // (protobuf duration seconds, e.g. "3600s"). The caption used to claim a
+  // fixed 24h, which is not what the chain enforces.
+  const verificationMeta = `Inbound bridge content${
+    fedParams?.verification_window
+      ? ` · verifier window ${formatDurationParam(fedParams.verification_window)}`
+      : ""
+  }`;
+
+  const shows = (key: SectionKey) => VIEW_SECTIONS[view].includes(key);
 
   const sidebar = (
     <>
@@ -259,6 +398,8 @@ export default function FederationPage() {
         <TransportLegendItem t="ibc" label="IBC peers" count={counts.byTransport.ibc} />
         <TransportLegendItem t="ap" label="ActivityPub" count={counts.byTransport.ap} />
         <TransportLegendItem t="at" label="AT Protocol" count={counts.byTransport.at} />
+        <TransportLegendItem t="nostr" label="Nostr relays" count={counts.byTransport.nostr} />
+        <TransportLegendItem t="lens" label="Lens" count={counts.byTransport.lens} />
       </SidebarSection>
     </>
   );
@@ -267,13 +408,61 @@ export default function FederationPage() {
     <ContentPageLayout
       title={null}
       sidebar={sidebar}
-      railCards={<RolesStrip />}
+      railCards={<RolesStrip params={fedParams} bridgeConfig={bridgeConfig} />}
     >
-      <PageHead />
+      <PageHead
+        view={view}
+        onLinkIdentity={() => {
+          setComposer(composer === "link" ? null : "link");
+          setView("identity");
+        }}
+        onProposePeer={() => {
+          setComposer(composer === "peer" ? null : "peer");
+          setPeerAction("register");
+          setPeerActionTarget("");
+          setComposerNonce((n) => n + 1);
+          setView("peers");
+        }}
+        composer={composer}
+      />
+
+      {composer === "link" && (
+        <LinkIdentityForm
+          peers={peers}
+          myLinks={myIdentityLinks}
+          maxLinks={maxLinks}
+          onLinked={() => {
+            setComposer(null);
+            reload();
+          }}
+          onCancel={() => setComposer(null)}
+        />
+      )}
+
+      {composer === "peer" && (
+        <PeerProposalForm
+          key={composerNonce}
+          peers={peers}
+          initialAction={peerAction}
+          initialPeerId={peerActionTarget}
+          onSubmitted={() => {
+            setComposer(null);
+            reload();
+          }}
+          onCancel={() => setComposer(null)}
+        />
+      )}
+
+      {failedQueries.length > 0 && (
+        <div className="sd-fed-load-warning" role="status">
+          Could not read {failedQueries.join(", ")} from the node. Those sections
+          are blank because the query failed, not because the chain is empty.
+        </div>
+      )}
 
       <KpiStrip
         peerCount={counts.total}
-        peerDelta={counts.pending > 0 ? `${counts.pending} pending` : `${counts.active} active`}
+        peerDelta={`${counts.active} active · ${counts.pending} pending`}
         content24h={content24h}
         contentDelta={`${queue.pending.length} awaiting verification`}
         myLinks={myIdentityLinks.length}
@@ -282,33 +471,76 @@ export default function FederationPage() {
         roleDelta={verifierBondWhole !== null ? `Eligible: Verifier · ${verifierBondWhole} ${dream}` : `Eligible: Verifier`}
       />
 
-      <Section title="Network" meta={`My chain · ${config.chainId} · ${counts.total} peer${counts.total === 1 ? "" : "s"}${lastActivity ? ` · last activity ${timeAgo(lastActivity)}` : ""}`}>
-        <Constellation peers={peers} chainName={config.chainId} />
-      </Section>
+      {shows("network") && (
+        <Section title="Network" meta={`My chain · ${config.chainId} · ${counts.total} peer${counts.total === 1 ? "" : "s"}${lastActivity ? ` · last activity ${timeAgo(lastActivity)}` : ""}`}>
+          <Constellation peers={peers} chainName={config.chainId} />
+        </Section>
+      )}
 
-      <Section
-        title="Peers"
-        meta={`Bilateral relationships · ${counts.active} active · ${counts.pending} pending`}
-      >
-        <PeersGrid peers={peers} policies={policies} />
-      </Section>
+      {shows("peers") && (
+        <Section
+          title="Peers"
+          meta={`Bilateral relationships · ${counts.active} active · ${counts.pending} pending`}
+        >
+          <PeersGrid
+            peers={peers}
+            policies={policies}
+            loading={loading}
+            onProposeFor={(peer) => {
+              // Pre-pick the action the peer's current status allows, so the
+              // form opens on the only thing the council can do to it.
+              setPeerAction(peer.status === PeerStatus.ACTIVE ? "suspend" : "resume");
+              setPeerActionTarget(peer.id);
+              setComposerNonce((n) => n + 1);
+              setComposer("peer");
+            }}
+          />
+        </Section>
+      )}
 
-      <Section
-        title="My identity links"
-        meta={`Voluntary cross-network bindings${maxLinks !== null ? ` · ${myIdentityLinks.length} of ${maxLinks} used` : ` · ${myIdentityLinks.length} linked`}`}
-      >
-        <IdentityLinkTable links={myIdentityLinks} address={address} />
-      </Section>
+      {shows("identity") && (
+        <Section
+          title="My identity links"
+          meta={`Voluntary cross-network bindings${maxLinks !== null ? ` · ${myIdentityLinks.length} of ${maxLinks} used` : ` · ${myIdentityLinks.length} linked`}`}
+        >
+          <IdentityLinkTable
+            links={myIdentityLinks}
+            address={address}
+            transports={peerTransports}
+            onUnlinked={reload}
+          />
+        </Section>
+      )}
 
-      <Section title="Verification queue" meta="Inbound bridge content · verifier window 24h">
-        <VerificationQueue queue={queue} />
-      </Section>
+      {shows("queue") && (
+        <Section title="Verification queue" meta={verificationMeta}>
+          <VerificationQueue queue={queue} transports={peerTransports} />
+        </Section>
+      )}
 
-      <Section title="Recent attestations" meta="IBC packets & bridge submissions">
-        <AttestationsList attestations={attestations} />
-      </Section>
+      {shows("content") && (
+        <Section
+          title="Federated content"
+          meta={`Inbound from peers · newest ${content.length}${loading ? " · loading" : ""}`}
+        >
+          <FederatedContentList content={content} transports={peerTransports} />
+        </Section>
+      )}
 
-      <BridgeBindingsSection bindings={bridges} />
+      {shows("attestations") && (
+        <Section title="Recent attestations" meta="Outbound content published to peers">
+          <AttestationsList attestations={attestations} />
+        </Section>
+      )}
+
+      {shows("bridges") && (
+        <BridgeBindingsSection
+          bindings={bridges}
+          // On the overview an empty binding table is noise; when the sidebar
+          // asked for this view specifically, an empty state is the answer.
+          showWhenEmpty={view === "bridges"}
+        />
+      )}
     </ContentPageLayout>
   );
 }
@@ -321,8 +553,24 @@ export default function FederationPage() {
 // the `suspended` flag the service hooks toggle on underfund/refund. Surface
 // the binding list here with a pointer to the unified operator view in
 // governance.
-function BridgeBindingsSection({ bindings }: { bindings: BridgeOperator[] }) {
-  if (!bindings.length) return null;
+function BridgeBindingsSection({
+  bindings,
+  showWhenEmpty,
+}: {
+  bindings: BridgeOperator[];
+  showWhenEmpty: boolean;
+}) {
+  if (!bindings.length) {
+    if (!showWhenEmpty) return null;
+    return (
+      <Section title="Bridge bindings" meta="Bond + slashing live on x/service">
+        <div className="sd-positions-empty">
+          No bridge operators registered yet. An operator bonds on x/service and
+          binds to a peer with <span className="sd-mono">MsgRegisterBridge</span>.
+        </div>
+      </Section>
+    );
+  }
   const suspended = bindings.filter((b) => b.suspended);
   return (
     <Section
@@ -376,7 +624,27 @@ function BridgeBindingsSection({ bindings }: { bindings: BridgeOperator[] }) {
 
 // ───────────────────────── Page header ─────────────────────────
 
-function PageHead() {
+const VIEW_LABELS: Record<View, string> = {
+  overview: "Overview",
+  peers: "Peers",
+  identity: "My identity links",
+  bridges: "Bridge operators",
+  verifiers: "Verifiers",
+  content: "Federated content",
+  moderation: "Moderation queue",
+};
+
+function PageHead({
+  view,
+  onLinkIdentity,
+  onProposePeer,
+  composer,
+}: {
+  view: View;
+  onLinkIdentity: () => void;
+  onProposePeer: () => void;
+  composer: null | "link" | "peer";
+}) {
   return (
     <div className="sd-fed-page-head">
       <nav className="crumbs" aria-label="Breadcrumb">
@@ -384,17 +652,29 @@ function PageHead() {
         <span className="sep">›</span>
         <span className="crumb">Federation</span>
         <span className="sep">›</span>
-        <span className="crumb current">Overview</span>
+        <span className="crumb current">{VIEW_LABELS[view]}</span>
       </nav>
       <div className="actions">
-        <button type="button" className="sd-btn sd-btn-secondary" disabled title="Coming soon: MsgLinkIdentity">
+        <button
+          type="button"
+          className="sd-btn sd-btn-secondary"
+          onClick={onLinkIdentity}
+          aria-expanded={composer === "link"}
+          title="MsgLinkIdentity"
+        >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 5v14M5 12h14" />
           </svg>
-          Link identity
+          {composer === "link" ? "Close" : "Link identity"}
         </button>
-        <button type="button" className="sd-btn sd-btn-primary" disabled title="Council-only: MsgRegisterPeer">
-          Propose peer
+        <button
+          type="button"
+          className="sd-btn sd-btn-primary"
+          onClick={onProposePeer}
+          aria-expanded={composer === "peer"}
+          title="Commons Council proposal carrying MsgRegisterPeer"
+        >
+          {composer === "peer" ? "Close" : "Propose peer"}
         </button>
       </div>
     </div>
@@ -431,7 +711,7 @@ function KpiStrip({
           <circle cx="18" cy="18" r="3" />
           <path d="M9 10l6-3M9 14l6 3" />
         </svg>
-        <span className="label">Active peers</span>
+        <span className="label">Federation peers</span>
         <span className="value">{peerCount}</span>
         <span className="delta up">{peerDelta}</span>
       </div>
@@ -562,6 +842,8 @@ function Constellation({ peers, chainName }: { peers: Peer[]; chainName: string 
         <span className="swatch s">Spark Dream chain · IBC</span>
         <span className="swatch a">ActivityPub · bridge</span>
         <span className="swatch t">AT Protocol · bridge</span>
+        <span className="swatch n">Nostr relay · bridge</span>
+        <span className="swatch l">Lens · bridge</span>
       </div>
     </div>
   );
@@ -572,23 +854,33 @@ function Constellation({ peers, chainName }: { peers: Peer[]; chainName: string 
 function PeersGrid({
   peers,
   policies,
+  loading,
+  onProposeFor,
 }: {
   peers: Peer[];
   policies: Record<string, PeerPolicy>;
+  loading: boolean;
+  onProposeFor: (peer: Peer) => void;
 }) {
   if (peers.length === 0) {
     return (
       <div className="sd-positions-empty">
-        No peers registered yet. Once the council registers a peer (
-        <span className="sd-mono">MsgRegisterPeer</span>) it will appear here
-        with its bilateral content policy and reputation cap.
+        {loading ? (
+          "Loading peers…"
+        ) : (
+          <>
+            No peers registered yet. Once the council registers a peer (
+            <span className="sd-mono">MsgRegisterPeer</span>) it will appear here
+            with its bilateral content policy and reputation cap.
+          </>
+        )}
       </div>
     );
   }
   return (
     <div className="sd-fed-peers-grid">
       {peers.map((p) => (
-        <PeerCard key={p.id} peer={p} policy={policies[p.id]} />
+        <PeerCard key={p.id} peer={p} policy={policies[p.id]} onPropose={() => onProposeFor(p)} />
       ))}
     </div>
   );
@@ -606,9 +898,11 @@ const TRUST_LEVEL_LABELS: Record<number, string> = {
 function PeerCard({
   peer,
   policy,
+  onPropose,
 }: {
   peer: Peer;
   policy?: PeerPolicy;
+  onPropose: () => void;
 }) {
   const t = APPROX_PEER_TYPE[peer.type] || "ibc";
   const statusClass =
@@ -657,7 +951,7 @@ function PeerCard({
         <PolicyRow arrow="⏱" label="Rate" v={rateLimit ? `${rateLimit}/epoch` : "—"} />
       </div>
       <div className="trust-credit no-rep">
-        <span>{t === "ibc" ? "Rep credit cap" : `No reputation bridging (${t === "ap" ? "ActivityPub" : "AT Protocol"})`}</span>
+        <span>{t === "ibc" ? "Rep credit cap" : `No reputation bridging (${TRANSPORT_LABELS[t]})`}</span>
         <div className="bar">
           <i style={{ width: t === "ibc" ? `${Math.min(100, repCap * 25)}%` : 0 }} />
         </div>
@@ -667,12 +961,15 @@ function PeerCard({
       </div>
       <div className="foot">
         <span className="stat">
-          last activity <b>{peer.last_activity ? timeAgo(peer.last_activity) : "—"}</b>
+          last activity <b>{stamp(peer.last_activity)}</b>
         </span>
         <span className="stat" style={{ marginLeft: "auto" }}>
-          registered <b>{peer.registered_at ? timeAgo(peer.registered_at) : "—"}</b>
+          registered <b>{stamp(peer.registered_at)}</b>
         </span>
       </div>
+      <button type="button" className="sd-fed-peer-action" onClick={onPropose}>
+        {peer.status === PeerStatus.ACTIVE ? "Propose suspension" : "Propose activation"}
+      </button>
     </div>
   );
 }
@@ -690,10 +987,36 @@ function PolicyRow({ arrow, label, v }: { arrow: string; label: string; v: strin
 function IdentityLinkTable({
   links,
   address,
+  transports,
+  onUnlinked,
 }: {
   links: IdentityLink[];
   address: string | null;
+  transports: Record<string, Transport>;
+  onUnlinked: () => void;
 }) {
+  const { signAndBroadcast } = useWallet();
+  const { pending, error, clearError, run } = useTxAction();
+
+  // MsgUnlinkIdentity keys on (creator, peer_id) only -- one link per peer, so
+  // the peer id is the whole identifier. Works on a link in any status,
+  // including one still waiting on its challenge.
+  const unlink = async (link: IdentityLink) => {
+    if (!address) return;
+    const ok = await run(
+      link.peer_id,
+      async () => {
+        await signAndBroadcast([
+          {
+            typeUrl: FederationMsgTypeUrls.UnlinkIdentity,
+            value: { creator: address, peerId: link.peer_id },
+          },
+        ]);
+      },
+      (raw) => `Could not unlink ${link.remote_identity}: ${raw}`
+    );
+    if (ok) onUnlinked();
+  };
   if (links.length === 0) {
     return (
       <div className="sd-positions-empty">
@@ -704,9 +1027,11 @@ function IdentityLinkTable({
     );
   }
   return (
-    <div className="sd-fed-id-links">
+    <>
+      <ActionBanner message={error} onDismiss={clearError} className="mb-2" />
+      <div className="sd-fed-id-links">
       {links.map((l) => {
-        const t = peerMarkClass(l.peer_id);
+        const t = TRANSPORT_MARK[transports[l.peer_id] ?? "ibc"];
         return (
           <div key={`${l.local_address}-${l.peer_id}-${l.remote_identity}`} className="row">
             <div className="me">{(l.local_address.slice(-2) || "K").toUpperCase()}</div>
@@ -719,19 +1044,21 @@ function IdentityLinkTable({
               </span>
             </span>
             <VerifyPill status={l.status} verifiedAt={l.verified_at} />
-            <span className="more">⋯</span>
+            <button
+              type="button"
+              className="more"
+              onClick={() => unlink(l)}
+              disabled={pending !== null}
+              title={`Unlink ${l.remote_identity}`}
+            >
+              {pending === l.peer_id ? "…" : "Unlink"}
+            </button>
           </div>
         );
       })}
-    </div>
+      </div>
+    </>
   );
-}
-
-// Pick the constellation/legend mark class for a peer id.
-function peerMarkClass(peerId: string): "s" | "a" | "t" {
-  if (peerId.includes("mastodon") || peerId.includes("hachyderm")) return "a";
-  if (peerId.includes("bsky") || peerId.includes("whtwnd")) return "t";
-  return "s";
 }
 
 function VerifyPill({ status, verifiedAt }: { status: string; verifiedAt: string }) {
@@ -739,7 +1066,7 @@ function VerifyPill({ status, verifiedAt }: { status: string; verifiedAt: string
     return (
       <span className="verify verified">
         <span className="vd" />
-        Verified · {verifiedAt ? timeAgo(verifiedAt) : "now"}
+        Verified · {stamp(verifiedAt, "now")}
       </span>
     );
   }
@@ -763,8 +1090,10 @@ function VerifyPill({ status, verifiedAt }: { status: string; verifiedAt: string
 
 function VerificationQueue({
   queue,
+  transports,
 }: {
   queue: { pending: FederatedContent[]; verified: FederatedContent[]; disputed: FederatedContent[] };
+  transports: Record<string, Transport>;
 }) {
   return (
     <div className="sd-fed-queue-grid">
@@ -773,18 +1102,23 @@ function VerificationQueue({
         title="Pending verification"
         count={queue.pending.length}
         items={queue.pending.slice(0, 4)}
+        transports={transports}
       />
+      {/* The column is not time-windowed: it holds every VERIFIED/ACTIVE item
+          in the fetched page, so it must not be captioned "· 24h". */}
       <QueueColumn
         kind="verified"
-        title="Verified · 24h"
+        title="Verified"
         count={queue.verified.length}
         items={queue.verified.slice(0, 4)}
+        transports={transports}
       />
       <QueueColumn
         kind="disputed"
         title="Disputed"
         count={queue.disputed.length}
         items={queue.disputed.slice(0, 4)}
+        transports={transports}
       />
     </div>
   );
@@ -795,11 +1129,13 @@ function QueueColumn({
   title,
   count,
   items,
+  transports,
 }: {
   kind: "pending" | "verified" | "disputed";
   title: string;
   count: number;
   items: FederatedContent[];
+  transports: Record<string, Transport>;
 }) {
   return (
     <div className={`sd-fed-queue-col ${kind}`}>
@@ -810,29 +1146,86 @@ function QueueColumn({
       {items.length === 0 ? (
         <div className="empty">— nothing here —</div>
       ) : (
-        items.map((c) => <QueueItem key={c.id} c={c} />)
+        items.map((c) => <QueueItem key={c.id} c={c} transports={transports} />)
       )}
     </div>
   );
 }
 
-function QueueItem({ c }: { c: FederatedContent }) {
+function QueueItem({
+  c,
+  transports,
+}: {
+  c: FederatedContent;
+  transports: Record<string, Transport>;
+}) {
   // The proto carries the source peer + creator handle; we present a 2-line
   // summary that mirrors the design's compact card.
   return (
     <div className="sd-fed-queue-item">
       <div className="src-line">
-        <span className="peer-mark s" />
+        <span className={`peer-mark ${TRANSPORT_MARK[transports[c.peer_id] ?? "ibc"]}`} />
         {c.peer_id} · {c.creator_name || c.creator_identity}
       </div>
       <div className="title">{c.title || c.body || "(untitled)"}</div>
       <div className="meta-line">
         <span className="hash">#{c.id}</span>
-        <span>{c.received_at ? timeAgo(c.received_at) : ""}</span>
+        <span>{stamp(c.received_at, "")}</span>
       </div>
     </div>
   );
 }
+
+// ──────────────────── Federated content (full list) ────────────────────
+
+// The "Federated content" sidebar view. The verification queue only shows the
+// four newest per status; this lists the whole fetched page with its status.
+function FederatedContentList({
+  content,
+  transports,
+}: {
+  content: FederatedContent[];
+  transports: Record<string, Transport>;
+}) {
+  if (content.length === 0) {
+    return (
+      <div className="sd-positions-empty">
+        No federated content yet. A bridge operator submits inbound content with{" "}
+        <span className="sd-mono">MsgSubmitFederatedContent</span>, and it lands
+        here pending verification.
+      </div>
+    );
+  }
+  return (
+    <div className="sd-fed-content-grid">
+      {content.map((c) => (
+        <div key={c.id} className="sd-fed-queue-item">
+          <div className="src-line">
+            <span className={`peer-mark ${TRANSPORT_MARK[transports[c.peer_id] ?? "ibc"]}`} />
+            {c.peer_id} · {c.creator_name || c.creator_identity}
+          </div>
+          <div className="title">{c.title || c.body || "(untitled)"}</div>
+          <div className="meta-line">
+            <span className="hash">#{c.id}</span>
+            <span>{c.content_type}</span>
+            <span>{FED_CONTENT_STATUS_LABELS[c.status] || c.status}</span>
+            <span>{stamp(c.received_at, "")}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const FED_CONTENT_STATUS_LABELS: Record<string, string> = {
+  [FederatedContentStatus.PENDING_VERIFICATION]: "Pending verification",
+  [FederatedContentStatus.VERIFIED]: "Verified",
+  [FederatedContentStatus.ACTIVE]: "Active",
+  [FederatedContentStatus.HIDDEN]: "Hidden",
+  [FederatedContentStatus.DISPUTED]: "Disputed",
+  [FederatedContentStatus.CHALLENGED]: "Challenged",
+  [FederatedContentStatus.REJECTED]: "Rejected",
+};
 
 // ───────────────────────── Attestations ─────────────────────────
 
@@ -850,7 +1243,7 @@ function AttestationsList({ attestations }: { attestations: OutboundAttestation[
     <div className="sd-fed-attest-list">
       {attestations.map((a) => (
         <div key={a.id} className="row">
-          <span className="when">{a.published_at ? timeAgo(a.published_at) : "—"}</span>
+          <span className="when">{stamp(a.published_at)}</span>
           <span className="dir out">→</span>
           <span className="desc">
             Federated <b>{a.content_type} #{a.local_content_id}</b> outbound to{" "}
@@ -866,8 +1259,35 @@ function AttestationsList({ attestations }: { attestations: OutboundAttestation[
 
 // ───────────────────────── Roles strip ─────────────────────────
 
-function RolesStrip() {
+// Full x/rep TrustLevel names, for copy that states a requirement. The peer
+// cards use the abbreviated TRUST_LEVEL_LABELS instead, to fit the grid.
+const TRUST_LEVEL_FULL: Record<number, string> = {
+  0: "NONE",
+  1: "PROVISIONAL",
+  2: "ESTABLISHED",
+  3: "TRUSTED",
+  4: "CORE",
+};
+
+function RolesStrip({
+  params,
+  bridgeConfig,
+}: {
+  params: FederationParams | null;
+  bridgeConfig: ServiceTypeConfig | null;
+}) {
   const dream = useDreamDenom();
+  const { config } = useChainConfig();
+  // Every figure below is a live chain param. They were hardcoded before and
+  // had drifted: the bridge bond reads 1000 SPARK on-chain, not the 10k this
+  // card used to claim.
+  const verifierBond = params ? Number(params.min_verifier_bond || 0) / 1e6 : null;
+  const verifierTrust = params
+    ? TRUST_LEVEL_FULL[params.min_verifier_trust_level] ?? `L${params.min_verifier_trust_level}`
+    : null;
+  const verifierSlash = params ? Number(params.verifier_slash_amount || 0) / 1e6 : null;
+  const bridgeBond = bridgeConfig ? Number(bridgeConfig.min_bond_amount || 0) / 1e6 : null;
+  const spark = config.displayDenom;
   return (
     <div className="sd-fut-roles">
       <RoleCard
@@ -875,19 +1295,19 @@ function RolesStrip() {
         title="Become a verifier"
         body={`Independently fetch federated content, hash it, and confirm matches. Earn SPARK + ${dream} per epoch. Slashed if proven wrong.`}
         reqs={[
-          <>trust ≥ <b>ESTABLISHED</b></>,
-          <>bond <b>500 {dream}</b></>,
-          <>~10 epochs to recover</>,
+          <>trust ≥ <b>{verifierTrust ?? "—"}</b></>,
+          <>bond <b>{verifierBond !== null ? `${verifierBond} ${dream}` : "—"}</b></>,
+          <>slash <b>{verifierSlash !== null ? `${verifierSlash} ${dream}` : "—"}</b></>,
         ]}
       />
       <RoleCard
-        label="SPARK-staked"
+        label={`${spark}-bonded`}
         title="Run a bridge"
-        body="Operate a relay between this chain and ActivityPub or AT Protocol. Submit content, attest outbound, earn from x/split."
+        body="Operate a relay between this chain and ActivityPub, AT Protocol, Nostr, or Lens. Submit content, attest outbound, earn from the operator reward pool."
         reqs={[
-          <>stake ≥ <b>10k SPARK</b></>,
-          <>14d unbond</>,
-          <>session keys recommended</>,
+          <>bond ≥ <b>{bridgeBond !== null ? `${bridgeBond.toLocaleString()} ${spark}` : "—"}</b></>,
+          <>{bridgeConfig ? `${Number(bridgeConfig.unbonding_period_blocks).toLocaleString()} block unbond` : "unbonding on x/service"}</>,
+          <>reports resolved by controller</>,
         ]}
       />
       <RoleCard
@@ -970,13 +1390,31 @@ function TransportLegendItem({
       flex: "none",
       margin: "0 3px",
     };
-  } else {
+  } else if (t === "at") {
     mark = {
       background: "var(--green)",
       width: 10,
       height: 10,
       clipPath:
         "polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%)",
+      flex: "none",
+      margin: "0 3px",
+    };
+  } else if (t === "nostr") {
+    mark = {
+      background: "var(--rose)",
+      width: 10,
+      height: 10,
+      clipPath: "polygon(50% 0, 100% 100%, 0 100%)",
+      flex: "none",
+      margin: "0 3px",
+    };
+  } else {
+    mark = {
+      background: "var(--blue)",
+      width: 10,
+      height: 10,
+      borderRadius: 2,
       flex: "none",
       margin: "0 3px",
     };

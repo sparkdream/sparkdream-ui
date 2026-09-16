@@ -8,6 +8,12 @@ export const PeerType = {
   SPARK_DREAM: "PEER_TYPE_SPARK_DREAM",
   ACTIVITYPUB: "PEER_TYPE_ACTIVITYPUB",
   ATPROTO: "PEER_TYPE_ATPROTO",
+  // One Peer = one relay endpoint; NOSTR pubkeys are global, so the same
+  // remote_identity can be linked across several relay peers.
+  NOSTR: "PEER_TYPE_NOSTR",
+  // A Lens Chain deployment. Identity is on-chain (wallet + handle NFT), so
+  // its bridge verifies NFT ownership against Lens RPC before attesting.
+  LENS: "PEER_TYPE_LENS",
 } as const;
 export type PeerTypeValue = (typeof PeerType)[keyof typeof PeerType];
 
@@ -64,6 +70,25 @@ export interface Peer {
   registered_by: string;
   metadata: string;
   removed_at: string;
+  // x/commons Group policy address that resolves tier-1 reports against this
+  // peer's bridge operators. Empty until federation resolves it to the
+  // Operations Committee at MsgRegisterBridge time.
+  controller_group: string;
+  // Chain identity (denoms, display symbols, human name) supplied at peer
+  // registration, so wallets can render PSPK.ibc instead of ibc/<hash>. Null
+  // for pre-extension peers and for every non-Spark-Dream peer type.
+  peer_identity: ChainIdentity | null;
+}
+
+// Subset of sparkdream.identity.v1.ChainIdentity carried on a peer record.
+export interface ChainIdentity {
+  chain_id: string;
+  chain_name: string;
+  bond_denom: string;
+  bond_display_denom: string;
+  dream_denom: string;
+  dream_display_denom: string;
+  [key: string]: unknown;
 }
 
 export interface PeerPolicy {
@@ -96,6 +121,18 @@ export interface BridgeBinding {
   last_submission_at: string;
   // Toggled by service hooks AfterOperatorUnderfunded / AfterOperatorReFunded.
   suspended: boolean;
+  // Per-epoch mirrors of the lifetime counters above, zeroed at every operator
+  // reward distribution. The lifetime numbers only grow, so they cannot score
+  // a reward: a long-serving operator would out-earn an equally productive
+  // newcomer on history alone.
+  epoch_submitted: string;
+  epoch_verified: string;
+  epoch_rejected: string;
+  epoch_unverified: string;
+  // Most recent epoch this binding was paid in; "0" means never.
+  last_reward_epoch: string;
+  // Lifetime SPARK paid to this binding, in bond-denom micro-units.
+  cumulative_rewards: string;
 }
 
 // Legacy alias: older code refers to `BridgeOperator`, but post-0747637 the
@@ -222,4 +259,6 @@ export const PEER_TYPE_LABELS: Record<string, string> = {
   [PeerType.SPARK_DREAM]: "IBC",
   [PeerType.ACTIVITYPUB]: "ActivityPub",
   [PeerType.ATPROTO]: "AT Protocol",
+  [PeerType.NOSTR]: "Nostr",
+  [PeerType.LENS]: "Lens",
 };

@@ -340,6 +340,19 @@ export const FutarchyMsgTypeUrls = {
   UpdateOperationalParams: "/sparkdream.futarchy.v1.MsgUpdateOperationalParams",
 } as const;
 
+// Federation transaction message type URLs. The identity pair is signed
+// directly by the user; the peer lifecycle messages take `authority` and are
+// only accepted from the Commons Council policy address, so they travel as
+// inner messages of a commons proposal.
+export const FederationMsgTypeUrls = {
+  LinkIdentity: "/sparkdream.federation.v1.MsgLinkIdentity",
+  UnlinkIdentity: "/sparkdream.federation.v1.MsgUnlinkIdentity",
+  RegisterPeer: "/sparkdream.federation.v1.MsgRegisterPeer",
+  SuspendPeer: "/sparkdream.federation.v1.MsgSuspendPeer",
+  ResumePeer: "/sparkdream.federation.v1.MsgResumePeer",
+  RemovePeer: "/sparkdream.federation.v1.MsgRemovePeer",
+} as const;
+
 // Build a blog message for signing.
 export function buildBlogMsg(typeUrl: string, value: Record<string, unknown>) {
   return { typeUrl, value };

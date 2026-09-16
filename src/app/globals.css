@@ -3460,6 +3460,8 @@ body > * { position: relative; z-index: 1; }
 .sd-fed-constellation .node.peer-ibc { color: var(--violet-hi); }
 .sd-fed-constellation .node.peer-ap  { color: var(--amber); }
 .sd-fed-constellation .node.peer-at  { color: var(--green); }
+.sd-fed-constellation .node.peer-nostr { color: var(--rose); }
+.sd-fed-constellation .node.peer-lens  { color: var(--blue); }
 .sd-fed-constellation .node .label {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 11px;
@@ -3503,6 +3505,10 @@ body > * { position: relative; z-index: 1; }
 .sd-fed-constellation .legend .swatch.s { color: var(--violet-hi); }
 .sd-fed-constellation .legend .swatch.a { color: var(--amber); }
 .sd-fed-constellation .legend .swatch.t { color: var(--green); }
+.sd-fed-constellation .legend .swatch.n { color: var(--rose); }
+.sd-fed-constellation .legend .swatch.l { color: var(--blue); }
+/* Five buckets no longer fit one row at laptop width. */
+.sd-fed-constellation .legend { flex-wrap: wrap; row-gap: 6px; max-width: calc(100% - 32px); }
 
 /* ---------- Peers grid ---------- */
 .sd-fed-peers-grid {
@@ -3550,6 +3556,14 @@ body > * { position: relative; z-index: 1; }
 .sd-fed-peer-card.type-at .glyph-box .g {
   background: var(--green);
   clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+.sd-fed-peer-card.type-nostr .glyph-box .g {
+  background: var(--rose);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.sd-fed-peer-card.type-lens .glyph-box .g {
+  background: var(--blue);
+  border-radius: 3px;
 }
 .sd-fed-peer-card .head .meta {
   flex: 1; min-width: 0;
@@ -3687,6 +3701,11 @@ body > * { position: relative; z-index: 1; }
   background: var(--green);
   clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
 }
+.sd-fed-id-links .remote .peer-mark.n {
+  background: var(--rose);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.sd-fed-id-links .remote .peer-mark.l { background: var(--blue); border-radius: 2px; }
 .sd-fed-id-links .remote .text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sd-fed-id-links .verify {
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -3712,6 +3731,34 @@ body > * { position: relative; z-index: 1; }
   cursor: pointer;
 }
 .sd-fed-id-links .more:hover { background: var(--panel); color: var(--ink); }
+
+.sd-fed-peer-action {
+  margin-top: 10px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--panel-2);
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  cursor: pointer;
+}
+.sd-fed-peer-action:hover { border-color: var(--violet); color: var(--violet-hi); }
+
+/* The unlink control replaced a decorative glyph, so it needs the button
+   reset the glyph never did. */
+.sd-fed-id-links button.more {
+  border: 1px solid var(--rule);
+  background: transparent;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  width: auto;
+  padding: 0 8px;
+  height: 22px;
+  white-space: nowrap;
+}
+.sd-fed-id-links button.more:disabled { opacity: 0.5; cursor: default; }
 
 /* ---------- Verification queue ---------- */
 .sd-fed-queue-grid {
@@ -3783,6 +3830,33 @@ body > * { position: relative; z-index: 1; }
 .sd-fed-queue-item .src-line .peer-mark.t {
   background: var(--green);
   clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+.sd-fed-queue-item .src-line .peer-mark.n {
+  background: var(--rose);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.sd-fed-queue-item .src-line .peer-mark.l { background: var(--blue); border-radius: 2px; }
+
+/* ---------- Federated content view ---------- */
+.sd-fed-content-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+.sd-fed-content-grid .sd-fed-queue-item .meta-line {
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+/* ---------- Failed-query notice ---------- */
+.sd-fed-load-warning {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--amber);
+  background: var(--amber-soft);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--ink-soft);
 }
 .sd-fed-queue-item .title {
   font-size: 12px;
