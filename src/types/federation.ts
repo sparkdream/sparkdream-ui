@@ -262,3 +262,45 @@ export const PEER_TYPE_LABELS: Record<string, string> = {
   [PeerType.NOSTR]: "Nostr",
   [PeerType.LENS]: "Lens",
 };
+
+// --- Verifier activity ---
+
+// The read-only projection behind /verifier_activity/{address}: federation's
+// slim stored record (unchallenged_verifications) overlaid with the shared
+// accountability counters x/rep owns on RoleActivity. Nothing here is
+// persisted by federation except unchallenged_verifications, so an address
+// that never verified still resolves — with every counter at "0".
+export interface VerifierActivityView {
+  address: string;
+  unchallenged_verifications: string;
+  total_verifications: string;
+  upheld_verifications: string;
+  overturned_verifications: string;
+  epoch_verifications: string;
+  epoch_challenges_resolved: string;
+  consecutive_overturns: string;
+  consecutive_upheld: string;
+  overturn_cooldown_until: string;
+  last_slash_epoch: string;
+  // Derived chain-side: every upheld challenge slashes exactly once, so this
+  // equals overturned_verifications.
+  slash_count: string;
+}
+
+export interface VerifierActivityResponse {
+  activity: VerifierActivityView;
+}
+
+// --- Operator reward pool ---
+
+// The bridge-operator SPARK pool. `funded_today` against `daily_funding_cap`
+// is the on-chain answer to "why was I not paid this epoch".
+export interface OperatorRewardPoolResponse {
+  address: string;
+  balance: string;
+  cap: string;
+  headroom: string;
+  funded_today: string;
+  daily_funding_cap: string;
+  inflation_share: string;
+}

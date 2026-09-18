@@ -20,8 +20,16 @@ import {
   listFederationOutboundAttestations,
   getFederationPeerPolicy,
   getFederationParams,
+  getFederationVerifierActivity,
+  getFederationOperatorRewardPool,
   listServiceTypes,
+  listBondedRolesByType,
+  getBondedRole,
+  getBondedRoleConfig,
+  getCouncilMembers,
+  listGroups,
 } from "@/lib/api";
+import { errorKind } from "@/lib/errors";
 import type { ServiceTypeConfig } from "@/types/service";
 import {
   PeerType,
@@ -36,7 +44,19 @@ import {
   type IdentityLink,
   type FederatedContent,
   type OutboundAttestation,
+  type VerifierActivityView,
+  type OperatorRewardPoolResponse,
 } from "@/types/federation";
+import {
+  RoleType,
+  BondedRoleStatus,
+  BONDED_ROLE_STATUS_LABELS,
+  TrustLevel,
+  TRUST_LEVEL_LABELS as REP_TRUST_LEVEL_LABELS,
+  type BondedRole,
+  type BondedRoleConfig,
+} from "@/types/rep";
+import { useTrustRank } from "@/hooks/useTrustRank";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import { useTxAction } from "@/hooks/useTxAction";
 import ActionBanner from "@/components/ActionBanner";
@@ -96,9 +116,26 @@ type SectionKey =
   | "peers"
   | "identity"
   | "queue"
+  | "verifiers"
   | "content"
   | "attestations"
   | "bridges";
+
+// The council x/federation accepts peer-lifecycle messages from. Mirrors the
+// constant the proposal form signs against.
+const COUNCIL_NAME = "Commons Council";
+
+// x/rep trust levels arrive from BondedRoleConfig as the enum's string name
+// ("TRUST_LEVEL_ESTABLISHED"), while useTrustRank reports the member's level
+// as the enum's ordinal. Map one onto the other so a requirement can be
+// compared the same way BondRole compares it (int32 actual < required).
+const REP_TRUST_RANK: Record<string, number> = {
+  [TrustLevel.NEW]: 0,
+  [TrustLevel.PROVISIONAL]: 1,
+  [TrustLevel.ESTABLISHED]: 2,
+  [TrustLevel.TRUSTED]: 3,
+  [TrustLevel.CORE]: 4,
+};
 
 // Federation timestamps are unix seconds (BlockTime().Unix()), and an unset
 // one arrives as "0", not "". "0" is truthy, so a bare `ts ? timeAgo(ts) : "-"`
@@ -126,7 +163,7 @@ const VIEW_SECTIONS: Record<View, SectionKey[]> = {
   peers: ["network", "peers"],
   identity: ["identity"],
   bridges: ["bridges"],
-  verifiers: ["queue"],
+  verifiers: ["verifiers", "queue"],
   content: ["content", "attestations"],
   moderation: ["queue"],
 };
@@ -183,6 +220,31 @@ export default function FederationPage() {
   // `federation-bridge-<protocol>` service type. They are seeded identically,
   // so the first one stands in for the requirement the roles card states.
   const [bridgeConfig, setBridgeConfig] = useState<ServiceTypeConfig | null>(null);
+  // The verifier corps, straight from x/rep: federation reports verifications
+  // but the role, its bond and its standing are BondedRole records under
+  // ROLE_TYPE_FEDERATION_VERIFIER. The "Verifiers" view used to be an alias of
+  // the moderation queue and showed no verifier at all.
+  const [verifiers, setVerifiers] = useState<BondedRole[]>([]);
+  const [verifiersLoading, setVerifiersLoading] = useState(true);
+  // address -> counter view, loaded per roster entry.
+  const [verifierActivity, setVerifierActivity] = useState<Record<string, VerifierActivityView>>({});
+  // The bond/trust/cooldown gate x/rep actually enforces on BondRole. The
+  // role cards state requirements, so they have to read this rather than
+  // assert a level nothing on chain checks.
+  const [verifierRoleConfig, setVerifierRoleConfig] = useState<BondedRoleConfig | null>(null);
+  const [rewardPool, setRewardPool] = useState<OperatorRewardPoolResponse | null>(null);
+  // Commons Council roster, for the peer-proposal requirement card and the
+  // connected wallet's role.
+  const [councilMembers, setCouncilMembers] = useState<string[] | null>(null);
+  const [councilMinMembers, setCouncilMinMembers] = useState<string | null>(null);
+  // The connected wallet's own verifier record. The three non-record answers
+  // are all different and the role tile reads differently for each: still
+  // asking, the chain said "no such record" (they hold no verifier role), and
+  // the read failed (we do not know).
+  const [myVerifierRole, setMyVerifierRole] = useState<
+    BondedRole | "loading" | "none" | "error"
+  >("loading");
+  const myTrustRank = useTrustRank(address);
 
   useEffect(() => {
     let cancelled = false;
@@ -239,6 +301,102 @@ export default function FederationPage() {
       })
       .catch(() => setBridgeConfig(null));
   }, []);
+
+  // Verifier corps + the bond gate + the operator pool. All three are plain
+  // chain reads with no wallet dependency, so they load once with the page.
+  useEffect(() => {
+    let cancelled = false;
+    listBondedRolesByType(RoleType.FEDERATION_VERIFIER, { limit: "100" })
+      .then((res) => {
+        if (cancelled) return;
+        setVerifiers(res.bonded_roles || []);
+        setVerifiersLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setVerifiers([]);
+        setVerifiersLoading(false);
+      });
+    getBondedRoleConfig(RoleType.FEDERATION_VERIFIER)
+      .then((res) => !cancelled && setVerifierRoleConfig(res.bonded_role_config))
+      .catch(() => !cancelled && setVerifierRoleConfig(null));
+    getFederationOperatorRewardPool()
+      .then((res) => !cancelled && setRewardPool(res))
+      .catch(() => !cancelled && setRewardPool(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  // Per-verifier counters. The roster carries bond and standing; the accuracy
+  // numbers live behind a per-address query, so fan out over the roster.
+  useEffect(() => {
+    if (verifiers.length === 0) return;
+    let cancelled = false;
+    Promise.allSettled(
+      verifiers.slice(0, 25).map((v) => getFederationVerifierActivity(v.address))
+    ).then((results) => {
+      if (cancelled) return;
+      const byAddr: Record<string, VerifierActivityView> = {};
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled" && r.value.activity) {
+          byAddr[verifiers[i].address] = r.value.activity;
+        }
+      });
+      setVerifierActivity(byAddr);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [verifiers]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCouncilMembers(COUNCIL_NAME)
+      .then((res) => {
+        if (cancelled) return;
+        setCouncilMembers((res.members || []).map((m) => m.address));
+      })
+      .catch(() => !cancelled && setCouncilMembers(null));
+    listGroups()
+      .then((res) => {
+        if (cancelled) return;
+        const g = (res.group || []).find((x) => x.index === COUNCIL_NAME);
+        setCouncilMinMembers(g?.min_members ?? null);
+      })
+      .catch(() => !cancelled && setCouncilMinMembers(null));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // The connected wallet's verifier record. x/rep answers "bonded role not
+  // found" with a NotFound, which is the answer "you are not a verifier" --
+  // distinguish it from a failed read so the role tile never claims a role
+  // the chain did not confirm.
+  // Clear the previous wallet's answer synchronously at the moment `address`
+  // changes, so a reconnect never shows the old wallet's role for a render.
+  // Doing this in the effect would cascade a render (set-state-in-effect).
+  const [roleTrackedAddress, setRoleTrackedAddress] = useState(address);
+  if (address !== roleTrackedAddress) {
+    setRoleTrackedAddress(address);
+    setMyVerifierRole("loading");
+  }
+  useEffect(() => {
+    if (!address) return;
+    let cancelled = false;
+    getBondedRole(RoleType.FEDERATION_VERIFIER, address)
+      .then((res) => !cancelled && setMyVerifierRole(res.bonded_role))
+      .catch((e) => {
+        if (cancelled) return;
+        // NotFound is the chain saying "no such record", i.e. not a
+        // verifier. Anything else (node down, 501) leaves it unknown.
+        setMyVerifierRole(errorKind(e) === "not-found" ? "none" : "error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [address, reloadKey]);
 
   // Pull each peer's bilateral policy so the peer cards describe the real
   // relationship (allowlists, rate limits, reputation credit) instead of a
@@ -342,6 +500,67 @@ export default function FederationPage() {
     : null;
   const maxLinks = fedParams?.max_identity_links_per_user ?? null;
 
+  // The connected wallet's standing in this module, entirely from chain
+  // reads: the x/rep BondedRole record for the verifier role, the wallet's
+  // own bridge bindings, the Commons Council roster, and its trust rank
+  // against the bond gate. This tile used to read "Member · Eligible:
+  // Verifier" for everyone, connected or not, which is a claim the chain had
+  // never been asked to confirm.
+  const myFedRole = useMemo<{ label: string; delta: string }>(() => {
+    if (!address) return { label: "—", delta: "Connect a wallet" };
+    if (typeof myVerifierRole !== "string") {
+      const bond = Number(myVerifierRole.current_bond || 0) / 1_000_000;
+      const status =
+        BONDED_ROLE_STATUS_LABELS[myVerifierRole.bond_status] || myVerifierRole.bond_status;
+      const unbonding = myVerifierRole.bond_status === BondedRoleStatus.UNBONDING;
+      return {
+        label: "Verifier",
+        delta: `${status} · ${bond} ${dream} bonded${unbonding ? ", withdrawal queued" : ""}`,
+      };
+    }
+    const myBindings = bridges.filter((b) => b.address === address);
+    if (myBindings.length > 0) {
+      const suspended = myBindings.filter((b) => b.suspended).length;
+      return {
+        label: "Bridge operator",
+        delta: `${myBindings.length} binding${myBindings.length === 1 ? "" : "s"}${
+          suspended > 0 ? ` · ${suspended} suspended` : ""
+        }`,
+      };
+    }
+    if (councilMembers?.includes(address)) {
+      return { label: "Council", delta: `${COUNCIL_NAME} member` };
+    }
+    // No role held. State what the chain would require, and whether this
+    // wallet clears it, rather than asserting eligibility.
+    if (myVerifierRole === "loading") return { label: "…", delta: "Reading role records" };
+    if (myVerifierRole === "error") {
+      return { label: "—", delta: "Could not read your role records" };
+    }
+    if (myTrustRank === null) return { label: "Member", delta: "Checking verifier eligibility" };
+    if (myTrustRank < 0) return { label: "Visitor", delta: "No reputation record on this chain" };
+    const required = verifierRoleConfig?.min_trust_level ?? null;
+    const requiredRank = required !== null ? REP_TRUST_RANK[required] ?? null : null;
+    const bondCopy = verifierBondWhole !== null ? ` · ${verifierBondWhole} ${dream}` : "";
+    if (requiredRank === null) return { label: "Member", delta: "Verifier bond gate unavailable" };
+    if (myTrustRank >= requiredRank) {
+      return { label: "Member", delta: `Eligible: verifier${bondCopy}` };
+    }
+    return {
+      label: "Member",
+      delta: `Verifier needs trust ${REP_TRUST_LEVEL_LABELS[required!] || required}${bondCopy}`,
+    };
+  }, [
+    address,
+    myVerifierRole,
+    bridges,
+    councilMembers,
+    myTrustRank,
+    verifierRoleConfig,
+    verifierBondWhole,
+    dream,
+  ]);
+
   // Window the verifier gets to confirm inbound content, straight from params
   // (protobuf duration seconds, e.g. "3600s"). The caption used to claim a
   // fixed 24h, which is not what the chain enforces.
@@ -377,6 +596,7 @@ export default function FederationPage() {
         </SidebarItem>
         <SidebarItem active={view === "verifiers"} onClick={() => setView("verifiers")}>
           <Glyph name="check" /> Verifiers
+          <Badge>{verifiers.length}</Badge>
         </SidebarItem>
         <SidebarItem active={view === "content"} onClick={() => setView("content")}>
           <Glyph name="speech" /> Federated content
@@ -409,7 +629,15 @@ export default function FederationPage() {
     <ContentPageLayout
       title={null}
       sidebar={sidebar}
-      railCards={<RolesStrip params={fedParams} bridgeConfig={bridgeConfig} />}
+      railCards={
+        <RolesStrip
+          params={fedParams}
+          bridgeConfig={bridgeConfig}
+          verifierRoleConfig={verifierRoleConfig}
+          councilSize={councilMembers?.length ?? null}
+          councilMinMembers={councilMinMembers}
+        />
+      }
     >
       <PageHead
         view={view}
@@ -482,8 +710,8 @@ export default function FederationPage() {
         contentDelta={`${queue.pending.length} awaiting verification`}
         myLinks={myIdentityLinks.length}
         linksDelta={`${linkBreakdown.verified} verified · ${linkBreakdown.pending} pending`}
-        roleLabel="Member"
-        roleDelta={verifierBondWhole !== null ? `Eligible: Verifier · ${verifierBondWhole} ${dream}` : `Eligible: Verifier`}
+        roleLabel={myFedRole.label}
+        roleDelta={myFedRole.delta}
       />
 
       {shows("network") && (
@@ -530,6 +758,18 @@ export default function FederationPage() {
             onUnlinked={reload}
           />
         </Section>
+      )}
+
+      {shows("verifiers") && (
+        <VerifiersSection
+          verifiers={verifiers}
+          activity={verifierActivity}
+          config={verifierRoleConfig}
+          params={fedParams}
+          pool={rewardPool}
+          loading={verifiersLoading}
+          address={address}
+        />
       )}
 
       {shows("queue") && (
@@ -1121,6 +1361,166 @@ function VerifyPill({ status, verifiedAt }: { status: string; verifiedAt: string
   );
 }
 
+// ───────────────────────── Verifiers ─────────────────────────
+
+// Both tokens are micro-denominated at 6 decimals: BondedRole bonds are
+// micro-DREAM, the operator pool is micro-SPARK.
+function microToWhole(micro: string | undefined): number {
+  return Number(micro || 0) / 1_000_000;
+}
+
+// Upheld against resolved, the ratio the reward split scores. Null until a
+// verdict has actually resolved: 0% and "no verdicts yet" are different.
+function accuracy(a: VerifierActivityView | undefined): { pct: number; resolved: number } | null {
+  if (!a) return null;
+  const upheld = Number(a.upheld_verifications || 0);
+  const overturned = Number(a.overturned_verifications || 0);
+  const resolved = upheld + overturned;
+  if (resolved === 0) return null;
+  return { pct: (upheld / resolved) * 100, resolved };
+}
+
+function VerifiersSection({
+  verifiers,
+  activity,
+  config,
+  params,
+  pool,
+  loading,
+  address,
+}: {
+  verifiers: BondedRole[];
+  activity: Record<string, VerifierActivityView>;
+  config: BondedRoleConfig | null;
+  params: FederationParams | null;
+  pool: OperatorRewardPoolResponse | null;
+  loading: boolean;
+  address: string | null;
+}) {
+  const dream = useDreamDenom();
+  const { config: chain } = useChainConfig();
+  const spark = chain.displayDenom;
+  const normal = verifiers.filter((v) => v.bond_status === BondedRoleStatus.NORMAL).length;
+  const meta = config
+    ? `Bond ${microToWhole(config.min_bond)} ${dream} · trust ≥ ${
+        REP_TRUST_LEVEL_LABELS[config.min_trust_level] || config.min_trust_level
+      } · ${verifiers.length} bonded, ${normal} in good standing`
+    : `${verifiers.length} bonded, ${normal} in good standing`;
+  return (
+    <Section title="Verifiers" meta={meta}>
+      {pool && (
+        <div className="sd-fed-pool">
+          <span className="lab">Operator reward pool</span>
+          <span className="v">
+            {microToWhole(pool.balance).toLocaleString()} {spark}
+          </span>
+          <span className="sub">
+            funded today {microToWhole(pool.funded_today).toLocaleString()} of{" "}
+            {microToWhole(pool.daily_funding_cap).toLocaleString()} {spark} · cap{" "}
+            {microToWhole(pool.cap).toLocaleString()} {spark} · inflation share{" "}
+            {(Number(pool.inflation_share || 0) * 100).toFixed(1)}%
+          </span>
+        </div>
+      )}
+      {verifiers.length === 0 ? (
+        <div className="sd-positions-empty">
+          {loading
+            ? "Loading verifiers…"
+            : config
+              ? `No verifiers bonded yet. Bonding ${microToWhole(config.min_bond)} ${dream} at trust ${
+                  REP_TRUST_LEVEL_LABELS[config.min_trust_level] || config.min_trust_level
+                } or above claims the role.${
+                  params
+                    ? ` An overturned verdict slashes ${
+                        Number(params.verifier_slash_amount || 0) / 1e6
+                      } ${dream}, and the role is demoted once the bond falls below ${microToWhole(
+                        config.demotion_threshold
+                      )} ${dream}.`
+                    : ""
+                }`
+              : "No verifiers bonded yet."}
+        </div>
+      ) : (
+        <div className="sd-hull-tile overflow-hidden rounded-xl">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-900/40 text-left text-xs text-zinc-500">
+              <tr>
+                <th className="px-3 py-2 font-medium">Verifier</th>
+                <th className="px-3 py-2 font-medium text-right">Bond</th>
+                <th className="px-3 py-2 font-medium text-right">Verified</th>
+                <th className="px-3 py-2 font-medium text-right">This epoch</th>
+                <th className="px-3 py-2 font-medium text-right">Accuracy</th>
+                <th className="px-3 py-2 font-medium text-right">Slashes</th>
+                <th className="px-3 py-2 font-medium">Standing</th>
+              </tr>
+            </thead>
+            <tbody>
+              {verifiers.map((v) => {
+                const a = activity[v.address];
+                const acc = accuracy(a);
+                const mine = address !== null && v.address === address;
+                return (
+                  <tr
+                    key={v.address}
+                    className={`border-t border-zinc-800/60${mine ? " bg-indigo-500/5" : ""}`}
+                  >
+                    <td className="px-3 py-2 text-xs">
+                      <CopyableAddress address={v.address} />
+                      {mine && <span className="ml-2 text-[10px] text-indigo-400">you</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs text-zinc-200">
+                      {microToWhole(v.current_bond).toLocaleString()} {dream}
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs text-zinc-200">
+                      {a ? a.total_verifications : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs text-zinc-400">
+                      {a ? a.epoch_verifications : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs text-zinc-300">
+                      {acc ? `${acc.pct.toFixed(0)}% of ${acc.resolved}` : "—"}
+                    </td>
+                    <td
+                      className={`px-3 py-2 text-right text-xs ${
+                        a && Number(a.slash_count) > 0 ? "text-red-400" : "text-zinc-500"
+                      }`}
+                    >
+                      {a ? a.slash_count : "—"}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] ${
+                          v.bond_status === BondedRoleStatus.NORMAL
+                            ? "bg-emerald-500/15 text-emerald-400"
+                            : v.bond_status === BondedRoleStatus.DEMOTED
+                              ? "bg-red-500/15 text-red-400"
+                              : "bg-amber-500/15 text-amber-400"
+                        }`}
+                      >
+                        {BONDED_ROLE_STATUS_LABELS[v.bond_status] || v.bond_status}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="mt-2 text-xs text-zinc-500">
+        The bond and its standing live in x/rep as a bonded role. Manage it on{" "}
+        <Link
+          href="/governance?view=chain-operators"
+          className="text-indigo-400 underline hover:text-indigo-300"
+        >
+          Governance → Operators
+        </Link>
+        .
+      </p>
+    </Section>
+  );
+}
+
 // ───────────────────────── Verification queue ─────────────────────────
 
 function VerificationQueue({
@@ -1307,19 +1707,35 @@ const TRUST_LEVEL_FULL: Record<number, string> = {
 function RolesStrip({
   params,
   bridgeConfig,
+  verifierRoleConfig,
+  councilSize,
+  councilMinMembers,
 }: {
   params: FederationParams | null;
   bridgeConfig: ServiceTypeConfig | null;
+  verifierRoleConfig: BondedRoleConfig | null;
+  councilSize: number | null;
+  councilMinMembers: string | null;
 }) {
   const dream = useDreamDenom();
   const { config } = useChainConfig();
   // Every figure below is a live chain param. They were hardcoded before and
   // had drifted: the bridge bond reads 1000 SPARK on-chain, not the 10k this
   // card used to claim.
-  const verifierBond = params ? Number(params.min_verifier_bond || 0) / 1e6 : null;
-  const verifierTrust = params
-    ? TRUST_LEVEL_FULL[params.min_verifier_trust_level] ?? `L${params.min_verifier_trust_level}`
-    : null;
+  // The bond gate x/rep enforces on BondRole is the authority here; the
+  // federation params carry the same figures for the keeper's own checks, so
+  // they stand in when the role config read fails.
+  const verifierBond = verifierRoleConfig
+    ? microToWhole(verifierRoleConfig.min_bond)
+    : params
+      ? Number(params.min_verifier_bond || 0) / 1e6
+      : null;
+  const verifierTrust = verifierRoleConfig
+    ? REP_TRUST_LEVEL_LABELS[verifierRoleConfig.min_trust_level]?.toUpperCase() ??
+      verifierRoleConfig.min_trust_level
+    : params
+      ? TRUST_LEVEL_FULL[params.min_verifier_trust_level] ?? `L${params.min_verifier_trust_level}`
+      : null;
   const verifierSlash = params ? Number(params.verifier_slash_amount || 0) / 1e6 : null;
   const bridgeBond = bridgeConfig ? Number(bridgeConfig.min_bond_amount || 0) / 1e6 : null;
   const spark = config.displayDenom;
@@ -1348,10 +1764,18 @@ function RolesStrip({
       <RoleCard
         label="Council vote"
         title="Propose a peer"
-        body="Bring a new Spark Dream chain, ActivityPub instance, or AT Protocol service into bilateral federation. Sets policies, content types, rate limits."
+        body={`Bring a new Spark Dream chain, ActivityPub instance, or AT Protocol service into bilateral federation. Sets policies, content types, rate limits. x/federation accepts these messages only from the ${COUNCIL_NAME} policy address, so every one travels as a council proposal.`}
         reqs={[
-          <>trust ≥ <b>CORE</b></>,
-          <>passes council</>,
+          <>
+            {COUNCIL_NAME} seat
+            {councilSize !== null ? (
+              <>
+                {" "}
+                (<b>{councilSize}</b> held)
+              </>
+            ) : null}
+          </>,
+          <>passes council{councilMinMembers ? `, quorum ${councilMinMembers}` : ""}</>,
           <>unilateral, revocable</>,
         ]}
       />

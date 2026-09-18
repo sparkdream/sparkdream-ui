@@ -193,6 +193,8 @@ import type {
   ListOutboundAttestationsResponse,
   GetPeerPolicyResponse,
   FederationParamsResponse,
+  VerifierActivityResponse,
+  OperatorRewardPoolResponse,
 } from "@/types/federation";
 import type {
   ListValidatorsResponse,
@@ -2161,6 +2163,26 @@ export async function listFederationOutboundAttestations(
   return get<ListOutboundAttestationsResponse>(
     "/sparkdream/federation/v1/list_outbound_attestations",
     paginationParams(pagination)
+  );
+}
+
+// One verifier's counter view. Resolves for any address — an address that
+// never verified comes back with every counter at "0" — so this cannot be
+// used to test whether someone holds the role. That is the x/rep BondedRole
+// record (ROLE_TYPE_FEDERATION_VERIFIER), which 404s when they do not.
+export async function getFederationVerifierActivity(
+  address: string
+): Promise<VerifierActivityResponse> {
+  return get<VerifierActivityResponse>(
+    `/sparkdream/federation/v1/verifier_activity/${address}`
+  );
+}
+
+// Bridge-operator SPARK pool: balance, cap and today's draw against the
+// daily allowance minted from the inflation share.
+export async function getFederationOperatorRewardPool(): Promise<OperatorRewardPoolResponse> {
+  return get<OperatorRewardPoolResponse>(
+    "/sparkdream/federation/v1/operator_reward_pool"
   );
 }
 
