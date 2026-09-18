@@ -529,6 +529,53 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         },
       };
 
+      // 0.0.39's generated federation map is correct for every message this
+      // app signs EXCEPT MsgUpdatePeerPolicy, which carries the only federation
+      // message with repeated fields. PeerPolicy.toAmino emits them with a
+      // truthiness test:
+      //
+      //     if (message.outboundContentTypes) { obj.x = [...] } else { obj.x = ... }
+      //
+      // and `[]` is truthy, so an empty list signs as `"blocked_identities": []`
+      // where the chain's aminojson omits the key per omitempty. blocked_
+      // identities is empty in the ordinary case, so this fails sigverify as
+      // "unauthorized" on essentially every policy update — the first trap in
+      // [[amino-sigverify-traps]]. Shadow the whole converter, spread after the
+      // package map so ours wins.
+      //
+      // The uint64 rate limits are the second trap: the converter tests
+      // `!== BigInt(0)`, so callers must pass BigInt. PeerPolicy.fromPartial
+      // already coerces, and the policy form encodes through it.
+      const { MsgUpdatePeerPolicy: FederationUpdatePeerPolicy } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const peerPolicyToAmino = (p: any) => ({
+        peer_id: p?.peerId === "" ? undefined : p?.peerId,
+        outbound_content_types: (p?.outboundContentTypes?.length ?? 0) > 0 ? p.outboundContentTypes : undefined,
+        inbound_content_types: (p?.inboundContentTypes?.length ?? 0) > 0 ? p.inboundContentTypes : undefined,
+        min_outbound_trust_level: p?.minOutboundTrustLevel === 0 ? undefined : p?.minOutboundTrustLevel,
+        inbound_rate_limit_per_epoch: p?.inboundRateLimitPerEpoch !== BigInt(0) ? p?.inboundRateLimitPerEpoch?.toString() : undefined,
+        outbound_rate_limit_per_epoch: p?.outboundRateLimitPerEpoch !== BigInt(0) ? p?.outboundRateLimitPerEpoch?.toString() : undefined,
+        allow_reputation_queries: p?.allowReputationQueries === false ? undefined : p?.allowReputationQueries,
+        accept_reputation_attestations: p?.acceptReputationAttestations === false ? undefined : p?.acceptReputationAttestations,
+        max_trust_credit: p?.maxTrustCredit === 0 ? undefined : p?.maxTrustCredit,
+        require_review: p?.requireReview === false ? undefined : p?.requireReview,
+        blocked_identities: (p?.blockedIdentities?.length ?? 0) > 0 ? p.blockedIdentities : undefined,
+      });
+      const federationPolicyAmino = {
+        "/sparkdream.federation.v1.MsgUpdatePeerPolicy": {
+          aminoType: "sparkdream/x/federation/MsgUpdatePeerPolicy",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          toAmino: (message: any) => ({
+            authority: message.authority === "" ? undefined : message.authority,
+            peer_id: message.peerId === "" ? undefined : message.peerId,
+            // policy is (gogoproto.nullable) = false, so the chain always has
+            // one to render and we always send one.
+            policy: message.policy ? peerPolicyToAmino(message.policy) : undefined,
+          }),
+          fromAmino: FederationUpdatePeerPolicy.fromAmino,
+        },
+      };
+
       // Telescope's auto-generated amino converters don't recursively decode
       // `repeated google.protobuf.Any` fields, so MsgSubmitProposal /
       // MsgSubmitAnonymousProposal / MsgExecSession need the registry + the
@@ -676,7 +723,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         },
       };
 
-      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...federationAmino, ...pinSeparationAmino, ...latestMsgAmino, ...reviewAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
+      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...federationAmino, ...federationPolicyAmino, ...pinSeparationAmino, ...latestMsgAmino, ...reviewAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
       // Cast: cosmjs's `lookupType` returns `GeneratedType` (union of TsProto +
       // Pbjs); the override only ever encounters TsProto types here.
       configureNestedAminoConverter({ registry: registry as unknown as Parameters<typeof configureNestedAminoConverter>[0]["registry"], aminoTypes });

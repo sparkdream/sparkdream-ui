@@ -351,6 +351,9 @@ export const FederationMsgTypeUrls = {
   SuspendPeer: "/sparkdream.federation.v1.MsgSuspendPeer",
   ResumePeer: "/sparkdream.federation.v1.MsgResumePeer",
   RemovePeer: "/sparkdream.federation.v1.MsgRemovePeer",
+  // Operations Committee, not the Commons Council -- the keeper gates this one
+  // on the "operations" committee and the Council policy does not allow it.
+  UpdatePeerPolicy: "/sparkdream.federation.v1.MsgUpdatePeerPolicy",
 } as const;
 
 // Build a blog message for signing.

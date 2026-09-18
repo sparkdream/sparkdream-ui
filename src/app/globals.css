@@ -3732,6 +3732,8 @@ body > * { position: relative; z-index: 1; }
 }
 .sd-fed-id-links .more:hover { background: var(--panel); color: var(--ink); }
 
+.sd-fed-peer-actions { display: flex; gap: 8px; }
+.sd-fed-peer-actions .sd-fed-peer-action { flex: 1; }
 .sd-fed-peer-action {
   margin-top: 10px;
   width: 100%;

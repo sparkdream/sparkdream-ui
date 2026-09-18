@@ -43,6 +43,7 @@ import ActionBanner from "@/components/ActionBanner";
 import { FederationMsgTypeUrls } from "@/lib/tx";
 import LinkIdentityForm from "@/components/federation/LinkIdentityForm";
 import PeerProposalForm, { type PeerAction } from "@/components/federation/PeerProposalForm";
+import PeerPolicyForm from "@/components/federation/PeerPolicyForm";
 
 // View slot in the sidebar. "overview" stacks every section; the rest narrow
 // the page down to one slice. See VIEW_SECTIONS below for the mapping.
@@ -138,7 +139,7 @@ export default function FederationPage() {
   const [view, setView] = useState<View>("overview");
   // Which compose form is open, if any. Both are council/wallet gated inside
   // the form rather than here, so the button always explains itself.
-  const [composer, setComposer] = useState<null | "link" | "peer">(null);
+  const [composer, setComposer] = useState<null | "link" | "peer" | "policy">(null);
   const [peerAction, setPeerAction] = useState<PeerAction>("register");
   const [peerActionTarget, setPeerActionTarget] = useState("");
   // Bumped every time the composer is opened, and used as the form's `key`, so
@@ -439,6 +440,20 @@ export default function FederationPage() {
         />
       )}
 
+      {composer === "policy" && (
+        <PeerPolicyForm
+          key={composerNonce}
+          peers={peers}
+          params={fedParams}
+          initialPeerId={peerActionTarget}
+          onSubmitted={() => {
+            setComposer(null);
+            reload();
+          }}
+          onCancel={() => setComposer(null)}
+        />
+      )}
+
       {composer === "peer" && (
         <PeerProposalForm
           key={composerNonce}
@@ -493,6 +508,11 @@ export default function FederationPage() {
               setPeerActionTarget(peer.id);
               setComposerNonce((n) => n + 1);
               setComposer("peer");
+            }}
+            onEditPolicy={(peer) => {
+              setPeerActionTarget(peer.id);
+              setComposerNonce((n) => n + 1);
+              setComposer("policy");
             }}
           />
         </Section>
@@ -643,7 +663,7 @@ function PageHead({
   view: View;
   onLinkIdentity: () => void;
   onProposePeer: () => void;
-  composer: null | "link" | "peer";
+  composer: null | "link" | "peer" | "policy";
 }) {
   return (
     <div className="sd-fed-page-head">
@@ -856,11 +876,13 @@ function PeersGrid({
   policies,
   loading,
   onProposeFor,
+  onEditPolicy,
 }: {
   peers: Peer[];
   policies: Record<string, PeerPolicy>;
   loading: boolean;
   onProposeFor: (peer: Peer) => void;
+  onEditPolicy: (peer: Peer) => void;
 }) {
   if (peers.length === 0) {
     return (
@@ -880,7 +902,13 @@ function PeersGrid({
   return (
     <div className="sd-fed-peers-grid">
       {peers.map((p) => (
-        <PeerCard key={p.id} peer={p} policy={policies[p.id]} onPropose={() => onProposeFor(p)} />
+        <PeerCard
+          key={p.id}
+          peer={p}
+          policy={policies[p.id]}
+          onPropose={() => onProposeFor(p)}
+          onEditPolicy={() => onEditPolicy(p)}
+        />
       ))}
     </div>
   );
@@ -899,10 +927,12 @@ function PeerCard({
   peer,
   policy,
   onPropose,
+  onEditPolicy,
 }: {
   peer: Peer;
   policy?: PeerPolicy;
   onPropose: () => void;
+  onEditPolicy: () => void;
 }) {
   const t = APPROX_PEER_TYPE[peer.type] || "ibc";
   const statusClass =
@@ -967,9 +997,14 @@ function PeerCard({
           registered <b>{stamp(peer.registered_at)}</b>
         </span>
       </div>
-      <button type="button" className="sd-fed-peer-action" onClick={onPropose}>
-        {peer.status === PeerStatus.ACTIVE ? "Propose suspension" : "Propose activation"}
-      </button>
+      <div className="sd-fed-peer-actions">
+        <button type="button" className="sd-fed-peer-action" onClick={onPropose}>
+          {peer.status === PeerStatus.ACTIVE ? "Propose suspension" : "Propose activation"}
+        </button>
+        <button type="button" className="sd-fed-peer-action" onClick={onEditPolicy}>
+          Edit policy
+        </button>
+      </div>
     </div>
   );
 }
