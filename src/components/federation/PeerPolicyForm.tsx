@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { CommonsMsgTypeUrls, FederationMsgTypeUrls } from "@/lib/tx";
-import { DIRECT_COUNCIL_SIGNING } from "@/lib/devFlags";
+import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { listGroups, getCouncilMembers, getFederationPeerPolicy } from "@/lib/api";
 import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
@@ -53,6 +53,12 @@ export default function PeerPolicyForm({
   onCancel: () => void;
 }) {
   const { address, signAndBroadcast } = useWallet();
+  // Runtime flag: NEXT_PUBLIC_* is inlined at build time, so a deployment
+  // that flips this in its env would otherwise see no change at all. It
+  // arrives via /api/config; until that resolves the build-time default
+  // applies, which is `false` -- i.e. the safe, proposal-based path.
+  const { config } = useChainConfig();
+  const directCouncilSigning = config.directCouncilSigning;
   const { busy, error, clearError, run } = useTxAction();
 
   const [committee, setCommittee] = useState<Group | null>(null);
@@ -149,7 +155,7 @@ export default function PeerPolicyForm({
     if (!address || !committee || !peerId) return;
     // See PeerProposalForm: direct mode signs as the Operations Committee
     // member instead of proposing to the committee policy.
-    const authority = DIRECT_COUNCIL_SIGNING ? address : committee.policy_address;
+    const authority = directCouncilSigning ? address : committee.policy_address;
 
     await run(
       "policy",
@@ -190,7 +196,7 @@ export default function PeerPolicyForm({
             })
           ).finish(),
         };
-        if (DIRECT_COUNCIL_SIGNING) {
+        if (directCouncilSigning) {
           await signAndBroadcast([inner]);
         } else {
           await signAndBroadcast([
@@ -248,12 +254,12 @@ export default function PeerPolicyForm({
 
   return (
     <form onSubmit={submit} className="sd-hull-tile space-y-4 rounded-xl p-5">
-      {DIRECT_COUNCIL_SIGNING && (
+      {directCouncilSigning && (
         <div className="rounded-lg border border-amber-600/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
           <span className="font-semibold">Direct signing enabled (development).</span>{" "}
           This submits the message immediately as your own account instead of
           opening a council vote. It succeeds only if you are on the Operations
-          Committee. Turn off NEXT_PUBLIC_DIRECT_COUNCIL_SIGNING for any chain
+          Committee. Turn off DIRECT_COUNCIL_SIGNING for any chain
           other than a devnet.
         </div>
       )}
@@ -459,8 +465,9 @@ export default function PeerPolicyForm({
       )}
 
       <p className="text-xs text-zinc-500">
-        This opens a {COMMITTEE_NAME} vote. The policy changes only once the
-        proposal passes and is executed.
+        {directCouncilSigning
+          ? "This is submitted directly as your own account and takes effect immediately."
+          : `This opens a ${COMMITTEE_NAME} vote. The policy changes only once the proposal passes and is executed.`}
       </p>
 
       <button
@@ -468,7 +475,7 @@ export default function PeerPolicyForm({
         disabled={busy || !committee || !peerId}
         className="sd-btn sd-btn-primary disabled:opacity-50"
       >
-        {busy ? "Submitting…" : "Submit policy proposal"}
+        {busy ? "Submitting…" : directCouncilSigning ? "Set policy directly" : "Submit policy proposal"}
       </button>
     </form>
   );

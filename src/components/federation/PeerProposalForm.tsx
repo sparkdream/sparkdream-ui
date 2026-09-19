@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { CommonsMsgTypeUrls, FederationMsgTypeUrls } from "@/lib/tx";
-import { DIRECT_COUNCIL_SIGNING } from "@/lib/devFlags";
+import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { listGroups, getCouncilMembers } from "@/lib/api";
 import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
@@ -75,6 +75,12 @@ export default function PeerProposalForm({
   onCancel: () => void;
 }) {
   const { address, signAndBroadcast } = useWallet();
+  // Runtime flag: NEXT_PUBLIC_* is inlined at build time, so a deployment
+  // that flips this in its env would otherwise see no change at all. It
+  // arrives via /api/config; until that resolves the build-time default
+  // applies, which is `false` -- i.e. the safe, proposal-based path.
+  const { config } = useChainConfig();
+  const directCouncilSigning = config.directCouncilSigning;
   // Validation here throws inside `run`, so the hook routes it to the same
   // banner as a chain error -- no separate setError path.
   const { busy, error, clearError, run } = useTxAction();
@@ -149,7 +155,7 @@ export default function PeerProposalForm({
     if (!address || !council) return;
     // Direct mode signs as the member; otherwise the council policy is the
     // authority and the message has to be executed by a passed proposal.
-    const authority = DIRECT_COUNCIL_SIGNING ? address : council.policy_address;
+    const authority = directCouncilSigning ? address : council.policy_address;
 
     await run(
       "propose",
@@ -230,7 +236,7 @@ export default function PeerProposalForm({
           }
         }
 
-        if (DIRECT_COUNCIL_SIGNING) {
+        if (directCouncilSigning) {
           // `inner` already carries authority = the connected address, so it
           // is a complete, self-signed message. The chain rejects it with
           // ErrNotAuthorized if the signer is not on the Operations
@@ -277,12 +283,12 @@ export default function PeerProposalForm({
 
   return (
     <form onSubmit={submit} className="sd-hull-tile space-y-4 rounded-xl p-5">
-      {DIRECT_COUNCIL_SIGNING && (
+      {directCouncilSigning && (
         <div className="rounded-lg border border-amber-600/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
           <span className="font-semibold">Direct signing enabled (development).</span>{" "}
           This submits the message immediately as your own account instead of
           opening a council vote. It succeeds only if you are on the Operations
-          Committee. Turn off NEXT_PUBLIC_DIRECT_COUNCIL_SIGNING for any chain
+          Committee. Turn off DIRECT_COUNCIL_SIGNING for any chain
           other than a devnet.
         </div>
       )}
@@ -463,9 +469,19 @@ export default function PeerProposalForm({
       </div>
 
       <p className="text-xs text-zinc-500">
-        This opens a {COUNCIL_NAME} vote. The peer changes only once the
-        proposal passes and is executed.
-        {action === "register" && " A newly registered peer starts pending, and needs a second proposal to activate it."}
+        {directCouncilSigning ? (
+          <>
+            This is submitted directly as your own account and takes effect
+            immediately.
+            {action === "register" && " A newly registered peer starts pending, and needs a separate activate to use it."}
+          </>
+        ) : (
+          <>
+            This opens a {COUNCIL_NAME} vote. The peer changes only once the
+            proposal passes and is executed.
+            {action === "register" && " A newly registered peer starts pending, and needs a second proposal to activate it."}
+          </>
+        )}
       </p>
 
       <button
@@ -473,7 +489,7 @@ export default function PeerProposalForm({
         disabled={busy || !council || (action !== "register" && !targetPeerId)}
         className="sd-btn sd-btn-primary disabled:opacity-50"
       >
-        {busy ? "Submitting…" : "Submit proposal"}
+        {busy ? "Submitting…" : directCouncilSigning ? "Submit directly" : "Submit proposal"}
       </button>
     </form>
   );
