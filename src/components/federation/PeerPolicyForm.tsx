@@ -77,7 +77,6 @@ export default function PeerPolicyForm({
   const [outRate, setOutRate] = useState("0");
   const [allowRepQueries, setAllowRepQueries] = useState(false);
   const [acceptRepAttest, setAcceptRepAttest] = useState(false);
-  const [maxTrustCredit, setMaxTrustCredit] = useState(0);
   const [requireReview, setRequireReview] = useState(false);
   const [blocked, setBlocked] = useState("");
   const [note, setNote] = useState("");
@@ -93,7 +92,6 @@ export default function PeerPolicyForm({
       ),
     [params]
   );
-  const globalCap = params?.global_max_trust_credit ?? 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -143,7 +141,6 @@ export default function PeerPolicyForm({
         setOutRate(p?.outbound_rate_limit_per_epoch || "0");
         setAllowRepQueries(p?.allow_reputation_queries ?? false);
         setAcceptRepAttest(p?.accept_reputation_attestations ?? false);
-        setMaxTrustCredit(p?.max_trust_credit ?? 0);
         setRequireReview(p?.require_review ?? false);
         setBlocked((p?.blocked_identities || []).join(", "));
         setLoadedFor(peerId);
@@ -196,7 +193,6 @@ export default function PeerPolicyForm({
             outboundRateLimitPerEpoch: BigInt(outRate || "0"),
             allowReputationQueries: allowRepQueries,
             acceptReputationAttestations: acceptRepAttest,
-            maxTrustCredit: maxTrustCredit,
             requireReview,
             blockedIdentities: blocked
               .split(",")
@@ -458,32 +454,6 @@ export default function PeerPolicyForm({
             )}
           </div>
 
-          <div>
-            <label
-              className="mb-1 block text-sm text-zinc-400"
-              htmlFor="fed-pol-credit"
-            >
-              Max trust credit
-            </label>
-            <select
-              id="fed-pol-credit"
-              value={maxTrustCredit}
-              disabled={!isSparkDream}
-              onChange={(e) => setMaxTrustCredit(Number(e.target.value))}
-              className={`${inputClass} disabled:opacity-50`}
-            >
-              {TRUST_LEVELS.map((t) => (
-                <option key={t.v} value={t.v}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-zinc-500">
-              How much of the peer&apos;s trust carries over. This chain&apos;s
-              global_max_trust_credit is {globalCap}, which caps it at
-              attestation time.
-            </p>
-          </div>
 
           <div>
             <label

@@ -441,7 +441,6 @@ export const MODULES: Record<string, ModuleDef> = {
 
       // Trust
       { group: "Trust", key: "globalMaxTrustCredit", apiKey: "global_max_trust_credit", label: "Global Max Trust Credit", kind: "number" },
-      { group: "Trust", key: "trustDiscountRate", apiKey: "trust_discount_rate", label: "Trust Discount Rate", kind: "dec" },
 
       // Rate limits
       { group: "Rate Limits", key: "maxInboundPerBlock", apiKey: "max_inbound_per_block", label: "Max Inbound Per Block", kind: "bigint" },

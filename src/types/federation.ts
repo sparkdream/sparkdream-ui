@@ -117,7 +117,6 @@ export interface PeerPolicy {
   outbound_rate_limit_per_epoch: string;
   allow_reputation_queries: boolean;
   accept_reputation_attestations: boolean;
-  max_trust_credit: number;
   require_review: boolean;
   blocked_identities: string[];
 }
@@ -247,7 +246,6 @@ export interface FederationParams {
   known_content_types: string[];
   max_inbound_per_block: string;
   global_max_trust_credit: number;
-  trust_discount_rate: string;
   max_identity_links_per_user: number;
   min_verifier_trust_level: number;
   min_verifier_bond: string;

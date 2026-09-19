@@ -1219,8 +1219,11 @@ function PeerCard({
   // The default policy carries "0" (unlimited) — render that as unset.
   const rateLimitRaw = policy?.inbound_rate_limit_per_epoch;
   const rateLimit = rateLimitRaw && rateLimitRaw !== "0" ? rateLimitRaw : null;
-  // Reputation credit is IBC-only, capped by the policy's max_trust_credit.
-  const repCap = policy?.max_trust_credit ?? 0;
+  // Reputation credit is IBC-only and no longer varies per peer: the
+  // per-policy max_trust_credit was removed, so the chain-wide
+  // global_max_trust_credit is the only cap and it is applied at attestation
+  // time. The card therefore shows whether attestations are accepted, not a
+  // per-peer ceiling that no longer exists.
   const repAllowed = t === "ibc" && (policy?.accept_reputation_attestations ?? false);
   return (
     <div className={`sd-fed-peer-card type-${t}`}>
@@ -1248,10 +1251,10 @@ function PeerCard({
       <div className="trust-credit no-rep">
         <span>{t === "ibc" ? "Rep credit cap" : `No reputation bridging (${TRANSPORT_LABELS[t]})`}</span>
         <div className="bar">
-          <i style={{ width: t === "ibc" ? `${Math.min(100, repCap * 25)}%` : 0 }} />
+          <i style={{ width: repAllowed ? "100%" : 0 }} />
         </div>
         {t === "ibc" && (
-          <span>{!policy ? "—" : repAllowed ? TRUST_LEVEL_LABELS[repCap] ?? `L${repCap}` : "off"}</span>
+          <span>{!policy ? "—" : repAllowed ? "accepted" : "off"}</span>
         )}
       </div>
       <div className="foot">

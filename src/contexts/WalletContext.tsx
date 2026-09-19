@@ -557,7 +557,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         outbound_rate_limit_per_epoch: p?.outboundRateLimitPerEpoch !== BigInt(0) ? p?.outboundRateLimitPerEpoch?.toString() : undefined,
         allow_reputation_queries: p?.allowReputationQueries === false ? undefined : p?.allowReputationQueries,
         accept_reputation_attestations: p?.acceptReputationAttestations === false ? undefined : p?.acceptReputationAttestations,
-        max_trust_credit: p?.maxTrustCredit === 0 ? undefined : p?.maxTrustCredit,
         require_review: p?.requireReview === false ? undefined : p?.requireReview,
         blocked_identities: (p?.blockedIdentities?.length ?? 0) > 0 ? p.blockedIdentities : undefined,
       });
