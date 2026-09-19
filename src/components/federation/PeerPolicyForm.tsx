@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { CommonsMsgTypeUrls, FederationMsgTypeUrls } from "@/lib/tx";
+import { DIRECT_COUNCIL_SIGNING } from "@/lib/devFlags";
 import { listGroups, getCouncilMembers, getFederationPeerPolicy } from "@/lib/api";
 import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
@@ -146,7 +147,9 @@ export default function PeerPolicyForm({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!address || !committee || !peerId) return;
-    const authority = committee.policy_address;
+    // See PeerProposalForm: direct mode signs as the Operations Committee
+    // member instead of proposing to the committee policy.
+    const authority = DIRECT_COUNCIL_SIGNING ? address : committee.policy_address;
 
     await run(
       "policy",
@@ -187,17 +190,21 @@ export default function PeerPolicyForm({
             })
           ).finish(),
         };
-        await signAndBroadcast([
-          {
-            typeUrl: CommonsMsgTypeUrls.SubmitProposal,
-            value: {
-              proposer: address,
-              policyAddress: authority,
-              messages: [inner],
-              metadata: note.trim() || `Set federation policy for ${peerId}`,
+        if (DIRECT_COUNCIL_SIGNING) {
+          await signAndBroadcast([inner]);
+        } else {
+          await signAndBroadcast([
+            {
+              typeUrl: CommonsMsgTypeUrls.SubmitProposal,
+              value: {
+                proposer: address,
+                policyAddress: authority,
+                messages: [inner],
+                metadata: note.trim() || `Set federation policy for ${peerId}`,
+              },
             },
-          },
-        ]);
+          ]);
+        }
         onSubmitted();
       },
       (raw) => `Could not submit the policy proposal: ${raw}`
@@ -241,6 +248,15 @@ export default function PeerPolicyForm({
 
   return (
     <form onSubmit={submit} className="sd-hull-tile space-y-4 rounded-xl p-5">
+      {DIRECT_COUNCIL_SIGNING && (
+        <div className="rounded-lg border border-amber-600/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
+          <span className="font-semibold">Direct signing enabled (development).</span>{" "}
+          This submits the message immediately as your own account instead of
+          opening a council vote. It succeeds only if you are on the Operations
+          Committee. Turn off NEXT_PUBLIC_DIRECT_COUNCIL_SIGNING for any chain
+          other than a devnet.
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-white">Peer policy</h3>
         <button type="button" onClick={onCancel} className="sd-btn sd-btn-secondary">

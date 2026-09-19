@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { CommonsMsgTypeUrls, FederationMsgTypeUrls } from "@/lib/tx";
+import { DIRECT_COUNCIL_SIGNING } from "@/lib/devFlags";
 import { listGroups, getCouncilMembers } from "@/lib/api";
 import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
@@ -47,11 +48,16 @@ const PROPOSABLE_TYPES = [
  * Compose a Commons Council proposal carrying one federation peer-lifecycle
  * message.
  *
- * These messages take `authority`, not `creator`: signing one directly is
- * rejected with ErrNotAuthorized. The authority has to be the council's policy
- * address, which means the message must be executed by the policy -- i.e.
- * wrapped in MsgSubmitProposal, voted through, then executed. So a successful
- * broadcast here opens a vote; it does not change the peer.
+ * These messages take `authority`, not `creator`. The authority defaults to
+ * the council's policy address, which means the message must be executed by
+ * the policy -- i.e. wrapped in MsgSubmitProposal, voted through, then
+ * executed. So a successful broadcast here opens a vote; it does not change
+ * the peer.
+ *
+ * The chain is more permissive than that: IsCouncilAuthorized also accepts an
+ * individual Operations Committee member signing for themselves. DIRECT_
+ * COUNCIL_SIGNING (development only) takes that path instead, signing as the
+ * connected wallet and broadcasting the message alone -- see lib/devFlags.
  */
 export default function PeerProposalForm({
   peers,
@@ -141,7 +147,9 @@ export default function PeerProposalForm({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!address || !council) return;
-    const authority = council.policy_address;
+    // Direct mode signs as the member; otherwise the council policy is the
+    // authority and the message has to be executed by a passed proposal.
+    const authority = DIRECT_COUNCIL_SIGNING ? address : council.policy_address;
 
     await run(
       "propose",
@@ -222,17 +230,25 @@ export default function PeerProposalForm({
           }
         }
 
-        await signAndBroadcast([
-          {
-            typeUrl: CommonsMsgTypeUrls.SubmitProposal,
-            value: {
-              proposer: address,
-              policyAddress: authority,
-              messages: [inner],
-              metadata: proposalNote.trim() || summary,
+        if (DIRECT_COUNCIL_SIGNING) {
+          // `inner` already carries authority = the connected address, so it
+          // is a complete, self-signed message. The chain rejects it with
+          // ErrNotAuthorized if the signer is not on the Operations
+          // Committee, which is the only gate either path relies on.
+          await signAndBroadcast([inner]);
+        } else {
+          await signAndBroadcast([
+            {
+              typeUrl: CommonsMsgTypeUrls.SubmitProposal,
+              value: {
+                proposer: address,
+                policyAddress: authority,
+                messages: [inner],
+                metadata: proposalNote.trim() || summary,
+              },
             },
-          },
-        ]);
+          ]);
+        }
 
         setPeerId("");
         setDisplayName("");
@@ -261,6 +277,15 @@ export default function PeerProposalForm({
 
   return (
     <form onSubmit={submit} className="sd-hull-tile space-y-4 rounded-xl p-5">
+      {DIRECT_COUNCIL_SIGNING && (
+        <div className="rounded-lg border border-amber-600/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
+          <span className="font-semibold">Direct signing enabled (development).</span>{" "}
+          This submits the message immediately as your own account instead of
+          opening a council vote. It succeeds only if you are on the Operations
+          Committee. Turn off NEXT_PUBLIC_DIRECT_COUNCIL_SIGNING for any chain
+          other than a devnet.
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-white">Peer proposal</h3>
         <button type="button" onClick={onCancel} className="sd-btn sd-btn-secondary">
