@@ -25,6 +25,7 @@ import { timeAgo, formatSpark } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import CreatePostForm from "@/components/forum/CreatePostForm";
 import PostConvictionControl from "@/components/forum/PostConvictionControl";
+import FederateContentForm from "@/components/federation/FederateContentForm";
 import BountyPanel, { MAX_BOUNTY_WINNERS, provisionalShares } from "@/components/forum/BountyPanel";
 import AuthorBondPanel from "@/components/AuthorBondPanel";
 import type { Category } from "@/types/commons";
@@ -130,6 +131,9 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const [hideAsCouncil, setHideAsCouncil] = useState(false);
   const [bountyAssignId, setBountyAssignId] = useState<string | null>(null);
   const [bountyReason, setBountyReason] = useState("");
+  // Post id whose "federate to a peer" form is open, or null. Keyed rather
+  // than boolean so the form belongs to a specific post.
+  const [federatingPostId, setFederatingPostId] = useState<string | null>(null);
   // Thread author's pin-dispute form, keyed by the pinned reply's post id.
   const [disputeFormId, setDisputeFormId] = useState<string | null>(null);
   const [disputeReason, setDisputeReason] = useState("");
@@ -901,6 +905,21 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
               {actionLoading === `permanent-${post.post_id}` ? "..." : "Make permanent"}
             </button>
           )}
+          {/* Publish this thread to a federation peer. Creator-signed, so only
+              the author sees it; the chain rejects anyone else. Root posts
+              only -- a reply federates as part of its thread, and the
+              content type for a thread is "forum_thread". */}
+          {isRoot && isAuthor && isActive && (
+            <button
+              onClick={() =>
+                setFederatingPostId(federatingPostId === post.post_id ? null : post.post_id)
+              }
+              title="Send this thread to a federated peer chain"
+              className="text-xs text-sky-400 transition-colors hover:text-sky-300"
+            >
+              {federatingPostId === post.post_id ? "Cancel" : "Federate"}
+            </button>
+          )}
           {/* Feature (pin) a permanent thread, or remove the marker. Forum
               pinning is an ops-committee moderation action limited to root
               posts, so only surface it to authorized members on the root. */}
@@ -1112,6 +1131,20 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
         {/* Bounty award form: optional reason, recorded on-chain with the
             award. The escrow is split equally among all assigned awards at
             payout, so only the reason is collected here. */}
+        {federatingPostId === post.post_id && isRoot && (
+          <div className="mt-3">
+            <FederateContentForm
+              contentType="forum_thread"
+              localContentId={post.post_id}
+              // A forum post has no separate title field, so the content
+              // doubles as both; the author can edit either before sending.
+              defaultTitle={post.content.slice(0, 120)}
+              defaultBody={post.content}
+              onDone={() => setFederatingPostId(null)}
+              onCancel={() => setFederatingPostId(null)}
+            />
+          </div>
+        )}
         {bountyAssignId === post.post_id && canAssignBounty && (
           <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-800/50 bg-amber-950/20 p-3">
             <input

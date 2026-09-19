@@ -3601,17 +3601,25 @@ body > * { position: relative; z-index: 1; }
   gap: 8px 16px;
 }
 .sd-fed-peer-card .policy-row {
-  display: flex; align-items: center; gap: 6px;
+  /* Baseline, not centre: the content-type lists wrap to several lines, and
+     centring floated the "Out:" label into the middle of the block. */
+  display: flex; align-items: baseline; gap: 6px;
   font-size: 11px;
   font-family: var(--font-mono), ui-monospace, monospace;
   color: var(--ink-mute);
 }
+/* Content-type lists take the full card width; the short scalars stay paired. */
+.sd-fed-peer-card .policy-row.wide { grid-column: 1 / -1; }
 .sd-fed-peer-card .policy-row .arrow {
   color: var(--ink-soft);
   font-size: 12px;
   line-height: 1;
 }
-.sd-fed-peer-card .policy-row .v { color: var(--ink); }
+.sd-fed-peer-card .policy-row .v {
+  color: var(--ink);
+  /* Wrapped lines hang under the value, not under the label. */
+  overflow-wrap: anywhere;
+}
 
 .sd-fed-peer-card .trust-credit {
   display: flex; align-items: center; gap: 8px;

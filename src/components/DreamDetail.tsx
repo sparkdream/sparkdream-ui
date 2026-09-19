@@ -20,6 +20,7 @@ import ReplyThread from "./ReplyThread";
 import ReplyForm from "./ReplyForm";
 import AuthorBondPanel from "./AuthorBondPanel";
 import { useWallet } from "@/contexts/WalletContext";
+import FederateContentForm from "@/components/federation/FederateContentForm";
 import { useCanPin } from "@/hooks/useCanPin";
 import { useCanMakePermanent } from "@/hooks/useCanMakePermanent";
 import { MsgTypeUrls } from "@/lib/tx";
@@ -46,6 +47,9 @@ export default function DreamDetail({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  // Open state for the "federate to a peer" form. Author-only:
+  // MsgFederateContent is creator-signed.
+  const [federating, setFederating] = useState(false);
   // Reply ids carrying an author bond (BLOG_REPLY_AUTHOR_BOND, type 10).
   // One indexed query so the bond panel only mounts under bonded replies.
   const [bondedReplyIds, setBondedReplyIds] = useState<Set<string>>(new Set());
@@ -253,6 +257,18 @@ export default function DreamDetail({
       className: "text-emerald-400",
     });
   }
+  // Publish this post to a federation peer. Author-only, and only for a post
+  // that still exists -- the peer stores a copy, so sending a deleted post
+  // would propagate something this chain no longer shows.
+  if (isOwner && !isDeleted) {
+    menuActions.push({
+      key: "federate",
+      label: "Federate",
+      onClick: () => setFederating((v) => !v),
+      icon: ACTION_ICONS.federate,
+      className: "text-sky-400",
+    });
+  }
   if (connected && !isDeleted && !isEphemeral && canPin === true) {
     if (post.pinned_by && permits(MsgTypeUrls.UnpinPost)) {
       menuActions.push({
@@ -397,6 +413,19 @@ export default function DreamDetail({
           <ReactionBar postId={post.id} minReplyTrustLevel={post.min_reply_trust_level} postCreator={post.creator} />
           <ActionMenu items={menuActions} disabled={actionLoading} />
         </div>
+
+        {federating && (
+          <div className="mt-4">
+            <FederateContentForm
+              contentType="blog_post"
+              localContentId={post.id}
+              defaultTitle={post.title}
+              defaultBody={post.body}
+              onDone={() => setFederating(false)}
+              onCancel={() => setFederating(false)}
+            />
+          </div>
+        )}
 
         {!isDeleted && <AuthorBondPanel postId={post.id} />}
       </article>

@@ -1062,21 +1062,40 @@ function Constellation({ peers, chainName }: { peers: Peer[]; chainName: string 
       <div className="me-badge">YOU · {chainName}</div>
 
       <svg className="lines" viewBox="0 0 100 100" preserveAspectRatio="none">
+        {/* One gradient per edge, in user space. An objectBoundingBox gradient
+            collapses on a perfectly vertical or horizontal line — the box has
+            zero width, so the line is not painted at all — which erased the
+            only edge whenever a single peer landed straight above the centre.
+            User space also fixes the direction: bright at us, fading out at
+            the peer, whichever way the edge runs. */}
         <defs>
-          <linearGradient id="fed-line-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#8d79ff" stopOpacity="0.7" />
-            <stop offset="100%" stopColor="#8d79ff" stopOpacity="0.05" />
-          </linearGradient>
+          {nodes.map((n, i) => (
+            <linearGradient
+              key={n.id}
+              id={`fed-line-grad-${i}`}
+              gradientUnits="userSpaceOnUse"
+              x1="50"
+              y1="50"
+              x2={n.x}
+              y2={n.y}
+            >
+              <stop offset="0%" stopColor="#8d79ff" stopOpacity="0.7" />
+              <stop offset="100%" stopColor="#8d79ff" stopOpacity="0.05" />
+            </linearGradient>
+          ))}
         </defs>
-        {nodes.map((n) => (
+        {/* The viewBox is stretched to fill the panel, so an ordinary stroke
+            comes out thicker on vertical edges than on horizontal ones. */}
+        {nodes.map((n, i) => (
           <line
             key={n.id}
             x1="50"
             y1="50"
             x2={n.x}
             y2={n.y}
-            stroke="url(#fed-line-grad)"
-            strokeWidth="0.25"
+            stroke={`url(#fed-line-grad-${i})`}
+            strokeWidth="1.25"
+            vectorEffect="non-scaling-stroke"
           />
         ))}
       </svg>
@@ -1215,8 +1234,8 @@ function PeerCard({
         </span>
       </div>
       <div className="policy-grid">
-        <PolicyRow arrow="→" label="Out" v={!policy ? "—" : outTypes.length > 0 ? outTypes.join(", ") : "none"} />
-        <PolicyRow arrow="←" label="In" v={!policy ? "—" : inTypes.length > 0 ? inTypes.join(", ") : "none"} />
+        <PolicyRow arrow="→" label="Out" wide v={!policy ? "—" : outTypes.length > 0 ? outTypes.join(", ") : "none"} />
+        <PolicyRow arrow="←" label="In" wide v={!policy ? "—" : inTypes.length > 0 ? inTypes.join(", ") : "none"} />
         <PolicyRow arrow="⊣" label="Min trust" v={minTrust} />
         <PolicyRow arrow="⏱" label="Rate" v={rateLimit ? `${rateLimit}/epoch` : "—"} />
       </div>
@@ -1249,9 +1268,21 @@ function PeerCard({
   );
 }
 
-function PolicyRow({ arrow, label, v }: { arrow: string; label: string; v: string }) {
+// `wide` is for the content-type lists: several comma-joined types never fit
+// a half-card column, so they take the full row and wrap under themselves.
+function PolicyRow({
+  arrow,
+  label,
+  v,
+  wide,
+}: {
+  arrow: string;
+  label: string;
+  v: string;
+  wide?: boolean;
+}) {
   return (
-    <div className="policy-row">
+    <div className={`policy-row${wide ? " wide" : ""}`}>
       <span className="arrow">{arrow}</span> {label}: <span className="v">{v}</span>
     </div>
   );

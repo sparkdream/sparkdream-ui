@@ -11,6 +11,7 @@ import {
   listCollectionHideRecordsByTarget,
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
+import FederateContentForm from "@/components/federation/FederateContentForm";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useTrustRank } from "@/hooks/useTrustRank";
 import { useIsEligibleCurator } from "@/hooks/useIsEligibleCurator";
@@ -100,6 +101,9 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const [tab, setTab] = useState<"items" | "collaborators" | "curation">("items");
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const { pending: actionLoading, error: actionError, clearError, run } = useTxAction();
+  // Open state for the "federate to a peer" form. Owner-only: the chain
+  // takes the signer as the content creator.
+  const [federating, setFederating] = useState(false);
 
   // Curator review form (curation tab).
   const [showRateForm, setShowRateForm] = useState(false);
@@ -780,6 +784,15 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
             )}
             {isOwner && (
               <button
+                onClick={() => setFederating((v) => !v)}
+                title="Publish this collection to a federated peer chain"
+                className="rounded-lg border border-sky-800/50 px-3 py-1.5 text-xs text-sky-400 transition-colors hover:border-sky-700 hover:bg-sky-900/20"
+              >
+                {federating ? "Cancel" : "Federate"}
+              </button>
+            )}
+            {isOwner && (
+              <button
                 onClick={handleDeleteCollection}
                 disabled={actionLoading === "delete"}
                 className="rounded-lg border border-red-800/50 px-3 py-1.5 text-xs text-red-400 transition-colors hover:border-red-700 hover:bg-red-900/20 disabled:opacity-50"
@@ -789,6 +802,19 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
             )}
           </div>
         </div>
+
+        {federating && (
+          <div className="mt-4">
+            <FederateContentForm
+              contentType="collection"
+              localContentId={collection.id}
+              defaultTitle={collection.name || `Collection #${collection.id}`}
+              defaultBody={collection.description || ""}
+              onDone={() => setFederating(false)}
+              onCancel={() => setFederating(false)}
+            />
+          </div>
+        )}
 
         <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
           <div>
