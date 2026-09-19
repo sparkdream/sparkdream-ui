@@ -358,6 +358,9 @@ export const FederationMsgTypeUrls = {
   // governance action, and never automatic -- creating content federates
   // nothing on its own.
   FederateContent: "/sparkdream.federation.v1.MsgFederateContent",
+  // Phase 2 of an identity link, signed by the holder of the CLAIMED address
+  // on this chain. Signing it is the proof of key ownership.
+  ConfirmIdentityLink: "/sparkdream.federation.v1.MsgConfirmIdentityLink",
 } as const;
 
 // Build a blog message for signing.

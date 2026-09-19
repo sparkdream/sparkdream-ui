@@ -62,6 +62,7 @@ import { useTxAction } from "@/hooks/useTxAction";
 import ActionBanner from "@/components/ActionBanner";
 import { FederationMsgTypeUrls } from "@/lib/tx";
 import LinkIdentityForm from "@/components/federation/LinkIdentityForm";
+import PendingIdentityChallenges from "@/components/federation/PendingIdentityChallenges";
 import PeerProposalForm, { type PeerAction } from "@/components/federation/PeerProposalForm";
 import PeerPolicyForm from "@/components/federation/PeerPolicyForm";
 
@@ -746,6 +747,11 @@ export default function FederationPage() {
         </Section>
       )}
 
+      {/* Phase 2 of a link started on a peer chain. Rendered above the links
+          table and outside it, because the table early-returns when empty --
+          and having no links yet is exactly when a challenge is waiting. The
+          panel renders nothing when there is nothing to confirm. */}
+      {shows("identity") && <PendingIdentityChallenges />}
       {shows("identity") && (
         <Section
           title="My identity links"

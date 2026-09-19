@@ -195,6 +195,7 @@ import type {
   FederationParamsResponse,
   VerifierActivityResponse,
   OperatorRewardPoolResponse,
+  PendingIdentityChallenge,
 } from "@/types/federation";
 import type {
   ListValidatorsResponse,
@@ -2103,6 +2104,18 @@ export async function listFederationPeers(
 ): Promise<ListPeersResponse> {
   return get<ListPeersResponse>(
     "/sparkdream/federation/v1/list_peers",
+    paginationParams(pagination)
+  );
+}
+
+// Identity-link challenges waiting for this address to confirm. One call
+// rather than a per-peer probe: the chain indexes them by claimed address.
+export async function listPendingIdentityChallenges(
+  claimedAddress: string,
+  pagination?: PaginationRequest
+): Promise<{ challenges: PendingIdentityChallenge[] }> {
+  return get<{ challenges: PendingIdentityChallenge[] }>(
+    `/sparkdream/federation/v1/list_pending_identity_challenges/${claimedAddress}`,
     paginationParams(pagination)
   );
 }

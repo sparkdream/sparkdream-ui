@@ -91,6 +91,23 @@ export interface ChainIdentity {
   [key: string]: unknown;
 }
 
+/**
+ * An inbound identity-link challenge waiting on THIS chain.
+ *
+ * Phase 1 of a link runs on the claimant's chain; the packet lands here and
+ * leaves this record. Phase 2 is the holder of `claimed_address` signing
+ * MsgConfirmIdentityLink, which is what proves they own the key -- so only
+ * they can clear it, and it expires if they never do.
+ */
+export interface PendingIdentityChallenge {
+  claimed_address: string;
+  claimant_chain_peer_id: string;
+  claimant_address: string;
+  challenge: string;
+  received_at: string;
+  expires_at: string;
+}
+
 export interface PeerPolicy {
   peer_id: string;
   outbound_content_types: string[];
