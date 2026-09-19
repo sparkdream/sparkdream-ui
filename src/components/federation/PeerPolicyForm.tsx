@@ -4,7 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { CommonsMsgTypeUrls, FederationMsgTypeUrls } from "@/lib/tx";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
-import { listGroups, getCouncilMembers, getFederationPeerPolicy } from "@/lib/api";
+import {
+  listGroups,
+  getCouncilMembers,
+  getFederationPeerPolicy,
+} from "@/lib/api";
 import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
 import {
@@ -83,7 +87,10 @@ export default function PeerPolicyForm({
 
   // known_content_types minus the two the keeper refuses to federate.
   const contentTypes = useMemo(
-    () => (params?.known_content_types || []).filter((t) => !NEVER_FEDERATED.includes(t)),
+    () =>
+      (params?.known_content_types || []).filter(
+        (t) => !NEVER_FEDERATED.includes(t)
+      ),
     [params]
   );
   const globalCap = params?.global_max_trust_credit ?? 0;
@@ -93,7 +100,9 @@ export default function PeerPolicyForm({
     listGroups()
       .then((res) => {
         if (cancelled) return;
-        setCommittee((res.group || []).find((g) => g.index === COMMITTEE_NAME) ?? null);
+        setCommittee(
+          (res.group || []).find((g) => g.index === COMMITTEE_NAME) ?? null
+        );
       })
       .catch(() => setCommittee(null));
     return () => {
@@ -168,36 +177,44 @@ export default function PeerPolicyForm({
         const { MsgUpdatePeerPolicy } = await import(
           "@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx"
         );
+        // See PeerProposalForm: the proposal path needs encoded bytes, the
+        // direct path needs the plain object. Sending the bytes directly
+        // yields an all-empty message and "empty address string is not
+        // allowed" on the authority.
+        const policyFields = MsgUpdatePeerPolicy.fromPartial({
+          authority,
+          peerId,
+          policy: {
+            peerId,
+            outboundContentTypes: outbound,
+            inboundContentTypes: inbound,
+            minOutboundTrustLevel: minTrust,
+            // uint64: must be BigInt. The generated converter omits a zero
+            // by testing `!== BigInt(0)`, and Number(0) !== BigInt(0) is
+            // always true, which would sign a key the chain never emits.
+            inboundRateLimitPerEpoch: BigInt(inRate || "0"),
+            outboundRateLimitPerEpoch: BigInt(outRate || "0"),
+            allowReputationQueries: allowRepQueries,
+            acceptReputationAttestations: acceptRepAttest,
+            maxTrustCredit: maxTrustCredit,
+            requireReview,
+            blockedIdentities: blocked
+              .split(",")
+              .map((x) => x.trim())
+              .filter(Boolean),
+          },
+        });
         const inner = {
           typeUrl: FederationMsgTypeUrls.UpdatePeerPolicy,
-          value: MsgUpdatePeerPolicy.encode(
-            MsgUpdatePeerPolicy.fromPartial({
-              authority,
-              peerId,
-              policy: {
-                peerId,
-                outboundContentTypes: outbound,
-                inboundContentTypes: inbound,
-                minOutboundTrustLevel: minTrust,
-                // uint64: must be BigInt. The generated converter omits a zero
-                // by testing `!== BigInt(0)`, and Number(0) !== BigInt(0) is
-                // always true, which would sign a key the chain never emits.
-                inboundRateLimitPerEpoch: BigInt(inRate || "0"),
-                outboundRateLimitPerEpoch: BigInt(outRate || "0"),
-                allowReputationQueries: allowRepQueries,
-                acceptReputationAttestations: acceptRepAttest,
-                maxTrustCredit: maxTrustCredit,
-                requireReview,
-                blockedIdentities: blocked
-                  .split(",")
-                  .map((x) => x.trim())
-                  .filter(Boolean),
-              },
-            })
-          ).finish(),
+          value: MsgUpdatePeerPolicy.encode(policyFields).finish(),
         };
         if (directCouncilSigning) {
-          await signAndBroadcast([inner]);
+          await signAndBroadcast([
+            {
+              typeUrl: FederationMsgTypeUrls.UpdatePeerPolicy,
+              value: policyFields,
+            },
+          ]);
         } else {
           await signAndBroadcast([
             {
@@ -229,10 +246,16 @@ export default function PeerPolicyForm({
   const inputClass =
     "w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none";
 
-  const typeGrid = (list: string[], set: (v: string[]) => void, name: string) => (
+  const typeGrid = (
+    list: string[],
+    set: (v: string[]) => void,
+    name: string
+  ) => (
     <div className="flex flex-wrap gap-2">
       {contentTypes.length === 0 && (
-        <span className="text-xs text-zinc-500">No known content types on this chain.</span>
+        <span className="text-xs text-zinc-500">
+          No known content types on this chain.
+        </span>
       )}
       {contentTypes.map((t) => (
         <button
@@ -256,16 +279,22 @@ export default function PeerPolicyForm({
     <form onSubmit={submit} className="sd-hull-tile space-y-4 rounded-xl p-5">
       {directCouncilSigning && (
         <div className="rounded-lg border border-amber-600/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
-          <span className="font-semibold">Direct signing enabled (development).</span>{" "}
+          <span className="font-semibold">
+            Direct signing enabled (development).
+          </span>{" "}
           This submits the message immediately as your own account instead of
           opening a council vote. It succeeds only if you are on the Operations
-          Committee. Turn off DIRECT_COUNCIL_SIGNING for any chain
-          other than a devnet.
+          Committee. Turn off DIRECT_COUNCIL_SIGNING for any chain other than a
+          devnet.
         </div>
       )}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-white">Peer policy</h3>
-        <button type="button" onClick={onCancel} className="sd-btn sd-btn-secondary">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="sd-btn sd-btn-secondary"
+        >
           Cancel
         </button>
       </div>
@@ -274,14 +303,17 @@ export default function PeerPolicyForm({
 
       {isMember === false && (
         <div className="rounded-lg border border-amber-800 bg-amber-900/20 px-3 py-2 text-xs text-amber-400">
-          Your address is not a member of the {COMMITTEE_NAME}, so the chain will
-          reject this proposal. Peer policy is the committee&apos;s, not the
-          council&apos;s.
+          Your address is not a member of the {COMMITTEE_NAME}, so the chain
+          will reject this proposal. Peer policy is the committee&apos;s, not
+          the council&apos;s.
         </div>
       )}
 
       <div>
-        <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-pol-peer">
+        <label
+          className="mb-1 block text-sm text-zinc-400"
+          htmlFor="fed-pol-peer"
+        >
           Peer
         </label>
         <select
@@ -299,8 +331,8 @@ export default function PeerPolicyForm({
         </select>
         {peerId && loadedFor === peerId && (
           <p className="mt-1 text-xs text-zinc-500">
-            Loaded the policy currently on chain. This message replaces it whole,
-            so anything you clear here is cleared on chain.
+            Loaded the policy currently on chain. This message replaces it
+            whole, so anything you clear here is cleared on chain.
           </p>
         )}
       </div>
@@ -313,7 +345,8 @@ export default function PeerPolicyForm({
             </label>
             {typeGrid(inbound, setInbound, "in")}
             <p className="mt-1 text-xs text-zinc-500">
-              What this chain accepts from the peer. Empty means nothing arrives.
+              What this chain accepts from the peer. Empty means nothing
+              arrives.
             </p>
           </div>
 
@@ -329,7 +362,10 @@ export default function PeerPolicyForm({
 
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
-              <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-pol-trust">
+              <label
+                className="mb-1 block text-sm text-zinc-400"
+                htmlFor="fed-pol-trust"
+              >
                 Min outbound trust
               </label>
               <select
@@ -346,7 +382,10 @@ export default function PeerPolicyForm({
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-pol-inrate">
+              <label
+                className="mb-1 block text-sm text-zinc-400"
+                htmlFor="fed-pol-inrate"
+              >
                 Inbound rate / epoch
               </label>
               <input
@@ -359,7 +398,10 @@ export default function PeerPolicyForm({
               <p className="mt-1 text-xs text-zinc-500">0 is unlimited.</p>
             </div>
             <div>
-              <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-pol-outrate">
+              <label
+                className="mb-1 block text-sm text-zinc-400"
+                htmlFor="fed-pol-outrate"
+              >
                 Outbound rate / epoch
               </label>
               <input
@@ -383,7 +425,9 @@ export default function PeerPolicyForm({
               Require review on inbound content
             </label>
             <label
-              className={`flex items-center gap-2 text-sm ${isSparkDream ? "text-zinc-300" : "text-zinc-600"}`}
+              className={`flex items-center gap-2 text-sm ${
+                isSparkDream ? "text-zinc-300" : "text-zinc-600"
+              }`}
             >
               <input
                 type="checkbox"
@@ -394,7 +438,9 @@ export default function PeerPolicyForm({
               Allow reputation queries from this peer
             </label>
             <label
-              className={`flex items-center gap-2 text-sm ${isSparkDream ? "text-zinc-300" : "text-zinc-600"}`}
+              className={`flex items-center gap-2 text-sm ${
+                isSparkDream ? "text-zinc-300" : "text-zinc-600"
+              }`}
             >
               <input
                 type="checkbox"
@@ -413,7 +459,10 @@ export default function PeerPolicyForm({
           </div>
 
           <div>
-            <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-pol-credit">
+            <label
+              className="mb-1 block text-sm text-zinc-400"
+              htmlFor="fed-pol-credit"
+            >
               Max trust credit
             </label>
             <select
@@ -437,7 +486,10 @@ export default function PeerPolicyForm({
           </div>
 
           <div>
-            <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-pol-blocked">
+            <label
+              className="mb-1 block text-sm text-zinc-400"
+              htmlFor="fed-pol-blocked"
+            >
               Blocked identities
             </label>
             <input
@@ -450,7 +502,10 @@ export default function PeerPolicyForm({
           </div>
 
           <div>
-            <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-pol-note">
+            <label
+              className="mb-1 block text-sm text-zinc-400"
+              htmlFor="fed-pol-note"
+            >
               Proposal note
             </label>
             <input
@@ -475,7 +530,11 @@ export default function PeerPolicyForm({
         disabled={busy || !committee || !peerId}
         className="sd-btn sd-btn-primary disabled:opacity-50"
       >
-        {busy ? "Submitting…" : directCouncilSigning ? "Set policy directly" : "Submit policy proposal"}
+        {busy
+          ? "Submitting…"
+          : directCouncilSigning
+          ? "Set policy directly"
+          : "Submit policy proposal"}
       </button>
     </form>
   );

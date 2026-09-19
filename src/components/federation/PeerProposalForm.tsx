@@ -107,7 +107,9 @@ export default function PeerProposalForm({
     listGroups()
       .then((res) => {
         if (cancelled) return;
-        setCouncil((res.group || []).find((g) => g.index === COUNCIL_NAME) ?? null);
+        setCouncil(
+          (res.group || []).find((g) => g.index === COUNCIL_NAME) ?? null
+        );
       })
       .catch(() => setCouncil(null));
     return () => {
@@ -142,11 +144,14 @@ export default function PeerProposalForm({
   const targets = useMemo(() => {
     if (action === "resume") {
       return peers.filter(
-        (p) => p.status === PeerStatus.PENDING || p.status === PeerStatus.SUSPENDED
+        (p) =>
+          p.status === PeerStatus.PENDING || p.status === PeerStatus.SUSPENDED
       );
     }
-    if (action === "suspend") return peers.filter((p) => p.status === PeerStatus.ACTIVE);
-    if (action === "remove") return peers.filter((p) => p.status !== PeerStatus.REMOVED);
+    if (action === "suspend")
+      return peers.filter((p) => p.status === PeerStatus.ACTIVE);
+    if (action === "remove")
+      return peers.filter((p) => p.status !== PeerStatus.REMOVED);
     return [];
   }, [action, peers]);
 
@@ -160,13 +165,22 @@ export default function PeerProposalForm({
     await run(
       "propose",
       async () => {
-        const [{ MsgRegisterPeer, MsgResumePeer, MsgSuspendPeer, MsgRemovePeer }, { peerTypeFromJSON }] =
-          await Promise.all([
-            import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx"),
-            import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/types"),
-          ]);
+        const [
+          { MsgRegisterPeer, MsgResumePeer, MsgSuspendPeer, MsgRemovePeer },
+          { peerTypeFromJSON },
+        ] = await Promise.all([
+          import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx"),
+          import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/types"),
+        ]);
 
+        // Two shapes of the same message. `inner` is pre-encoded bytes for
+        // embedding in MsgSubmitProposal.messages; `direct` is the plain
+        // object the registry encodes when broadcasting it on its own.
+        // Passing the encoded bytes to signAndBroadcast silently produces a
+        // message with every field empty -- the chain then rejects it with
+        // "empty address string is not allowed" on the authority.
         let inner: { typeUrl: string; value: Uint8Array };
+        let direct: { typeUrl: string; value: unknown };
         let summary: string;
 
         if (action === "register") {
@@ -176,61 +190,91 @@ export default function PeerProposalForm({
               "Peer id must be 3-64 characters of lowercase letters, digits, dots or hyphens, and cannot start or end with a dot or hyphen."
             );
           }
-          if (peers.some((p) => p.id === id && p.status !== PeerStatus.REMOVED)) {
+          if (
+            peers.some((p) => p.id === id && p.status !== PeerStatus.REMOVED)
+          ) {
             throw new Error(`Peer ${id} is already registered.`);
           }
           const channel = ibcChannelId.trim();
-          if (channel && peers.some((p) => p.ibc_channel_id === channel && p.status !== PeerStatus.REMOVED)) {
-            throw new Error(`Channel ${channel} is already bound to another peer.`);
+          if (
+            channel &&
+            peers.some(
+              (p) =>
+                p.ibc_channel_id === channel && p.status !== PeerStatus.REMOVED
+            )
+          ) {
+            throw new Error(
+              `Channel ${channel} is already bound to another peer.`
+            );
           }
+          const registerFields = MsgRegisterPeer.fromPartial({
+            authority,
+            peerId: id,
+            displayName: displayName.trim(),
+            // PeerType is a proto3 int32 enum. The form holds the
+            // enum-string for the <select>, so convert before encoding --
+            // passing the string NaN-coerces to 0 (UNSPECIFIED), which the
+            // keeper rejects outright.
+            type: peerTypeFromJSON(peerType),
+            ibcChannelId: channel,
+            metadata: metadata.trim(),
+            // Left unset: controller_group resolves to the Operations
+            // Committee at bridge-registration time, and peer_identity is
+            // only meaningful for a Spark Dream peer whose denom metadata
+            // we would have to be told out of band.
+            controllerGroup: "",
+          });
           inner = {
             typeUrl: FederationMsgTypeUrls.RegisterPeer,
-            value: MsgRegisterPeer.encode(
-              MsgRegisterPeer.fromPartial({
-                authority,
-                peerId: id,
-                displayName: displayName.trim(),
-                // PeerType is a proto3 int32 enum. The form holds the
-                // enum-string for the <select>, so convert before encoding --
-                // passing the string NaN-coerces to 0 (UNSPECIFIED), which the
-                // keeper rejects outright.
-                type: peerTypeFromJSON(peerType),
-                ibcChannelId: channel,
-                metadata: metadata.trim(),
-                // Left unset: controller_group resolves to the Operations
-                // Committee at bridge-registration time, and peer_identity is
-                // only meaningful for a Spark Dream peer whose denom metadata
-                // we would have to be told out of band.
-                controllerGroup: "",
-              })
-            ).finish(),
+            value: MsgRegisterPeer.encode(registerFields).finish(),
+          };
+          direct = {
+            typeUrl: FederationMsgTypeUrls.RegisterPeer,
+            value: registerFields,
           };
           summary = `Register federation peer ${id}`;
         } else {
           const id = targetPeerId;
           if (!id) throw new Error("Select a peer.");
           if (action === "resume") {
+            const fields = MsgResumePeer.fromPartial({ authority, peerId: id });
             inner = {
               typeUrl: FederationMsgTypeUrls.ResumePeer,
-              value: MsgResumePeer.encode(
-                MsgResumePeer.fromPartial({ authority, peerId: id })
-              ).finish(),
+              value: MsgResumePeer.encode(fields).finish(),
+            };
+            direct = {
+              typeUrl: FederationMsgTypeUrls.ResumePeer,
+              value: fields,
             };
             summary = `Activate federation peer ${id}`;
           } else if (action === "suspend") {
+            const fields = MsgSuspendPeer.fromPartial({
+              authority,
+              peerId: id,
+              reason: reason.trim(),
+            });
             inner = {
               typeUrl: FederationMsgTypeUrls.SuspendPeer,
-              value: MsgSuspendPeer.encode(
-                MsgSuspendPeer.fromPartial({ authority, peerId: id, reason: reason.trim() })
-              ).finish(),
+              value: MsgSuspendPeer.encode(fields).finish(),
+            };
+            direct = {
+              typeUrl: FederationMsgTypeUrls.SuspendPeer,
+              value: fields,
             };
             summary = `Suspend federation peer ${id}`;
           } else {
+            const fields = MsgRemovePeer.fromPartial({
+              authority,
+              peerId: id,
+              reason: reason.trim(),
+            });
             inner = {
               typeUrl: FederationMsgTypeUrls.RemovePeer,
-              value: MsgRemovePeer.encode(
-                MsgRemovePeer.fromPartial({ authority, peerId: id, reason: reason.trim() })
-              ).finish(),
+              value: MsgRemovePeer.encode(fields).finish(),
+            };
+            direct = {
+              typeUrl: FederationMsgTypeUrls.RemovePeer,
+              value: fields,
             };
             summary = `Remove federation peer ${id}`;
           }
@@ -241,7 +285,7 @@ export default function PeerProposalForm({
           // is a complete, self-signed message. The chain rejects it with
           // ErrNotAuthorized if the signer is not on the Operations
           // Committee, which is the only gate either path relies on.
-          await signAndBroadcast([inner]);
+          await signAndBroadcast([direct]);
         } else {
           await signAndBroadcast([
             {
@@ -285,16 +329,22 @@ export default function PeerProposalForm({
     <form onSubmit={submit} className="sd-hull-tile space-y-4 rounded-xl p-5">
       {directCouncilSigning && (
         <div className="rounded-lg border border-amber-600/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
-          <span className="font-semibold">Direct signing enabled (development).</span>{" "}
+          <span className="font-semibold">
+            Direct signing enabled (development).
+          </span>{" "}
           This submits the message immediately as your own account instead of
           opening a council vote. It succeeds only if you are on the Operations
-          Committee. Turn off DIRECT_COUNCIL_SIGNING for any chain
-          other than a devnet.
+          Committee. Turn off DIRECT_COUNCIL_SIGNING for any chain other than a
+          devnet.
         </div>
       )}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-white">Peer proposal</h3>
-        <button type="button" onClick={onCancel} className="sd-btn sd-btn-secondary">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="sd-btn sd-btn-secondary"
+        >
           Cancel
         </button>
       </div>
@@ -332,7 +382,10 @@ export default function PeerProposalForm({
         <>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-peer-id">
+              <label
+                className="mb-1 block text-sm text-zinc-400"
+                htmlFor="fed-peer-id"
+              >
                 Peer id
               </label>
               <input
@@ -347,7 +400,10 @@ export default function PeerProposalForm({
               </p>
             </div>
             <div>
-              <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-peer-name">
+              <label
+                className="mb-1 block text-sm text-zinc-400"
+                htmlFor="fed-peer-name"
+              >
                 Display name
               </label>
               <input
@@ -362,7 +418,10 @@ export default function PeerProposalForm({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-peer-type">
+              <label
+                className="mb-1 block text-sm text-zinc-400"
+                htmlFor="fed-peer-type"
+              >
                 Transport
               </label>
               <select
@@ -379,7 +438,10 @@ export default function PeerProposalForm({
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-peer-channel">
+              <label
+                className="mb-1 block text-sm text-zinc-400"
+                htmlFor="fed-peer-channel"
+              >
                 IBC channel
               </label>
               <input
@@ -399,7 +461,10 @@ export default function PeerProposalForm({
           </div>
 
           <div>
-            <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-peer-meta">
+            <label
+              className="mb-1 block text-sm text-zinc-400"
+              htmlFor="fed-peer-meta"
+            >
               Peer metadata
             </label>
             <textarea
@@ -415,7 +480,10 @@ export default function PeerProposalForm({
       ) : (
         <>
           <div>
-            <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-peer-target">
+            <label
+              className="mb-1 block text-sm text-zinc-400"
+              htmlFor="fed-peer-target"
+            >
               Peer
             </label>
             <select
@@ -427,7 +495,8 @@ export default function PeerProposalForm({
               <option value="">Select a peer…</option>
               {targets.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.display_name || p.id} — {PEER_STATUS_LABELS[p.status] || p.status}
+                  {p.display_name || p.id} —{" "}
+                  {PEER_STATUS_LABELS[p.status] || p.status}
                 </option>
               ))}
             </select>
@@ -440,7 +509,10 @@ export default function PeerProposalForm({
 
           {action !== "resume" && (
             <div>
-              <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-peer-reason">
+              <label
+                className="mb-1 block text-sm text-zinc-400"
+                htmlFor="fed-peer-reason"
+              >
                 Reason
               </label>
               <input
@@ -456,7 +528,10 @@ export default function PeerProposalForm({
       )}
 
       <div>
-        <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-peer-note">
+        <label
+          className="mb-1 block text-sm text-zinc-400"
+          htmlFor="fed-peer-note"
+        >
           Proposal note
         </label>
         <input
@@ -473,13 +548,15 @@ export default function PeerProposalForm({
           <>
             This is submitted directly as your own account and takes effect
             immediately.
-            {action === "register" && " A newly registered peer starts pending, and needs a separate activate to use it."}
+            {action === "register" &&
+              " A newly registered peer starts pending, and needs a separate activate to use it."}
           </>
         ) : (
           <>
             This opens a {COUNCIL_NAME} vote. The peer changes only once the
             proposal passes and is executed.
-            {action === "register" && " A newly registered peer starts pending, and needs a second proposal to activate it."}
+            {action === "register" &&
+              " A newly registered peer starts pending, and needs a second proposal to activate it."}
           </>
         )}
       </p>
@@ -489,7 +566,11 @@ export default function PeerProposalForm({
         disabled={busy || !council || (action !== "register" && !targetPeerId)}
         className="sd-btn sd-btn-primary disabled:opacity-50"
       >
-        {busy ? "Submitting…" : directCouncilSigning ? "Submit directly" : "Submit proposal"}
+        {busy
+          ? "Submitting…"
+          : directCouncilSigning
+          ? "Submit directly"
+          : "Submit proposal"}
       </button>
     </form>
   );
