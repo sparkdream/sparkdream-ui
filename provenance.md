@@ -133,3 +133,16 @@ On-chain provenance for archived Spark Dream files. Each entry documents an arch
 | **SHA-256** | `0x4d49fb0b9e143ac3aeede4fbe8bc25a80d072042134422f76421265ef9ac7dc1` |
 | **Arweave Wallet** | [4iFET0Ufm0X0805N4u5x7l9XaJHqnh946OgOS6SGx6Q](https://viewblock.io/arweave/address/4iFET0Ufm0X0805N4u5x7l9XaJHqnh946OgOS6SGx6Q) |
 | **Arweave Copy 1** | [l868ZtCnMLVIztVZCxHldMbsdhvEAp8gJRG8Q60-BPE](https://arweave.net/l868ZtCnMLVIztVZCxHldMbsdhvEAp8gJRG8Q60-BPE) |
+
+---
+
+## sparkdream-ui11.tgz
+
+| Field | Value |
+|---|---|
+| **Date** | 2026-09-20 15:24:07 UTC |
+| **Git Hash** | b5257638b3ab204d1eaa80ee480efe99b0b218c6 |
+| **Ethereum Tx** | [0x1355670339bb1330dcdcba9a2b2b27ffbb5a9f22c5651733f4c76ae3351ea087](https://etherscan.io/tx/0x1355670339bb1330dcdcba9a2b2b27ffbb5a9f22c5651733f4c76ae3351ea087) |
+| **SHA-256** | `0x5296e64489ec41ad2e78a1614f95ee062ef73e471346facaa923987f5763ed6d` |
+| **Arweave Wallet** | [4iFET0Ufm0X0805N4u5x7l9XaJHqnh946OgOS6SGx6Q](https://viewblock.io/arweave/address/4iFET0Ufm0X0805N4u5x7l9XaJHqnh946OgOS6SGx6Q) |
+| **Arweave Copy 1** | [OvEIeeYNEYK7s72qfuTTkSAOE0a0-U7fDNRB1xge36A](https://arweave.net/OvEIeeYNEYK7s72qfuTTkSAOE0a0-U7fDNRB1xge36A) |
