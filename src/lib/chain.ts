@@ -16,13 +16,6 @@ export interface ChainConfig {
   dreamDisplayDenom: string;
   bech32Prefix: string;
   remoteManifestUrl: string;
-  /**
-   * Development-only. Federation peer actions are signed directly by the
-   * connected wallet instead of being wrapped in a Commons Council proposal.
-   * See lib/devFlags for why the chain permits it and why it must stay off
-   * on any shared network.
-   */
-  directCouncilSigning: boolean;
 }
 
 export const defaults: ChainConfig = {
@@ -36,7 +29,6 @@ export const defaults: ChainConfig = {
   dreamDisplayDenom: process.env.NEXT_PUBLIC_DREAM_DISPLAY_DENOM || "DREAM",
   bech32Prefix: process.env.NEXT_PUBLIC_BECH32_PREFIX || "sprkdrm",
   remoteManifestUrl: process.env.NEXT_PUBLIC_REMOTE_MANIFEST_URL || "",
-  directCouncilSigning: process.env.NEXT_PUBLIC_DIRECT_COUNCIL_SIGNING === "1",
 };
 
 export function buildChainInfo(c: ChainConfig) {

@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { CommonsMsgTypeUrls, FederationMsgTypeUrls } from "@/lib/tx";
-import { useChainConfig } from "@/contexts/ChainConfigContext";
-import { listGroups, getCouncilMembers } from "@/lib/api";
+import {
+  usePeerAuthRoute,
+  COUNCIL_NAME,
+  COMMITTEE_NAME,
+} from "@/hooks/usePeerAuthRoute";
 import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
 import {
@@ -14,14 +17,10 @@ import {
   PEER_STATUS_LABELS,
   type Peer,
 } from "@/types/federation";
-import type { Group } from "@/types/commons";
 
-// The council that owns peer lifecycle. x/federation accepts these four
-// messages from the gov authority or the Commons Council policy address, and
-// that policy's `allowed_messages` lists exactly them -- so every action here
-// travels as an inner message of a Commons Council proposal.
-const COUNCIL_NAME = "Commons Council";
-
+// Routing (who may sign what, and which body a vote goes to) lives in
+// usePeerAuthRoute, because PeerPolicyForm needs the same rules and the two
+// drifting apart is how a proposal ends up at the wrong policy.
 export type PeerAction = "register" | "resume" | "suspend" | "remove";
 
 const ACTION_LABELS: Record<PeerAction, string> = {
@@ -79,15 +78,11 @@ export default function PeerProposalForm({
   // that flips this in its env would otherwise see no change at all. It
   // arrives via /api/config; until that resolves the build-time default
   // applies, which is `false` -- i.e. the safe, proposal-based path.
-  const { config } = useChainConfig();
-  const directCouncilSigning = config.directCouncilSigning;
   // Validation here throws inside `run`, so the hook routes it to the same
   // banner as a chain error -- no separate setError path.
   const { busy, error, clearError, run } = useTxAction();
 
   const [action, setAction] = useState<PeerAction>(initialAction);
-  const [council, setCouncil] = useState<Group | null>(null);
-  const [isMember, setIsMember] = useState<boolean | null>(null);
 
   // Register fields
   const [peerId, setPeerId] = useState("");
@@ -102,41 +97,13 @@ export default function PeerProposalForm({
 
   const [proposalNote, setProposalNote] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-    listGroups()
-      .then((res) => {
-        if (cancelled) return;
-        setCouncil(
-          (res.group || []).find((g) => g.index === COUNCIL_NAME) ?? null
-        );
-      })
-      .catch(() => setCouncil(null));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Only council members may submit; the chain rejects anyone else, so tell
-  // the user before they sign rather than after.
-  useEffect(() => {
-    if (!address) {
-      setIsMember(null);
-      return;
-    }
-    let cancelled = false;
-    getCouncilMembers(COUNCIL_NAME)
-      .then((res) => {
-        if (cancelled) return;
-        setIsMember((res.members || []).some((m) => m.address === address));
-      })
-      .catch(() => {
-        if (!cancelled) setIsMember(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [address]);
+  // Direct vs vote is decided by who is connected, not by a deployment flag.
+  const [preferVote, setPreferVote] = useState(false);
+  const { route } = usePeerAuthRoute(
+    action,
+    address,
+    preferVote
+  );
 
   // Which peers each lifecycle action can target, per the keeper's status
   // guards: resume takes PENDING or SUSPENDED, suspend takes ACTIVE, remove
@@ -157,10 +124,13 @@ export default function PeerProposalForm({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!address || !council) return;
-    // Direct mode signs as the member; otherwise the council policy is the
-    // authority and the message has to be executed by a passed proposal.
-    const authority = directCouncilSigning ? address : council.policy_address;
+    if (!address) return;
+    // The hook has already decided direct vs vote, and which body a vote goes
+    // to. Anything other than those two is not submittable.
+    if (route.kind !== "direct" && route.kind !== "vote") return;
+
+    const useDirect = route.kind === "direct";
+    const authority = useDirect ? address : route.policyAddress;
 
     await run(
       "propose",
@@ -280,11 +250,11 @@ export default function PeerProposalForm({
           }
         }
 
-        if (directCouncilSigning) {
+        if (useDirect) {
           // `inner` already carries authority = the connected address, so it
           // is a complete, self-signed message. The chain rejects it with
           // ErrNotAuthorized if the signer is not on the Operations
-          // Committee, which is the only gate either path relies on.
+          // Committee, which is the only gate this path relies on.
           await signAndBroadcast([direct]);
         } else {
           await signAndBroadcast([
@@ -327,15 +297,10 @@ export default function PeerProposalForm({
 
   return (
     <form onSubmit={submit} className="sd-hull-tile space-y-4 rounded-xl p-5">
-      {directCouncilSigning && (
-        <div className="rounded-lg border border-amber-600/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
-          <span className="font-semibold">
-            Direct signing enabled (development).
-          </span>{" "}
-          This submits the message immediately as your own account instead of
-          opening a council vote. It succeeds only if you are on the Operations
-          Committee. Turn off DIRECT_COUNCIL_SIGNING for any chain other than a
-          devnet.
+      {route.kind === "direct" && (
+        <div className="rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 py-2 text-xs text-zinc-300">
+          You are on the {COMMITTEE_NAME}, so the chain accepts your signature
+          for this action directly — no vote required.
         </div>
       )}
       <div className="flex items-center justify-between">
@@ -351,10 +316,27 @@ export default function PeerProposalForm({
 
       <ActionBanner message={error} onDismiss={clearError} />
 
-      {isMember === false && (
+      {route.kind === "blocked" && (
         <div className="rounded-lg border border-amber-800 bg-amber-900/20 px-3 py-2 text-xs text-amber-400">
-          Your address is not a member of the {COUNCIL_NAME}, so the chain will
-          reject this proposal. Ask a council member to submit it.
+          Your address is on neither the {COMMITTEE_NAME} nor the{" "}
+          {COUNCIL_NAME}, so the chain will reject this. Ask a member of either
+          body to submit it.
+        </div>
+      )}
+
+      {route.kind === "vote" && !route.isMemberOfBody && (
+        <div className="rounded-lg border border-amber-800 bg-amber-900/20 px-3 py-2 text-xs text-amber-400">
+          This action is carried by the{" "}
+          {route.body === "committee" ? COMMITTEE_NAME : COUNCIL_NAME}, and
+          your address is not a member of it, so the proposal will be rejected.
+          Ask a member of that body to submit it.
+        </div>
+      )}
+
+      {route.kind === "unavailable" && (
+        <div className="rounded-lg border border-amber-800 bg-amber-900/20 px-3 py-2 text-xs text-amber-400">
+          Could not read the governance groups from the chain, so this action
+          cannot be routed. Try again once the node is reachable.
         </div>
       )}
 
@@ -543,32 +525,61 @@ export default function PeerProposalForm({
         />
       </div>
 
+      {/* A committee member may choose deliberation even where the chain
+          would accept their lone signature -- worth having for a destructive
+          action like remove. Hidden when a vote is already mandatory. */}
+      {(route.kind === "direct" || (preferVote && route.kind === "vote")) &&
+        action !== "resume" && (
+          <label className="flex items-center gap-2 text-xs text-zinc-400">
+            <input
+              type="checkbox"
+              checked={preferVote}
+              onChange={(e) => setPreferVote(e.target.checked)}
+              className="accent-zinc-500"
+            />
+            Open a vote instead of signing directly
+          </label>
+        )}
+
       <p className="text-xs text-zinc-500">
-        {directCouncilSigning ? (
+        {action === "resume" ? (
+          <>
+            This opens an {COMMITTEE_NAME} vote. Activation is the one peer
+            action the chain will not accept from a single signature, so it
+            takes a passed proposal however you are connected. The peer becomes
+            active only after the proposal passes AND its minimum execution
+            period has elapsed, so expect to come back and execute it.
+          </>
+        ) : route.kind === "direct" ? (
           <>
             This is submitted directly as your own account and takes effect
             immediately.
             {action === "register" &&
               " A newly registered peer starts pending, and needs a separate activate to use it."}
           </>
-        ) : (
+        ) : route.kind === "vote" ? (
           <>
-            This opens a {COUNCIL_NAME} vote. The peer changes only once the
-            proposal passes and is executed.
+            This opens a{" "}
+            {route.body === "committee" ? COMMITTEE_NAME : COUNCIL_NAME} vote.
+            The peer changes only once the proposal passes and is executed.
             {action === "register" &&
               " A newly registered peer starts pending, and needs a second proposal to activate it."}
           </>
-        )}
+        ) : null}
       </p>
 
       <button
         type="submit"
-        disabled={busy || !council || (action !== "register" && !targetPeerId)}
+        disabled={
+          busy ||
+          (route.kind !== "direct" && route.kind !== "vote") ||
+          (action !== "register" && !targetPeerId)
+        }
         className="sd-btn sd-btn-primary disabled:opacity-50"
       >
         {busy
           ? "Submitting…"
-          : directCouncilSigning
+          : route.kind === "direct"
           ? "Submit directly"
           : "Submit proposal"}
       </button>

@@ -20,13 +20,5 @@ export async function GET() {
     bech32Prefix: process.env.BECH32_PREFIX || process.env.NEXT_PUBLIC_BECH32_PREFIX || "sprkdrm",
     remoteManifestUrl:
       process.env.REMOTE_MANIFEST_URL || process.env.NEXT_PUBLIC_REMOTE_MANIFEST_URL || "",
-    // Development-only: sign federation peer actions directly as the
-    // connected Operations Committee member instead of opening a council
-    // vote. Read at runtime precisely so it can be flipped per deployment
-    // (one image serves devnet and testnet) without a rebuild.
-    directCouncilSigning:
-      (process.env.DIRECT_COUNCIL_SIGNING ||
-        process.env.NEXT_PUBLIC_DIRECT_COUNCIL_SIGNING ||
-        "") === "1",
   });
 }
