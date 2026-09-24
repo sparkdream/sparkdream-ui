@@ -51,6 +51,12 @@ export const SessionMsgTypeUrls = {
   CreateSession: "/sparkdream.session.v1.MsgCreateSession",
   RevokeSession: "/sparkdream.session.v1.MsgRevokeSession",
   ExecSession: "/sparkdream.session.v1.MsgExecSession",
+  CreateGrant: "/sparkdream.session.v1.MsgCreateGrant",
+  RevokeGrant: "/sparkdream.session.v1.MsgRevokeGrant",
+  DeclineGrant: "/sparkdream.session.v1.MsgDeclineGrant",
+  ClaimRecurringPull: "/sparkdream.session.v1.MsgClaimRecurringPull",
+  PullAllowance: "/sparkdream.session.v1.MsgPullAllowance",
+  RetryScheduledOneshot: "/sparkdream.session.v1.MsgRetryScheduledOneshot",
 } as const;
 
 // Blog transaction message type URLs

@@ -115,7 +115,7 @@ export default function NewChainProposal({
   // Prefill the Initial Deposit with the chain's gov `min_deposit` so users
   // don't have to look it up. The chain enforces `min_deposit_ratio *
   // min_deposit` as the floor at submission time (x/gov MinInitial — see
-  // /home/chill/go/pkg/mod/cosmossdk.io@v0.53.0/x/gov/keeper/msg_server.go),
+  // cosmossdk.io@v0.53.0/x/gov/keeper/msg_server.go),
   // and the full min_deposit is what gets the proposal straight into the
   // voting period. We pick the entry whose denom matches the chain's bond
   // denom (typically the first/only entry) and convert from micro-units.

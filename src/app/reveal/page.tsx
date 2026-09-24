@@ -368,8 +368,8 @@ function SessionKeyCard({
         ) : (
           <>
             No active session. Visit{" "}
-            <Link href="/sessions" style={{ color: "var(--violet-hi)" }}>
-              Sessions
+            <Link href="/permissions?new=session" style={{ color: "var(--violet-hi)" }}>
+              Permissions
             </Link>{" "}
             to create a scoped key for bots or agents.
           </>

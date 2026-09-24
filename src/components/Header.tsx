@@ -9,6 +9,7 @@ import { useDisplayName } from "@/hooks/useDisplayName";
 import CopyableAddress from "@/components/CopyableAddress";
 import SessionModeSwitcher from "@/components/SessionModeSwitcher";
 import WalletBalances from "@/components/WalletBalances";
+import { useClaimablePayments } from "@/hooks/useClaimablePayments";
 
 type NavLeaf = {
   href: string;
@@ -16,6 +17,8 @@ type NavLeaf = {
   desc?: string;
   icon: React.ReactNode;
   external?: boolean;
+  /** Draws attention to this entry (and a dot on its group's icon trigger). */
+  alert?: boolean;
 };
 type NavGroup = { id: string; label: string; items: NavLeaf[] };
 
@@ -154,9 +157,9 @@ const SYSTEM_GROUP: NavGroup = {
       ),
     },
     {
-      href: "/sessions",
-      label: "Sessions",
-      desc: "Keys & scoped access",
+      href: "/permissions",
+      label: "Permissions",
+      desc: "Recurring payments, allowances & keys",
       icon: (
         <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
           <rect x="3" y="11" width="18" height="11" rx="2" />
@@ -237,8 +240,12 @@ function Dropdown({
 }) {
   const { ref, open, setOpen } = useDropdown<HTMLDivElement>();
   const hasActive = group.items.some(
-    (i) => activeHref === i.href || activeHref.startsWith(i.href + "/")
+    (i) => {
+      const path = i.href.split("?")[0];
+      return activeHref === path || activeHref.startsWith(path + "/");
+    }
   );
+  const hasAlert = group.items.some((i) => i.alert);
   return (
     <div ref={ref} className={`sd-nav-group ${open ? "open" : ""}`}>
       {trigger === "text" ? (
@@ -260,6 +267,7 @@ function Dropdown({
           title={group.label}
           onClick={() => setOpen((v) => !v)}
         >
+          {hasAlert && <span className="sd-nav-dot" aria-hidden="true" />}
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -287,7 +295,7 @@ function Dropdown({
               {it.icon}
               <div>
                 <span className="label">{it.label}</span>
-                {it.desc && <span className="desc">{it.desc}</span>}
+                {it.desc && <span className={`desc${it.alert ? " alert" : ""}`}>{it.desc}</span>}
               </div>
             </Link>
           )
@@ -310,6 +318,7 @@ export default function Header() {
   } = useWallet();
   const { config } = useChainConfig();
   const { name } = useDisplayName(address);
+  const claimable = useClaimablePayments(signerAddress);
 
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -317,7 +326,16 @@ export default function Header() {
     () => ({
       ...SYSTEM_GROUP,
       items: [
-        ...SYSTEM_GROUP.items,
+        ...SYSTEM_GROUP.items.map((it) =>
+          it.href === "/permissions" && claimable > 0
+            ? {
+                ...it,
+                href: "/permissions?tab=received",
+                desc: `${claimable} payment${claimable === 1 ? "" : "s"} ready to claim`,
+                alert: true,
+              }
+            : it
+        ),
         {
           href: config.explorerUrl,
           label: "Block explorer",
@@ -333,11 +351,13 @@ export default function Header() {
         },
       ],
     }),
-    [config.explorerUrl]
+    [config.explorerUrl, claimable]
   );
 
-  const isActive = (href: string) =>
-    pathname === href || pathname.startsWith(href + "/");
+  const isActive = (href: string) => {
+    const path = href.split("?")[0];
+    return pathname === path || pathname.startsWith(path + "/");
+  };
 
   // Close the mobile menu whenever the route changes, without an effect:
   // React allows adjusting state during render as long as it's guarded by a
@@ -510,8 +530,10 @@ function MobileMenu({
   sessionActive: boolean;
   systemGroup: NavGroup;
 }) {
-  const isActive = (href: string) =>
-    pathname === href || pathname.startsWith(href + "/");
+  const isActive = (href: string) => {
+    const path = href.split("?")[0];
+    return pathname === path || pathname.startsWith(path + "/");
+  };
 
   const renderLeaf = (l: NavLeaf) =>
     l.external ? (
@@ -539,7 +561,7 @@ function MobileMenu({
         {l.icon}
         <div>
           <span className="label">{l.label}</span>
-          {l.desc && <span className="desc">{l.desc}</span>}
+          {l.desc && <span className={`desc${l.alert ? " alert" : ""}`}>{l.desc}</span>}
         </div>
       </Link>
     );

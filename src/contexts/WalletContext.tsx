@@ -65,12 +65,11 @@ export function useWallet() {
   return useContext(WalletContext);
 }
 
-// Session management message typeUrls that should never be wrapped in MsgExecSession
-const SESSION_MGMT_TYPES: Set<string> = new Set([
-  SessionMsgTypeUrls.CreateSession,
-  SessionMsgTypeUrls.RevokeSession,
-  SessionMsgTypeUrls.ExecSession,
-]);
+// x/session messages that are signed by the connected wallet itself and never
+// wrapped in MsgExecSession. All but MsgRevokeGrant are on the chain's
+// non-delegable list; MsgRevokeGrant is delegable only to a key with
+// allow_self_revoke, and the permissions page always acts as the hot wallet.
+const SESSION_MGMT_TYPES: Set<string> = new Set(Object.values(SessionMsgTypeUrls));
 
 // Inner-message typeUrls that x/commons exempts from the ProposalFee
 // ante-handler check (see x/commons/ante/group_policy.go). Mirroring the
@@ -458,11 +457,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // on the first amino signature of any message, so the entry is dropped
       // rather than renamed. The two below are still missing theirs.
       //
-      // 0.0.38's commons (recurring spend) and session (grant/allowance) maps
-      // have the same gap, left unpatched on purpose: this app signs none of
-      // those messages, and a converter nothing exercises is a converter whose
-      // staleness nobody would notice. Add them here if a view starts sending
-      // one.
+      // 0.0.38's commons (recurring spend) map has the same gap, left
+      // unpatched on purpose: this app signs none of those messages, and a
+      // converter nothing exercises is a converter whose staleness nobody
+      // would notice. Add them here if a view starts sending one. The session
+      // map's gap (grant messages) is fixed in the package as of 0.0.41, whose
+      // converters are checked against the chain's aminojson output.
       const { MsgSetThreadProposalsLock: ForumSetThreadProposalsLock } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/forum/v1/tx");
       const { MsgUnhideContent: CollectUnhideContent } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/tx");
       const latestMsgAmino = {

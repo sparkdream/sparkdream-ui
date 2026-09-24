@@ -41,6 +41,9 @@ import type {
   SessionsByGranteeResponse,
   AllowedMsgTypesResponse,
   SessionParamsResponse,
+  GetGrantResponse,
+  GrantsResponse,
+  GrantType,
 } from "@/types/session";
 import type {
   GetCollectionResponse,
@@ -624,6 +627,28 @@ export async function getAllowedMsgTypes(): Promise<AllowedMsgTypesResponse> {
 // Get session module params
 export async function getSessionParams(): Promise<SessionParamsResponse> {
   return get<SessionParamsResponse>("/sparkdream/session/v1/params");
+}
+
+// Get one grant (any type) by id
+export async function getGrant(id: string): Promise<GetGrantResponse> {
+  return get<GetGrantResponse>(`/sparkdream/session/v1/grants/${id}`);
+}
+
+// Grants issued by a granter. Revoked, declined and expired grants are
+// deleted chain-side, so this is live grants plus COMPLETED / FIRED ones.
+export async function getGrantsByGranter(granter: string, type?: GrantType): Promise<GrantsResponse> {
+  return get<GrantsResponse>(
+    `/sparkdream/session/v1/grants/by_granter/${granter}`,
+    type ? new URLSearchParams({ type }) : undefined
+  );
+}
+
+// Grants held by a grantee
+export async function getGrantsByGrantee(grantee: string, type?: GrantType): Promise<GrantsResponse> {
+  return get<GrantsResponse>(
+    `/sparkdream/session/v1/grants/by_grantee/${grantee}`,
+    type ? new URLSearchParams({ type }) : undefined
+  );
 }
 
 // ── Module params (for param change proposals) ─────────────────────

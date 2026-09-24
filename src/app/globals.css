@@ -623,6 +623,18 @@ body > * { position: relative; z-index: 1; }
   place-items: center;
   transition: background .15s, color .15s, border-color .15s;
 }
+.sd-nav-group .sd-icon-btn { position: relative; }
+.sd-nav-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--violet-hi);
+}
+.sd-nav-menu a .desc.alert,
+.sd-mobile-link .desc.alert { color: var(--violet-hi); }
 .sd-icon-btn:hover,
 .sd-nav-group.open .sd-icon-btn {
   background: var(--panel);
