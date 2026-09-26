@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { fediversePreview } from "@/lib/fediverse";
 import Link from "next/link";
 import {
   ContentPageLayout,
@@ -1642,7 +1643,7 @@ function QueueItem({
         <span className={`peer-mark ${TRANSPORT_MARK[transports[c.peer_id] ?? "ibc"]}`} />
         {c.peer_id} · {c.creator_name || c.creator_identity}
       </div>
-      <div className="title">{c.title || c.body || "(untitled)"}</div>
+      <div className="title">{fediversePreview(c.title) || fediversePreview(c.body) || "(untitled)"}</div>
       <div className="meta-line">
         <span className="hash">#{c.id}</span>
         <span>{stamp(c.received_at, "")}</span>
@@ -1679,7 +1680,7 @@ function FederatedContentList({
             <span className={`peer-mark ${TRANSPORT_MARK[transports[c.peer_id] ?? "ibc"]}`} />
             {c.peer_id} · {c.creator_name || c.creator_identity}
           </div>
-          <div className="title">{c.title || c.body || "(untitled)"}</div>
+          <div className="title">{fediversePreview(c.title) || fediversePreview(c.body) || "(untitled)"}</div>
           <div className="meta-line">
             <span className="hash">#{c.id}</span>
             <span>{c.content_type}</span>
