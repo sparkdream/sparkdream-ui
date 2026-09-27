@@ -119,6 +119,22 @@ export interface PeerPolicy {
   accept_reputation_attestations: boolean;
   require_review: boolean;
   blocked_identities: string[];
+  // Hostnames beyond the peer id that may appear in an inbound content_uri.
+  // ActivityPub peers only, at most 8.
+  content_hosts?: string[];
+  // Author gate on bridged content: "*" admits anyone, EMPTY ADMITS NOBODY
+  // (the default for a new external peer). Entries are "@user@host" or a
+  // profile URL; see lib/authorIdentity.
+  allowed_identities?: string[];
+  // Second author gate: the author must also be an active link item of this
+  // x/collect collection. null when unset. collection_id is a uint64 string,
+  // and "0" is a real collection id, not "unset".
+  curation?: IdentityCuration | null;
+}
+
+export interface IdentityCuration {
+  // Omitted by a JSON encoder that drops zero values; read it as `?? "0"`.
+  collection_id?: string;
 }
 
 // BridgeBinding: federation-side record per (operator, peer). Economic state

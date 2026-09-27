@@ -62,10 +62,12 @@ import { useDreamDenom } from "@/hooks/useDreamDenom";
 import { useTxAction } from "@/hooks/useTxAction";
 import ActionBanner from "@/components/ActionBanner";
 import { FederationMsgTypeUrls } from "@/lib/tx";
+import { curationId } from "@/lib/peerPolicy";
 import LinkIdentityForm from "@/components/federation/LinkIdentityForm";
 import PendingIdentityChallenges from "@/components/federation/PendingIdentityChallenges";
 import PeerProposalForm, { type PeerAction } from "@/components/federation/PeerProposalForm";
 import PeerPolicyForm from "@/components/federation/PeerPolicyForm";
+import PeerCurationPanel from "@/components/federation/PeerCurationPanel";
 
 // View slot in the sidebar. "overview" stacks every section; the rest narrow
 // the page down to one slice. See VIEW_SECTIONS below for the mapping.
@@ -178,7 +180,7 @@ export default function FederationPage() {
   const [view, setView] = useState<View>("overview");
   // Which compose form is open, if any. Both are council/wallet gated inside
   // the form rather than here, so the button always explains itself.
-  const [composer, setComposer] = useState<null | "link" | "peer" | "policy">(null);
+  const [composer, setComposer] = useState<null | "link" | "peer" | "policy" | "curation">(null);
   const [peerAction, setPeerAction] = useState<PeerAction>("register");
   const [peerActionTarget, setPeerActionTarget] = useState("");
   // Bumped every time the composer is opened, and used as the form's `key`, so
@@ -684,6 +686,19 @@ export default function FederationPage() {
         />
       )}
 
+      {composer === "curation" && peers.find((p) => p.id === peerActionTarget) && (
+        <PeerCurationPanel
+          key={composerNonce}
+          peer={peers.find((p) => p.id === peerActionTarget)!}
+          onEditPolicy={() => {
+            setComposerNonce((n) => n + 1);
+            setComposer("policy");
+          }}
+          onChanged={reload}
+          onClose={() => setComposer(null)}
+        />
+      )}
+
       {composer === "peer" && (
         <PeerProposalForm
           key={composerNonce}
@@ -743,6 +758,11 @@ export default function FederationPage() {
               setPeerActionTarget(peer.id);
               setComposerNonce((n) => n + 1);
               setComposer("policy");
+            }}
+            onCurate={(peer) => {
+              setPeerActionTarget(peer.id);
+              setComposerNonce((n) => n + 1);
+              setComposer("curation");
             }}
           />
         </Section>
@@ -910,7 +930,7 @@ function PageHead({
   view: View;
   onLinkIdentity: () => void;
   onProposePeer: () => void;
-  composer: null | "link" | "peer" | "policy";
+  composer: null | "link" | "peer" | "policy" | "curation";
 }) {
   return (
     <div className="sd-fed-page-head">
@@ -1143,12 +1163,14 @@ function PeersGrid({
   loading,
   onProposeFor,
   onEditPolicy,
+  onCurate,
 }: {
   peers: Peer[];
   policies: Record<string, PeerPolicy>;
   loading: boolean;
   onProposeFor: (peer: Peer) => void;
   onEditPolicy: (peer: Peer) => void;
+  onCurate: (peer: Peer) => void;
 }) {
   if (peers.length === 0) {
     return (
@@ -1174,6 +1196,7 @@ function PeersGrid({
           policy={policies[p.id]}
           onPropose={() => onProposeFor(p)}
           onEditPolicy={() => onEditPolicy(p)}
+          onCurate={() => onCurate(p)}
         />
       ))}
     </div>
@@ -1194,11 +1217,13 @@ function PeerCard({
   policy,
   onPropose,
   onEditPolicy,
+  onCurate,
 }: {
   peer: Peer;
   policy?: PeerPolicy;
   onPropose: () => void;
   onEditPolicy: () => void;
+  onCurate: () => void;
 }) {
   const t = APPROX_PEER_TYPE[peer.type] || "ibc";
   const statusClass =
@@ -1226,6 +1251,17 @@ function PeerCard({
   // time. The card therefore shows whether attestations are accepted, not a
   // per-peer ceiling that no longer exists.
   const repAllowed = t === "ibc" && (policy?.accept_reputation_attestations ?? false);
+  // Author gates on bridged content, which Spark Dream peers never carry.
+  // Empty allowed_identities is default-deny, so say "nobody", not "none".
+  const allowed = policy?.allowed_identities ?? [];
+  const curation = curationId(policy);
+  const authors = !policy
+    ? "—"
+    : allowed.includes("*")
+      ? "any"
+      : allowed.length === 0
+        ? "nobody"
+        : `${allowed.length} listed`;
   return (
     <div className={`sd-fed-peer-card type-${t}`}>
       <div className="head">
@@ -1248,6 +1284,14 @@ function PeerCard({
         <PolicyRow arrow="←" label="In" wide v={!policy ? "—" : inTypes.length > 0 ? inTypes.join(", ") : "none"} />
         <PolicyRow arrow="⊣" label="Min trust" v={minTrust} />
         <PolicyRow arrow="⏱" label="Rate" v={rateLimit ? `${rateLimit}/epoch` : "—"} />
+        {t !== "ibc" && (
+          <PolicyRow
+            arrow="@"
+            label="Authors"
+            wide
+            v={curation !== null ? `${authors} · curated by collection #${curation}` : authors}
+          />
+        )}
       </div>
       <div className="trust-credit no-rep">
         <span>{t === "ibc" ? "Rep credit cap" : `No reputation bridging (${TRANSPORT_LABELS[t]})`}</span>
@@ -1273,6 +1317,11 @@ function PeerCard({
         <button type="button" className="sd-fed-peer-action" onClick={onEditPolicy}>
           Edit policy
         </button>
+        {t !== "ibc" && (
+          <button type="button" className="sd-fed-peer-action" onClick={onCurate}>
+            Curate authors
+          </button>
+        )}
       </div>
     </div>
   );

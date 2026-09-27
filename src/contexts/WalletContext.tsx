@@ -546,6 +546,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // The uint64 rate limits are the second trap: the converter tests
       // `!== BigInt(0)`, so callers must pass BigInt. PeerPolicy.fromPartial
       // already coerces, and the policy form encodes through it.
+      //
+      // Every PeerPolicy field must be listed here: a field the shadow drops
+      // is still in the protobuf body, so the chain's sign-doc has a key ours
+      // lacks. content_hosts and allowed_identities follow the same omit-when-
+      // empty rule as the other lists. `curation` is a nullable message and
+      // follows cosmossdk.io/x/tx@v0.14.0 signing/aminojson marshalMessage:
+      // a field is skipped only when !msg.Has(f), and for a singular message
+      // field Has means PRESENT, not non-zero. So unset (nil) is omitted, but
+      // a set curation whose only field is zero -- collection 0, a real
+      // collection -- is emitted as `"curation":{}`, its zero collection_id
+      // omitted inside. A set non-zero id is `{"collection_id":"7"}` (uint64
+      // as a string). Checked against the chain's encoder, not just read off
+      // the source. The generated fromAmino turns `{}` back into a present
+      // IdentityCuration, whose encode writes the empty field 13 the chain
+      // then sees as set, so the round trip agrees on both sides.
       const { MsgUpdatePeerPolicy: FederationUpdatePeerPolicy } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const peerPolicyToAmino = (p: any) => ({
@@ -559,6 +574,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         accept_reputation_attestations: p?.acceptReputationAttestations === false ? undefined : p?.acceptReputationAttestations,
         require_review: p?.requireReview === false ? undefined : p?.requireReview,
         blocked_identities: (p?.blockedIdentities?.length ?? 0) > 0 ? p.blockedIdentities : undefined,
+        content_hosts: (p?.contentHosts?.length ?? 0) > 0 ? p.contentHosts : undefined,
+        allowed_identities: (p?.allowedIdentities?.length ?? 0) > 0 ? p.allowedIdentities : undefined,
+        curation: p?.curation
+          ? {
+              collection_id:
+                BigInt(p.curation.collectionId ?? 0) !== BigInt(0)
+                  ? BigInt(p.curation.collectionId).toString()
+                  : undefined,
+            }
+          : undefined,
       });
       const federationPolicyAmino = {
         "/sparkdream.federation.v1.MsgUpdatePeerPolicy": {
@@ -574,6 +599,37 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           fromAmino: FederationUpdatePeerPolicy.fromAmino,
         },
       };
+
+      // The package's collect converters render `encrypted_data` with a
+      // truthiness test on a Uint8Array, and an empty one is truthy, so it
+      // signs `"encrypted_data": ""` where the chain's aminojson omits the
+      // empty bytes field. A message the app builds by hand leaves the field
+      // undefined and escapes this, but one DECODED from bytes always carries
+      // an empty Uint8Array -- which is every collect message inside an
+      // Operations Committee proposal (nested-amino decodes each inner Any
+      // before converting it). The federation curation panel proposes
+      // MsgCreateCollection and MsgAddItem that way, so wrap the four
+      // converters that carry the field and drop an empty value.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const dropEmptyEncryptedData = (conv: any) => ({
+        ...conv,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        toAmino: (message: any) => {
+          const obj = conv.toAmino(message);
+          if (!obj.encrypted_data) delete obj.encrypted_data;
+          return obj;
+        },
+      });
+      const collectBytesAmino = Object.fromEntries(
+        [
+          "/sparkdream.collect.v1.MsgCreateCollection",
+          "/sparkdream.collect.v1.MsgUpdateCollection",
+          "/sparkdream.collect.v1.MsgAddItem",
+          "/sparkdream.collect.v1.MsgUpdateItem",
+        ]
+          .filter((url) => url in collectAmino)
+          .map((url) => [url, dropEmptyEncryptedData(collectAmino[url as keyof typeof collectAmino])])
+      );
 
       // Telescope's auto-generated amino converters don't recursively decode
       // `repeated google.protobuf.Any` fields, so MsgSubmitProposal /
@@ -722,7 +778,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         },
       };
 
-      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...federationAmino, ...federationPolicyAmino, ...pinSeparationAmino, ...latestMsgAmino, ...reviewAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
+      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...federationAmino, ...federationPolicyAmino, ...collectBytesAmino, ...pinSeparationAmino, ...latestMsgAmino, ...reviewAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
       // Cast: cosmjs's `lookupType` returns `GeneratedType` (union of TsProto +
       // Pbjs); the override only ever encounters TsProto types here.
       configureNestedAminoConverter({ registry: registry as unknown as Parameters<typeof configureNestedAminoConverter>[0]["registry"], aminoTypes });
