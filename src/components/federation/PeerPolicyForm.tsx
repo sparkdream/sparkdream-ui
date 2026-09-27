@@ -682,12 +682,12 @@ export default function PeerPolicyForm({
                 value={contentHosts}
                 onChange={(e) => setContentHosts(e.target.value)}
                 rows={2}
-                placeholder="One per line, e.g. media.aurora.example"
+                placeholder={"One per line, e.g.\nmedia.aurora.example\nzenith.example"}
                 className={`${inputClass} font-mono`}
               />
               <p className={`mt-1 text-xs ${hostsProblem ? "text-amber-400" : "text-zinc-500"}`}>
                 {hostsProblem ??
-                  `Hostnames besides ${peerId} that inbound post URLs may live on, for an instance whose posts are served from another domain. Usually empty. At most ${MAX_CONTENT_HOSTS}.`}
+                  `Other hosts whose posts and authors this peer may anchor, besides ${peerId}: an instance that serves its posts from a second domain, or other Mastodon servers bridged under this one peer (their authors pass the same allowed-authors and curation gates, and share this peer's rate limit). For a server with its own policy and limits, register it as a peer of its own instead. At most ${MAX_CONTENT_HOSTS}.`}
               </p>
             </div>
           )}

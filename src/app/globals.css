@@ -3785,7 +3785,9 @@ body > * { position: relative; z-index: 1; }
 /* ---------- Verification queue ---------- */
 .sd-fed-queue-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  /* minmax(0, …) lets a column shrink below its longest unbreakable string
+     (a fediverse handle), which plain 1fr would not, so the grid overflowed. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   background: var(--rule);
   border: 1px solid var(--rule);
@@ -3797,7 +3799,8 @@ body > * { position: relative; z-index: 1; }
   background-image: var(--hull-texture);
   padding: 14px 16px;
   display: flex; flex-direction: column; gap: 10px;
-  min-height: 220px;
+  min-width: 0;
+  min-height: 160px;
 }
 .sd-fed-queue-col .col-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -3808,6 +3811,10 @@ body > * { position: relative; z-index: 1; }
   color: var(--ink-mute);
   padding-bottom: 10px;
   border-bottom: 1px solid var(--rule);
+  gap: 8px;
+}
+.sd-fed-queue-col .col-head .label {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .sd-fed-queue-col .col-head .count {
   font-weight: 700;
@@ -3826,7 +3833,19 @@ body > * { position: relative; z-index: 1; }
   font-family: var(--font-mono), ui-monospace, monospace;
   text-align: center;
   padding: 20px 0;
+  margin: auto 0;
 }
+.sd-fed-queue-col .more {
+  align-self: flex-start;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-mute);
+  background: none;
+  border: 0;
+  padding: 2px 0;
+}
+.sd-fed-queue-col button.more { cursor: pointer; }
+.sd-fed-queue-col button.more:hover { color: var(--ink); }
 
 .sd-fed-queue-item {
   background: var(--panel-2);
@@ -3834,18 +3853,21 @@ body > * { position: relative; z-index: 1; }
   border-radius: var(--r-sm);
   padding: 10px 12px;
   display: flex; flex-direction: column; gap: 6px;
-  cursor: pointer;
-  transition: border-color .15s;
+  min-width: 0;
 }
-.sd-fed-queue-item:hover { border-color: var(--ink-dim); }
 .sd-fed-queue-item .src-line {
   display: flex; align-items: center; gap: 6px;
+  min-width: 0;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 11px;
   color: var(--ink-soft);
 }
 .sd-fed-queue-item .src-line .peer-mark {
   width: 7px; height: 7px;
+  flex: none;
+}
+.sd-fed-queue-item .src-line .handle {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .sd-fed-queue-item .src-line .peer-mark.s { background: var(--violet-hi); transform: rotate(45deg); }
 .sd-fed-queue-item .src-line .peer-mark.a { border: 2px solid var(--amber); border-radius: 999px; }
@@ -3889,9 +3911,11 @@ body > * { position: relative; z-index: 1; }
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
 }
 .sd-fed-queue-item .meta-line {
   display: flex; align-items: center; gap: 8px;
+  min-width: 0;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 10px;
   color: var(--ink-mute);
@@ -3902,6 +3926,21 @@ body > * { position: relative; z-index: 1; }
   border-radius: 3px;
   border: 1px solid var(--rule);
   font-size: 9px;
+  flex: none;
+}
+.sd-fed-queue-item .meta-line .peer {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0;
+}
+.sd-fed-queue-item .meta-line .when { flex: none; margin-left: auto; }
+.sd-fed-content-grid .sd-fed-queue-item .meta-line .when { margin-left: 0; }
+
+/* Three columns need room: stack them when the page's main column is narrow
+   (e.g. beside the sidebar on a laptop), not only on a narrow viewport. */
+@container (max-width: 760px) {
+  .sd-fed-queue-grid { grid-template-columns: minmax(0, 1fr); }
+  .sd-fed-queue-col { min-height: 0; }
+  .sd-fed-queue-col .empty { padding: 4px 0; text-align: left; margin: 0; }
 }
 
 /* ---------- Operator reward pool tile (Verifiers view) ---------- */
@@ -3997,7 +4036,6 @@ body > * { position: relative; z-index: 1; }
   .sd-fed-peers-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 820px) {
-  .sd-fed-queue-grid { grid-template-columns: 1fr; }
   .sd-fed-id-links .row {
     grid-template-columns: 24px 1fr 16px 1fr;
     row-gap: 6px;

@@ -801,7 +801,11 @@ export default function FederationPage() {
 
       {shows("queue") && (
         <Section title="Verification queue" meta={verificationMeta}>
-          <VerificationQueue queue={queue} transports={peerTransports} />
+          <VerificationQueue
+            queue={queue}
+            transports={peerTransports}
+            onViewAll={shows("content") ? undefined : () => setView("content")}
+          />
         </Section>
       )}
 
@@ -1613,37 +1617,43 @@ function VerifiersSection({
 
 // ───────────────────────── Verification queue ─────────────────────────
 
+// Each column previews the newest few items; the "Federated content" view
+// holds the full list.
+const QUEUE_PREVIEW = 4;
+
 function VerificationQueue({
   queue,
   transports,
+  onViewAll,
 }: {
   queue: { pending: FederatedContent[]; verified: FederatedContent[]; disputed: FederatedContent[] };
   transports: Record<string, Transport>;
+  onViewAll?: () => void;
 }) {
   return (
     <div className="sd-fed-queue-grid">
       <QueueColumn
         kind="pending"
         title="Pending verification"
-        count={queue.pending.length}
-        items={queue.pending.slice(0, 4)}
+        items={queue.pending}
         transports={transports}
+        onViewAll={onViewAll}
       />
       {/* The column is not time-windowed: it holds every VERIFIED/ACTIVE item
           in the fetched page, so it must not be captioned "· 24h". */}
       <QueueColumn
         kind="verified"
         title="Verified"
-        count={queue.verified.length}
-        items={queue.verified.slice(0, 4)}
+        items={queue.verified}
         transports={transports}
+        onViewAll={onViewAll}
       />
       <QueueColumn
         kind="disputed"
         title="Disputed"
-        count={queue.disputed.length}
-        items={queue.disputed.slice(0, 4)}
+        items={queue.disputed}
         transports={transports}
+        onViewAll={onViewAll}
       />
     </div>
   );
@@ -1652,50 +1662,76 @@ function VerificationQueue({
 function QueueColumn({
   kind,
   title,
-  count,
   items,
   transports,
+  onViewAll,
 }: {
   kind: "pending" | "verified" | "disputed";
   title: string;
-  count: number;
   items: FederatedContent[];
   transports: Record<string, Transport>;
+  onViewAll?: () => void;
 }) {
+  const hidden = items.length - QUEUE_PREVIEW;
   return (
     <div className={`sd-fed-queue-col ${kind}`}>
       <div className="col-head">
-        {title}
-        <span className="count">{count}</span>
+        <span className="label">{title}</span>
+        <span className="count">{items.length}</span>
       </div>
       {items.length === 0 ? (
-        <div className="empty">— nothing here —</div>
+        <div className="empty">Nothing here</div>
       ) : (
-        items.map((c) => <QueueItem key={c.id} c={c} transports={transports} />)
+        items
+          .slice(0, QUEUE_PREVIEW)
+          .map((c) => <QueueItem key={c.id} c={c} transports={transports} />)
       )}
+      {hidden > 0 &&
+        (onViewAll ? (
+          <button type="button" className="more" onClick={onViewAll}>
+            +{hidden} more
+          </button>
+        ) : (
+          <div className="more">+{hidden} more below</div>
+        ))}
     </div>
   );
+}
+
+// ActivityPub handles already carry the instance ("@alice@mastodon.example"),
+// so beside the peer id the domain is noise. Drop it when it repeats the peer.
+function creatorHandle(c: FederatedContent): string {
+  const who = c.creator_name || c.creator_identity;
+  const suffix = `@${c.peer_id}`;
+  return who.endsWith(suffix) && who.length > suffix.length
+    ? who.slice(0, -suffix.length)
+    : who;
 }
 
 function QueueItem({
   c,
   transports,
+  showStatus = false,
 }: {
   c: FederatedContent;
   transports: Record<string, Transport>;
+  showStatus?: boolean;
 }) {
-  // The proto carries the source peer + creator handle; we present a 2-line
-  // summary that mirrors the design's compact card.
+  const who = c.creator_name || c.creator_identity;
+  const preview = fediversePreview(c.title) || fediversePreview(c.body) || "(untitled)";
   return (
     <div className="sd-fed-queue-item">
-      <div className="src-line">
+      <div className="src-line" title={`${c.peer_id} · ${who}`}>
         <span className={`peer-mark ${TRANSPORT_MARK[transports[c.peer_id] ?? "ibc"]}`} />
-        {c.peer_id} · {c.creator_name || c.creator_identity}
+        <span className="handle">{creatorHandle(c)}</span>
       </div>
-      <div className="title">{fediversePreview(c.title) || fediversePreview(c.body) || "(untitled)"}</div>
+      <div className="title" title={preview}>{preview}</div>
       <div className="meta-line">
         <span className="hash">#{c.id}</span>
-        <span>{stamp(c.received_at, "")}</span>
+        <span className="peer">{c.peer_id}</span>
+        {showStatus && <span>{c.content_type}</span>}
+        {showStatus && <span>{FED_CONTENT_STATUS_LABELS[c.status] || c.status}</span>}
+        <span className="when">{stamp(c.received_at, "")}</span>
       </div>
     </div>
   );
@@ -1704,7 +1740,7 @@ function QueueItem({
 // ──────────────────── Federated content (full list) ────────────────────
 
 // The "Federated content" sidebar view. The verification queue only shows the
-// four newest per status; this lists the whole fetched page with its status.
+// newest few per status; this lists the whole fetched page with its status.
 function FederatedContentList({
   content,
   transports,
@@ -1724,19 +1760,7 @@ function FederatedContentList({
   return (
     <div className="sd-fed-content-grid">
       {content.map((c) => (
-        <div key={c.id} className="sd-fed-queue-item">
-          <div className="src-line">
-            <span className={`peer-mark ${TRANSPORT_MARK[transports[c.peer_id] ?? "ibc"]}`} />
-            {c.peer_id} · {c.creator_name || c.creator_identity}
-          </div>
-          <div className="title">{fediversePreview(c.title) || fediversePreview(c.body) || "(untitled)"}</div>
-          <div className="meta-line">
-            <span className="hash">#{c.id}</span>
-            <span>{c.content_type}</span>
-            <span>{FED_CONTENT_STATUS_LABELS[c.status] || c.status}</span>
-            <span>{stamp(c.received_at, "")}</span>
-          </div>
-        </div>
+        <QueueItem key={c.id} c={c} transports={transports} showStatus />
       ))}
     </div>
   );
