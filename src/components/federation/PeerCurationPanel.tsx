@@ -585,7 +585,7 @@ export default function PeerCurationPanel({
                   aria-label="Collection description"
                 />
                 <p className="text-xs text-zinc-500">
-                  Opens a {COMMITTEE_NAME} vote. Once it passes and is
+                  Opens a {COMMITTEE_NAME}{" "}vote. Once it passes and is
                   executed the committee owns a public link collection, active
                   and permanent. Its deposit is burned from the committee&apos;s
                   own account. Then set it here as this peer&apos;s curation
@@ -601,7 +601,9 @@ export default function PeerCurationPanel({
                       " That is not enough: fund it below first, or the proposal will fail when it is executed."}
                   </p>
                 )}
-                {address && (
+                {/* only when the deposit is not covered: a funded committee
+                    has no use for it */}
+                {address && committeeShort && (
                   <div className="flex flex-wrap items-center gap-2">
                     <input
                       value={fundAmount}
