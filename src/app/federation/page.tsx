@@ -885,8 +885,8 @@ function BridgeBindingsSection({
       title="Bridge bindings"
       meta={`${bindings.length} binding${bindings.length === 1 ? "" : "s"} · ${suspended.length} suspended · bond + slashing live on x/service`}
     >
-      <div className="sd-hull-tile overflow-hidden rounded-xl">
-        <table className="w-full text-sm">
+      <div className="sd-hull-tile overflow-x-auto rounded-xl">
+        <table className="w-full whitespace-nowrap text-sm">
           <thead className="bg-zinc-900/40 text-left text-xs text-zinc-500">
             <tr>
               <th className="px-3 py-2 font-medium">Operator</th>
@@ -901,8 +901,8 @@ function BridgeBindingsSection({
           <tbody>
             {bindings.map((b) => (
               <tr key={`${b.address}/${b.peer_id}`} className="border-t border-zinc-800/60">
-                <td className="px-3 py-2 font-mono text-xs text-zinc-400">
-                  {b.address.slice(0, 12)}…{b.address.slice(-6)}
+                <td className="px-3 py-2 text-xs">
+                  <CopyableAddress address={b.address} />
                 </td>
                 <td className="px-3 py-2 text-xs text-zinc-300">{b.peer_id}</td>
                 <td className="px-3 py-2 font-mono text-xs text-zinc-400">{b.protocol}</td>
@@ -1549,8 +1549,8 @@ function VerifiersSection({
               : "No verifiers bonded yet."}
         </div>
       ) : (
-        <div className="sd-hull-tile overflow-hidden rounded-xl">
-          <table className="w-full text-sm">
+        <div className="sd-hull-tile overflow-x-auto rounded-xl">
+          <table className="w-full whitespace-nowrap text-sm">
             <thead className="bg-zinc-900/40 text-left text-xs text-zinc-500">
               <tr>
                 <th className="px-3 py-2 font-medium">Verifier</th>
