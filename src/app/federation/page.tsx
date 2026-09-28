@@ -112,6 +112,23 @@ const TRANSPORT_MARK: Record<Transport, string> = {
   lens: "l",
 };
 
+// Hover text for a transport mark, worded like the constellation legend.
+function transportMarkLabel(t: Transport): string {
+  return t === "ibc" ? "Spark Dream chain (IBC)" : `${TRANSPORT_LABELS[t]} bridge`;
+}
+
+function PeerMark({ transport }: { transport: Transport }) {
+  const label = transportMarkLabel(transport);
+  return (
+    <span
+      className={`peer-mark ${TRANSPORT_MARK[transport]}`}
+      role="img"
+      aria-label={label}
+      title={label}
+    />
+  );
+}
+
 // Which sections each sidebar view renders. The overview shows everything;
 // the rest narrow the page to the slice the sidebar item names, so clicking
 // an item actually changes the page.
@@ -1399,32 +1416,29 @@ function IdentityLinkTable({
     <>
       <ActionBanner message={error} onDismiss={clearError} className="mb-2" />
       <div className="sd-fed-id-links">
-      {links.map((l) => {
-        const t = TRANSPORT_MARK[transports[l.peer_id] ?? "ibc"];
-        return (
-          <div key={`${l.local_address}-${l.peer_id}-${l.remote_identity}`} className="row">
-            <div className="me">{(l.local_address.slice(-2) || "K").toUpperCase()}</div>
-            <span className="local"><CopyableAddress address={l.local_address} /></span>
-            <span className="arrow">→</span>
-            <span className="remote">
-              <span className={`peer-mark ${t}`} />
-              <span className="text">
-                {l.peer_id} · {l.remote_identity}
-              </span>
+      {links.map((l) => (
+        <div key={`${l.local_address}-${l.peer_id}-${l.remote_identity}`} className="row">
+          <div className="me">{(l.local_address.slice(-2) || "K").toUpperCase()}</div>
+          <span className="local"><CopyableAddress address={l.local_address} /></span>
+          <span className="arrow">→</span>
+          <span className="remote">
+            <PeerMark transport={transports[l.peer_id] ?? "ibc"} />
+            <span className="text">
+              {l.peer_id} · {l.remote_identity}
             </span>
-            <VerifyPill status={l.status} verifiedAt={l.verified_at} />
-            <button
-              type="button"
-              className="more"
-              onClick={() => unlink(l)}
-              disabled={pending !== null}
-              title={`Unlink ${l.remote_identity}`}
-            >
-              {pending === l.peer_id ? "…" : "Unlink"}
-            </button>
-          </div>
-        );
-      })}
+          </span>
+          <VerifyPill status={l.status} verifiedAt={l.verified_at} />
+          <button
+            type="button"
+            className="more"
+            onClick={() => unlink(l)}
+            disabled={pending !== null}
+            title={`Unlink ${l.remote_identity}`}
+          >
+            {pending === l.peer_id ? "…" : "Unlink"}
+          </button>
+        </div>
+      ))}
       </div>
     </>
   );
@@ -1722,7 +1736,7 @@ function QueueItem({
   return (
     <div className="sd-fed-queue-item">
       <div className="src-line" title={`${c.peer_id} · ${who}`}>
-        <span className={`peer-mark ${TRANSPORT_MARK[transports[c.peer_id] ?? "ibc"]}`} />
+        <PeerMark transport={transports[c.peer_id] ?? "ibc"} />
         <span className="handle">{creatorHandle(c)}</span>
       </div>
       <div className="title" title={preview}>{preview}</div>
