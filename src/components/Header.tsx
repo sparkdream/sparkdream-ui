@@ -168,6 +168,16 @@ const SYSTEM_GROUP: NavGroup = {
       ),
     },
     {
+      href: "/transfer",
+      label: "Send to other chains",
+      desc: "Move tokens over IBC",
+      icon: (
+        <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M4 8h13l-3-3M20 16H7l3 3" />
+        </svg>
+      ),
+    },
+    {
       href: "/rss",
       label: "RSS feed",
       desc: "Subscribe to onchain updates",

@@ -166,6 +166,11 @@ import type {
   PostConvictionStakesResponse,
 } from "@/types/forum";
 import type {
+  IbcChannelClientStateResponse,
+  IbcChannelsResponse,
+  IbcClientStatusResponse,
+} from "@/types/ibc";
+import type {
   BondedRoleResponse,
   BondedRolesByTypeResponse,
   BondedRoleConfigResponse,
@@ -2120,6 +2125,35 @@ export async function getAllBankBalances(
     `/cosmos/bank/v1beta1/balances/${address}`,
     paginationParams(pagination)
   );
+}
+
+// ── IBC ────────────────────────────────────────────────────────────
+
+// Channels this chain has with other chains, on every port.
+export async function listIbcChannels(
+  pagination?: PaginationRequest
+): Promise<IbcChannelsResponse> {
+  return get<IbcChannelsResponse>(
+    "/ibc/core/channel/v1/channels",
+    paginationParams(pagination)
+  );
+}
+
+// The light client behind a channel: its client_state names the chain at the
+// other end (07-tendermint chain_id).
+export async function getIbcChannelClientState(
+  portId: string,
+  channelId: string
+): Promise<IbcChannelClientStateResponse> {
+  return get<IbcChannelClientStateResponse>(
+    `/ibc/core/channel/v1/channels/${channelId}/ports/${portId}/client_state`
+  );
+}
+
+// "Active" while the client can still be updated; an expired client strands
+// any transfer sent over its channel until governance revives it.
+export async function getIbcClientStatus(clientId: string): Promise<IbcClientStatusResponse> {
+  return get<IbcClientStatusResponse>(`/ibc/core/client/v1/client_status/${clientId}`);
 }
 
 // ── Federation ─────────────────────────────────────────────────────

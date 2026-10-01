@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { getAllBankBalances, getRepMember } from "@/lib/api";
 import { primeRepMember } from "@/lib/repMember";
 import { ApiError } from "@/lib/errors";
@@ -82,9 +83,13 @@ export default function WalletBalances() {
       className="hidden flex-col leading-tight sm:flex"
       title={`SPARK (bank coin, x/bank balances) and DREAM (member account, x/rep record — DREAM is not a bank token on this chain)`}
     >
-      <span className="font-mono text-[11px] text-zinc-400">
+      <Link
+        href="/transfer"
+        className="font-mono text-[11px] text-zinc-400 transition-colors hover:text-zinc-200"
+        title={`Send ${config.displayDenom} to another chain`}
+      >
         {sparkMicro === null ? "…" : `${formatSpark(sparkMicro, { maxFractionDigits: 2 })} ${config.displayDenom}`}
-      </span>
+      </Link>
       <span className="font-mono text-[11px] text-zinc-500">
         {dreamMicro === null
           ? "…"

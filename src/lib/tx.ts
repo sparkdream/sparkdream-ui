@@ -27,6 +27,12 @@ export const StakingMsgTypeUrls = {
 // Cosmos SDK x/distribution — only WithdrawDelegatorReward is exposed in
 // the UI today (one msg per delegation, batched into a single tx by the
 // "Claim All Rewards" button).
+// ICS-20 token transfer to another chain over an IBC channel. Registry and
+// amino converter both come from cosmjs's defaults.
+export const IbcMsgTypeUrls = {
+  Transfer: "/ibc.applications.transfer.v1.MsgTransfer",
+} as const;
+
 export const DistributionMsgTypeUrls = {
   WithdrawDelegatorReward: "/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward",
   SetWithdrawAddress: "/cosmos.distribution.v1beta1.MsgSetWithdrawAddress",

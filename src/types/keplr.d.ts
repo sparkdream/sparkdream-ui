@@ -31,6 +31,11 @@ interface Keplr {
   defaultOptions?: KeplrInteractionOptions;
   experimentalSuggestChain(chainInfo: unknown): Promise<void>;
   enable(chainId: string): Promise<void>;
+  /** Every chain Keplr knows (built in or suggested), without RPC/REST
+   *  endpoints. Optional: older Keplr builds lack it. */
+  getChainInfosWithoutEndpoints?(): Promise<
+    { chainId: string; chainName: string; bech32Config?: { bech32PrefixAccAddr: string } }[]
+  >;
   getKey(chainId: string): Promise<KeplrKey>;
   // `OfflineSigner` from `@cosmjs/proto-signing` is the union of direct +
   // amino signers — what `SigningStargateClient.connectWithSigner` accepts.
