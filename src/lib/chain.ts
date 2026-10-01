@@ -66,5 +66,8 @@ export function buildChainInfo(c: ChainConfig) {
       coinMinimalDenom: c.denom,
       coinDecimals: 6,
     },
+    // Keplr offers IBC transfers (manual channel entry) only for chains that
+    // declare them; without these the chain gets no IBC Transfer action
+    features: ["ibc-transfer", "ibc-go"],
   };
 }
