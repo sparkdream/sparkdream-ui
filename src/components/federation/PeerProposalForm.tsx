@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { listIbcChannels } from "@/lib/api";
+import { getIbcChannelClientState, listIbcChannels } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { CommonsMsgTypeUrls, FederationMsgTypeUrls } from "@/lib/tx";
 import {
@@ -121,6 +121,38 @@ export default function PeerProposalForm({
   );
   const [identityNote, setIdentityNote] = useState<string | null>(null);
   const [identityBusy, setIdentityBusy] = useState(false);
+
+  // This chain's open channels on the federation port, each with the chain
+  // at its other end (its light client's chain_id) and the peer already
+  // bound to it, so the channel is picked by chain rather than typed in.
+  const [fedChannels, setFedChannels] = useState<FederationChannel[] | null>(null);
+  const [manualChannel, setManualChannel] = useState(false);
+  useEffect(() => {
+    let live = true;
+    listFederationChannels(peers)
+      .then((list) => {
+        if (live) setFedChannels(list);
+      })
+      .catch(() => {
+        if (live) setFedChannels([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [peers]);
+  const pickChannel = (channel: string) => {
+    if (channel === MANUAL_CHANNEL) {
+      setManualChannel(true);
+      return;
+    }
+    setIbcChannelId(channel);
+    const picked = fedChannels?.find((c) => c.channel === channel);
+    // the chain at the other end is the peer, by its chain id
+    if (picked?.chainId) {
+      if (!peerId.trim()) setPeerId(picked.chainId);
+      if (!displayName.trim()) setDisplayName(picked.chainId);
+    }
+  };
 
   // The transfer channel to the same chain shares the federation channel's
   // connection: suggest it once the federation channel is known, unless the
@@ -511,18 +543,38 @@ export default function PeerProposalForm({
               >
                 IBC channel
               </label>
-              <input
-                id="fed-peer-channel"
-                value={ibcChannelId}
-                onChange={(e) => setIbcChannelId(e.target.value)}
-                placeholder="channel-0"
-                disabled={peerType !== PeerType.SPARK_DREAM}
-                className={`${inputClass} disabled:opacity-50`}
-              />
+              {peerType === PeerType.SPARK_DREAM && fedChannels && fedChannels.length > 0 && !manualChannel ? (
+                <select
+                  id="fed-peer-channel"
+                  value={ibcChannelId}
+                  onChange={(e) => pickChannel(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">Choose the channel to the peer chain…</option>
+                  {fedChannels.map((c) => (
+                    <option key={c.channel} value={c.channel} disabled={Boolean(c.boundTo)}>
+                      {c.channel} → {c.chainId ?? "unknown chain"} (their {c.theirs})
+                      {c.boundTo ? `, bound to peer ${c.boundTo}` : ""}
+                    </option>
+                  ))}
+                  <option value={MANUAL_CHANNEL}>Enter a channel id by hand…</option>
+                </select>
+              ) : (
+                <input
+                  id="fed-peer-channel"
+                  value={ibcChannelId}
+                  onChange={(e) => setIbcChannelId(e.target.value)}
+                  placeholder="channel-0"
+                  disabled={peerType !== PeerType.SPARK_DREAM}
+                  className={`${inputClass} disabled:opacity-50`}
+                />
+              )}
               <p className="mt-1 text-xs text-zinc-500">
-                {peerType === PeerType.SPARK_DREAM
-                  ? "This chain's end of the federation channel. One peer per channel; changing it later means removing and re-registering the peer."
-                  : "Only Spark Dream peers federate over IBC. Other transports use an off-chain bridge."}
+                {peerType !== PeerType.SPARK_DREAM
+                  ? "Only Spark Dream peers federate over IBC. Other transports use an off-chain bridge."
+                  : fedChannels && fedChannels.length === 0 && !manualChannel
+                    ? "This chain has no open federation channel yet: a relayer opens one to the peer chain first (the launcher's relayer settings do this)."
+                    : "This chain's end of the federation channel the relayer opened to the peer chain, listed by the chain at its other end. One peer per channel; changing it later means removing and re-registering the peer."}
               </p>
             </div>
           </div>
@@ -748,4 +800,36 @@ async function suggestTransferChannel(federationChannel: string): Promise<string
     (c) => c.port_id === "transfer" && c.state === "STATE_OPEN" && c.connection_hops?.[0] === connection
   );
   return transfers.length === 1 ? transfers[0]!.channel_id : undefined;
+}
+
+const MANUAL_CHANNEL = "__manual__";
+
+/** An open channel on this chain's federation port. */
+interface FederationChannel {
+  channel: string;
+  /** The peer chain's end of it. */
+  theirs: string;
+  /** The chain at the other end, from the channel's light client. */
+  chainId?: string;
+  /** The peer already registered on it, if any. */
+  boundTo?: string;
+}
+
+async function listFederationChannels(peers: Peer[]): Promise<FederationChannel[]> {
+  const { channels } = await listIbcChannels();
+  const open = channels.filter((c) => c.port_id === "federation" && c.state === "STATE_OPEN");
+  return Promise.all(
+    open.map(async (c) => {
+      const chainId = await getIbcChannelClientState("federation", c.channel_id)
+        .then((r) => r.identified_client_state?.client_state?.chain_id)
+        .catch(() => undefined);
+      const bound = peers.find((p) => p.ibc_channel_id === c.channel_id && p.status !== PeerStatus.REMOVED);
+      return {
+        channel: c.channel_id,
+        theirs: c.counterparty.channel_id,
+        ...(chainId ? { chainId } : {}),
+        ...(bound ? { boundTo: bound.id } : {}),
+      };
+    })
+  );
 }
