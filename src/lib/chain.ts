@@ -16,6 +16,10 @@ export interface ChainConfig {
   dreamDisplayDenom: string;
   bech32Prefix: string;
   remoteManifestUrl: string;
+  /** Public REST APIs of the chains this one relays with, by chain id
+   *  (PEER_CHAINS, set by the SparkDream launcher): the federation register
+   *  form reads a peer chain's identity from them. */
+  peerChains?: Record<string, string>;
 }
 
 export const defaults: ChainConfig = {

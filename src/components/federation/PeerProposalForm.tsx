@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getIbcChannelClientState, listIbcChannels } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
+import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { CommonsMsgTypeUrls, FederationMsgTypeUrls } from "@/lib/tx";
 import {
   usePeerAuthRoute,
@@ -140,6 +141,10 @@ export default function PeerProposalForm({
       live = false;
     };
   }, [peers]);
+  // the chain the chosen federation channel leads to, when known
+  function channelChain(): string | undefined {
+    return fedChannels?.find((c) => c.channel === ibcChannelId.trim())?.chainId;
+  }
   const pickChannel = (channel: string) => {
     if (channel === MANUAL_CHANNEL) {
       setManualChannel(true);
@@ -147,10 +152,16 @@ export default function PeerProposalForm({
     }
     setIbcChannelId(channel);
     const picked = fedChannels?.find((c) => c.channel === channel);
-    // the chain at the other end is the peer, by its chain id
+    // the chain at the other end is the peer, by its chain id; where its API
+    // answers is proposed too, and its identity read straight away
     if (picked?.chainId) {
       if (!peerId.trim()) setPeerId(picked.chainId);
       if (!displayName.trim()) setDisplayName(picked.chainId);
+      const api = knownApi(picked.chainId);
+      if (api && !peerIdentity) {
+        setPeerApi(api);
+        void fetchIdentity(api, picked.chainId);
+      }
     }
   };
 
@@ -175,8 +186,25 @@ export default function PeerProposalForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ibcChannelId, peerType]);
 
-  const fetchIdentity = async () => {
-    const base = peerApi.trim().replace(/\/+$/, "");
+  // Where a peer chain's API answers: the launcher's PEER_CHAINS for chains
+  // this one relays with, else one entered here before (remembered per
+  // chain id in this browser). Nothing on chain records it.
+  const { config } = useChainConfig();
+  const knownApi = (chain: string | undefined): string | undefined => {
+    if (!chain) return undefined;
+    const fromConfig = config.peerChains?.[chain];
+    if (fromConfig) return fromConfig;
+    try {
+      return localStorage.getItem(`sd-peer-api:${chain}`) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  // `expectChain`: the chain the picked channel leads to; an API serving
+  // another chain is refused rather than read for the wrong identity
+  const fetchIdentity = async (url = peerApi, expectChain = channelChain()) => {
+    const base = url.trim().replace(/\/+$/, "");
     if (!/^https?:\/\/\S+$/.test(base)) {
       setIdentityNote("Enter the peer chain's API (LCD) URL, e.g. https://api.example.org");
       return;
@@ -184,11 +212,25 @@ export default function PeerProposalForm({
     setIdentityBusy(true);
     setIdentityNote(null);
     try {
+      const info = await fetch(`${base}/cosmos/base/tendermint/v1beta1/node_info`)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+      const network: string | undefined = info?.default_node_info?.network;
+      if (expectChain && network && network !== expectChain) {
+        throw new Error(`that API serves ${network}, but the channel leads to ${expectChain}`);
+      }
       const res = await fetch(`${base}/sparkdream/identity/v1/chain-identity`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as { identity?: Record<string, unknown> };
       if (!body.identity?.bond_denom) throw new Error("no chain identity in the answer");
       setPeerIdentity(body.identity);
+      if (network) {
+        try {
+          localStorage.setItem(`sd-peer-api:${network}`, base);
+        } catch {
+          // storage unavailable: the URL is just not remembered
+        }
+      }
     } catch (err) {
       setPeerIdentity(null);
       setIdentityNote(
@@ -619,11 +661,19 @@ export default function PeerProposalForm({
                     value={peerApi}
                     onChange={(e) => setPeerApi(e.target.value)}
                     placeholder="https://api.example.org"
+                    list="fed-peer-api-known"
                     className={inputClass}
                   />
+                  <datalist id="fed-peer-api-known">
+                    {Object.entries(config.peerChains ?? {}).map(([chain, url]) => (
+                      <option key={chain} value={url}>
+                        {chain}
+                      </option>
+                    ))}
+                  </datalist>
                   <button
                     type="button"
-                    onClick={fetchIdentity}
+                    onClick={() => void fetchIdentity()}
                     disabled={identityBusy}
                     className="sd-btn sd-btn-secondary"
                   >
@@ -635,7 +685,9 @@ export default function PeerProposalForm({
                     ? `Chain identity: ${String(peerIdentity.chain_human_name ?? "?")} (${String(
                         peerIdentity.chain_ticker_prefix ?? "?"
                       )}), token ${String(peerIdentity.bond_display_symbol ?? peerIdentity.bond_denom)}. `
-                    : "Fetches the peer chain's identity, which names its token here. "}
+                    : config.peerChains && Object.keys(config.peerChains).length > 0
+                      ? "Proposed for chains this one relays with once you pick the channel; fetches the peer chain's identity, which names its token here. "
+                      : "Fetches the peer chain's identity, which names its token here. "}
                   {identityNote ?? ""}
                 </p>
               </div>

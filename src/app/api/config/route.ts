@@ -20,5 +20,23 @@ export async function GET() {
     bech32Prefix: process.env.BECH32_PREFIX || process.env.NEXT_PUBLIC_BECH32_PREFIX || "sprkdrm",
     remoteManifestUrl:
       process.env.REMOTE_MANIFEST_URL || process.env.NEXT_PUBLIC_REMOTE_MANIFEST_URL || "",
+    peerChains: peerChains(process.env.PEER_CHAINS),
   });
+}
+
+// PEER_CHAINS: {"<chain id>": "<REST API URL>", ...} for the chains this one
+// relays with. Anything that does not parse as that shape is ignored.
+function peerChains(raw: string | undefined): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (e): e is [string, string] => typeof e[1] === "string" && /^https?:\/\//.test(e[1])
+      )
+    );
+  } catch {
+    return {};
+  }
 }
