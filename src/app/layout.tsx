@@ -7,6 +7,7 @@ import Header from "@/components/Header";
 import Ticker from "@/components/Ticker";
 import BackgroundField from "@/components/BackgroundField";
 import ChainStatusBanner from "@/components/ChainStatusBanner";
+import VersionFooter from "@/components/VersionFooter";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,6 +22,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Spark Dream",
   description: "Spark Dream blockchain interface",
+  other: { "app-version": process.env.NEXT_PUBLIC_APP_VERSION ?? "" },
   alternates: {
     types: {
       "application/rss+xml": [
@@ -48,6 +50,7 @@ export default function RootLayout({
             <Header />
             <ChainStatusBanner />
             <main className="flex-1">{children}</main>
+            <VersionFooter />
           </WalletProvider>
         </ChainConfigProvider>
       </body>

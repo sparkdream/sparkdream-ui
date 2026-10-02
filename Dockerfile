@@ -12,6 +12,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# .git is excluded from the context; pass --build-arg GIT_SHA=$(git rev-parse HEAD)
+ARG GIT_SHA=""
+ENV GIT_SHA=$GIT_SHA
 RUN npm run build
 
 # --- Production ---

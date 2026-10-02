@@ -719,6 +719,26 @@ export async function getLatestBlockHeight(): Promise<string> {
   );
 }
 
+// The node's application version (the sparkdreamd build it runs), or "" when
+// the node is unreachable or in archive mode. A node only changes version on
+// restart, so a long TTL is fine.
+export async function getNodeAppVersion(): Promise<string> {
+  return cachedFetch(
+    "nodeAppVersion",
+    async () => {
+      try {
+        const res = await get<{ application_version?: { version?: string } }>(
+          "/cosmos/base/tendermint/v1beta1/node_info"
+        );
+        return res.application_version?.version ?? "";
+      } catch {
+        return "";
+      }
+    },
+    { ttl: 600_000 }
+  );
+}
+
 /**
  * A sample of the chain's clock: one committed block, plus how fast blocks are
  * arriving around it. Lets the UI turn a future block height (a review
