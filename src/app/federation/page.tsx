@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { fediversePreview } from "@/lib/fediverse";
 import Link from "next/link";
@@ -1151,6 +1151,10 @@ interface NodePos {
   label: string;
 }
 
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 3;
+const ZOOM_STEP = 1.25;
+
 function Constellation({ peers, chainName }: { peers: Peer[]; chainName: string }) {
   // Lay nodes out on a ring around the centre. Deterministic — same peer list
   // → same positions.
@@ -1170,66 +1174,168 @@ function Constellation({ peers, chainName }: { peers: Peer[]; chainName: string 
     });
   }, [peers]);
 
+  // View transform: zoom about the stage centre, then pan in px. A stage point
+  // p lands at centre + pan + zoom·(p − centre). Labels are positioned through
+  // the same mapping instead of being scaled, so text stays readable.
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const drag = useRef<{ id: number; x: number; y: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const zoomBy = (f: number) => {
+    const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom * f));
+    // Keep whatever sits at the stage centre fixed while zooming.
+    const k = next / zoom;
+    setPan((p) => ({ x: p.x * k, y: p.y * k }));
+    setZoom(next);
+  };
+  const resetView = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+  const atDefault = zoom === 1 && pan.x === 0 && pan.y === 0;
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragging(true);
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId) return;
+    const dx = e.clientX - d.x;
+    const dy = e.clientY - d.y;
+    d.x = e.clientX;
+    d.y = e.clientY;
+    setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+  };
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (drag.current?.id !== e.pointerId) return;
+    drag.current = null;
+    setDragging(false);
+  };
+
+  const place = (x: number, y: number) => ({
+    left: `calc(50% + ${(x - 50) * zoom}% + ${pan.x}px)`,
+    top: `calc(50% + ${(y - 50) * zoom}% + ${pan.y}px)`,
+  });
+
   return (
     <div className="sd-fed-constellation">
-      <div className="grid-bg" />
-      <div className="me-badge">YOU · {chainName}</div>
+      {/* Nodes are placed in % of the stage alone. The legend used to overlay
+          its bottom edge and hid the label of whichever peer landed there. */}
+      <div
+        className={`stage${dragging ? " dragging" : ""}`}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+      >
+        <div
+          className="grid-bg"
+          style={{
+            backgroundSize: `${32 * zoom}px ${32 * zoom}px`,
+            backgroundPosition: `calc(50% + ${pan.x}px) calc(50% + ${pan.y}px)`,
+          }}
+        />
+        <div className="me-badge">YOU · {chainName}</div>
 
-      <svg className="lines" viewBox="0 0 100 100" preserveAspectRatio="none">
-        {/* One gradient per edge, in user space. An objectBoundingBox gradient
-            collapses on a perfectly vertical or horizontal line — the box has
-            zero width, so the line is not painted at all — which erased the
-            only edge whenever a single peer landed straight above the centre.
-            User space also fixes the direction: bright at us, fading out at
-            the peer, whichever way the edge runs. */}
-        <defs>
+        {/* Buttons swallow pointerdown so a click never starts a pan. */}
+        <div className="zoom-controls" onPointerDown={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => zoomBy(ZOOM_STEP)}
+            disabled={zoom >= ZOOM_MAX}
+            aria-label="Zoom in"
+            title="Zoom in"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomBy(1 / ZOOM_STEP)}
+            disabled={zoom <= ZOOM_MIN}
+            aria-label="Zoom out"
+            title="Zoom out"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            onClick={resetView}
+            disabled={atDefault}
+            aria-label="Reset view"
+            title="Reset view"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M3 12a9 9 0 1 0 3-6.7" />
+              <path d="M3 3v6h6" />
+            </svg>
+          </button>
+        </div>
+
+        <svg
+          className="lines"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+        >
+          {/* One gradient per edge, in user space. An objectBoundingBox gradient
+              collapses on a perfectly vertical or horizontal line — the box has
+              zero width, so the line is not painted at all — which erased the
+              only edge whenever a single peer landed straight above the centre.
+              User space also fixes the direction: bright at us, fading out at
+              the peer, whichever way the edge runs. */}
+          <defs>
+            {nodes.map((n, i) => (
+              <linearGradient
+                key={n.id}
+                id={`fed-line-grad-${i}`}
+                gradientUnits="userSpaceOnUse"
+                x1="50"
+                y1="50"
+                x2={n.x}
+                y2={n.y}
+              >
+                <stop offset="0%" stopColor="#8d79ff" stopOpacity="0.7" />
+                <stop offset="100%" stopColor="#8d79ff" stopOpacity="0.05" />
+              </linearGradient>
+            ))}
+          </defs>
+          {/* The viewBox is stretched to fill the panel, so an ordinary stroke
+              comes out thicker on vertical edges than on horizontal ones. */}
           {nodes.map((n, i) => (
-            <linearGradient
+            <line
               key={n.id}
-              id={`fed-line-grad-${i}`}
-              gradientUnits="userSpaceOnUse"
               x1="50"
               y1="50"
               x2={n.x}
               y2={n.y}
-            >
-              <stop offset="0%" stopColor="#8d79ff" stopOpacity="0.7" />
-              <stop offset="100%" stopColor="#8d79ff" stopOpacity="0.05" />
-            </linearGradient>
+              stroke={`url(#fed-line-grad-${i})`}
+              strokeWidth="1.25"
+              vectorEffect="non-scaling-stroke"
+            />
           ))}
-        </defs>
-        {/* The viewBox is stretched to fill the panel, so an ordinary stroke
-            comes out thicker on vertical edges than on horizontal ones. */}
-        {nodes.map((n, i) => (
-          <line
-            key={n.id}
-            x1="50"
-            y1="50"
-            x2={n.x}
-            y2={n.y}
-            stroke={`url(#fed-line-grad-${i})`}
-            strokeWidth="1.25"
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-      </svg>
+        </svg>
 
-      <div className="node center" style={{ left: "50%", top: "50%" }}>
-        <span className="dot" />
-        <span className="label center-label">{chainName} · YOU</span>
-      </div>
-
-      {nodes.map((n) => (
-        <div
-          key={n.id}
-          className={`node peer-${APPROX_PEER_TYPE[n.type] || "ibc"}`}
-          style={{ left: `${n.x}%`, top: `${n.y}%` }}
-          title={n.label}
-        >
+        <div className="node center" style={place(50, 50)}>
           <span className="dot" />
-          <span className="label">{n.label}</span>
+          <span className="label center-label">{chainName} · YOU</span>
         </div>
-      ))}
+
+        {nodes.map((n) => (
+          <div
+            key={n.id}
+            className={`node peer-${APPROX_PEER_TYPE[n.type] || "ibc"}`}
+            style={place(n.x, n.y)}
+            title={n.label}
+          >
+            <span className="dot" />
+            <span className="label">{n.label}</span>
+          </div>
+        ))}
+      </div>
 
       <div className="legend">
         <span className="swatch s">Spark Dream chain · IBC</span>

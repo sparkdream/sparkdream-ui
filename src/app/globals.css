@@ -3404,13 +3404,46 @@ body > * { position: relative; z-index: 1; }
 /* ---------- Constellation ---------- */
 .sd-fed-constellation {
   position: relative;
-  height: 320px;
   background-color: var(--panel);
   background-image: var(--hull-texture);
   border: 1px solid var(--rule);
   border-radius: var(--r-md);
   overflow: hidden;
 }
+.sd-fed-constellation .stage {
+  position: relative;
+  height: 320px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.sd-fed-constellation .stage.dragging { cursor: grabbing; }
+.sd-fed-constellation .zoom-controls {
+  position: absolute;
+  top: 16px; left: 16px;
+  z-index: 3;
+  display: flex; flex-direction: column;
+  background: var(--panel-2);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  overflow: hidden;
+  cursor: default;
+}
+.sd-fed-constellation .zoom-controls button {
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.sd-fed-constellation .zoom-controls button + button { border-top: 1px solid var(--rule); }
+.sd-fed-constellation .zoom-controls button:hover:not(:disabled) { color: var(--ink); background: rgba(255,255,255,0.04); }
+.sd-fed-constellation .zoom-controls button:disabled { color: var(--ink-mute); opacity: 0.5; cursor: default; }
 .sd-fed-constellation .grid-bg {
   position: absolute; inset: 0;
   background-image:
@@ -3427,6 +3460,7 @@ body > * { position: relative; z-index: 1; }
 }
 .sd-fed-constellation .me-badge {
   position: absolute;
+  z-index: 3;
   top: 16px; right: 16px;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 10px;
@@ -3494,8 +3528,10 @@ body > * { position: relative; z-index: 1; }
 }
 
 .sd-fed-constellation .legend {
-  position: absolute;
-  bottom: 16px; left: 16px;
+  position: relative;
+  z-index: 3;
+  padding: 10px 16px;
+  border-top: 1px solid var(--rule);
   display: flex;
   gap: 18px;
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -3520,7 +3556,7 @@ body > * { position: relative; z-index: 1; }
 .sd-fed-constellation .legend .swatch.n { color: var(--rose); }
 .sd-fed-constellation .legend .swatch.l { color: var(--blue); }
 /* Five buckets no longer fit one row at laptop width. */
-.sd-fed-constellation .legend { flex-wrap: wrap; row-gap: 6px; max-width: calc(100% - 32px); }
+.sd-fed-constellation .legend { flex-wrap: wrap; row-gap: 6px; }
 
 /* ---------- Peers grid ---------- */
 .sd-fed-peers-grid {
