@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { listIbcChannels } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { CommonsMsgTypeUrls, FederationMsgTypeUrls } from "@/lib/tx";
 import {
@@ -58,10 +59,27 @@ const PROPOSABLE_TYPES = [
  * COUNCIL_SIGNING (development only) takes that path instead, signing as the
  * connected wallet and broadcasting the message alone -- see lib/devFlags.
  */
+/**
+ * Register fields handed in from outside, e.g. the SparkDream launcher's
+ * "finish in the chain's frontend" link (federation page URL parameters).
+ * Applied at mount only, like initialPeerId.
+ */
+export interface RegisterPrefill {
+  peerId?: string;
+  displayName?: string;
+  ibcChannelId?: string;
+  ibcTransferChannelId?: string;
+  /** The peer chain's REST (LCD) base URL, to fetch its chain identity. */
+  peerApi?: string;
+  /** The peer chain's identity as the LCD returns it (snake_case JSON). */
+  peerIdentity?: Record<string, unknown>;
+}
+
 export default function PeerProposalForm({
   peers,
   initialAction = "register",
   initialPeerId = "",
+  prefill,
   onSubmitted,
   onCancel,
 }: {
@@ -70,6 +88,7 @@ export default function PeerProposalForm({
   // Preselected target when the form is opened from a specific peer's card.
   // Applied at mount only; the caller remounts (via `key`) to re-seed it.
   initialPeerId?: string;
+  prefill?: RegisterPrefill;
   onSubmitted: () => void;
   onCancel: () => void;
 }) {
@@ -85,11 +104,68 @@ export default function PeerProposalForm({
   const [action, setAction] = useState<PeerAction>(initialAction);
 
   // Register fields
-  const [peerId, setPeerId] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [peerId, setPeerId] = useState(prefill?.peerId ?? "");
+  const [displayName, setDisplayName] = useState(prefill?.displayName ?? "");
   const [peerType, setPeerType] = useState<string>(PeerType.SPARK_DREAM);
-  const [ibcChannelId, setIbcChannelId] = useState("");
+  const [ibcChannelId, setIbcChannelId] = useState(prefill?.ibcChannelId ?? "");
   const [metadata, setMetadata] = useState("");
+  // A Spark Dream peer's ICS-20 channel and chain identity: the chain keys
+  // the peer's voucher metadata (its token's name in wallets) and its relay
+  // fee refunds on them, and neither can be added after registration (that
+  // takes remove + re-register), so the form asks for both up front.
+  const [transferChannelId, setTransferChannelId] = useState(prefill?.ibcTransferChannelId ?? "");
+  const [transferSuggested, setTransferSuggested] = useState(false);
+  const [peerApi, setPeerApi] = useState(prefill?.peerApi ?? "");
+  const [peerIdentity, setPeerIdentity] = useState<Record<string, unknown> | null>(
+    prefill?.peerIdentity ?? null
+  );
+  const [identityNote, setIdentityNote] = useState<string | null>(null);
+  const [identityBusy, setIdentityBusy] = useState(false);
+
+  // The transfer channel to the same chain shares the federation channel's
+  // connection: suggest it once the federation channel is known, unless the
+  // user (or a prefill) already chose one.
+  useEffect(() => {
+    const channel = ibcChannelId.trim();
+    if (!channel || peerType !== PeerType.SPARK_DREAM) return;
+    if (transferChannelId && !transferSuggested) return;
+    let live = true;
+    suggestTransferChannel(channel)
+      .then((suggested) => {
+        if (!live || !suggested) return;
+        setTransferChannelId(suggested);
+        setTransferSuggested(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ibcChannelId, peerType]);
+
+  const fetchIdentity = async () => {
+    const base = peerApi.trim().replace(/\/+$/, "");
+    if (!/^https?:\/\/\S+$/.test(base)) {
+      setIdentityNote("Enter the peer chain's API (LCD) URL, e.g. https://api.example.org");
+      return;
+    }
+    setIdentityBusy(true);
+    setIdentityNote(null);
+    try {
+      const res = await fetch(`${base}/sparkdream/identity/v1/chain-identity`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = (await res.json()) as { identity?: Record<string, unknown> };
+      if (!body.identity?.bond_denom) throw new Error("no chain identity in the answer");
+      setPeerIdentity(body.identity);
+    } catch (err) {
+      setPeerIdentity(null);
+      setIdentityNote(
+        `Could not read the chain identity from ${base} (${err instanceof Error ? err.message : String(err)}).`
+      );
+    } finally {
+      setIdentityBusy(false);
+    }
+  };
 
   // Lifecycle fields
   const [targetPeerId, setTargetPeerId] = useState(initialPeerId);
@@ -138,9 +214,11 @@ export default function PeerProposalForm({
         const [
           { MsgRegisterPeer, MsgResumePeer, MsgSuspendPeer, MsgRemovePeer },
           { peerTypeFromJSON },
+          { ChainIdentity },
         ] = await Promise.all([
           import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx"),
           import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/types"),
+          import("@sparkdreamnft/sparkdreamjs/sparkdream/identity/v1/chain_identity"),
         ]);
 
         // Two shapes of the same message. `inner` is pre-encoded bytes for
@@ -177,6 +255,11 @@ export default function PeerProposalForm({
               `Channel ${channel} is already bound to another peer.`
             );
           }
+          const sparkDream = peerType === PeerType.SPARK_DREAM;
+          const transfer = sparkDream ? transferChannelId.trim() : "";
+          if (transfer && !/^channel-\d+$/.test(transfer)) {
+            throw new Error(`Transfer channel ${transfer} is not a channel id (channel-N).`);
+          }
           const registerFields = MsgRegisterPeer.fromPartial({
             authority,
             peerId: id,
@@ -189,10 +272,12 @@ export default function PeerProposalForm({
             ibcChannelId: channel,
             metadata: metadata.trim(),
             // Left unset: controller_group resolves to the Operations
-            // Committee at bridge-registration time, and peer_identity is
-            // only meaningful for a Spark Dream peer whose denom metadata
-            // we would have to be told out of band.
+            // Committee at bridge-registration time.
             controllerGroup: "",
+            ...(transfer ? { ibcTransferChannelId: transfer } : {}),
+            ...(sparkDream && peerIdentity
+              ? { peerIdentity: ChainIdentity.fromAmino(peerIdentity as never) }
+              : {}),
           });
           inner = {
             typeUrl: FederationMsgTypeUrls.RegisterPeer,
@@ -436,11 +521,74 @@ export default function PeerProposalForm({
               />
               <p className="mt-1 text-xs text-zinc-500">
                 {peerType === PeerType.SPARK_DREAM
-                  ? "Optional. Can be bound later, but only one peer per channel."
+                  ? "This chain's end of the federation channel. One peer per channel; changing it later means removing and re-registering the peer."
                   : "Only Spark Dream peers federate over IBC. Other transports use an off-chain bridge."}
               </p>
             </div>
           </div>
+
+          {peerType === PeerType.SPARK_DREAM && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label
+                  className="mb-1 block text-sm text-zinc-400"
+                  htmlFor="fed-peer-transfer"
+                >
+                  Transfer channel
+                </label>
+                <input
+                  id="fed-peer-transfer"
+                  value={transferChannelId}
+                  onChange={(e) => {
+                    setTransferChannelId(e.target.value);
+                    setTransferSuggested(false);
+                  }}
+                  placeholder="channel-1"
+                  className={inputClass}
+                />
+                <p className="mt-1 text-xs text-zinc-500">
+                  {transferSuggested
+                    ? "The open transfer channel on the federation channel's connection. "
+                    : "This chain's end of the ICS-20 transfer channel to the same chain. "}
+                  The peer&apos;s token is named in wallets and relay fees are refunded through it;
+                  it cannot be added after registration.
+                </p>
+              </div>
+              <div>
+                <label
+                  className="mb-1 block text-sm text-zinc-400"
+                  htmlFor="fed-peer-api"
+                >
+                  Peer chain API
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="fed-peer-api"
+                    value={peerApi}
+                    onChange={(e) => setPeerApi(e.target.value)}
+                    placeholder="https://api.example.org"
+                    className={inputClass}
+                  />
+                  <button
+                    type="button"
+                    onClick={fetchIdentity}
+                    disabled={identityBusy}
+                    className="sd-btn sd-btn-secondary"
+                  >
+                    {identityBusy ? "Reading…" : "Fetch"}
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {peerIdentity
+                    ? `Chain identity: ${String(peerIdentity.chain_human_name ?? "?")} (${String(
+                        peerIdentity.chain_ticker_prefix ?? "?"
+                      )}), token ${String(peerIdentity.bond_display_symbol ?? peerIdentity.bond_denom)}. `
+                    : "Fetches the peer chain's identity, which names its token here. "}
+                  {identityNote ?? ""}
+                </p>
+              </div>
+            </div>
+          )}
 
           <div>
             <label
@@ -585,4 +733,19 @@ export default function PeerProposalForm({
       </button>
     </form>
   );
+}
+
+/**
+ * The open ICS-20 transfer channel on the same connection as `federationChannel`
+ * (both run between the same two chains), if exactly one exists.
+ */
+async function suggestTransferChannel(federationChannel: string): Promise<string | undefined> {
+  const { channels } = await listIbcChannels();
+  const fed = channels.find((c) => c.channel_id === federationChannel && c.port_id === "federation");
+  const connection = fed?.connection_hops?.[0];
+  if (!connection) return undefined;
+  const transfers = channels.filter(
+    (c) => c.port_id === "transfer" && c.state === "STATE_OPEN" && c.connection_hops?.[0] === connection
+  );
+  return transfers.length === 1 ? transfers[0]!.channel_id : undefined;
 }

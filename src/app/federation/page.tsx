@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { fediversePreview } from "@/lib/fediverse";
 import Link from "next/link";
 import {
@@ -65,7 +66,7 @@ import { FederationMsgTypeUrls } from "@/lib/tx";
 import { curationId } from "@/lib/peerPolicy";
 import LinkIdentityForm from "@/components/federation/LinkIdentityForm";
 import PendingIdentityChallenges from "@/components/federation/PendingIdentityChallenges";
-import PeerProposalForm, { type PeerAction } from "@/components/federation/PeerProposalForm";
+import PeerProposalForm, { type PeerAction, type RegisterPrefill } from "@/components/federation/PeerProposalForm";
 import PeerPolicyForm from "@/components/federation/PeerPolicyForm";
 import PeerCurationPanel from "@/components/federation/PeerCurationPanel";
 
@@ -190,16 +191,80 @@ const VIEW_SECTIONS: Record<View, SectionKey[]> = {
 };
 
 export default function FederationPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="sd-page">
+          <div className="mb-8">
+            <div className="h-7 w-36 animate-pulse rounded bg-zinc-800" />
+            <div className="mt-2 h-4 w-56 animate-pulse rounded bg-zinc-800/60" />
+          </div>
+        </div>
+      }
+    >
+      <FederationPageInner />
+    </Suspense>
+  );
+}
+
+/** A composer the URL asks to open: a link from the SparkDream launcher's
+ *  "finish in the chain's frontend" (register with every field filled in,
+ *  then the policy and activation for the same peer). */
+interface FederationDeepLink {
+  composer: "peer" | "policy";
+  action: PeerAction;
+  target: string;
+  prefill?: RegisterPrefill;
+}
+
+/** ?register=1&peer_id=...&display_name=...&channel=...&transfer_channel=...
+ *  &peer_api=...&identity=<base64url JSON>, ?policy=<peer id> or
+ *  ?activate=<peer id>. */
+function parseFederationLink(q: URLSearchParams): FederationDeepLink | null {
+  if (q.get("register")) {
+    let identity: Record<string, unknown> | undefined;
+    const raw = q.get("identity");
+    if (raw) {
+      try {
+        identity = JSON.parse(atob(raw.replace(/-/g, "+").replace(/_/g, "/")));
+      } catch {
+        identity = undefined;
+      }
+    }
+    const get = (k: string) => q.get(k) ?? undefined;
+    const prefill: RegisterPrefill = {};
+    if (get("peer_id")) prefill.peerId = get("peer_id");
+    if (get("display_name")) prefill.displayName = get("display_name");
+    if (get("channel")) prefill.ibcChannelId = get("channel");
+    if (get("transfer_channel")) prefill.ibcTransferChannelId = get("transfer_channel");
+    if (get("peer_api")) prefill.peerApi = get("peer_api");
+    if (identity) prefill.peerIdentity = identity;
+    return { composer: "peer", action: "register", target: "", prefill };
+  }
+  const policy = q.get("policy");
+  if (policy) return { composer: "policy", action: "register", target: policy };
+  const activate = q.get("activate");
+  if (activate) return { composer: "peer", action: "resume", target: activate };
+  return null;
+}
+
+function FederationPageInner() {
   const dream = useDreamDenom();
   const { config } = useChainConfig();
   const { address } = useWallet();
+  const searchParams = useSearchParams();
+  // read once: the composer it opens is the user's to close
+  const [deepLink] = useState(() => parseFederationLink(new URLSearchParams(searchParams.toString())));
 
-  const [view, setView] = useState<View>("overview");
+  const [view, setView] = useState<View>(deepLink ? "peers" : "overview");
   // Which compose form is open, if any. Both are council/wallet gated inside
   // the form rather than here, so the button always explains itself.
-  const [composer, setComposer] = useState<null | "link" | "peer" | "policy" | "curation">(null);
-  const [peerAction, setPeerAction] = useState<PeerAction>("register");
-  const [peerActionTarget, setPeerActionTarget] = useState("");
+  const [composer, setComposer] = useState<null | "link" | "peer" | "policy" | "curation">(
+    deepLink?.composer ?? null
+  );
+  const [peerAction, setPeerAction] = useState<PeerAction>(deepLink?.action ?? "register");
+  const [peerActionTarget, setPeerActionTarget] = useState(deepLink?.target ?? "");
+  const registerPrefill = deepLink?.prefill;
   // Bumped every time the composer is opened, and used as the form's `key`, so
   // opening it from a peer card re-seeds the action and target even when the
   // form is already on screen.
@@ -722,6 +787,7 @@ export default function FederationPage() {
           peers={peers}
           initialAction={peerAction}
           initialPeerId={peerActionTarget}
+          {...(peerAction === "register" && registerPrefill ? { prefill: registerPrefill } : {})}
           onSubmitted={() => {
             setComposer(null);
             reload();
