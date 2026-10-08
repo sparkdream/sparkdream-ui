@@ -30,6 +30,15 @@ export interface ShieldedOpsResponse {
   registrations: ShieldedOpRegistration[];
 }
 
+export interface VerificationKeyResponse {
+  verification_key: {
+    circuit_id: string;
+    /** base64 */
+    vk_bytes?: string;
+    description?: string;
+  };
+}
+
 export interface ShieldEpochResponse {
   epoch_state: {
     current_epoch: string;

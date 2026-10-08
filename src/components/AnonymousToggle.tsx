@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { hasShieldVerificationKey } from "@/lib/api";
 import { anonymousOp } from "@/lib/shieldClient";
 import type { ShieldedOpRegistration } from "@/types/shield";
 import type { ShieldIdentityStatus } from "@/hooks/useShieldIdentity";
@@ -31,6 +32,7 @@ export default function AnonymousToggle({
   note,
 }: AnonymousToggleProps) {
   const [reg, setReg] = useState<ShieldedOpRegistration | null | undefined>(undefined);
+  const [hasVk, setHasVk] = useState(true);
 
   useEffect(() => {
     let live = true;
@@ -42,11 +44,23 @@ export default function AnonymousToggle({
     };
   }, [typeUrl]);
 
+  // Without a stored verifying key the chain rejects every anonymous exec. A
+  // failed lookup leaves the switch on; the chain's own error still explains.
+  useEffect(() => {
+    let live = true;
+    hasShieldVerificationKey()
+      .then((v) => live && setHasVk(v))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
   if (!reg || shield.status === "unavailable" || shield.status === "loading") return null;
 
   const needsSetup = shield.status === "unregistered" || shield.status === "mismatch";
   const tooLow = shield.trustLevel !== null && shield.trustLevel < reg.min_trust_level;
-  const disabled = needsSetup || tooLow;
+  const disabled = !hasVk || needsSetup || tooLow;
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 px-4 py-3">
@@ -64,7 +78,12 @@ export default function AnonymousToggle({
             {"Shows as Anonymous. A zero-knowledge proof shows you're a member without revealing who you are."}
           </span>
           {checked && !disabled && note && <span className="mt-1 block text-xs text-zinc-500">{note}</span>}
-          {needsSetup && (
+          {!hasVk && (
+            <span className="mt-1 block text-xs text-zinc-400">
+              {"Anonymous actions aren't available on this chain yet. Its proof verification key hasn't been set up."}
+            </span>
+          )}
+          {hasVk && needsSetup && (
             <span className="mt-1 block text-xs text-zinc-400">
               <Link href="/permissions#anonymous" className="underline hover:text-white">
                 Set up an anonymous identity
@@ -72,7 +91,7 @@ export default function AnonymousToggle({
               to use this.
             </span>
           )}
-          {!needsSetup && tooLow && (
+          {hasVk && !needsSetup && tooLow && (
             <span className="mt-1 block text-xs text-zinc-400">
               Needs trust level {TRUST_NAMES[reg.min_trust_level] ?? reg.min_trust_level} or higher.
             </span>

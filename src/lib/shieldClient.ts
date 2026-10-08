@@ -247,6 +247,7 @@ function friendlyChainError(log: string): string {
   if (/nullifier already used/i.test(log)) return "Your anonymous identity has already done this here.";
   if (/rate limit/i.test(log)) return "You've reached the limit for anonymous actions this epoch. Try again later.";
   if (/merkle root/i.test(log)) return "The member list changed while you were sending. Please try again.";
+  if (/no verification key/i.test(log)) return "Anonymous actions aren't available on this chain yet. Its proof verification key hasn't been set up.";
   return log;
 }
 

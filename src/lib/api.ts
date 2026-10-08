@@ -71,6 +71,7 @@ import type {
   ShieldEpochResponse,
   TrustTreeLeaf,
   TrustTreeResponse,
+  VerificationKeyResponse,
 } from "@/types/shield";
 import type {
   RepMember,
@@ -2530,6 +2531,25 @@ export async function getShieldEpochInterval(): Promise<number> {
     async () => {
       const res = await get<{ params: { shield_epoch_interval: string } }>("/sparkdream/shield/v1/params");
       return Number(res.params.shield_epoch_interval);
+    },
+    { ttl: 10 * 60_000 }
+  );
+}
+
+// Whether the chain can verify anonymous proofs. Production builds refuse every
+// shielded exec until the circuit's verifying key is stored, which only genesis
+// or a chain upgrade can do.
+export async function hasShieldVerificationKey(): Promise<boolean> {
+  return cachedFetch(
+    "shield|vk",
+    async () => {
+      try {
+        const res = await get<VerificationKeyResponse>("/sparkdream/shield/v1/verification_key/shield_v1");
+        return !!res.verification_key?.vk_bytes;
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) return false;
+        throw err;
+      }
     },
     { ttl: 10 * 60_000 }
   );
