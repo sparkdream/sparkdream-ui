@@ -12,6 +12,8 @@ import NumberInput from "@/components/NumberInput";
 import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import AnonymousToggle from "@/components/AnonymousToggle";
+import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 
 interface CreatePostFormProps {
   mode: "thread" | "reply";
@@ -39,6 +41,8 @@ export default function CreatePostForm({
   const [tags, setTags] = useState<string[]>([]);
   const [authorBond, setAuthorBond] = useState("");
   const { busy: submitting, error: submitError, clearError, run } = useTxAction();
+  const [anonymous, setAnonymous] = useState(false);
+  const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
 
   const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
   const canCreateTags = useCanCreateTags(address);
@@ -63,10 +67,20 @@ export default function CreatePostForm({
       }
       const tagMsgs =
         mode === "thread" ? buildCreateTagMsgs(address, tags, availableTags) : [];
-      await signAndBroadcast([
-        ...tagMsgs,
-        { typeUrl: ForumMsgTypeUrls.CreatePost, value },
-      ]);
+      if (anonymous) {
+        // One message, signed by the shield module: no new tags alongside it,
+        // and no bond (it would lock the shield's DREAM).
+        if (tagMsgs.length > 0) {
+          throw new Error("New tags can't be created anonymously. Pick existing tags or send without them.");
+        }
+        delete value.authorBond;
+        await submitAnonymously(ForumMsgTypeUrls.CreatePost, (shieldAddress) => ({ ...value, creator: shieldAddress }));
+      } else {
+        await signAndBroadcast([
+          ...tagMsgs,
+          { typeUrl: ForumMsgTypeUrls.CreatePost, value },
+        ]);
+      }
       if (tagMsgs.length > 0) refreshTags();
       setContent("");
       setTags([]);
@@ -111,7 +125,7 @@ export default function CreatePostForm({
             )}
           </div>
         )}
-        {isMember === true && (
+        {isMember === true && !anonymous && (
           <div>
             <label htmlFor="forumAuthorBond" className="mb-1 block text-sm text-zinc-400">
               Author bond ({dream})
@@ -130,6 +144,14 @@ export default function CreatePostForm({
             </p>
           </div>
         )}
+        <AnonymousToggle
+          typeUrl={ForumMsgTypeUrls.CreatePost}
+          checked={anonymous}
+          onChange={setAnonymous}
+          shield={shield}
+          label={mode === "thread" ? "Send anonymously" : "Reply anonymously"}
+          note="Anonymous posts can't create new tags or carry an author bond. You can send one anonymous spark or reply per epoch (a few minutes)."
+        />
         <ActionBanner message={submitError} onDismiss={clearError} />
         <div className="flex gap-2">
           <button
@@ -137,7 +159,11 @@ export default function CreatePostForm({
             disabled={!content.trim() || submitting}
             className="sd-btn-ember px-4 py-2"
           >
-            {submitting ? "Sending..." : mode === "thread" ? "Send spark" : "Send reply"}
+            {anonPhase
+              ? SHIELD_PHASE_LABELS[anonPhase]
+              : submitting
+                ? "Sending..."
+                : `${mode === "thread" ? "Send spark" : "Send reply"}${anonymous ? " anonymously" : ""}`}
           </button>
           <button
             onClick={onCancel}

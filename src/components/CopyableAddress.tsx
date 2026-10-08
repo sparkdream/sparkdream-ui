@@ -4,6 +4,7 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } fr
 import { useCopy } from "@/hooks/useCopy";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { truncateAddress } from "@/lib/utils";
+import { ANONYMOUS_LABEL, ANONYMOUS_TITLE, isAnonymousAddress } from "@/lib/shield";
 
 interface CopyableAddressProps {
   address: string | undefined | null;
@@ -60,6 +61,16 @@ export default function CopyableAddress({
   const { name } = useDisplayName(resolveName ? address : null);
 
   if (!address) return null;
+
+  // Anonymous content's creator is the shield module account. Copying it is
+  // meaningless (every anonymous author shares it), so render a plain label.
+  if (!children && isAnonymousAddress(address)) {
+    return (
+      <span className={className} style={style} title={ANONYMOUS_TITLE}>
+        {ANONYMOUS_LABEL}
+      </span>
+    );
+  }
 
   const visible = copied
     ? "Copied ✓"

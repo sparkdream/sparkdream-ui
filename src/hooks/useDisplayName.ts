@@ -2,9 +2,11 @@
 
 import { useWallet } from "@/contexts/WalletContext";
 import { useResolveName } from "@/hooks/useResolveName";
+import { ANONYMOUS_LABEL, isAnonymousAddress } from "@/lib/shield";
 
 /**
  * Resolves an address to its best display name. Precedence:
+ *   0. "Anonymous" for the x/shield module account (anonymous content)
  *   1. Onchain-registered name (via reverse resolution from the name module)
  *   2. Keplr wallet name — only if the address is the connected user's
  *   3. "" — caller should fall back to `truncateAddress(address)`
@@ -18,7 +20,10 @@ export function useDisplayName(address: string | undefined | null): {
   loading: boolean;
 } {
   const { address: currentAddress, name: keplrName } = useWallet();
-  const { name: onchainName, loading } = useResolveName(address);
+  const anonymous = isAnonymousAddress(address);
+  const { name: onchainName, loading } = useResolveName(anonymous ? null : address);
+
+  if (anonymous) return { name: ANONYMOUS_LABEL, loading: false };
 
   if (onchainName) return { name: onchainName, loading };
 

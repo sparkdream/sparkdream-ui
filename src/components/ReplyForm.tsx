@@ -13,6 +13,8 @@ import { parseDreamToUdream } from "@/lib/utils";
 import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
 import NumberInput from "@/components/NumberInput";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import AnonymousToggle from "@/components/AnonymousToggle";
+import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 
 interface ReplyFormProps {
   postId: string;
@@ -62,6 +64,8 @@ export default function ReplyForm({
   const [showOptions, setShowOptions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [anonymous, setAnonymous] = useState(false);
+  const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
 
   const isEditing = !!editReplyId;
   // The post author may always reply within their own thread, so they skip the
@@ -152,9 +156,21 @@ export default function ReplyForm({
         if (isMember === true && bondUdream && bondUdream !== "0") {
           value.authorBond = bondUdream;
         }
-        await signAndBroadcast([
-          { typeUrl: MsgTypeUrls.CreateReply, value },
-        ]);
+        if (anonymous) {
+          // Signed by the shield module: no author bond (it would lock the
+          // shield's DREAM). Prove the post's reply trust level, not just
+          // the op's minimum.
+          delete value.authorBond;
+          await submitAnonymously(
+            MsgTypeUrls.CreateReply,
+            (shieldAddress) => ({ ...value, creator: shieldAddress }),
+            Math.max(minReplyTrustLevel, 0),
+          );
+        } else {
+          await signAndBroadcast([
+            { typeUrl: MsgTypeUrls.CreateReply, value },
+          ]);
+        }
       }
       invalidateReplies(postId);
       invalidatePost(postId);
@@ -264,6 +280,17 @@ export default function ReplyForm({
         </div>
       )}
 
+      {!isEditing && (
+        <AnonymousToggle
+          typeUrl={MsgTypeUrls.CreateReply}
+          checked={anonymous}
+          onChange={setAnonymous}
+          shield={shield}
+          label="Reply anonymously"
+          note="Anonymous replies can't carry an author bond, and they expire unless staked conviction keeps them alive. One anonymous reply per post."
+        />
+      )}
+
       {error && <p className="text-xs text-red-400">{error}</p>}
 
       <div className="flex items-center gap-2 justify-between">
@@ -299,7 +326,11 @@ export default function ReplyForm({
                     : "sd-btn sd-btn-primary"
             }
           >
-            {submitting ? (isEditing ? "Saving..." : "Posting...") : (isEditing ? "Save" : "Reply")}
+            {anonPhase
+              ? SHIELD_PHASE_LABELS[anonPhase]
+              : submitting
+                ? (isEditing ? "Saving..." : "Posting...")
+                : (isEditing ? "Save" : anonymous ? "Reply anonymously" : "Reply")}
           </button>
         </div>
       </div>

@@ -12,6 +12,7 @@ import RecurringPaymentForm from "@/components/permissions/RecurringPaymentForm"
 import SpendingAllowanceForm from "@/components/permissions/SpendingAllowanceForm";
 import ScheduledTransferForm from "@/components/permissions/ScheduledTransferForm";
 import SessionKeyForm from "@/components/permissions/SessionKeyForm";
+import AnonymousIdentityPanel from "@/components/permissions/AnonymousIdentityPanel";
 
 type Side = "given" | "received";
 type Kind = "recurring" | "allowance" | "scheduled" | "session";
@@ -258,6 +259,8 @@ function PermissionsPageInner() {
           ))}
         </div>
       )}
+
+      <AnonymousIdentityPanel />
     </div>
   );
 }

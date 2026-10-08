@@ -21,6 +21,7 @@ export async function GET() {
     remoteManifestUrl:
       process.env.REMOTE_MANIFEST_URL || process.env.NEXT_PUBLIC_REMOTE_MANIFEST_URL || "",
     peerChains: peerChains(process.env.PEER_CHAINS),
+    zkAssetsUrl:  (process.env.ZK_ASSETS_URL || process.env.NEXT_PUBLIC_ZK_ASSETS_URL || "/zk").replace(/\/+$/, ""),
   });
 }
 

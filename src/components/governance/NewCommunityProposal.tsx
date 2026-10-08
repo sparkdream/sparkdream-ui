@@ -9,6 +9,8 @@ import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { truncateAddress } from "@/lib/utils";
 import { canSpendTreasury } from "@/lib/commons";
 import NumberInput from "@/components/NumberInput";
+import AnonymousToggle from "@/components/AnonymousToggle";
+import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 
 export type ProposalType =
   | "general"
@@ -55,6 +57,9 @@ interface NewCommunityProposalProps {
   initialType?: ProposalType;
   /** Pre-fill the unhide-post form when the proposal type defaults to "unhide-post". */
   initialPostId?: string;
+  /** The proposer isn't on this council: the proposal can only be submitted
+   *  anonymously, which x/commons accepts from any member. */
+  anonymousOnly?: boolean;
 }
 
 export default function NewCommunityProposal({
@@ -64,8 +69,12 @@ export default function NewCommunityProposal({
   onSuccess,
   initialType,
   initialPostId,
+  anonymousOnly = false,
 }: NewCommunityProposalProps) {
   const { address, signAndBroadcast } = useWallet();
+  const [anonymousChoice, setAnonymous] = useState(false);
+  const anonymous = anonymousOnly || anonymousChoice;
+  const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
   const { config } = useChainConfig();
   const canSpend = canSpendTreasury(group);
   // Reject a deep-linked initialType="treasury-spend" for non-spending groups
@@ -409,17 +418,26 @@ export default function NewCommunityProposal({
           unhidePostId: unhidePostId.trim(),
         });
 
-      await signAndBroadcast([
-        {
-          typeUrl: CommonsMsgTypeUrls.SubmitProposal,
-          value: {
-            proposer: address,
-            policyAddress: group.policy_address,
-            messages: innerMessages,
-            metadata: proposalMetadata,
+      if (anonymous) {
+        await submitAnonymously(CommonsMsgTypeUrls.SubmitAnonymousProposal, (shieldAddress) => ({
+          proposer: shieldAddress,
+          policyAddress: group.policy_address,
+          messages: innerMessages,
+          metadata: proposalMetadata,
+        }));
+      } else {
+        await signAndBroadcast([
+          {
+            typeUrl: CommonsMsgTypeUrls.SubmitProposal,
+            value: {
+              proposer: address,
+              policyAddress: group.policy_address,
+              messages: innerMessages,
+              metadata: proposalMetadata,
+            },
           },
-        },
-      ]);
+        ]);
+      }
 
       onSuccess();
     } catch (err) {
@@ -815,6 +833,21 @@ export default function NewCommunityProposal({
         )}
       </div>}
 
+      {anonymousOnly ? (
+        <p className="text-xs text-zinc-500">
+          {"You're not on this council, so this proposal is submitted anonymously. It shows as Anonymous, and you can submit one anonymous proposal per epoch (a few minutes)."}
+        </p>
+      ) : (
+        <AnonymousToggle
+          typeUrl={CommonsMsgTypeUrls.SubmitAnonymousProposal}
+          checked={anonymousChoice}
+          onChange={setAnonymous}
+          shield={shield}
+          label="Submit anonymously"
+          note="One anonymous proposal per epoch (a few minutes)."
+        />
+      )}
+
       {error && (
         <div className="rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
           {error}
@@ -832,7 +865,7 @@ export default function NewCommunityProposal({
           }
           className="sd-btn sd-btn-primary"
         >
-          {submitting ? "Submitting..." : "Submit proposal"}
+          {anonPhase ? SHIELD_PHASE_LABELS[anonPhase] : submitting ? "Submitting..." : anonymous ? "Submit anonymously" : "Submit proposal"}
         </button>
         <button
           type="button"

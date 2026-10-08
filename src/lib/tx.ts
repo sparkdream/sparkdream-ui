@@ -42,6 +42,8 @@ export const DistributionMsgTypeUrls = {
 export const CommonsMsgTypeUrls = {
   SubmitProposal: "/sparkdream.commons.v1.MsgSubmitProposal",
   VoteProposal: "/sparkdream.commons.v1.MsgVoteProposal",
+  SubmitAnonymousProposal: "/sparkdream.commons.v1.MsgSubmitAnonymousProposal",
+  AnonymousVoteProposal: "/sparkdream.commons.v1.MsgAnonymousVoteProposal",
   ExecuteProposal: "/sparkdream.commons.v1.MsgExecuteProposal",
   UpdateGroupMembers: "/sparkdream.commons.v1.MsgUpdateGroupMembers",
   SpendFromCommons: "/sparkdream.commons.v1.MsgSpendFromCommons",

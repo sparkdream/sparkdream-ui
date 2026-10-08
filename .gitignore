@@ -54,3 +54,8 @@ GEMINI.md
 /.stfolder/
 /.stignore
 /.stversions/
+
+# x/shield prover assets: shield.wasm + wasm_exec.js (chain repo
+# tools/zk/wasm/build.sh) and proving_key.raw.bin + circuit.r1cs (ceremony)
+/public/zk/*
+!/public/zk/shield-worker.js

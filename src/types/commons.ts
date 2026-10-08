@@ -137,10 +137,20 @@ export interface GetPolicyPermissionsResponse {
   policy_permissions: PolicyPermissions;
 }
 
+/** Anonymous votes cast through x/shield: weight 1 each, tallied apart from council votes. */
+export interface AnonVoteTally {
+  yes_count?: string;
+  no_count?: string;
+  abstain_count?: string;
+  no_with_veto_count?: string;
+}
+
 export interface GetProposalResponse {
   proposal: Proposal;
   votes: Vote[];
   tally: TallyResult;
+  /** Absent on nodes older than the anonymous-tally query field. */
+  anon_tally?: AnonVoteTally;
 }
 
 export interface ListProposalsResponse {

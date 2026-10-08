@@ -55,6 +55,13 @@ interface Keplr {
     signDoc: import("cosmjs-types/cosmos/tx/v1beta1/tx").SignDoc,
     signOptions?: KeplrSignOptions
   ): Promise<import("@cosmjs/proto-signing").DirectSignResponse>;
+  /** ADR-036 signature over arbitrary data. Deterministic for a given key and
+   *  data, which the anonymous identity relies on. */
+  signArbitrary(
+    chainId: string,
+    signer: string,
+    data: string | Uint8Array
+  ): Promise<import("@cosmjs/amino").StdSignature>;
 }
 
 interface Window {

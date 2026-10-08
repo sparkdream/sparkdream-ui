@@ -9,6 +9,8 @@ export interface RepMember {
   lifetime_burned: string;
   reputation_scores: Record<string, string>;
   lifetime_reputation: Record<string, string>;
+  /** base64 ZK public key registered for anonymous actions (x/shield); absent until registered. */
+  zk_public_key?: string;
   trust_level: string;
   trust_level_updated_at: string;
   joined_season: number;

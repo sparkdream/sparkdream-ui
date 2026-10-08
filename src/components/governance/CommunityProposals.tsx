@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Group, Proposal, Member, Vote, TallyResult } from "@/types/commons";
+import type { Group, Proposal, Member, Vote, TallyResult, AnonVoteTally } from "@/types/commons";
 import { ProposalStatus, VoteOption, VOTE_OPTION_LABELS, parseVoteOption } from "@/types/commons";
 import { getProposal } from "@/lib/api";
 import { CommonsMsgTypeUrls } from "@/lib/tx";
@@ -17,6 +17,8 @@ import { canSpendTreasury } from "@/lib/commons";
 import NewCommunityProposal, { type ProposalType } from "./NewCommunityProposal";
 import { CouncilTreasuryBanner } from "./CouncilTreasury";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import AnonymousToggle from "@/components/AnonymousToggle";
+import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 
 interface CommunityProposalsProps {
   group: Group;
@@ -47,6 +49,11 @@ export default function CommunityProposals({
   const [showNewProposal, setShowNewProposal] = useState(!!initialAction);
 
   const isMember = members.some((m) => m.address === address);
+  // Any member with an anonymous identity may propose and vote anonymously
+  // (weight 1, tallied apart from council votes), council seat or not.
+  const [anonVotes, setAnonVotes] = useState(false);
+  const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
+  const canActAnonymously = shield.status === "ready" || shield.status === "locked";
   // Shared clock for every card's voting / execution countdowns. Tick
   // adapts: 30s normally, 5s when *any* visible card is in its sub-minute
   // window, so the "<1m left" badge transitions to "expired" / the Execute
@@ -72,17 +79,26 @@ export default function CommunityProposals({
     setActionLoading(`vote-${proposalId}`);
     setActionError(null);
     try {
-      await signAndBroadcast([
-        {
-          typeUrl: CommonsMsgTypeUrls.VoteProposal,
-          value: {
-            voter: address,
-            proposalId: BigInt(proposalId),
-            option,
-            metadata: "",
+      if (anonVotes) {
+        await submitAnonymously(CommonsMsgTypeUrls.AnonymousVoteProposal, (shieldAddress) => ({
+          voter: shieldAddress,
+          proposalId: BigInt(proposalId),
+          option,
+          metadata: "",
+        }));
+      } else {
+        await signAndBroadcast([
+          {
+            typeUrl: CommonsMsgTypeUrls.VoteProposal,
+            value: {
+              voter: address,
+              proposalId: BigInt(proposalId),
+              option,
+              metadata: "",
+            },
           },
-        },
-      ]);
+        ]);
+      }
       setRefreshKey((k) => k + 1);
       onRefresh();
     } catch (err) {
@@ -124,7 +140,7 @@ export default function CommunityProposals({
 
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Proposals</h2>
-        {isMember && !showNewProposal && (
+        {(isMember || canActAnonymously) && !showNewProposal && (
           <button
             type="button"
             onClick={() => setShowNewProposal(true)}
@@ -142,6 +158,7 @@ export default function CommunityProposals({
             members={members}
             initialType={initialAction}
             initialPostId={initialPostId}
+            anonymousOnly={!isMember}
             onClose={() => setShowNewProposal(false)}
             onSuccess={() => {
               setShowNewProposal(false);
@@ -186,6 +203,15 @@ export default function CommunityProposals({
               </button>
             </div>
           )}
+          <AnonymousToggle
+            typeUrl={CommonsMsgTypeUrls.AnonymousVoteProposal}
+            checked={anonVotes}
+            onChange={setAnonVotes}
+            shield={shield}
+            label="Vote anonymously"
+            note="Anonymous votes count 1 each and are tallied apart from council votes. One anonymous vote per proposal."
+          />
+          {anonPhase && <p className="text-xs text-zinc-400">{SHIELD_PHASE_LABELS[anonPhase]}</p>}
           {proposals.map((proposal) => (
             // Remount on refreshKey bump so cached `detail` (votes + tally)
             // is dropped after a successful vote/execute.
@@ -193,6 +219,7 @@ export default function CommunityProposals({
               key={`${proposal.id}-${refreshKey}`}
               proposal={proposal}
               isMember={isMember}
+              canVote={isMember || anonVotes}
               actionLoading={actionLoading}
               now={now}
               onVote={handleVote}
@@ -357,6 +384,7 @@ function VoteRow({ voter, option }: { voter: string; option: string }) {
 function CommonsProposalCard({
   proposal,
   isMember,
+  canVote,
   actionLoading,
   now,
   onVote,
@@ -364,6 +392,8 @@ function CommonsProposalCard({
 }: {
   proposal: Proposal;
   isMember: boolean;
+  /** Council member, or voting anonymously */
+  canVote: boolean;
   actionLoading: string | null;
   /** Shared ticking clock from the parent — see useNow(). */
   now: number;
@@ -375,6 +405,7 @@ function CommonsProposalCard({
   const [detail, setDetail] = useState<{
     votes: Vote[];
     tally: TallyResult;
+    anon?: AnonVoteTally;
   } | null>(null);
 
   const loadDetail = async () => {
@@ -384,7 +415,7 @@ function CommonsProposalCard({
     }
     try {
       const res = await getProposal(proposal.id);
-      setDetail({ votes: res.votes || [], tally: res.tally });
+      setDetail({ votes: res.votes || [], tally: res.tally, anon: res.anon_tally });
       setExpanded(true);
     } catch {
       setExpanded(!expanded);
@@ -472,6 +503,13 @@ function CommonsProposalCard({
             veto={parseFloat(detail.tally.no_with_veto_weight || "0")}
           />
 
+          {detail.anon && anonVoteTotal(detail.anon) > 0 && (
+            <p className="mt-2 text-xs text-zinc-400">
+              Anonymous votes: {detail.anon.yes_count || "0"} yes, {detail.anon.no_count || "0"} no,{" "}
+              {detail.anon.abstain_count || "0"} abstain, {detail.anon.no_with_veto_count || "0"} veto
+            </p>
+          )}
+
           {/* Individual votes */}
           {detail.votes.length > 0 && (
             <div className="mt-3 space-y-1">
@@ -484,7 +522,7 @@ function CommonsProposalCard({
       )}
 
       {/* Actions */}
-      {isMember && (isVoting || isAccepted) && (
+      {((isMember && (isVoting || isAccepted)) || (canVote && isVoting)) && (
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-3">
           {isVoting && (
             <>
@@ -505,7 +543,7 @@ function CommonsProposalCard({
               ))}
             </>
           )}
-          {isAccepted && (
+          {isAccepted && isMember && (
             <button
               onClick={() => onExecute(proposal.id)}
               disabled={!isExecutable || actionLoading === `exec-${proposal.id}`}
@@ -525,6 +563,10 @@ function CommonsProposalCard({
       )}
     </article>
   );
+}
+
+function anonVoteTotal(t: AnonVoteTally): number {
+  return [t.yes_count, t.no_count, t.abstain_count, t.no_with_veto_count].reduce((n, c) => n + Number(c || 0), 0);
 }
 
 function voteColor(option: number): string {

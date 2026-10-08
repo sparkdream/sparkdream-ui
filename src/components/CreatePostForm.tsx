@@ -11,6 +11,8 @@ import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
 import NumberInput from "@/components/NumberInput";
 import TagPicker from "@/components/contribute/TagPicker";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import AnonymousToggle from "@/components/AnonymousToggle";
+import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 
 interface CreatePostFormProps {
   onCreated?: () => void;
@@ -45,6 +47,8 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
   const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
   const canCreateTags = useCanCreateTags(address);
   const [maxBond, setMaxBond] = useState<string | null>(null);
+  const [anonymous, setAnonymous] = useState(false);
+  const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
 
   useEffect(() => {
     getRepParams()
@@ -86,6 +90,19 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
       }
 
       const tagMsgs = buildCreateTagMsgs(address!, tags, availableTags);
+      if (anonymous) {
+        // One message per anonymous exec, signed by the shield module: no tag
+        // creation alongside it, and no bond (it would lock the shield's DREAM).
+        if (tagMsgs.length > 0) {
+          throw new Error("New tags can't be created anonymously. Pick existing tags or post without them.");
+        }
+        delete value.authorBond;
+        await submitAnonymously(MsgTypeUrls.CreatePost, (shieldAddress) => ({ ...value, creator: shieldAddress }));
+        invalidatePostsLists(address!);
+        if (onCreated) onCreated();
+        else router.push("/imaginarium");
+        return;
+      }
       await signAndBroadcast([
         ...tagMsgs,
         { typeUrl: MsgTypeUrls.CreatePost, value },
@@ -210,6 +227,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
             </p>
           </div>
 
+          {!anonymous && (
           <div>
             <label htmlFor="authorBond" className="mb-1.5 block text-sm font-medium text-zinc-300">
               Author bond ({dream})
@@ -227,8 +245,17 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
               {maxBond && `; up to ${formatMicroDream(maxBond)} ${dream}`}.
             </p>
           </div>
+          )}
         </div>
       )}
+
+      <AnonymousToggle
+        typeUrl={MsgTypeUrls.CreatePost}
+        checked={anonymous}
+        onChange={setAnonymous}
+        shield={shield}
+        note="Anonymous dreams can't create new tags or carry an author bond, and they expire unless staked conviction keeps them alive."
+      />
 
       {error && (
         <div className="rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
@@ -242,7 +269,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
           disabled={submitting || !title.trim() || !body.trim()}
           className="sd-btn-gold px-6 py-2.5"
         >
-          {submitting ? "Publishing..." : "Publish dream"}
+          {anonPhase ? SHIELD_PHASE_LABELS[anonPhase] : submitting ? "Publishing..." : anonymous ? "Publish anonymously" : "Publish dream"}
         </button>
         <button
           type="button"

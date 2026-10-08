@@ -27,6 +27,7 @@ import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import ErrorState from "@/components/ErrorState";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import { isAnonymousAddress } from "@/lib/shield";
 
 type SortOption = "newest" | "oldest";
 type FilterOption = "my-posts" | "members" | "all";
@@ -647,10 +648,14 @@ function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => v
         <span className="more">Read more →</span>
         <div className="foot">
           <div className="who">
-            <div className="sd-avatar">{(name || post.creator).charAt(name ? 0 : 8).toUpperCase()}</div>
+            <div className="sd-avatar">
+              {isAnonymousAddress(post.creator) ? "?" : (name || post.creator).charAt(name ? 0 : 8).toUpperCase()}
+            </div>
             <div>
               <div className="name"><CopyableAddress address={post.creator} resolveName nested /></div>
-              <CopyableAddress className="addr" address={post.creator} nested style={{ display: "block" }} />
+              {!isAnonymousAddress(post.creator) && (
+                <CopyableAddress className="addr" address={post.creator} nested style={{ display: "block" }} />
+              )}
             </div>
           </div>
           <div className="stats">

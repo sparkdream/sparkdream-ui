@@ -48,6 +48,8 @@ import {
 import ErrorState from "@/components/ErrorState";
 import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
+import AnonymousToggle from "@/components/AnonymousToggle";
+import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface CollectionDetailProps {
@@ -72,6 +74,8 @@ function linkHostname(uri: string): string | null {
 export default function CollectionDetail({ collectionId, onBack }: CollectionDetailProps) {
   const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
+  const [anonVotes, setAnonVotes] = useState(false);
+  const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
   const isMember = useIsRepMember(address);
   const cannotUpvote = address ? isMember === false : false;
   const isCurator = useIsEligibleCurator(address);
@@ -381,12 +385,17 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const handleUpvote = async () => {
     if (!address) return;
     await run("upvote", async () => {
-      await signAndBroadcast([{
-        typeUrl: CollectMsgTypeUrls.UpvoteContent,
-        // target_id is uint64; pass BigInt. target_type is int32 enum (1 =
-        // COLLECTION) — Number stays a Number, the override uses `=== 0`.
-        value: { creator: address, targetId: BigInt(collectionId), targetType: 1 },
-      }]);
+      // target_id is uint64; pass BigInt. target_type is int32 enum (1 =
+      // COLLECTION) — Number stays a Number, the override uses `=== 0`.
+      const value = { targetId: BigInt(collectionId), targetType: 1 };
+      if (anonVotes) {
+        await submitAnonymously(CollectMsgTypeUrls.UpvoteContent, (shieldAddress) => ({ creator: shieldAddress, ...value }));
+      } else {
+        await signAndBroadcast([{
+          typeUrl: CollectMsgTypeUrls.UpvoteContent,
+          value: { creator: address, ...value },
+        }]);
+      }
       await fetchData();
     }, "Failed to upvote");
   };
@@ -431,10 +440,15 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const handleDownvote = async () => {
     if (!address) return;
     await run("downvote", async () => {
-      await signAndBroadcast([{
-        typeUrl: CollectMsgTypeUrls.DownvoteContent,
-        value: { creator: address, targetId: BigInt(collectionId), targetType: FlagTargetType.COLLECTION },
-      }]);
+      const value = { targetId: BigInt(collectionId), targetType: FlagTargetType.COLLECTION };
+      if (anonVotes) {
+        await submitAnonymously(CollectMsgTypeUrls.DownvoteContent, (shieldAddress) => ({ creator: shieldAddress, ...value }));
+      } else {
+        await signAndBroadcast([{
+          typeUrl: CollectMsgTypeUrls.DownvoteContent,
+          value: { creator: address, ...value },
+        }]);
+      }
       await fetchData();
     }, "Failed to downvote");
   };
@@ -722,7 +736,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
               title={cannotUpvote ? "Only existing members can upvote" : undefined}
               className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-emerald-400 disabled:opacity-50"
             >
-              {actionLoading === "upvote" ? "..." : `+${collection.upvote_count || 0}`}
+              {actionLoading === "upvote" ? (anonPhase ? "Proving…" : "...") : `+${collection.upvote_count || 0}`}
             </button>
             <button
               onClick={handleDownvote}
@@ -730,7 +744,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
               title={cannotUpvote ? "Only existing members can downvote" : `Downvoting costs ${dream}`}
               className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-red-400 disabled:opacity-50"
             >
-              {actionLoading === "downvote" ? "..." : `-${collection.downvote_count || 0}`}
+              {actionLoading === "downvote" ? (anonPhase ? "Proving…" : "...") : `-${collection.downvote_count || 0}`}
             </button>
             {!isOwner && !cannotUpvote && (
               <button
@@ -907,6 +921,20 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
 
         {flagTarget === `${FlagTargetType.COLLECTION}:${collection.id}` &&
           renderFlagForm(FlagTargetType.COLLECTION, collection.id)}
+
+        {!isOwner && !cannotUpvote && (
+          <div className="mt-3">
+            <AnonymousToggle
+              typeUrl={CollectMsgTypeUrls.UpvoteContent}
+              checked={anonVotes}
+              onChange={setAnonVotes}
+              shield={shield}
+              label="Vote anonymously"
+              note="One anonymous vote per collection, up or down. Each vote takes about 10 seconds to prove."
+            />
+            {anonPhase && <p className="mt-1 text-xs text-zinc-400">{SHIELD_PHASE_LABELS[anonPhase]}</p>}
+          </div>
+        )}
 
         <ActionBanner message={actionError} onDismiss={clearError} className="mt-3" />
       </div>

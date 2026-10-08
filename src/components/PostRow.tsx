@@ -9,6 +9,7 @@ import { getReactionCounts } from "@/lib/api";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import CopyableAddress from "@/components/CopyableAddress";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import { isAnonymousAddress } from "@/lib/shield";
 
 const AVATAR_GRADIENTS = [
   "linear-gradient(135deg, #6366f1, #f472b6)",
@@ -69,9 +70,13 @@ export default function PostRow({
   const inner = (
     <>
       <div className="who-col">
-        <div className="sd-avatar" style={{ background: gradientFor(post.creator) }}>
-          {initialFor(name, post.creator)}
-        </div>
+        {isAnonymousAddress(post.creator) ? (
+          <div className="sd-avatar" style={{ background: "var(--panel-2)" }}>?</div>
+        ) : (
+          <div className="sd-avatar" style={{ background: gradientFor(post.creator) }}>
+            {initialFor(name, post.creator)}
+          </div>
+        )}
       </div>
       <div className="body-col">
         <div className="head">

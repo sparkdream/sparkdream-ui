@@ -20,6 +20,10 @@ export interface ChainConfig {
    *  (PEER_CHAINS, set by the SparkDream launcher): the federation register
    *  form reads a peer chain's identity from them. */
   peerChains?: Record<string, string>;
+  /** Where the anonymous-action prover assets live (shield.wasm, wasm_exec.js,
+   *  proving_key.raw.bin, circuit.r1cs): "/zk" on this origin by default, or a
+   *  CORS-enabled bucket. */
+  zkAssetsUrl?: string;
 }
 
 export const defaults: ChainConfig = {

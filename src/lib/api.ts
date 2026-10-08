@@ -67,6 +67,12 @@ import type {
   ListHideRecordsBySentinelResponse,
 } from "@/types/collect";
 import type {
+  ShieldedOpsResponse,
+  ShieldEpochResponse,
+  TrustTreeLeaf,
+  TrustTreeResponse,
+} from "@/types/shield";
+import type {
   RepMember,
   GetMemberResponse,
   ListMemberResponse,
@@ -2504,4 +2510,63 @@ export async function getAllMembers(): Promise<RepMember[]> {
 
 export async function getAllMemberAddresses(): Promise<Set<string>> {
   return new Set((await getAllMembers()).map((m) => m.address));
+}
+
+// ---------------------------------------------------------------------------
+// x/shield (anonymous actions)
+// ---------------------------------------------------------------------------
+
+export async function getShieldedOps(): Promise<ShieldedOpsResponse> {
+  return cachedFetch(
+    "shield|ops",
+    () => get<ShieldedOpsResponse>("/sparkdream/shield/v1/shielded_ops"),
+    { ttl: 5 * 60_000 }
+  );
+}
+
+export async function getShieldEpochInterval(): Promise<number> {
+  return cachedFetch(
+    "shield|epochInterval",
+    async () => {
+      const res = await get<{ params: { shield_epoch_interval: string } }>("/sparkdream/shield/v1/params");
+      return Number(res.params.shield_epoch_interval);
+    },
+    { ttl: 10 * 60_000 }
+  );
+}
+
+// Uncached: an anonymous proof is bound to the epoch it was made in.
+export async function getShieldEpoch(): Promise<ShieldEpochResponse> {
+  return get<ShieldEpochResponse>("/sparkdream/shield/v1/shield_epoch");
+}
+
+// The whole member trust tree. Anonymous clients fetch all of it and find their
+// own leaf locally, so the request says nothing about who is asking. Uncached:
+// a proof must use a current root.
+export async function getTrustTree(): Promise<TrustTreeResponse> {
+  const leaves: TrustTreeLeaf[] = [];
+  let first: TrustTreeResponse | null = null;
+  let nextKey: string | null = null;
+  do {
+    const res: TrustTreeResponse = await get<TrustTreeResponse>(
+      "/sparkdream/rep/v1/trust_tree",
+      paginationParams({ limit: "1000", ...(nextKey ? { key: nextKey } : {}) })
+    );
+    first ??= res;
+    for (const l of res.leaves || []) leaves.push(l);
+    nextKey = res.pagination?.next_key || null;
+  } while (nextKey);
+  return { ...first!, leaves };
+}
+
+export async function getAccountNumber(address: string): Promise<string | null> {
+  try {
+    const res = await get<{ account?: { account_number?: string } }>(
+      `/cosmos/auth/v1beta1/accounts/${address}`
+    );
+    return res.account?.account_number ?? null;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
 }

@@ -34,6 +34,8 @@ import { PostStatus, BountyStatus } from "@/types/forum";
 import ErrorState from "@/components/ErrorState";
 import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
+import AnonymousToggle from "@/components/AnonymousToggle";
+import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 
 // Promoting an ephemeral post to permanent is a member action gated on
 // make_permanent_min_trust_level (default PROVISIONAL). Pinning a thread,
@@ -83,6 +85,8 @@ interface ThreadDetailProps {
 
 export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const { address, signAndBroadcast } = useWallet();
+  const [anonVotes, setAnonVotes] = useState(false);
+  const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
   const rank = useTrustRank(address);
   const isMember = useIsRepMember(address);
   const { isOpsCommitteeMember } = useCommonsCouncil(address);
@@ -309,10 +313,14 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       const typeUrl = direction === "up"
         ? ForumMsgTypeUrls.UpvotePost
         : ForumMsgTypeUrls.DownvotePost;
-      await signAndBroadcast([{
-        typeUrl,
-        value: { creator: address, postId: BigInt(postId) },
-      }]);
+      if (anonVotes) {
+        await submitAnonymously(typeUrl, (shieldAddress) => ({ creator: shieldAddress, postId: BigInt(postId) }));
+      } else {
+        await signAndBroadcast([{
+          typeUrl,
+          value: { creator: address, postId: BigInt(postId) },
+        }]);
+      }
       await fetchData();
     }, "Vote failed");
   };
@@ -1571,11 +1579,23 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
           </button>
           <span className="text-xs text-zinc-500">{followCount} follower{followCount !== "1" ? "s" : ""}</span>
         </div>
+        {anonPhase && <span className="text-xs text-zinc-400">{SHIELD_PHASE_LABELS[anonPhase]}</span>}
         {rootPost.locked && (
           <span className="rounded-lg border border-red-800/50 bg-red-900/15 px-3 py-1.5 text-xs text-red-400">
             Locked{rootPost.lock_reason ? `: ${rootPost.lock_reason}` : ""}
           </span>
         )}
+      </div>
+
+      <div className="mb-4">
+        <AnonymousToggle
+          typeUrl={ForumMsgTypeUrls.UpvotePost}
+          checked={anonVotes}
+          onChange={setAnonVotes}
+          shield={shield}
+          label="Vote anonymously"
+          note="One anonymous vote per post, up or down. Each vote takes about 10 seconds to prove."
+        />
       </div>
 
       {/* Bounty lifecycle: view the active bounty and its assigned awards;
