@@ -14,6 +14,7 @@ import { useTxAction } from "@/hooks/useTxAction";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import AnonymousToggle from "@/components/AnonymousToggle";
 import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
+import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 
 interface CreatePostFormProps {
   mode: "thread" | "reply";
@@ -152,6 +153,7 @@ export default function CreatePostForm({
           label={mode === "thread" ? "Send anonymously" : "Reply anonymously"}
           note="Anonymous posts can't create new tags or carry an author bond. You can send one anonymous spark or reply per epoch (a few minutes)."
         />
+        <ContentLicenseNotice what="Your post" />
         <ActionBanner message={submitError} onDismiss={clearError} />
         <div className="flex gap-2">
           <button

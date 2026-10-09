@@ -15,6 +15,7 @@ import { useCanMakePermanent } from "@/hooks/useCanMakePermanent";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { MsgTypeUrls } from "@/lib/tx";
 import { invalidatePost, invalidateReplies } from "@/lib/api";
+import { isRemoved } from "@/lib/moderation";
 import AuthorBondPanel from "./AuthorBondPanel";
 
 // StakeTargetType numeric value for x/blog reply author bonds (replies have
@@ -240,103 +241,108 @@ function ReplyItem({
 
   return (
     <div className={depth > 0 ? "ml-6 border-l border-zinc-800 pl-4" : ""}>
-      <div className={`py-3 ${isHidden ? "opacity-50" : ""}`}>
-        <div className="mb-1 flex items-center gap-2 text-xs text-zinc-500">
-          <NameOrAddress address={reply.creator} className="font-mono" />
-          <span>&middot;</span>
-          <span>{timeAgo(reply.created_at)}</span>
-          {reply.edited && (
-            <>
-              <span>&middot;</span>
-              <span className="italic">edited</span>
-            </>
+      {/* Removed by the site operator: a placeholder keeps its replies anchored. */}
+      {isRemoved(reply) ? (
+        <p className="py-3 text-sm italic text-zinc-600">{"This reply isn't available on this site."}</p>
+      ) : (
+        <div className={`py-3 ${isHidden ? "opacity-50" : ""}`}>
+          <div className="mb-1 flex items-center gap-2 text-xs text-zinc-500">
+            <NameOrAddress address={reply.creator} className="font-mono" />
+            <span>&middot;</span>
+            <span>{timeAgo(reply.created_at)}</span>
+            {reply.edited && (
+              <>
+                <span>&middot;</span>
+                <span className="italic">edited</span>
+              </>
+            )}
+            {reply.pinned_by && (
+              <span className="rounded bg-amber-900/30 px-1.5 py-0.5 text-amber-400">
+                Pinned
+              </span>
+            )}
+            {isHidden && (
+              <span className="rounded bg-red-900/30 px-1.5 py-0.5 text-red-400">
+                Hidden
+              </span>
+            )}
+            {reply.expires_at && reply.expires_at !== "0" && (
+              <span className="rounded bg-yellow-900/30 px-1.5 py-0.5 text-yellow-400">
+                Ephemeral
+              </span>
+            )}
+          </div>
+
+          {showEditForm ? (
+            <div className="mb-2">
+              <ReplyForm
+                postId={postId}
+                editReplyId={reply.id}
+                initialBody={reply.body}
+                initialContentType={parseInt(reply.content_type) || undefined}
+                variant="dream"
+                compact
+                onCancel={() => setShowEditForm(false)}
+                onSubmitted={() => {
+                  setShowEditForm(false);
+                  onReplySubmitted?.();
+                }}
+              />
+            </div>
+          ) : concealBody ? (
+            <p className="mb-2 text-sm italic leading-relaxed text-zinc-500">
+              This reply was hidden by moderation.
+            </p>
+          ) : (
+            <p className="mb-2 text-sm leading-relaxed text-zinc-300 whitespace-pre-wrap">
+              {reply.body}
+            </p>
           )}
-          {reply.pinned_by && (
-            <span className="rounded bg-amber-900/30 px-1.5 py-0.5 text-amber-400">
-              Pinned
-            </span>
+
+          <div className="flex items-center gap-3">
+            <ReactionBar postId={postId} replyId={reply.id} minReplyTrustLevel={postMinReplyTrustLevel} postCreator={postCreator} />
+            {connected && depth < 3 && !showEditForm && repliesEnabled && permits(MsgTypeUrls.CreateReply) && (
+              <button
+                onClick={() => setShowReplyForm(!showReplyForm)}
+                title="Reply"
+                aria-label="Reply"
+                className={`flex items-center rounded-lg border px-2 py-1 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-300 ${
+                  showReplyForm ? "border-zinc-600 bg-zinc-700" : "border-transparent bg-zinc-800"
+                }`}
+              >
+                {ACTION_ICONS.reply}
+              </button>
+            )}
+            <ActionMenu items={menuActions} disabled={actionLoading} />
+          </div>
+
+          {bondedReplyIds?.has(reply.id) && (
+            <AuthorBondPanel
+              postId={reply.id}
+              targetType={BLOG_REPLY_AUTHOR_BOND}
+              noun="reply"
+            />
           )}
-          {isHidden && (
-            <span className="rounded bg-red-900/30 px-1.5 py-0.5 text-red-400">
-              Hidden
-            </span>
-          )}
-          {reply.expires_at && reply.expires_at !== "0" && (
-            <span className="rounded bg-yellow-900/30 px-1.5 py-0.5 text-yellow-400">
-              Ephemeral
-            </span>
+
+          {showReplyForm && (
+            <div className="mt-3">
+              <ReplyForm
+                postId={postId}
+                parentReplyId={reply.id}
+                variant="dream"
+                compact
+                minReplyTrustLevel={postMinReplyTrustLevel}
+                postCreator={postCreator}
+                onCancel={() => setShowReplyForm(false)}
+                onSubmitted={() => {
+                  setShowReplyForm(false);
+                  onReplySubmitted?.();
+                }}
+              />
+            </div>
           )}
         </div>
-
-        {showEditForm ? (
-          <div className="mb-2">
-            <ReplyForm
-              postId={postId}
-              editReplyId={reply.id}
-              initialBody={reply.body}
-              initialContentType={parseInt(reply.content_type) || undefined}
-              variant="dream"
-              compact
-              onCancel={() => setShowEditForm(false)}
-              onSubmitted={() => {
-                setShowEditForm(false);
-                onReplySubmitted?.();
-              }}
-            />
-          </div>
-        ) : concealBody ? (
-          <p className="mb-2 text-sm italic leading-relaxed text-zinc-500">
-            This reply was hidden by moderation.
-          </p>
-        ) : (
-          <p className="mb-2 text-sm leading-relaxed text-zinc-300 whitespace-pre-wrap">
-            {reply.body}
-          </p>
-        )}
-
-        <div className="flex items-center gap-3">
-          <ReactionBar postId={postId} replyId={reply.id} minReplyTrustLevel={postMinReplyTrustLevel} postCreator={postCreator} />
-          {connected && depth < 3 && !showEditForm && repliesEnabled && permits(MsgTypeUrls.CreateReply) && (
-            <button
-              onClick={() => setShowReplyForm(!showReplyForm)}
-              title="Reply"
-              aria-label="Reply"
-              className={`flex items-center rounded-lg border px-2 py-1 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-300 ${
-                showReplyForm ? "border-zinc-600 bg-zinc-700" : "border-transparent bg-zinc-800"
-              }`}
-            >
-              {ACTION_ICONS.reply}
-            </button>
-          )}
-          <ActionMenu items={menuActions} disabled={actionLoading} />
-        </div>
-
-        {bondedReplyIds?.has(reply.id) && (
-          <AuthorBondPanel
-            postId={reply.id}
-            targetType={BLOG_REPLY_AUTHOR_BOND}
-            noun="reply"
-          />
-        )}
-
-        {showReplyForm && (
-          <div className="mt-3">
-            <ReplyForm
-              postId={postId}
-              parentReplyId={reply.id}
-              variant="dream"
-              compact
-              minReplyTrustLevel={postMinReplyTrustLevel}
-              postCreator={postCreator}
-              onCancel={() => setShowReplyForm(false)}
-              onSubmitted={() => {
-                setShowReplyForm(false);
-                onReplySubmitted?.();
-              }}
-            />
-          </div>
-        )}
-      </div>
+      )}
 
       {childReplies.map((child) => (
         <ReplyItem

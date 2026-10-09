@@ -30,6 +30,7 @@ import { projectCategoryFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 
 // Chain defaults (x/rep params) — used as fallbacks if the params query
 // hasn't completed when the form renders.
@@ -610,6 +611,7 @@ export default function ProjectList() {
               </>
             )}
 
+            <ContentLicenseNotice what="The project proposal" />
             <div className="flex items-center gap-3">
               <button
                 type="button"

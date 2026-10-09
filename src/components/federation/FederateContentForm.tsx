@@ -6,6 +6,7 @@ import { useTxAction } from "@/hooks/useTxAction";
 import { listFederationPeers } from "@/lib/api";
 import { FederationMsgTypeUrls } from "@/lib/tx";
 import { PeerStatus, type Peer } from "@/types/federation";
+import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 
 /**
  * Publish one piece of local content to a federation peer.
@@ -183,6 +184,7 @@ export default function FederateContentForm({
         </div>
       )}
 
+      <ContentLicenseNotice what="Content sent to a peer" />
       <div className="flex items-center gap-3">
         <button
           type="submit"

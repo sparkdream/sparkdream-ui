@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getNodeAppVersion } from "@/lib/api";
 
@@ -31,6 +32,13 @@ export default function VersionFooter() {
       className="px-4 py-3 text-center font-mono text-[11px]"
       style={{ color: "var(--ink-dim)" }}
     >
+      <p className="mb-1 font-sans text-xs" style={{ color: "var(--ink-mute)" }}>
+        Everything published here is in the public domain (
+        <Link href="/license" className="underline hover:text-white">
+          CC0 1.0
+        </Link>
+        ): free for anyone to reuse, for any purpose.
+      </p>
       <span title={build || undefined}>sparkdream-ui v{APP_VERSION}</span>
       {chainVersion && (
         <>

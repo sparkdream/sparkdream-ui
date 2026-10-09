@@ -5,6 +5,12 @@
 //
 // Run via: npm run snapshot:capture -- --lcd <url> [--label <slug>]
 //                                       [--resume] [--force] [--out <dir>]
+//                                       [--allow-unchecked]
+//
+// Point --lcd at the content gateway. Snapshots are stored and served as-is,
+// so the script refuses any response the gateway didn't mark as checked
+// (X-Content-Policy-Version) unless --allow-unchecked is passed, e.g. for a
+// throwaway local capture straight from a node.
 //
 // The script monkey-patches globalThis.fetch so every LCD response that api.ts
 // fetches is written to disk at the same path it would be served from in
@@ -22,10 +28,11 @@ interface Args {
   id?: string;
   resume: boolean;
   force: boolean;
+  allowUnchecked: boolean;
 }
 
 function parseArgs(): Args {
-  const a: Args = { resume: false, force: false };
+  const a: Args = { resume: false, force: false, allowUnchecked: false };
   for (let i = 2; i < argv.length; i++) {
     const t = argv[i];
     const next = () => argv[++i];
@@ -35,10 +42,12 @@ function parseArgs(): Args {
     else if (t === "--id") a.id = next();
     else if (t === "--resume") a.resume = true;
     else if (t === "--force") a.force = true;
+    else if (t === "--allow-unchecked") a.allowUnchecked = true;
     else if (t === "--help" || t === "-h") {
       console.log(
         "snapshot-chain --lcd <url> [--label <slug>] [--id <override>]\n" +
-          "               [--out public/archive] [--resume] [--force]",
+          "               [--out public/archive] [--resume] [--force]\n" +
+          "               [--allow-unchecked]",
       );
       exit(0);
     } else {
@@ -50,8 +59,12 @@ function parseArgs(): Args {
 }
 
 const args = parseArgs();
-if (args.lcd) env.NEXT_PUBLIC_LCD_ENDPOINT = args.lcd;
-const LCD = args.lcd ?? env.NEXT_PUBLIC_LCD_ENDPOINT ?? "https://api-test.sparkdream.io";
+// Same precedence as api.ts's server-side reads (runtime LCD_ENDPOINT first),
+// pinned to one value so the interceptor below matches every request api.ts makes.
+const LCD =
+  args.lcd ?? env.LCD_ENDPOINT ?? env.NEXT_PUBLIC_LCD_ENDPOINT ?? "https://api-test.sparkdream.io";
+env.LCD_ENDPOINT = LCD;
+env.NEXT_PUBLIC_LCD_ENDPOINT = LCD;
 const OUT_BASE = args.out ?? join(cwd(), "public", "archive");
 
 // ---------------------------------------------------------------------------
@@ -91,6 +104,13 @@ globalThis.fetch = async (input: any, init?: any) => {
     }
   }
   const res = await originalFetch(input, init);
+  if (!args.allowUnchecked && !res.headers.has("X-Content-Policy-Version")) {
+    console.error(
+      `Refusing to record ${lcdPath}: the response didn't come through the content gateway.\n` +
+        "Point --lcd at the gateway, or pass --allow-unchecked for a local capture.",
+    );
+    exit(1);
+  }
   if (res.ok && snapshotDir) {
     try {
       const clone = res.clone();

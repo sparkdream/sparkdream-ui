@@ -41,6 +41,8 @@ export interface FeedOptions {
   feedUrl: string;
   /** Optional language tag — defaults to en. */
   language?: string;
+  /** Rights statement for the channel (RSS 2.0 <copyright>). */
+  copyright?: string;
 }
 
 function toRfc822(d: Date | string): string {
@@ -83,7 +85,7 @@ export function buildRssFeed(opts: FeedOptions, items: FeedItem[]): string {
 <link>${escapeXml(opts.link)}</link>
 <description>${escapeXml(opts.description)}</description>
 <language>${escapeXml(opts.language || "en")}</language>
-<lastBuildDate>${lastBuildDate}</lastBuildDate>
+${opts.copyright ? `<copyright>${escapeXml(opts.copyright)}</copyright>\n` : ""}<lastBuildDate>${lastBuildDate}</lastBuildDate>
 <atom:link href="${escapeXml(opts.feedUrl)}" rel="self" type="application/rss+xml" />
 ${itemsXml}
 </channel>

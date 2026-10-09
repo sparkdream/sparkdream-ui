@@ -13,6 +13,7 @@ import TagPicker from "@/components/contribute/TagPicker";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import AnonymousToggle from "@/components/AnonymousToggle";
 import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
+import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 
 interface CreatePostFormProps {
   onCreated?: () => void;
@@ -263,6 +264,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
         </div>
       )}
 
+      <ContentLicenseNotice what="Your dream" />
       <div className="flex items-center gap-3">
         <button
           type="submit"

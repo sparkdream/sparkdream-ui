@@ -51,6 +51,7 @@ import { useTxAction } from "@/hooks/useTxAction";
 import AnonymousToggle from "@/components/AnonymousToggle";
 import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 
 interface CollectionDetailProps {
   collectionId: string;
@@ -1099,6 +1100,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                           </>
                         )}
                       </div>
+                      <ContentLicenseNotice what="What you write about this item (not the work it points to)" />
                       <button
                         onClick={handleAddItem}
                         disabled={!newItemTitle.trim() || !isRefReady() || actionLoading === "add-item"}

@@ -21,6 +21,7 @@ const ACCENT: Record<ErrorKind, { color: string; border: string; bg: string }> =
   offline: { color: "var(--amber)", border: "rgba(245, 158, 11, 0.35)", bg: "var(--amber-soft)" },
   "not-found": { color: "var(--ink-soft)", border: "var(--rule-strong)", bg: "var(--panel-2)" },
   unavailable: { color: "var(--ink-soft)", border: "var(--rule-strong)", bg: "var(--panel-2)" },
+  removed: { color: "var(--ink-soft)", border: "var(--rule-strong)", bg: "var(--panel-2)" },
   rejected: { color: "#f87171", border: "rgba(248, 113, 113, 0.35)", bg: "rgba(248, 113, 113, 0.10)" },
   server: { color: "#f87171", border: "rgba(248, 113, 113, 0.35)", bg: "rgba(248, 113, 113, 0.10)" },
   unknown: { color: "#f87171", border: "rgba(248, 113, 113, 0.35)", bg: "rgba(248, 113, 113, 0.10)" },

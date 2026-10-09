@@ -15,6 +15,7 @@ import NumberInput from "@/components/NumberInput";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import AnonymousToggle from "@/components/AnonymousToggle";
 import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
+import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 
 interface ReplyFormProps {
   postId: string;
@@ -293,6 +294,7 @@ export default function ReplyForm({
 
       {error && <p className="text-xs text-red-400">{error}</p>}
 
+      <ContentLicenseNotice what="Your reply" />
       <div className="flex items-center gap-2 justify-between">
         {!showOptions && !isEditing && (
           <button

@@ -22,6 +22,7 @@ import {
   InitiativeStatus,
 } from "@/types/rep";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 
 interface Props {
   initiative: Initiative;
@@ -390,6 +391,7 @@ export default function InitiativeChallengePanel({ initiative, onChanged }: Prop
                       before the deadline upholds the challenge outright: the initiative is
                       rejected, your reputation is slashed and any self-assign bond burns.
                     </p>
+                    <ContentLicenseNotice what="Your response" className="mt-2" />
                     <div className="mt-2 flex gap-2">
                       <button
                         type="button"
@@ -483,6 +485,7 @@ export default function InitiativeChallengePanel({ initiative, onChanged }: Prop
 
           {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
 
+          <ContentLicenseNotice what="Your challenge" className="mt-2" />
           <div className="mt-2.5 flex gap-2">
             <button
               type="button"

@@ -31,6 +31,7 @@ import {
   RoleType,
 } from "@/types/rep";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 
 interface Props {
   initiative: Initiative;
@@ -654,6 +655,7 @@ export default function InitiativeReviewPanel({
             Rejecting returns the work to the assignee for another round.
           </p>
 
+          <ContentLicenseNotice what="Your review notes" className="mt-2" />
           <div className="mt-2.5 flex gap-2">
             <button
               type="button"

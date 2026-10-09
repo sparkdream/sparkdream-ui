@@ -15,6 +15,8 @@ import { INVITATION_STATUS_LABELS, InvitationStatus, TRUST_LEVEL_LABELS } from "
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import { useContentLicense } from "@/hooks/useContentLicense";
+import Link from "next/link";
 
 function statusColor(status: string): string {
   switch (status) {
@@ -43,6 +45,10 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
   const [showForm, setShowForm] = useState(defaultShowForm);
   const [submitting, setSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  // Joining is agreeing to publish under CC0; the chain refuses an
+  // acceptance without the license field, so Accept waits for the checkbox.
+  const contentLicense = useContentLicense();
+  const [agreedToLicense, setAgreedToLicense] = useState(false);
 
   // Auto-close the invite form once we learn the user isn't a member,
   // even if it was opened by `defaultShowForm`.
@@ -180,14 +186,16 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
   };
 
   const handleAccept = async (invitationId: string) => {
-    if (!address) return;
+    if (!address || !agreedToLicense) return;
     try {
       setActionLoading(`accept-${invitationId}`);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.AcceptInvitation,
         // invitation_id is uint64; pass BigInt so the override's
         // `!== BigInt(0)` zero-omit branch fires under JS strict equality.
-        value: { invitee: address, invitationId: BigInt(invitationId) },
+        // accepted_content_license is the signed agreement to publish under
+        // CC0 (x/rep refuses anything but the chain's license).
+        value: { invitee: address, invitationId: BigInt(invitationId), acceptedContentLicense: contentLicense.license },
       }]);
       await fetchInvitations();
     } catch (err) {
@@ -218,6 +226,30 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
       {pendingForMe.length > 0 && (
         <div>
           <h2 className="mb-3 text-lg font-semibold text-white">Pending invitations</h2>
+          <div className="mb-3 rounded-xl sd-hull-tile p-4">
+            <h3 className="mb-2 text-sm font-semibold text-zinc-200">
+              Joining means everything you publish is public domain
+            </h3>
+            <blockquote className="sd-license-dedication">{contentLicense.dedication}</blockquote>
+            <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm text-zinc-300">
+              <input
+                type="checkbox"
+                checked={agreedToLicense}
+                onChange={(e) => setAgreedToLicense(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                I agree to dedicate everything I publish on this chain to the public domain under{" "}
+                <a href={contentLicense.url} target="_blank" rel="noopener noreferrer" className="underline">
+                  CC0 1.0
+                </a>
+                . My wallet signs this agreement ({contentLicense.license}) as part of accepting.{" "}
+                <Link href="/license" className="underline">
+                  Why?
+                </Link>
+              </span>
+            </label>
+          </div>
           <div className="space-y-2">
             {pendingForMe.map((inv) => (
               <div key={inv.id} className="flex items-center justify-between rounded-xl border border-yellow-800/50 bg-yellow-900/10 px-4 py-3">
@@ -233,10 +265,11 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
                 </div>
                 <button
                   onClick={() => handleAccept(inv.id)}
-                  disabled={actionLoading === `accept-${inv.id}`}
+                  disabled={!agreedToLicense || actionLoading === `accept-${inv.id}`}
+                  title={agreedToLicense ? undefined : "Agree to publish under CC0 first"}
                   className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
                 >
-                  {actionLoading === `accept-${inv.id}` ? "Accepting..." : "Accept"}
+                  {actionLoading === `accept-${inv.id}` ? "Accepting..." : "Accept and agree"}
                 </button>
               </div>
             ))}
@@ -261,7 +294,8 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
 
         {isMember === false && (
           <p className="mb-3 text-xs text-zinc-500">
-            Only existing members can send invitations. Accept a pending invitation above to join.
+            Only existing members can send invitations. Accept a pending invitation above to join; joining
+            means agreeing that everything you publish here is public domain (CC0).
           </p>
         )}
 

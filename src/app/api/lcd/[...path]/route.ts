@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { gatewayRequired, POLICY_HEADER } from "@/lib/moderation";
 
+// In production LCD_ENDPOINT points at the content gateway, which runs abuse
+// checks and does the caching. This proxy stores nothing: upstream fetches skip
+// Next's data cache, and responses are no-store so a takedown applies on the
+// next request rather than when a browser or CDN copy expires.
+//
 // Runtime LCD_ENDPOINT wins over the build-time NEXT_PUBLIC_* fallback so the
 // proxy target tracks the same source as /api/config without a rebuild.
 const LCD_ENDPOINT =
@@ -13,8 +19,10 @@ const UPSTREAM_TIMEOUT_MS = 15_000;
 // of it (Cloudflare, a load balancer, Next's own error page) replies with an
 // HTML document; forwarding that under a JSON content type is what used to put
 // a wall of markup on screen. Anything unparseable is replaced here.
+const NO_STORE = { "Cache-Control": "no-store" };
+
 function errorBody(status: number, message: string) {
-  return NextResponse.json({ code: status, message }, { status });
+  return NextResponse.json({ code: status, message }, { status, headers: NO_STORE });
 }
 
 export async function GET(
@@ -30,6 +38,7 @@ export async function GET(
   try {
     res = await fetch(url, {
       headers: { Accept: "application/json" },
+      cache: "no-store",
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
   } catch (err) {
@@ -40,11 +49,15 @@ export async function GET(
     );
   }
 
+  if (gatewayRequired() && !res.headers.has(POLICY_HEADER)) {
+    return errorBody(503, "Chain data did not pass through the content gateway");
+  }
+
   // The name module returns 404 when an address has no registered name.
   // That's an expected outcome, not a failure — translate to 200 with an
   // empty name so it doesn't surface as a network error in the browser.
   if (res.status === 404 && path[0] === "sparkdream" && path[1] === "name" && path[3] === "reverse_resolve") {
-    return NextResponse.json({ name: "" });
+    return NextResponse.json({ name: "" }, { headers: NO_STORE });
   }
 
   const body = await res.text();
@@ -58,6 +71,6 @@ export async function GET(
   }
   return new NextResponse(body, {
     status: res.status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...NO_STORE },
   });
 }

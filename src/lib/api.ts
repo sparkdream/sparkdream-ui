@@ -1,8 +1,11 @@
 // REST API client for blog and commons module LCD endpoints.
 
 import { defaults } from "./chain";
+import type { ContentLicense } from "@/types/contentLicense";
+import { FALLBACK_CONTENT_LICENSE } from "@/lib/contentLicense";
 import { cachedFetch, invalidate, invalidateAll } from "./queryCache";
 import { ApiError, errorMessage, isNodeUnreachable } from "./errors";
+import { dropRemoved, gatewayRequired, keepsStubs, POLICY_HEADER } from "./moderation";
 import { reportChainReachable, reportChainUnreachable } from "./chainStatus";
 import type {
   ListPostResponse,
@@ -237,9 +240,13 @@ import type {
 } from "@/types/identity";
 
 // In the browser, route through our Next.js proxy to avoid CORS issues.
-// On the server (SSR), call the LCD endpoint directly.
+// On the server (SSR, the RSS feed), call the LCD endpoint directly. The
+// runtime LCD_ENDPOINT wins there, as in the proxy, so both read through the
+// same content gateway.
 const BASE =
-  typeof window !== "undefined" ? "/api/lcd" : defaults.lcdEndpoint;
+  typeof window !== "undefined"
+    ? "/api/lcd"
+    : process.env.LCD_ENDPOINT || defaults.lcdEndpoint;
 
 function paginationParams(p?: PaginationRequest): URLSearchParams {
   const params = new URLSearchParams();
@@ -337,7 +344,14 @@ async function get<T>(path: string, params?: URLSearchParams): Promise<T> {
   }
 }
 
+// Records the content gateway removed arrive as stubs; drop them from lists
+// unless this is a threaded read that renders a placeholder (lib/moderation.ts).
 async function request<T>(path: string, params?: URLSearchParams): Promise<T> {
+  const value = await fetchJson<T>(path, params);
+  return keepsStubs(path) ? value : dropRemoved(value);
+}
+
+async function fetchJson<T>(path: string, params?: URLSearchParams): Promise<T> {
   const qs = params?.toString() || null;
   if (archiveSource) {
     const res = await archiveSource.fetch(path, qs);
@@ -349,7 +363,9 @@ async function request<T>(path: string, params?: URLSearchParams): Promise<T> {
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(url, { signal: controller.signal });
+    // no-store keeps Next's server-side data cache from holding a response;
+    // caching is the gateway's job, after its checks.
+    res = await fetch(url, { signal: controller.signal, cache: "no-store" });
   } catch (err) {
     if (controller.signal.aborted) {
       throw new ApiError(0, path, `LCD request timed out after ${REQUEST_TIMEOUT_MS}ms`);
@@ -358,6 +374,10 @@ async function request<T>(path: string, params?: URLSearchParams): Promise<T> {
     throw new ApiError(0, path, "Could not reach the chain node", errorMessage(err) || undefined);
   } finally {
     clearTimeout(timer);
+  }
+  // Server-side reads skip the proxy, so they enforce the gateway themselves.
+  if (typeof window === "undefined" && gatewayRequired() && !res.headers.has(POLICY_HEADER)) {
+    throw new ApiError(503, path, "Response did not pass through the content gateway");
   }
   if (!res.ok) throw await failure(res, path);
   try {
@@ -743,6 +763,32 @@ export async function getNodeAppVersion(): Promise<string> {
       }
     },
     { ttl: 600_000 }
+  );
+}
+
+/**
+ * The license everything on the chain is published under (CC0) and the
+ * dedication participants make. Falls back to the compiled constants the
+ * chain serves when the query is unavailable (older node, archive mode), so
+ * the statement is always shown.
+ */
+export async function getContentLicense(): Promise<ContentLicense> {
+  return cachedFetch(
+    "contentLicense",
+    async () => {
+      try {
+        const res = await get<Partial<ContentLicense>>("/sparkdream/sparkdream/v1/content_license");
+        if (!res.license || !res.dedication) return FALLBACK_CONTENT_LICENSE;
+        return {
+          ...FALLBACK_CONTENT_LICENSE,
+          ...res,
+          accepted_federated_licenses: res.accepted_federated_licenses ?? FALLBACK_CONTENT_LICENSE.accepted_federated_licenses,
+        } as ContentLicense;
+      } catch {
+        return FALLBACK_CONTENT_LICENSE;
+      }
+    },
+    { ttl: 3_600_000 }
   );
 }
 

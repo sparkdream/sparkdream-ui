@@ -11,6 +11,7 @@ import { canSpendTreasury } from "@/lib/commons";
 import NumberInput from "@/components/NumberInput";
 import AnonymousToggle from "@/components/AnonymousToggle";
 import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
+import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 
 export type ProposalType =
   | "general"
@@ -854,6 +855,7 @@ export default function NewCommunityProposal({
         </div>
       )}
 
+      <ContentLicenseNotice what="Your proposal" />
       <div className="flex items-center gap-3">
         <button
           type="submit"

@@ -12,6 +12,7 @@ export type ErrorKind =
   | "offline" // node unreachable: network failure, timeout, gateway error
   | "not-found" // 404: the record genuinely isn't there
   | "unavailable" // 501 / missing archive endpoint: this node doesn't serve it
+  | "removed" // 451: the content gateway withholds this record on this site
   | "rejected" // 4xx: the request itself was refused
   | "server" // 5xx from the node's own app layer
   | "unknown";
@@ -41,6 +42,7 @@ export function errorKind(err: unknown): ErrorKind {
     if (err.status === 0 || GATEWAY_STATUSES.has(err.status)) return "offline";
     if (err.status === 404) return "not-found";
     if (err.status === 501) return "unavailable";
+    if (err.status === 451) return "removed";
     // grpc-gateway normally maps the gRPC code to a status, but some node
     // builds answer 400/500 with the gRPC status text in the body instead.
     // Those are still a miss, and callers treat a miss as an empty view.
@@ -64,7 +66,11 @@ export function errorKind(err: unknown): ErrorKind {
   return "unknown";
 }
 
-/** True when the endpoint or record simply isn't served, so an empty view is the honest answer. */
+/**
+ * True when the endpoint or record simply isn't served, so an empty view is the
+ * honest answer. A gateway removal (451) is deliberately not a miss: callers
+ * would render it as "doesn't exist", so it falls through to ErrorState.
+ */
 export function isMissingEndpoint(err: unknown): boolean {
   const kind = errorKind(err);
   return kind === "not-found" || kind === "unavailable";
@@ -104,6 +110,10 @@ const COPY: Record<ErrorKind, { title: string; message: string }> = {
   unavailable: {
     title: "Not available here",
     message: "This node doesn't serve that data yet.",
+  },
+  removed: {
+    title: "Not available on this site",
+    message: "This content was removed from this site by its operator. It may still exist onchain.",
   },
   rejected: {
     title: "Request refused",

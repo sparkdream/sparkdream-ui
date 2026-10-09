@@ -9,6 +9,7 @@ import { invalidatePost, invalidatePostsLists } from "@/lib/api";
 import type { Post } from "@/types/blog";
 import { CONTENT_TYPE_INFO } from "@/types/blog";
 import TagPicker from "@/components/contribute/TagPicker";
+import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 
 interface EditPostFormProps {
   post: Post;
@@ -193,6 +194,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
         </div>
       )}
 
+      <ContentLicenseNotice what="Your edit" />
       <div className="flex items-center gap-3">
         <button
           type="submit"

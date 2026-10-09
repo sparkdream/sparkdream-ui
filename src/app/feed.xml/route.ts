@@ -104,6 +104,8 @@ export async function GET(request: NextRequest) {
       link: origin,
       feedUrl,
       description: `Recent onchain activity on ${defaults.chainName}: dreams, governance proposals, futarchy markets, and reveal contributions.`,
+      // Everything on the chain is public domain; say so where reusers look.
+      copyright: "Public domain: dedicated under CC0 1.0 Universal, https://creativecommons.org/publicdomain/zero/1.0/",
     },
     items.slice(0, 50)
   );

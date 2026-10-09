@@ -4095,3 +4095,44 @@ body > * { position: relative; z-index: 1; }
 
 
 
+
+/* ── Open content (CC0) ─────────────────────────────────────────────
+   Everything on the chain is public domain; these keep that visible
+   beside every composer and on federated content. */
+.sd-license-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+.sd-license-notice a {
+  color: var(--ink-mute);
+  text-decoration: underline;
+}
+.sd-license-notice a:hover {
+  color: var(--violet-hi);
+}
+.sd-license-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--rule-strong);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink-mute);
+  background: var(--panel);
+}
+.sd-license-dedication {
+  border-left: 3px solid var(--violet-hi);
+  padding: 10px 14px;
+  background: var(--panel);
+  border-radius: 0 8px 8px 0;
+  font-size: 14px;
+  line-height: 1.6;
+}

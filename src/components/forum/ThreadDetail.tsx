@@ -14,6 +14,7 @@ import {
   listPostConvictionStakesByStaker,
   authorBondsByType,
 } from "@/lib/api";
+import { isRemoved } from "@/lib/moderation";
 import { useWallet } from "@/contexts/WalletContext";
 import { useTrustRank } from "@/hooks/useTrustRank";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
@@ -749,8 +750,11 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       permits(ForumMsgTypeUrls.ConfirmProposedReply);
     // Conceal hidden content from non-author, non-moderator viewers (e.g. a
     // direct link to a hidden spark). The header still shows the "Hidden" badge.
+    // A reply the site operator removed stays in the thread as a placeholder,
+    // concealed from everyone.
+    const removed = isRemoved(post);
     const concealContent =
-      post.status === PostStatus.HIDDEN && !isAuthor && !canModerate;
+      removed || (post.status === PostStatus.HIDDEN && !isAuthor && !canModerate);
     // Bounty creator's per-reply award affordance. Mirrors the chain's
     // AssignBountyToReply gates: active bounty, creator only, reply not yet
     // awarded, winner slots left. Awards show on the reply in any status.
@@ -841,7 +845,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
         {/* Post content */}
         {concealContent ? (
           <div className="mt-2 text-sm italic text-zinc-500">
-            This spark was hidden by moderation.
+            {removed ? "This spark isn't available on this site." : "This spark was hidden by moderation."}
           </div>
         ) : (
           <div className="mt-2 whitespace-pre-wrap text-sm text-zinc-200">

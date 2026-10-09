@@ -9,6 +9,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import ParamChangeForm from "./ParamChangeForm";
 import NumberInput from "@/components/NumberInput";
+import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 
 type ChainProposalType =
   | "general"
@@ -808,6 +809,7 @@ export default function NewChainProposal({
         </div>
       )}
 
+      <ContentLicenseNotice what="Your proposal" />
       <div className="flex items-center gap-3">
         <button
           type="submit"

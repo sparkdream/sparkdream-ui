@@ -60,6 +60,17 @@ const PUBLISH_GROUP: NavGroup = {
         </svg>
       ),
     },
+    {
+      href: "/license",
+      label: "Public domain (CC0)",
+      desc: "Everything published here is free for anyone to reuse",
+      icon: (
+        <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M14.5 9.5a3.5 3.5 0 1 0 0 5" />
+        </svg>
+      ),
+    },
   ],
 };
 

@@ -69,6 +69,7 @@ import PendingIdentityChallenges from "@/components/federation/PendingIdentityCh
 import PeerProposalForm, { type PeerAction, type RegisterPrefill } from "@/components/federation/PeerProposalForm";
 import PeerPolicyForm from "@/components/federation/PeerPolicyForm";
 import PeerCurationPanel from "@/components/federation/PeerCurationPanel";
+import LicenseBadge from "@/components/license/LicenseBadge";
 
 // View slot in the sidebar. "overview" stacks every section; the rest narrow
 // the page down to one slice. See VIEW_SECTIONS below for the mapping.
@@ -897,6 +898,14 @@ function FederationPageInner() {
           title="Federated content"
           meta={`Inbound from peers · newest ${content.length}${loading ? " · loading" : ""}`}
         >
+          <p className="sd-license-notice" style={{ marginBottom: 12 }}>
+            <span className="sd-license-badge" aria-hidden>CC0</span>
+            <span>
+              Only public-domain content crosses into this chain: posts their authors tagged{" "}
+              <code>#cc0</code> or <code>#publicdomain</code>, and content from sister chains, which is CC0 by
+              default. <Link href="/license">How it works</Link>
+            </span>
+          </p>
           <FederatedContentList content={content} transports={peerTransports} />
         </Section>
       )}
@@ -1904,7 +1913,11 @@ function QueueItem({
   showStatus?: boolean;
 }) {
   const who = c.creator_name || c.creator_identity;
-  const preview = fediversePreview(c.title) || fediversePreview(c.body) || "(untitled)";
+  // Moderation-hidden content keeps its text in state; don't preview it.
+  const preview =
+    c.status === FederatedContentStatus.HIDDEN
+      ? "Hidden by moderation"
+      : fediversePreview(c.title) || fediversePreview(c.body) || "(untitled)";
   return (
     <div className="sd-fed-queue-item">
       <div className="src-line" title={`${c.peer_id} · ${who}`}>
@@ -1918,6 +1931,7 @@ function QueueItem({
         {showStatus && <span>{c.content_type}</span>}
         {showStatus && <span>{FED_CONTENT_STATUS_LABELS[c.status] || c.status}</span>}
         <span className="when">{stamp(c.received_at, "")}</span>
+        {c.license && <LicenseBadge license={c.license} />}
       </div>
     </div>
   );

@@ -393,6 +393,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       loadReveal(registry);
       loadFutarchy(registry);
       loadFederation(registry);
+      // MsgAcceptInvitation carries the content-license agreement (field 3),
+      // which the published package's codec drops: replace it (see the codec).
+      const { AcceptInvitationCodec, acceptInvitationAmino } = await import("@/lib/acceptInvitationCodec");
+      registry.register(AcceptInvitationCodec.typeUrl, AcceptInvitationCodec as unknown as GeneratedType);
 
       const { AminoConverter: blogAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx.amino");
       const { AminoConverter: sessionAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx.amino");
@@ -778,7 +782,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         },
       };
 
-      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...federationAmino, ...federationPolicyAmino, ...collectBytesAmino, ...pinSeparationAmino, ...latestMsgAmino, ...reviewAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
+      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...federationAmino, ...federationPolicyAmino, ...collectBytesAmino, ...pinSeparationAmino, ...latestMsgAmino, ...reviewAmino, ...acceptInvitationAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
       // Cast: cosmjs's `lookupType` returns `GeneratedType` (union of TsProto +
       // Pbjs); the override only ever encounters TsProto types here.
       configureNestedAminoConverter({ registry: registry as unknown as Parameters<typeof configureNestedAminoConverter>[0]["registry"], aminoTypes });

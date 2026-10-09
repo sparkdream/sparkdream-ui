@@ -188,6 +188,9 @@ export interface FederatedContent {
   status: string;
   expires_at: string;
   content_hash: string;
+  /** "CC0-1.0" or "PDM-1.0": the public-domain license it entered under.
+   *  Absent on records from a chain predating the field. */
+  license?: string;
 }
 
 export interface IdentityLink {

@@ -6,6 +6,8 @@ import { RevealMsgTypeUrls } from "@/lib/tx";
 import { dreamToMicro } from "@/lib/reveal-fmt";
 import NumberInput from "@/components/NumberInput";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
+import { OPEN_CODE_LICENSES } from "@/lib/contentLicense";
 
 interface TrancheInput {
   name: string;
@@ -36,7 +38,8 @@ export default function ProposeForm({
   const [description, setDescription] = useState("");
   const [totalValuation, setTotalValuation] = useState("");
   const [initialLicense, setInitialLicense] = useState("proprietary");
-  const [finalLicense, setFinalLicense] = useState("apache-2.0");
+  // The chain accepts only open licenses here (x/reveal final_license).
+  const [finalLicense, setFinalLicense] = useState(OPEN_CODE_LICENSES[0].id);
   const [tranches, setTranches] = useState<TrancheInput[]>([{ ...blankTranche }]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -152,12 +155,22 @@ export default function ProposeForm({
               onChange={(e) => setInitialLicense(e.target.value)}
             />
           </Field>
-          <Field label="Final license">
-            <input
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
+          <Field label="Final license (open)">
+            <select
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 focus:border-zinc-600 focus:outline-none"
               value={finalLicense}
               onChange={(e) => setFinalLicense(e.target.value)}
-            />
+            >
+              {OPEN_CODE_LICENSES.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-zinc-500">
+              Once fully revealed, the code is released under this license. Only public-domain and permissive
+              open-source licenses are accepted.
+            </p>
           </Field>
         </div>
       </div>
@@ -241,6 +254,7 @@ export default function ProposeForm({
         </button>
       </div>
 
+      <ContentLicenseNotice what="The proposal's description" />
       <div className="flex items-center gap-3">
         <button
           type="button"

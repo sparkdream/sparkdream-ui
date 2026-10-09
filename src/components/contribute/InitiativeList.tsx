@@ -56,6 +56,7 @@ import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 
 type Tab = "all" | "available" | "mine" | "authored";
 
@@ -1934,6 +1935,7 @@ export default function InitiativeList() {
               </p>
             )}
 
+            <ContentLicenseNotice what="The initiative's title and description" />
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -3068,6 +3070,7 @@ export default function InitiativeList() {
                                   }`
                             }`}
                       </p>
+                      <ContentLicenseNotice what="Your work submission" />
                       <div className="mt-2.5 flex gap-2">
                         <button
                           type="button"

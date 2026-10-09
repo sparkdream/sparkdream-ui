@@ -9,6 +9,7 @@ import { collectionTypeFromJSON, visibilityFromJSON } from "@sparkdreamnft/spark
 import TagPicker from "@/components/contribute/TagPicker";
 import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
+import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 
 interface CreateCollectionFormProps {
   onCreated: () => void;
@@ -156,6 +157,7 @@ export default function CreateCollectionForm({ onCreated, onCancel }: CreateColl
           />
         </div>
 
+        <ContentLicenseNotice what="The collection's name, description and tags" />
         <ActionBanner message={submitError} onDismiss={clearError} />
 
         <button
