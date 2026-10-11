@@ -10,6 +10,8 @@ import TagPicker from "@/components/contribute/TagPicker";
 import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
+import { containsDataURI, DATA_URI_FIELD_ERROR } from "@/lib/mediaLabels";
+import { describeTxError } from "@/lib/errors";
 
 interface CreateCollectionFormProps {
   onCreated: () => void;
@@ -27,10 +29,12 @@ export default function CreateCollectionForm({ onCreated, onCancel }: CreateColl
   const { busy: loading, error: submitError, clearError, run } = useTxAction();
   const canCreateTags = useCanCreateTags(address);
   const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
+  // x/collect rejects a data URI in cover_uri (ErrDataURINotAllowed, 1271).
+  const coverUriError = containsDataURI(coverUri.trim()) ? DATA_URI_FIELD_ERROR : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!address || !name.trim()) return;
+    if (!address || !name.trim() || coverUriError) return;
 
     await run("create", async () => {
       // x/collect rejects MsgCreateCollection with ErrTagNotFound for any tag
@@ -67,7 +71,7 @@ export default function CreateCollectionForm({ onCreated, onCancel }: CreateColl
       setCoverUri("");
       setTags([]);
       onCreated();
-    }, "Failed to create collection");
+    }, (raw) => describeTxError(raw) || "Failed to create collection");
   };
 
   return (
@@ -114,8 +118,12 @@ export default function CreateCollectionForm({ onCreated, onCancel }: CreateColl
             value={coverUri}
             onChange={(e) => setCoverUri(e.target.value)}
             placeholder="https://..."
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
+            aria-invalid={!!coverUriError}
+            className={`w-full rounded-lg border bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none ${
+              coverUriError ? "border-red-700 focus:border-red-600" : "border-zinc-700 focus:border-zinc-600"
+            }`}
           />
+          {coverUriError && <p className="mt-1 text-xs text-red-400">{coverUriError}</p>}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -162,7 +170,7 @@ export default function CreateCollectionForm({ onCreated, onCancel }: CreateColl
 
         <button
           type="submit"
-          disabled={!name.trim() || loading}
+          disabled={!name.trim() || loading || !!coverUriError}
           className="sd-btn-crystal w-full px-4 py-2.5"
         >
           {loading ? "Creating..." : "Create collection"}

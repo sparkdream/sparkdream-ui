@@ -8,6 +8,7 @@ import type { ForumPost, ThreadMetadata } from "@/types/forum";
 import CopyableAddress from "@/components/CopyableAddress";
 import { formatTime } from "@/lib/utils";
 import { ArchiveSectionShell, LoadError } from "../../_components";
+import ScannedText from "@/components/content/ScannedText";
 
 export default function ArchiveThreadDetail({
   params,
@@ -65,7 +66,11 @@ export default function ArchiveThreadDetail({
             <span>{formatTime(root.created_at)}</span>
             <span>👍 {root.upvote_count} · 👎 {root.downvote_count}</span>
           </div>
-          <div className="whitespace-pre-wrap text-sm leading-relaxed">{root.content}</div>
+          <ScannedText
+            input={{ kind: "forum-post", id: root.post_id, body: root.content, media_flags: root.media_flags, body_hash: root.body_hash }}
+            noun="spark"
+            className="whitespace-pre-wrap text-sm leading-relaxed"
+          />
         </article>
       )}
 
@@ -87,7 +92,11 @@ export default function ArchiveThreadDetail({
                     <span>{formatTime(r.created_at)}</span>
                     {accepted && <span className="text-emerald-400">✓ accepted</span>}
                   </div>
-                  <div className="whitespace-pre-wrap">{r.content}</div>
+                  <ScannedText
+                    input={{ kind: "forum-post", id: r.post_id, body: r.content, media_flags: r.media_flags, body_hash: r.body_hash }}
+                    noun="spark"
+                    className="whitespace-pre-wrap"
+                  />
                 </li>
               );
             })}

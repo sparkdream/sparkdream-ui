@@ -191,6 +191,12 @@ export interface FederatedContent {
   /** "CC0-1.0" or "PDM-1.0": the public-domain license it entered under.
    *  Absent on records from a chain predating the field. */
   license?: string;
+  // Media labels (docs/content-scanning.md §3.3). No body_hash: content_hash
+  // covers the full source, not the stored body. When media_flags != 0, body
+  // is "" here and comes from federated_content_body.
+  /** OR of MediaFlag bits (uint32, a JSON number). */
+  media_flags?: number;
+  media_rules_version?: number;
 }
 
 export interface IdentityLink {

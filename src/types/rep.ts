@@ -22,15 +22,34 @@ export interface RepMember {
   zeroed_at: string;
   zeroed_count: number;
   last_decay_epoch: string;
-  tips_given_this_epoch: number;
+  /** DREAM tipped this epoch (an amount, not a count). Stale once
+   * last_tip_epoch falls behind the current epoch; absent on older records. */
+  tips_sent_this_epoch?: string;
   last_tip_epoch: string;
   completed_interims_count: number;
   completed_initiatives_count: number;
-  gifts_sent_this_epoch: string;
-  last_gift_epoch: string;
+  /** DREAM received through tips and initiative bounty payouts this epoch,
+   * bounded by max_transfer_received_per_epoch. Resets lazily: stale once
+   * last_transfer_received_epoch falls behind the current epoch. */
+  transfer_received_this_epoch?: string;
+  last_transfer_received_epoch?: string;
   last_credit_reset_season: string;
   reputation_gained_this_epoch: Record<string, string>;
   last_rep_gain_epoch: string;
+  joined_at_height?: string;
+  content_staked_dream?: string;
+  /** Season-scale counterpart of transfer_received_this_epoch, bounded by
+   * max_transfer_received_per_season. */
+  transfer_received_this_season?: string;
+  last_transfer_received_season?: string;
+  /** DREAM this member escrowed into initiative bounties this epoch, bounded
+   * by max_initiative_bounty_per_funder_epoch. */
+  initiative_bounty_funded_this_epoch?: string;
+  last_initiative_bounty_epoch?: string;
+  /** Content license the member agreed to publish under ("CC0-1.0"), set at
+   * invitation acceptance (or in genesis for founders) and never changed. The
+   * agreement was made at joined_at / joined_at_height. */
+  content_license?: string;
 }
 
 export interface VerificationPolicy {
@@ -318,6 +337,42 @@ export interface ReviewBountyResponse {
   reclaim_status?: ReviewBountyReclaimStatus[];
 }
 
+/**
+ * DREAM escrowed against one initiative by members who want the work done,
+ * paid to the assignee only if the initiative completes (net of the transfer
+ * tax, clipped to the assignee's transfer receive limits). Closing, rejection
+ * and project cancellation refund every funder in full. Distinct from
+ * ReviewBounty, which pays reviewers per verdict filed.
+ */
+export interface InitiativeBounty {
+  initiative_id: string;
+  /** Total DREAM currently escrowed and unpaid (micro-DREAM). */
+  amount: string;
+  contributions?: InitiativeBountyContribution[];
+}
+
+export interface InitiativeBountyContribution {
+  funder: string;
+  amount: string;
+  /** Block height, for initiative_bounty_reclaim_delay. */
+  funded_at: string;
+}
+
+export interface InitiativeBountyReclaimStatus {
+  funder: string;
+  amount: string;
+  /** Height at which the reclaim delay elapses for this contribution. */
+  reclaimable_at_height: string;
+  /** False whenever the initiative is not OPEN, regardless of height: an
+   * assignee is working on the strength of the bounty. */
+  reclaimable: boolean;
+}
+
+export interface InitiativeBountyResponse {
+  bounty: InitiativeBounty;
+  reclaim_status?: InitiativeBountyReclaimStatus[];
+}
+
 export interface RepStake {
   id: string;
   staker: string;
@@ -566,8 +621,17 @@ export const STAKE_TARGET_LABELS: Record<string, string> = {
 export const TransferPurpose = {
   TIP: "TRANSFER_PURPOSE_TIP",
   GIFT: "TRANSFER_PURPOSE_GIFT",
-  BOUNTY: "TRANSFER_PURPOSE_BOUNTY",
 } as const;
+
+/**
+ * x/rep moderation-appeal terms. Compile-time constants on the chain
+ * (x/rep/types/accountability_defaults.go), not params, so no query reports
+ * them. Every moderation appeal uses them, including x/collect hide appeals
+ * since chain commit 0a25eaf (collect's own appeal_fee and
+ * appeal_deadline_blocks params were removed).
+ */
+export const REP_APPEAL_BOND_USPARK = "10000000"; // DefaultAppealBondAmount, 10 SPARK
+export const REP_APPEAL_DEADLINE_SECONDS = 1_209_600; // DefaultAppealDeadline, 14 days
 
 export const InvitationStatus = {
   PENDING: "INVITATION_STATUS_PENDING",

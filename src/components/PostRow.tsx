@@ -10,6 +10,8 @@ import { useDisplayName } from "@/hooks/useDisplayName";
 import CopyableAddress from "@/components/CopyableAddress";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import { isAnonymousAddress } from "@/lib/shield";
+import ContentNotice from "@/components/content/ContentNotice";
+import { useScannedBody } from "@/hooks/useScannedBody";
 
 const AVATAR_GRADIENTS = [
   "linear-gradient(135deg, #6366f1, #f472b6)",
@@ -53,6 +55,14 @@ export default function PostRow({
   const dream = useDreamDenom();
   const [counts, setCounts] = useState<ReactionCounts | null>(null);
   const { name } = useDisplayName(post.creator);
+  const scanned = useScannedBody({
+    kind: "blog-post",
+    id: post.id,
+    body: post.body,
+    media_flags: post.media_flags,
+    body_hash: post.body_hash,
+    author: post.creator,
+  });
 
   useEffect(() => {
     getReactionCounts(post.id)
@@ -61,6 +71,8 @@ export default function PostRow({
   }, [post.id]);
 
   if (post.status === PostStatus.DELETED) return null;
+  // Removed by scanner verdict: dropped from lists, as before.
+  if (scanned.status === "removed") return null;
 
   const isHidden = post.status === PostStatus.HIDDEN;
   const replyCount = countToNum(post.reply_count);
@@ -119,7 +131,13 @@ export default function PostRow({
           )}
         </div>
         <h3>{post.title}</h3>
-        <p className="excerpt">{post.body}</p>
+        <p className="excerpt">
+          {scanned.status === "show" ? (
+            scanned.text
+          ) : (
+            <ContentNotice status={scanned.status} reason={scanned.reason} noun="dream" compact />
+          )}
+        </p>
         {post.tags && post.tags.length > 0 && (
           <div className="tags">
             {post.tags.map((t) =>

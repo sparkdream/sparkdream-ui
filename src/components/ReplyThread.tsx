@@ -15,7 +15,8 @@ import { useCanMakePermanent } from "@/hooks/useCanMakePermanent";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { MsgTypeUrls } from "@/lib/tx";
 import { invalidatePost, invalidateReplies } from "@/lib/api";
-import { isRemoved } from "@/lib/moderation";
+import ContentNotice from "@/components/content/ContentNotice";
+import { useOwnBody, useScannedBody } from "@/hooks/useScannedBody";
 import AuthorBondPanel from "./AuthorBondPanel";
 
 // StakeTargetType numeric value for x/blog reply author bonds (replies have
@@ -69,6 +70,21 @@ function ReplyItem({
   const [showReplyForm, setShowReplyForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  // Scanner display policy: plain text at once, media only once cleared.
+  const scanned = useScannedBody({
+    kind: "blog-reply",
+    id: reply.id,
+    body: reply.body,
+    media_flags: reply.media_flags,
+    body_hash: reply.body_hash,
+    author: reply.creator,
+  });
+  // The editor needs the stored body, which list queries withhold for media.
+  const ownBody = useOwnBody(
+    showEditForm
+      ? { kind: "blog-reply", id: reply.id, body: reply.body, media_flags: reply.media_flags, body_hash: reply.body_hash }
+      : null
+  );
 
   const isOwner = connected && address === reply.creator;
   const isPostOwner = connected && address === postCreator;
@@ -241,9 +257,9 @@ function ReplyItem({
 
   return (
     <div className={depth > 0 ? "ml-6 border-l border-zinc-800 pl-4" : ""}>
-      {/* Removed by the site operator: a placeholder keeps its replies anchored. */}
-      {isRemoved(reply) ? (
-        <p className="py-3 text-sm italic text-zinc-600">{"This reply isn't available on this site."}</p>
+      {/* Removed by scanner verdict: a placeholder keeps its replies anchored. */}
+      {scanned.status === "removed" ? (
+        <p className="py-3 text-sm italic text-zinc-600">Not available on this site.</p>
       ) : (
         <div className={`py-3 ${isHidden ? "opacity-50" : ""}`}>
           <div className="mb-1 flex items-center gap-2 text-xs text-zinc-500">
@@ -273,12 +289,19 @@ function ReplyItem({
             )}
           </div>
 
-          {showEditForm ? (
+          {showEditForm && !ownBody.ready ? (
+            <div className="mb-2 flex items-center gap-3 text-sm text-zinc-500">
+              <span>{ownBody.error || "Loading."}</span>
+              <button type="button" onClick={() => setShowEditForm(false)} className="text-zinc-400 hover:text-zinc-300">
+                Cancel
+              </button>
+            </div>
+          ) : showEditForm ? (
             <div className="mb-2">
               <ReplyForm
                 postId={postId}
                 editReplyId={reply.id}
-                initialBody={reply.body}
+                initialBody={ownBody.body}
                 initialContentType={parseInt(reply.content_type) || undefined}
                 variant="dream"
                 compact
@@ -293,10 +316,12 @@ function ReplyItem({
             <p className="mb-2 text-sm italic leading-relaxed text-zinc-500">
               This reply was hidden by moderation.
             </p>
-          ) : (
+          ) : scanned.status === "show" ? (
             <p className="mb-2 text-sm leading-relaxed text-zinc-300 whitespace-pre-wrap">
-              {reply.body}
+              {scanned.text}
             </p>
+          ) : (
+            <ContentNotice status={scanned.status} reason={scanned.reason} noun="reply" className="mb-2" />
           )}
 
           <div className="flex items-center gap-3">

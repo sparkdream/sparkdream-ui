@@ -52,6 +52,7 @@ import SearchField from "@/components/contribute/SearchField";
 import TrendingRailCard from "@/components/contribute/TrendingRailCard";
 import InitiativeReviewPanel from "@/components/contribute/InitiativeReviewPanel";
 import InitiativeChallengePanel from "@/components/contribute/InitiativeChallengePanel";
+import InitiativeBountyPanel from "@/components/contribute/InitiativeBountyPanel";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
@@ -2796,6 +2797,15 @@ export default function InitiativeList() {
                   {/* The same schedule the row summarises, spelled out: what
                       the block actually does when it arrives. */}
                   <CompletionSchedule initiative={ini} detail />
+
+                  {/* DREAM members escrow for the assignee, paid only on
+                      completion. Distinct from the review bounty below, which
+                      pays reviewers per verdict. */}
+                  <InitiativeBountyPanel
+                    initiative={ini}
+                    projectCreator={projectCreatorById.get(ini.project_id)}
+                    onChanged={() => { void fetchInitiatives(tab, projectFilter, sort); }}
+                  />
 
                   {/* The bonded-reviewer gate: verdicts filed on the deliverable,
                       the bounty bidding for reviewer attention, and the actions a

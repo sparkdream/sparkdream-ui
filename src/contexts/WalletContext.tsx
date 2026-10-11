@@ -374,6 +374,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const { load: loadReveal } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/reveal/v1/tx.registry");
       const { load: loadFutarchy } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/futarchy/v1/tx.registry");
       const { load: loadFederation } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx.registry");
+      const { load: loadArtifact } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/artifact/v1/tx.registry");
       // Gov v1 + upgrade types (not in defaultRegistryTypes which only has v1beta1)
       const { MsgSubmitProposal: GovV1MsgSubmitProposal } = await import("cosmjs-types/cosmos/gov/v1/tx");
       const { MsgSoftwareUpgrade, MsgCancelUpgrade } = await import("cosmjs-types/cosmos/upgrade/v1beta1/tx");
@@ -393,10 +394,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       loadReveal(registry);
       loadFutarchy(registry);
       loadFederation(registry);
-      // MsgAcceptInvitation carries the content-license agreement (field 3),
-      // which the published package's codec drops: replace it (see the codec).
-      const { AcceptInvitationCodec, acceptInvitationAmino } = await import("@/lib/acceptInvitationCodec");
-      registry.register(AcceptInvitationCodec.typeUrl, AcceptInvitationCodec as unknown as GeneratedType);
+      loadArtifact(registry);
 
       const { AminoConverter: blogAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx.amino");
       const { AminoConverter: sessionAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx.amino");
@@ -417,6 +415,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // MsgRegisterPeer.type, is emitted as a plain int, which is what the
       // chain's aminojson renders. No shadowing needed.
       const { AminoConverter: federationAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx.amino");
+      // 0.0.44's generated artifact map covers every message, but its
+      // converters get empty lists (omitted, or null for dont_omitempty ones)
+      // and Coin amounts ("0", not "") wrong. artifactAmino shadows the
+      // affected converters, checked against the chain's aminojson.
+      const { AminoConverter: artifactGeneratedAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/artifact/v1/tx.amino");
+      const { artifactAminoOverrides } = await import("@/lib/artifactAmino");
 
       // The published sparkdreamjs (0.0.19) ships the registry + proto codecs
       // for the new Pin/MakePermanent-separation and forum post-conviction
@@ -469,9 +473,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // converters are checked against the chain's aminojson output.
       const { MsgSetThreadProposalsLock: ForumSetThreadProposalsLock } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/forum/v1/tx");
       const { MsgUnhideContent: CollectUnhideContent } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/tx");
+      // 0.0.44: the rep initiative-bounty messages (chain commit b9da52e) are
+      // missing too. Both are scalar-only (funder, uint64 initiative_id, and a
+      // cosmos.Int amount string), so the statics are safe.
+      const { MsgFundInitiativeBounty: RepFundInitiativeBounty, MsgReclaimInitiativeBounty: RepReclaimInitiativeBounty } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
       const latestMsgAmino = {
         "/sparkdream.forum.v1.MsgSetThreadProposalsLock": { aminoType: "sparkdream/x/forum/MsgSetThreadProposalsLock", toAmino: ForumSetThreadProposalsLock.toAmino, fromAmino: ForumSetThreadProposalsLock.fromAmino },
         "/sparkdream.collect.v1.MsgUnhideContent": { aminoType: "sparkdream/x/collect/MsgUnhideContent", toAmino: CollectUnhideContent.toAmino, fromAmino: CollectUnhideContent.fromAmino },
+        "/sparkdream.rep.v1.MsgFundInitiativeBounty": { aminoType: "sparkdream/x/rep/MsgFundInitiativeBounty", toAmino: RepFundInitiativeBounty.toAmino, fromAmino: RepFundInitiativeBounty.fromAmino },
+        "/sparkdream.rep.v1.MsgReclaimInitiativeBounty": { aminoType: "sparkdream/x/rep/MsgReclaimInitiativeBounty", toAmino: RepReclaimInitiativeBounty.toAmino, fromAmino: RepReclaimInitiativeBounty.fromAmino },
       };
 
       // 0.0.38 finally ships the whole rep AminoConverter map: every
@@ -782,7 +792,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         },
       };
 
-      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...federationAmino, ...federationPolicyAmino, ...collectBytesAmino, ...pinSeparationAmino, ...latestMsgAmino, ...reviewAmino, ...acceptInvitationAmino, ...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
+      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...federationAmino, ...federationPolicyAmino, ...artifactGeneratedAmino, ...artifactAminoOverrides, ...collectBytesAmino, ...pinSeparationAmino, ...latestMsgAmino, ...reviewAmino,...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
       // Cast: cosmjs's `lookupType` returns `GeneratedType` (union of TsProto +
       // Pbjs); the override only ever encounters TsProto types here.
       configureNestedAminoConverter({ registry: registry as unknown as Parameters<typeof configureNestedAminoConverter>[0]["registry"], aminoTypes });

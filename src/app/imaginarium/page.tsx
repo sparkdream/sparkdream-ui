@@ -8,6 +8,8 @@ import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
 import { listPosts, getPost, getAllMembers, listTags, getLatestBlockHeight, getReactionCounts, authorBondsByType } from "@/lib/api";
 import { TrustLevel, type RepStake } from "@/types/rep";
 import PostRow from "@/components/PostRow";
+import ContentNotice from "@/components/content/ContentNotice";
+import { useScannedBody } from "@/hooks/useScannedBody";
 import CreatePostForm from "@/components/CreatePostForm";
 import CreateTagForm from "@/components/CreateTagForm";
 import DreamDetail from "@/components/DreamDetail";
@@ -616,6 +618,14 @@ function ImaginariumPageInner() {
 
 function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => void }) {
   const { name } = useDisplayName(post.creator);
+  const scanned = useScannedBody({
+    kind: "blog-post",
+    id: post.id,
+    body: post.body,
+    media_flags: post.media_flags,
+    body_hash: post.body_hash,
+    author: post.creator,
+  });
   const [counts, setCounts] = useState<ReactionCounts | null>(null);
   useEffect(() => {
     getReactionCounts(post.id)
@@ -644,7 +654,13 @@ function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => v
           <span>{timeAgo(post.created_at)}</span>
         </div>
         <h2>{post.title}</h2>
-        <p>{post.body}</p>
+        <p>
+          {scanned.status === "show" ? (
+            scanned.text
+          ) : (
+            <ContentNotice status={scanned.status} reason={scanned.reason} noun="dream" compact />
+          )}
+        </p>
         <span className="more">Read more →</span>
         <div className="foot">
           <div className="who">

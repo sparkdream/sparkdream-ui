@@ -5,7 +5,6 @@ import type { ContentLicense } from "@/types/contentLicense";
 import { FALLBACK_CONTENT_LICENSE } from "@/lib/contentLicense";
 import { cachedFetch, invalidate, invalidateAll } from "./queryCache";
 import { ApiError, errorMessage, isNodeUnreachable } from "./errors";
-import { dropRemoved, gatewayRequired, keepsStubs, POLICY_HEADER } from "./moderation";
 import { reportChainReachable, reportChainUnreachable } from "./chainStatus";
 import type {
   ListPostResponse,
@@ -95,6 +94,7 @@ import type {
   ListChallengeResponse,
   ChallengesByInitiativeResponse,
   ReviewBountyResponse,
+  InitiativeBountyResponse,
   EscalatedReviewsResponse,
   RoleRewardPoolsResponse,
   RoleActivityResponse,
@@ -232,6 +232,8 @@ import type {
   QueryServiceTypesResponse,
   QueryReportResponse,
   QueryReportsByOperatorResponse,
+  QueryCheckpointResponse,
+  QueryCheckpointsByServiceTypeResponse,
 } from "@/types/service";
 import type {
   QueryChainIdentityResponse,
@@ -240,9 +242,10 @@ import type {
 } from "@/types/identity";
 
 // In the browser, route through our Next.js proxy to avoid CORS issues.
-// On the server (SSR, the RSS feed), call the LCD endpoint directly. The
-// runtime LCD_ENDPOINT wins there, as in the proxy, so both read through the
-// same content gateway.
+// On the server (the RSS feed, the content-scan verdict index), call the LCD
+// endpoint directly. The runtime LCD_ENDPOINT wins there, as in the proxy, so
+// both read the same node. No filter sits in this path: scanner verdicts are
+// applied client-side (lib/contentScan, docs/content-scanning.md §6).
 const BASE =
   typeof window !== "undefined"
     ? "/api/lcd"
@@ -332,7 +335,7 @@ async function failure(res: Response, path: string): Promise<ApiError> {
 
 async function get<T>(path: string, params?: URLSearchParams): Promise<T> {
   try {
-    const value = await request<T>(path, params);
+    const value = await fetchJson<T>(path, params);
     // The node answered, so it is up whatever else is failing.
     reportChainReachable();
     return value;
@@ -344,12 +347,9 @@ async function get<T>(path: string, params?: URLSearchParams): Promise<T> {
   }
 }
 
-// Records the content gateway removed arrive as stubs; drop them from lists
-// unless this is a threaded read that renders a placeholder (lib/moderation.ts).
-async function request<T>(path: string, params?: URLSearchParams): Promise<T> {
-  const value = await fetchJson<T>(path, params);
-  return keepsStubs(path) ? value : dropRemoved(value);
-}
+// The shared LCD read and pagination encoder, for module clients kept in their
+// own file (lib/artifactApi.ts).
+export { get as lcdGet, paginationParams };
 
 async function fetchJson<T>(path: string, params?: URLSearchParams): Promise<T> {
   const qs = params?.toString() || null;
@@ -364,7 +364,7 @@ async function fetchJson<T>(path: string, params?: URLSearchParams): Promise<T> 
   let res: Response;
   try {
     // no-store keeps Next's server-side data cache from holding a response;
-    // caching is the gateway's job, after its checks.
+    // lib/queryCache.ts does the client-side caching.
     res = await fetch(url, { signal: controller.signal, cache: "no-store" });
   } catch (err) {
     if (controller.signal.aborted) {
@@ -374,10 +374,6 @@ async function fetchJson<T>(path: string, params?: URLSearchParams): Promise<T> 
     throw new ApiError(0, path, "Could not reach the chain node", errorMessage(err) || undefined);
   } finally {
     clearTimeout(timer);
-  }
-  // Server-side reads skip the proxy, so they enforce the gateway themselves.
-  if (typeof window === "undefined" && gatewayRequired() && !res.headers.has(POLICY_HEADER)) {
-    throw new ApiError(503, path, "Response did not pass through the content gateway");
   }
   if (!res.ok) throw await failure(res, path);
   try {
@@ -408,6 +404,60 @@ export async function getPost(id: string): Promise<ShowPostResponse> {
     `post|${id}|`,
     () => get<ShowPostResponse>(`/sparkdream/blog/v1/show_post/${id}`),
     { ttl: 30_000, swr: true }
+  );
+}
+
+// Full bodies of media-labelled records (docs/content-scanning.md §3.4). List
+// and show queries return the body as "" whenever media_flags != 0; these
+// return it with the body_hash to check it against. Callers go through
+// lib/contentScan/body.ts, which fetches only once verdicts allow and verifies
+// the hash. bytes fields (body_hash, content_hash) arrive base64.
+export interface RecordBodyResponse {
+  body: string;
+  content_type?: string;
+  media_flags?: number;
+  body_hash?: string;
+}
+
+export async function getPostBody(id: string): Promise<RecordBodyResponse> {
+  return cachedFetch(
+    `postBody|${id}|`,
+    () => get<RecordBodyResponse>(`/sparkdream/blog/v1/post_body/${encodeURIComponent(id)}`),
+    { ttl: 30_000 }
+  );
+}
+
+export async function getReplyBody(id: string): Promise<RecordBodyResponse> {
+  return cachedFetch(
+    `replyBody|${id}|`,
+    () => get<RecordBodyResponse>(`/sparkdream/blog/v1/reply_body/${encodeURIComponent(id)}`),
+    { ttl: 30_000 }
+  );
+}
+
+export async function getForumPostContent(postId: string): Promise<RecordBodyResponse> {
+  return cachedFetch(
+    `forumPostContent|${postId}|`,
+    async () => {
+      const res = await get<{ content: string; content_type?: string; media_flags?: number; body_hash?: string }>(
+        `/sparkdream/forum/v1/post_content/${encodeURIComponent(postId)}`
+      );
+      return { ...res, body: res.content ?? "" };
+    },
+    { ttl: 30_000 }
+  );
+}
+
+export async function getFederatedContentBody(
+  id: string
+): Promise<{ body: string; media_flags?: number; content_hash?: string }> {
+  return cachedFetch(
+    `federatedContentBody|${id}|`,
+    () =>
+      get<{ body: string; media_flags?: number; content_hash?: string }>(
+        `/sparkdream/federation/v1/federated_content_body/${encodeURIComponent(id)}`
+      ),
+    { ttl: 30_000 }
   );
 }
 
@@ -1184,6 +1234,15 @@ export async function initiativeConviction(
 export async function reviewBounty(initiativeId: string): Promise<ReviewBountyResponse> {
   return get<ReviewBountyResponse>(
     `/sparkdream/rep/v1/review_bounty/${initiativeId}`
+  );
+}
+
+/** DREAM escrowed against an initiative for its assignee, paid on completion,
+ *  with each contribution's reclaim state. Answers with an empty bounty when
+ *  nothing is escrowed. */
+export async function initiativeBounty(initiativeId: string): Promise<InitiativeBountyResponse> {
+  return get<InitiativeBountyResponse>(
+    `/sparkdream/rep/v1/initiative_bounty/${initiativeId}`
   );
 }
 
@@ -2506,6 +2565,29 @@ export async function listReportsByOperator(
 ): Promise<QueryReportsByOperatorResponse> {
   return get<QueryReportsByOperatorResponse>(
     `/sparkdream/service/v1/reports_by_operator/${encodeURIComponent(operatorAddress)}/${encodeURIComponent(serviceType)}`,
+    paginationParams(pagination)
+  );
+}
+
+// Latest MsgSubmitCheckpoint of one operator under a service type (chain
+// commit 246bf2b). 404 / NotFound when the operator hasn't checkpointed yet.
+export async function getServiceCheckpoint(
+  operator: string,
+  serviceType: string
+): Promise<QueryCheckpointResponse> {
+  return get<QueryCheckpointResponse>(
+    `/sparkdream/service/v1/checkpoint/${encodeURIComponent(operator)}/${encodeURIComponent(serviceType)}`
+  );
+}
+
+// Every operator's latest checkpoint under a service type, in operator
+// address byte order.
+export async function listCheckpointsByServiceType(
+  serviceType: string,
+  pagination?: PaginationRequest
+): Promise<QueryCheckpointsByServiceTypeResponse> {
+  return get<QueryCheckpointsByServiceTypeResponse>(
+    `/sparkdream/service/v1/checkpoints_by_service_type/${encodeURIComponent(serviceType)}`,
     paginationParams(pagination)
   );
 }

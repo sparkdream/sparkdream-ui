@@ -11,6 +11,9 @@ import {
   listCollectionHideRecordsByTarget,
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
+import { useChainConfig } from "@/contexts/ChainConfigContext";
+import { formatSpark } from "@/lib/utils";
+import { REP_APPEAL_BOND_USPARK, REP_APPEAL_DEADLINE_SECONDS } from "@/types/rep";
 import FederateContentForm from "@/components/federation/FederateContentForm";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useTrustRank } from "@/hooks/useTrustRank";
@@ -52,6 +55,9 @@ import AnonymousToggle from "@/components/AnonymousToggle";
 import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
+import { ImageLoadBar, ScannedLink } from "@/components/content/ScannedMedia";
+import { containsDataURI, DATA_URI_FIELD_ERROR } from "@/lib/mediaLabels";
+import { describeTxError } from "@/lib/errors";
 
 interface CollectionDetailProps {
   collectionId: string;
@@ -74,6 +80,7 @@ function linkHostname(uri: string): string | null {
 
 export default function CollectionDetail({ collectionId, onBack }: CollectionDetailProps) {
   const dream = useDreamDenom();
+  const { config } = useChainConfig();
   const { address, signAndBroadcast } = useWallet();
   const [anonVotes, setAnonVotes] = useState(false);
   const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
@@ -105,6 +112,11 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const [error, setError] = useState<unknown>(null);
   const [tab, setTab] = useState<"items" | "collaborators" | "curation">("items");
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
+  // Item images point at arbitrary hosts. None load until content scanners
+  // have cleared the URI (docs/content-scanning.md §6), and then only when the
+  // viewer asks, since loading one shares the viewer's IP with that host.
+  // Item id -> blob URL of the verified bytes (ImageLoadBar).
+  const [loadedImages, setLoadedImages] = useState<Map<string, string>>(() => new Map());
   const { pending: actionLoading, error: actionError, clearError, run } = useTxAction();
   // Open state for the "federate to a peer" form. Owner-only: the chain
   // takes the signer as the content creator.
@@ -158,6 +170,18 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
 
   const refFieldCls =
     "w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none";
+  const refFieldErrCls =
+    "w-full rounded-lg border border-red-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-red-600 focus:outline-none";
+
+  // x/collect rejects a data URI in image_uri, link.uri, nft.token_uri and
+  // custom.value (ErrDataURINotAllowed, docs/content-scanning.md §3.3). Only
+  // the selected reference type's fields are sent, so only those are checked.
+  const dataUriErr = (v: string) => (containsDataURI(v.trim()) ? DATA_URI_FIELD_ERROR : null);
+  const imageUriError = dataUriErr(newItemImageUri);
+  const linkUriError = newItemRefType === ReferenceType.LINK ? dataUriErr(newItemLinkUri) : null;
+  const nftTokenUriError = newItemRefType === ReferenceType.NFT ? dataUriErr(newItemNftTokenUri) : null;
+  const customValueError = newItemRefType === ReferenceType.CUSTOM ? dataUriErr(newItemCustomValue) : null;
+  const itemHasDataUri = !!(imageUriError || linkUriError || nftTokenUriError || customValueError);
 
   const isOwner = collection?.owner === address;
   const isEphemeral = Boolean(collection?.expires_at && collection.expires_at !== "0");
@@ -264,7 +288,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   };
 
   const handleAddItem = async () => {
-    if (!address || !newItemTitle.trim() || !isRefReady()) return;
+    if (!address || !newItemTitle.trim() || !isRefReady() || itemHasDataUri) return;
     await run("add-item", async () => {
       const value: Record<string, unknown> = {
         creator: address,
@@ -319,7 +343,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
       resetItemForm();
       setShowAddItem(false);
       await fetchData();
-    }, "Failed to add item");
+    }, (raw) => describeTxError(raw) || "Failed to add item");
   };
 
   const handleRemoveItem = async (itemId: string) => {
@@ -545,7 +569,9 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     }, "Action failed");
   };
 
-  // Owner/adder appeals a sentinel hide (MsgAppealHide). Escrows appeal_fee.
+  // Owner/adder appeals a sentinel hide (MsgAppealHide). Since chain commit
+  // 0a25eaf this opens an x/rep moderation appeal (GOV_ACTION_TYPE_COLLECT_HIDE):
+  // x/rep charges its fixed SPARK appeal bond, seats a jury and owns the deadline.
   const handleAppeal = async (hideRecordId: string) => {
     if (!address) return;
     await run("appeal", async () => {
@@ -911,7 +937,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
               <button
                 onClick={() => handleAppeal(hideRecord.id)}
                 disabled={actionLoading === "appeal"}
-                title="Appeal this hide (escrows the appeal fee)"
+                title={`Appeal this hide. A jury decides it within ${Math.round(REP_APPEAL_DEADLINE_SECONDS / 86400)} days, and you post a ${formatSpark(REP_APPEAL_BOND_USPARK)} ${config.displayDenom} appeal bond, refunded if the hide is overturned.`}
                 className="shrink-0 rounded-md border border-red-700/60 px-2.5 py-1 font-medium text-red-200 hover:bg-red-900/30 disabled:opacity-50"
               >
                 {actionLoading === "appeal" ? "Appealing…" : "Appeal"}
@@ -1002,12 +1028,16 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                         rows={2}
                         className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
                       />
-                      <input
-                        value={newItemImageUri}
-                        onChange={(e) => setNewItemImageUri(e.target.value)}
-                        placeholder="Image URI (optional)"
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
-                      />
+                      <div>
+                        <input
+                          value={newItemImageUri}
+                          onChange={(e) => setNewItemImageUri(e.target.value)}
+                          placeholder="Image URI (optional)"
+                          aria-invalid={!!imageUriError}
+                          className={imageUriError ? refFieldErrCls : refFieldCls}
+                        />
+                        {imageUriError && <p className="mt-1 text-xs text-red-400">{imageUriError}</p>}
+                      </div>
                       <div className="space-y-3">
                         <select
                           value={newItemRefType}
@@ -1020,12 +1050,16 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                           <option value={ReferenceType.CUSTOM}>Custom</option>
                         </select>
                         {newItemRefType === ReferenceType.LINK && (
-                          <input
-                            value={newItemLinkUri}
-                            onChange={(e) => setNewItemLinkUri(e.target.value)}
-                            placeholder="Link URL"
-                            className={refFieldCls}
-                          />
+                          <div>
+                            <input
+                              value={newItemLinkUri}
+                              onChange={(e) => setNewItemLinkUri(e.target.value)}
+                              placeholder="Link URL"
+                              aria-invalid={!!linkUriError}
+                              className={linkUriError ? refFieldErrCls : refFieldCls}
+                            />
+                            {linkUriError && <p className="mt-1 text-xs text-red-400">{linkUriError}</p>}
+                          </div>
                         )}
                         {newItemRefType === ReferenceType.NFT && (
                           <>
@@ -1053,12 +1087,16 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                               placeholder="Token standard (optional, e.g. ERC721)"
                               className={refFieldCls}
                             />
-                            <input
-                              value={newItemNftTokenUri}
-                              onChange={(e) => setNewItemNftTokenUri(e.target.value)}
-                              placeholder="Token URI (optional)"
-                              className={refFieldCls}
-                            />
+                            <div>
+                              <input
+                                value={newItemNftTokenUri}
+                                onChange={(e) => setNewItemNftTokenUri(e.target.value)}
+                                placeholder="Token URI (optional)"
+                                aria-invalid={!!nftTokenUriError}
+                                className={nftTokenUriError ? refFieldErrCls : refFieldCls}
+                              />
+                              {nftTokenUriError && <p className="mt-1 text-xs text-red-400">{nftTokenUriError}</p>}
+                            </div>
                           </>
                         )}
                         {newItemRefType === ReferenceType.ON_CHAIN && (
@@ -1091,19 +1129,23 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                               placeholder="Type label"
                               className={refFieldCls}
                             />
-                            <input
-                              value={newItemCustomValue}
-                              onChange={(e) => setNewItemCustomValue(e.target.value)}
-                              placeholder="Value"
-                              className={refFieldCls}
-                            />
+                            <div>
+                              <input
+                                value={newItemCustomValue}
+                                onChange={(e) => setNewItemCustomValue(e.target.value)}
+                                placeholder="Value"
+                                aria-invalid={!!customValueError}
+                                className={customValueError ? refFieldErrCls : refFieldCls}
+                              />
+                              {customValueError && <p className="mt-1 text-xs text-red-400">{customValueError}</p>}
+                            </div>
                           </>
                         )}
                       </div>
                       <ContentLicenseNotice what="What you write about this item (not the work it points to)" />
                       <button
                         onClick={handleAddItem}
-                        disabled={!newItemTitle.trim() || !isRefReady() || actionLoading === "add-item"}
+                        disabled={!newItemTitle.trim() || !isRefReady() || itemHasDataUri || actionLoading === "add-item"}
                         className="sd-btn-crystal w-full px-4 py-2.5"
                       >
                         {actionLoading === "add-item" ? "Adding..." : "Add"}
@@ -1129,17 +1171,31 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                       <div className="flex items-center gap-3 min-w-0">
                         {item.image_uri && (
                           <div className="relative h-10 w-10 shrink-0 rounded-lg bg-zinc-800 overflow-hidden">
-                            {/* `unoptimized` skips Next's image optimizer (which would */}
-                            {/* require allow-listing every remote host the collection */}
-                            {/* item URI might come from in next.config.js). */}
-                            <Image
-                              src={item.image_uri}
-                              alt=""
-                              fill
-                              sizes="40px"
-                              unoptimized
-                              className="object-cover"
-                            />
+                            {loadedImages.has(item.id) ? (
+                              /* A blob URL of the hash-checked bytes; `unoptimized` */
+                              /* keeps Next's image optimizer out of it. */
+                              <Image
+                                src={loadedImages.get(item.id)!}
+                                alt=""
+                                fill
+                                sizes="40px"
+                                unoptimized
+                                className="object-cover"
+                              />
+                            ) : (
+                              <svg
+                                className="absolute inset-0 m-auto h-5 w-5 text-zinc-600"
+                                aria-label="Image not loaded"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                strokeWidth={1.5}
+                              >
+                                <rect x="3" y="5" width="18" height="14" rx="2" />
+                                <circle cx="9" cy="10" r="1.5" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 16l-5-5-8 8" />
+                              </svg>
+                            )}
                           </div>
                         )}
                         <div className="min-w-0">
@@ -1176,6 +1232,12 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
 
                     {expandedItem === item.id && (
                       <div className="border-t border-zinc-800 px-4 py-3">
+                        {item.image_uri && !loadedImages.has(item.id) && (
+                          <ImageLoadBar
+                            uri={item.image_uri}
+                            onLoaded={(url) => setLoadedImages((prev) => new Map(prev).set(item.id, url))}
+                          />
+                        )}
                         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
                           <div>
                             <dt className="text-xs text-zinc-500">Added by</dt>
@@ -1195,15 +1257,11 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                             <div className="col-span-2">
                               <dt className="text-xs text-zinc-500">Link</dt>
                               <dd className="truncate text-xs">
-                                <a
-                                  href={item.link.uri}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
+                                <ScannedLink
+                                  uri={item.link.uri}
+                                  contentHash={item.link.content_hash}
                                   className="text-indigo-400 hover:text-indigo-300 hover:underline"
-                                >
-                                  {item.link.uri}
-                                </a>
+                                />
                               </dd>
                             </div>
                           )}

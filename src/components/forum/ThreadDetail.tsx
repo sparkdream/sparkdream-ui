@@ -14,7 +14,7 @@ import {
   listPostConvictionStakesByStaker,
   authorBondsByType,
 } from "@/lib/api";
-import { isRemoved } from "@/lib/moderation";
+import ScannedText from "@/components/content/ScannedText";
 import { useWallet } from "@/contexts/WalletContext";
 import { useTrustRank } from "@/hooks/useTrustRank";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
@@ -750,11 +750,10 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       permits(ForumMsgTypeUrls.ConfirmProposedReply);
     // Conceal hidden content from non-author, non-moderator viewers (e.g. a
     // direct link to a hidden spark). The header still shows the "Hidden" badge.
-    // A reply the site operator removed stays in the thread as a placeholder,
-    // concealed from everyone.
-    const removed = isRemoved(post);
+    // Scanner verdicts (removed, held, media not yet cleared) are applied by
+    // ScannedText below; a removed reply stays in the thread as a placeholder.
     const concealContent =
-      removed || (post.status === PostStatus.HIDDEN && !isAuthor && !canModerate);
+      post.status === PostStatus.HIDDEN && !isAuthor && !canModerate;
     // Bounty creator's per-reply award affordance. Mirrors the chain's
     // AssignBountyToReply gates: active bounty, creator only, reply not yet
     // awarded, winner slots left. Awards show on the reply in any status.
@@ -845,12 +844,22 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
         {/* Post content */}
         {concealContent ? (
           <div className="mt-2 text-sm italic text-zinc-500">
-            {removed ? "This spark isn't available on this site." : "This spark was hidden by moderation."}
+            This spark was hidden by moderation.
           </div>
         ) : (
-          <div className="mt-2 whitespace-pre-wrap text-sm text-zinc-200">
-            {post.content}
-          </div>
+          <ScannedText
+            input={{
+              kind: "forum-post",
+              id: post.post_id,
+              body: post.content,
+              media_flags: post.media_flags,
+              body_hash: post.body_hash,
+              author: post.author,
+            }}
+            noun="spark"
+            className="mt-2 whitespace-pre-wrap text-sm text-zinc-200"
+            noticeClassName="mt-2"
+          />
         )}
 
         {/* Tags */}

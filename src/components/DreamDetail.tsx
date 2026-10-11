@@ -25,6 +25,9 @@ import { useCanPin } from "@/hooks/useCanPin";
 import { useCanMakePermanent } from "@/hooks/useCanMakePermanent";
 import { MsgTypeUrls } from "@/lib/tx";
 import ErrorState from "@/components/ErrorState";
+import ContentNotice from "@/components/content/ContentNotice";
+import { useScannedBody } from "@/hooks/useScannedBody";
+import { bodyForUpdate } from "@/lib/contentScan/body";
 
 export default function DreamDetail({
   postId,
@@ -53,6 +56,10 @@ export default function DreamDetail({
   // Reply ids carrying an author bond (BLOG_REPLY_AUTHOR_BOND, type 10).
   // One indexed query so the bond panel only mounts under bonded replies.
   const [bondedReplyIds, setBondedReplyIds] = useState<Set<string>>(new Set());
+  // Scanner display policy: plain text at once, media only once cleared.
+  const scanned = useScannedBody(
+    post ? { kind: "blog-post", id: post.id, body: post.body, media_flags: post.media_flags, body_hash: post.body_hash, author: post.creator } : null
+  );
 
   const fetchData = useCallback(async () => {
     try {
@@ -148,6 +155,8 @@ export default function DreamDetail({
     setActionLoading(true);
     try {
       const newRepliesEnabled = !post.replies_enabled;
+      // A media-labelled body arrives as ""; resend the stored one.
+      const body = await bodyForUpdate("blog-post", postId, post);
       await signAndBroadcast([
         {
           typeUrl: MsgTypeUrls.UpdatePost,
@@ -155,7 +164,7 @@ export default function DreamDetail({
             creator: address,
             id: BigInt(postId),
             title: post.title,
-            body: post.body,
+            body,
             contentType: parseInt(post.content_type) || 0,
             repliesEnabled: newRepliesEnabled,
             minReplyTrustLevel: post.min_reply_trust_level,
@@ -389,8 +398,10 @@ export default function DreamDetail({
             <p className="italic text-zinc-600">[This dream has been deleted]</p>
           ) : concealPost ? (
             <p className="italic text-zinc-500">This dream was hidden by moderation.</p>
+          ) : scanned.status === "show" ? (
+            scanned.text
           ) : (
-            post.body
+            <ContentNotice status={scanned.status} reason={scanned.reason} noun="dream" />
           )}
         </div>
 
@@ -427,7 +438,7 @@ export default function DreamDetail({
               contentType="blog_post"
               localContentId={post.id}
               defaultTitle={post.title}
-              defaultBody={post.body}
+              defaultBody={scanned.status === "show" ? scanned.text : ""}
               onDone={() => setFederating(false)}
               onCancel={() => setFederating(false)}
             />

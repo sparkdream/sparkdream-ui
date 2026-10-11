@@ -10,6 +10,11 @@ import type { Post } from "@/types/blog";
 import { CONTENT_TYPE_INFO } from "@/types/blog";
 import TagPicker from "@/components/contribute/TagPicker";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
+import MediaWriteNotice from "@/components/MediaWriteNotice";
+import { useMediaGate } from "@/hooks/useMediaGate";
+import { useDreamDenom } from "@/hooks/useDreamDenom";
+import { labelBody } from "@/lib/mediaLabels";
+import { describeTxError } from "@/lib/errors";
 
 interface EditPostFormProps {
   post: Post;
@@ -28,10 +33,25 @@ export default function EditPostForm({ post }: EditPostFormProps) {
   const [error, setError] = useState<string | null>(null);
   const canCreateTags = useCanCreateTags(address);
   const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
+  const dream = useDreamDenom();
+  // Labels are recomputed on every edit, and edits into media have no bond
+  // path (docs/content-scanning.md §9).
+  const mediaFlags = labelBody(contentType, body.trim());
+  const mediaGate = useMediaGate({
+    module: "blog",
+    flags: mediaFlags,
+    address,
+    anonymous: false,
+    bondAllowed: false,
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!connected || !title.trim() || !body.trim()) return;
+    if (mediaGate.blockReason) {
+      setError(mediaGate.blockReason);
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
@@ -69,7 +89,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
       if (tagMsgs.length > 0) refreshTags();
       router.push(`/imaginarium/${post.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update dream");
+      setError(describeTxError(err, { dreamDenom: dream }) || "Failed to update dream");
     } finally {
       setSubmitting(false);
     }
@@ -188,6 +208,8 @@ export default function EditPostForm({ post }: EditPostFormProps) {
         </div>
       </div>
 
+      <MediaWriteNotice flags={mediaFlags} gate={mediaGate} noun="dream" />
+
       {error && (
         <div className="rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
           {error}
@@ -198,7 +220,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          disabled={submitting || !title.trim() || !body.trim()}
+          disabled={submitting || !title.trim() || !body.trim() || !!mediaGate.blockReason}
           className="sd-btn sd-btn-primary"
         >
           {submitting ? "Saving..." : "Save changes"}

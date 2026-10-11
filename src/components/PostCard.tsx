@@ -7,6 +7,8 @@ import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
 import { timeAgo, countToNum } from "@/lib/utils";
 import { getReactionCounts } from "@/lib/api";
 import NameOrAddress from "@/components/NameOrAddress";
+import ContentNotice from "@/components/content/ContentNotice";
+import { useScannedBody } from "@/hooks/useScannedBody";
 
 interface PostCardProps {
   post: Post;
@@ -14,6 +16,14 @@ interface PostCardProps {
 
 export default function PostCard({ post }: PostCardProps) {
   const [counts, setCounts] = useState<ReactionCounts | null>(null);
+  const scanned = useScannedBody({
+    kind: "blog-post",
+    id: post.id,
+    body: post.body,
+    media_flags: post.media_flags,
+    body_hash: post.body_hash,
+    author: post.creator,
+  });
 
   useEffect(() => {
     getReactionCounts(post.id)
@@ -22,6 +32,8 @@ export default function PostCard({ post }: PostCardProps) {
   }, [post.id]);
 
   if (post.status === PostStatus.DELETED) return null;
+  // Removed by scanner verdict: dropped from lists, as before.
+  if (scanned.status === "removed") return null;
 
   const isHidden = post.status === PostStatus.HIDDEN;
   const replyCount = countToNum(post.reply_count);
@@ -60,7 +72,11 @@ export default function PostCard({ post }: PostCardProps) {
         </h2>
 
         <p className="mb-3 line-clamp-2 text-sm leading-relaxed text-zinc-400">
-          {post.body}
+          {scanned.status === "show" ? (
+            scanned.text
+          ) : (
+            <ContentNotice status={scanned.status} reason={scanned.reason} noun="dream" compact />
+          )}
         </p>
 
         <div className="flex items-center gap-4 text-xs text-zinc-500">

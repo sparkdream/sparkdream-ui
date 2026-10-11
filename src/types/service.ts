@@ -90,6 +90,36 @@ export interface ServiceTypeConfig {
   enabled: boolean;
   report_timeout_action: string;
   challenge_default_slash_bps: number;
+  // Chain commit 246bf2b (content scanning). Optional because proto3 JSON
+  // omits zeros and older chains lack them.
+  /** Independent ACTIVE operators that must agree before clients accept an
+   *  attestation (content scanners: "clean"). 0 = the type does not attest. */
+  attestation_quorum?: number;
+  /** Quorum for low-trust subjects (media by NEW/PROVISIONAL authors).
+   *  0 = attestation_quorum applies. */
+  elevated_attestation_quorum?: number;
+  /** int64 as string: how far a checkpoint may trail the chain before an
+   *  automatic liveness report. "0" / absent = no liveness tracking. */
+  checkpoint_max_lag_blocks?: string;
+}
+
+/** Service type seeded by x/service for the content scanners (docs/content-scanning.md §8). */
+export const CONTENT_SCANNER_SERVICE_TYPE = "content-scanner";
+
+/**
+ * An operator's latest progress claim under one service type
+ * (MsgSubmitCheckpoint). For content scanners `height` is the block height
+ * scanned up to and `root` the merkle root of its signed verdict feed.
+ */
+export interface Checkpoint {
+  operator: string;
+  service_type: string;
+  /** int64 block height the operator's work has reached. */
+  height: string;
+  /** 32 bytes, base64 in LCD JSON. */
+  root: string;
+  /** int64 block height the checkpoint landed in. */
+  submitted_at: string;
 }
 
 export interface Report {
@@ -140,5 +170,14 @@ export interface QueryReportResponse {
 
 export interface QueryReportsByOperatorResponse {
   reports: Report[];
+  pagination: Pagination;
+}
+
+export interface QueryCheckpointResponse {
+  checkpoint: Checkpoint;
+}
+
+export interface QueryCheckpointsByServiceTypeResponse {
+  checkpoints: Checkpoint[];
   pagination: Pagination;
 }

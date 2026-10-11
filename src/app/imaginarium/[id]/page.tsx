@@ -24,6 +24,9 @@ import { useCanPin } from "@/hooks/useCanPin";
 import { useCanMakePermanent } from "@/hooks/useCanMakePermanent";
 import { MsgTypeUrls } from "@/lib/tx";
 import ErrorState from "@/components/ErrorState";
+import ContentNotice from "@/components/content/ContentNotice";
+import { useScannedBody } from "@/hooks/useScannedBody";
+import { bodyForUpdate } from "@/lib/contentScan/body";
 
 export default function PostDetailPage() {
   const params = useParams();
@@ -38,6 +41,10 @@ export default function PostDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  // Scanner display policy: plain text at once, media only once cleared.
+  const scanned = useScannedBody(
+    post ? { kind: "blog-post", id: post.id, body: post.body, media_flags: post.media_flags, body_hash: post.body_hash, author: post.creator } : null
+  );
 
   const fetchData = useCallback(async () => {
     if (!/^\d+$/.test(id)) {
@@ -121,6 +128,8 @@ export default function PostDetailPage() {
     setActionLoading(true);
     try {
       const newRepliesEnabled = !post.replies_enabled;
+      // A media-labelled body arrives as ""; resend the stored one.
+      const body = await bodyForUpdate("blog-post", id, post);
       await signAndBroadcast([
         {
           typeUrl: MsgTypeUrls.UpdatePost,
@@ -128,7 +137,7 @@ export default function PostDetailPage() {
             creator: address,
             id: BigInt(id),
             title: post.title,
-            body: post.body,
+            body,
             contentType: parseInt(post.content_type) || 0,
             repliesEnabled: newRepliesEnabled,
             minReplyTrustLevel: post.min_reply_trust_level,
@@ -352,8 +361,10 @@ export default function PostDetailPage() {
             <p className="italic text-zinc-600">[This dream has been deleted]</p>
           ) : concealPost ? (
             <p className="italic text-zinc-500">This dream was hidden by moderation.</p>
+          ) : scanned.status === "show" ? (
+            scanned.text
           ) : (
-            post.body
+            <ContentNotice status={scanned.status} reason={scanned.reason} noun="dream" />
           )}
         </div>
 

@@ -2,12 +2,16 @@
 
 import { useEffect, useState, useCallback } from "react";
 import {
+  getLatestBlockHeight,
+  listCheckpointsByServiceType,
   listServiceOperators,
   listServiceTypes,
 } from "@/lib/api";
 import {
+  CONTENT_SCANNER_SERVICE_TYPE,
   OperatorStatus,
   OPERATOR_STATUS_LABELS,
+  type Checkpoint,
   type Operator,
   type ServiceTypeConfig,
 } from "@/types/service";
@@ -36,6 +40,33 @@ function formatSpark(amount: string): string {
   }
 }
 
+// Checkpoint roots are 32 bytes, base64 in LCD JSON; show them as hex.
+function base64ToHex(b64: string): string {
+  try {
+    const bin = atob(b64);
+    let out = "";
+    for (let i = 0; i < bin.length; i++) out += bin.charCodeAt(i).toString(16).padStart(2, "0");
+    return out;
+  } catch {
+    return b64;
+  }
+}
+
+function toInt(v: string | number | undefined): number {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// Types whose operators checkpoint: liveness tracking on, an attestation
+// quorum set, or the seeded content-scanner type.
+function tracksCheckpoints(t: ServiceTypeConfig): boolean {
+  return (
+    t.service_type === CONTENT_SCANNER_SERVICE_TYPE ||
+    toInt(t.checkpoint_max_lag_blocks) > 0 ||
+    toInt(t.attestation_quorum) > 0
+  );
+}
+
 function statusBadge(status: string) {
   if (status === OperatorStatus.ACTIVE) {
     return "bg-emerald-500/15 text-emerald-400";
@@ -56,6 +87,9 @@ export default function ServiceOperators() {
   const [error, setError] = useState<unknown>(null);
   // Per-service-type filter; empty = show all.
   const [filterType, setFilterType] = useState<string>("");
+  // Latest MsgSubmitCheckpoint per `${service_type}/${operator}`.
+  const [checkpoints, setCheckpoints] = useState<Record<string, Checkpoint>>({});
+  const [currentHeight, setCurrentHeight] = useState<number | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -66,7 +100,24 @@ export default function ServiceOperators() {
         listServiceTypes({ limit: "100" }).catch(() => null),
       ]);
       setOperators(opsRes?.operators || []);
-      setTypes(typesRes?.configs || []);
+      const configs = typesRes?.configs || [];
+      setTypes(configs);
+
+      // Checkpoints are a newer query (chain commit 246bf2b); a node without
+      // it just leaves the column empty.
+      const tracked = configs.filter(tracksCheckpoints);
+      const [height, ...cpRes] = await Promise.all([
+        getLatestBlockHeight().catch(() => null),
+        ...tracked.map((t) =>
+          listCheckpointsByServiceType(t.service_type, { limit: "200" }).catch(() => null)
+        ),
+      ]);
+      const cps: Record<string, Checkpoint> = {};
+      for (const res of cpRes) {
+        for (const cp of res?.checkpoints || []) cps[`${cp.service_type}/${cp.operator}`] = cp;
+      }
+      setCheckpoints(cps);
+      setCurrentHeight(height ? Number(height) : null);
     } catch (err) {
       // Pre-v1.0.4 chains don't have x/service; surface as empty state, not error.
       if (isMissingEndpoint(err)) {
@@ -87,6 +138,12 @@ export default function ServiceOperators() {
   const filtered = filterType
     ? operators.filter((o) => o.service_type === filterType)
     : operators;
+  const typeByName: Record<string, ServiceTypeConfig> = {};
+  for (const t of types) typeByName[t.service_type] = t;
+  const showCheckpoints = filtered.some((o) => {
+    const t = typeByName[o.service_type];
+    return (t && tracksCheckpoints(t)) || !!checkpoints[`${o.service_type}/${o.address}`];
+  });
 
   // Roll up bond per service-type for the summary header.
   const summary: Record<string, { count: number; bond: bigint }> = {};
@@ -154,6 +211,22 @@ export default function ServiceOperators() {
                     Total bonded: {formatSpark(s.bond.toString())} SPARK
                   </div>
                 )}
+                {(toInt(t.attestation_quorum) > 0 || toInt(t.checkpoint_max_lag_blocks) > 0) && (
+                  <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-zinc-500">
+                    {toInt(t.attestation_quorum) > 0 && (
+                      <span title="Independent active operators that must agree before clients accept an attestation">
+                        Quorum: {toInt(t.attestation_quorum)}
+                        {toInt(t.elevated_attestation_quorum) > toInt(t.attestation_quorum) &&
+                          ` (${toInt(t.elevated_attestation_quorum)} for low-trust authors)`}
+                      </span>
+                    )}
+                    {toInt(t.checkpoint_max_lag_blocks) > 0 && (
+                      <span title="How far a checkpoint may trail the chain before an automatic liveness report">
+                        Max lag: {toInt(t.checkpoint_max_lag_blocks).toLocaleString("en-US")} blocks
+                      </span>
+                    )}
+                  </div>
+                )}
                 {t.description && (
                   <p className="mt-1 line-clamp-2 text-[11px] text-zinc-500">{t.description}</p>
                 )}
@@ -188,6 +261,7 @@ export default function ServiceOperators() {
                 <th className="px-3 py-2 font-medium text-right">Bond (SPARK)</th>
                 <th className="px-3 py-2 font-medium">Controller</th>
                 <th className="px-3 py-2 font-medium">Status</th>
+                {showCheckpoints && <th className="px-3 py-2 font-medium">Latest checkpoint</th>}
               </tr>
             </thead>
             <tbody>
@@ -208,12 +282,69 @@ export default function ServiceOperators() {
                       {OPERATOR_STATUS_LABELS[op.status] || op.status}
                     </span>
                   </td>
+                  {showCheckpoints && (
+                    <td className="px-3 py-2">
+                      <CheckpointCell
+                        checkpoint={checkpoints[`${op.service_type}/${op.address}`]}
+                        config={typeByName[op.service_type]}
+                        operator={op}
+                        currentHeight={currentHeight}
+                      />
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+function CheckpointCell({
+  checkpoint,
+  config,
+  operator,
+  currentHeight,
+}: {
+  checkpoint: Checkpoint | undefined;
+  config: ServiceTypeConfig | undefined;
+  operator: Operator;
+  currentHeight: number | null;
+}) {
+  const maxLag = toInt(config?.checkpoint_max_lag_blocks);
+  if (!checkpoint) {
+    if (!config || !tracksCheckpoints(config)) return <span className="text-xs text-zinc-600">n/a</span>;
+    // Before the first checkpoint, liveness counts from registration.
+    const since = currentHeight !== null ? currentHeight - toInt(operator.registered_at) : null;
+    const overdue = maxLag > 0 && since !== null && since > maxLag;
+    return (
+      <span className={`text-xs ${overdue ? "text-red-400" : "text-zinc-500"}`}>
+        None yet
+        {since !== null && since >= 0 && ` (registered ${since.toLocaleString("en-US")} blocks ago)`}
+      </span>
+    );
+  }
+  const height = toInt(checkpoint.height);
+  const lag = currentHeight !== null ? Math.max(0, currentHeight - height) : null;
+  const overdue = maxLag > 0 && lag !== null && lag > maxLag;
+  const rootHex = base64ToHex(checkpoint.root);
+  return (
+    <div className="text-xs">
+      <div className="text-zinc-300">
+        Block {height.toLocaleString("en-US")}
+        {lag !== null && (
+          <span className={overdue ? "text-red-400" : "text-zinc-500"}>
+            {" "}
+            · {lag.toLocaleString("en-US")} behind
+            {maxLag > 0 && ` of ${maxLag.toLocaleString("en-US")} allowed`}
+          </span>
+        )}
+      </div>
+      <div className="font-mono text-[11px] text-zinc-500" title={rootHex}>
+        Root {rootHex.slice(0, 12)}…{rootHex.slice(-6)}
+      </div>
     </div>
   );
 }

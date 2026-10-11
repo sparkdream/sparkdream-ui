@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { gatewayRequired, POLICY_HEADER } from "@/lib/moderation";
 
-// In production LCD_ENDPOINT points at the content gateway, which runs abuse
-// checks and does the caching. This proxy stores nothing: upstream fetches skip
-// Next's data cache, and responses are no-store so a takedown applies on the
-// next request rather than when a browser or CDN copy expires.
+// A plain CORS proxy to the LCD. It filters nothing: the chain withholds
+// media-labelled bodies itself, and scanner verdicts are combined in the
+// browser (lib/contentScan, docs/content-scanning.md §6). It stores nothing
+// either: upstream fetches skip Next's data cache and responses are no-store,
+// so an onchain hide applies on the next request.
 //
 // Runtime LCD_ENDPOINT wins over the build-time NEXT_PUBLIC_* fallback so the
 // proxy target tracks the same source as /api/config without a rebuild.
@@ -47,10 +47,6 @@ export async function GET(
       503,
       timedOut ? "Chain node did not respond in time" : "Chain node unreachable"
     );
-  }
-
-  if (gatewayRequired() && !res.headers.has(POLICY_HEADER)) {
-    return errorBody(503, "Chain data did not pass through the content gateway");
   }
 
   // The name module returns 404 when an address has no registered name.

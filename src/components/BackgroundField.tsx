@@ -12,5 +12,7 @@ export default function BackgroundField() {
   const pathname = usePathname();
   if (pathname?.startsWith("/imaginarium")) return <NebulaField />;
   if (pathname?.startsWith("/wonders")) return <JewelField />;
+  // Artifacts are held and traded objects, so they share the jewel box.
+  if (pathname?.startsWith("/artifacts")) return <JewelField />;
   return <SparkField />;
 }

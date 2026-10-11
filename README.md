@@ -74,22 +74,25 @@ All configuration is read at runtime. Set these as environment variables in the 
 | `NEXT_PUBLIC_BECH32_PREFIX` | `sprkdrm` | Bech32 address prefix |
 | `NEXT_PUBLIC_CHAIN_NAME` | `Spark Dream` | Chain display name |
 | `NEXT_PUBLIC_REMOTE_MANIFEST_URL` | _(unset)_ | Optional. URL of `manifests.json` hosted in object storage. When set, the `/archive` picker reads from there instead of the local filesystem — lets you add snapshots after deploy without rebuilding the image. |
-| `LCD_ENDPOINT` / `RPC_ENDPOINT` | _(unset)_ | Runtime overrides of the `NEXT_PUBLIC_*` endpoints, no rebuild needed. In production, point both at the content gateway (see below). |
-| `REQUIRE_CONTENT_GATEWAY` | _(unset)_ | Set to `true` in production. Chain responses without the gateway's `X-Content-Policy-Version` header are refused (503) instead of shown. |
+| `LCD_ENDPOINT` / `RPC_ENDPOINT` | _(unset)_ | Runtime overrides of the `NEXT_PUBLIC_*` endpoints, no rebuild needed. |
+| `CONTENT_SCAN_FEED_URL` | _(unset)_ | Optional. One or more merged scanner feed files (comma or space separated, `https://`). When set, the server reads verdicts from these instead of fetching each worker's own feed. See [Content scanning](#content-scanning). |
+| `CONTENT_SCAN_MAX_LAG_BLOCKS` | `1800` | Freshness limit. When the scanners' effective scanned height trails the chain by more than this many blocks, flagged content stays "Being checked" (text keeps working). `0` turns the check off. Workers checkpoint every 600 blocks by default, so keep this well above that. |
 
-## Content gateway
+## Content scanning
 
-In production the UI reads the chain through a separate filtering gateway, which runs abuse checks and does all caching. The UI stores nothing itself: the `/api/lcd` proxy and server-side reads (the RSS feed) skip Next's data cache, and proxy responses are `no-store`, so a takedown applies on the next request.
+The UI applies the chain's content-scanning design (`docs/content-scanning.md` in the chain repo, §6). No filtering proxy sits in the request path: the `/api/lcd` proxy only works around CORS, and it and server-side reads (the RSS feed) skip Next's data cache.
 
-What the UI expects from the gateway:
+- **Media labels.** The chain labels every blog post, blog reply, forum post and federated record (`media_flags`, `body_hash`) and returns the body as `""` from list and show queries whenever `media_flags != 0`.
+- **Trusted workers** are read from the chain: `ACTIVE` operators of the `content-scanner` service type, with the ed25519 verdict key and feed URL in their operator metadata, and the service type's `attestation_quorum` / `elevated_attestation_quorum`.
+- **Verdicts.** The Next server fetches the workers' feeds (`manifest.json` plus `segments/*.jsonl`), or the merged files in `CONTENT_SCAN_FEED_URL`, refreshes them every minute and relays the attestations a page needs at `/api/content-scan?record=blog/post/12&uri=…`. The browser verifies every signature itself (WebCrypto Ed25519, against the keys it read from the chain) and combines them: removed if any worker says removed, held if any says held, clean only when a quorum agrees on the same hash, else unchecked. Media by new or provisional members needs the elevated quorum.
+- **Display.** Plain text shows at once. A labelled body shows "Being checked" until it is clean, is then fetched through `post_body` / `reply_body` / `post_content` / `federated_content_body`, and is shown only if its sha256 matches. Held content shows a placeholder, removed content "Not available on this site" (and drops out of lists and the RSS feed). Collection item images load only after a clean verdict, on request, from bytes whose hash matches; links stay plain text until clean. Bodies render as plain text, so URLs inside them are never loaded or clickable.
+- **No scanners yet.** With no `ACTIVE` content-scanner operators (or `attestation_quorum = 0`), text works as usual and every labelled body and image stays "Being checked", with a line saying no scanners are running. The same happens when verdicts are stale, the relay is unreachable, or the browser lacks Ed25519 (WebCrypto needs a secure context: https or localhost).
 
-- **Checked marker.** Every response it checked carries `X-Content-Policy-Version: <policy version>`. With `REQUIRE_CONTENT_GATEWAY=true`, anything without it is refused.
-- **Single records.** A removed record answers `451` with a JSON body (`{"code": 451, "message": "..."}`). The UI shows "Not available on this site".
-- **Lists.** A removed record stays in the array as a stub: user-written text emptied, structural fields (ids, addresses, status, timestamps) kept, plus `"_moderation": {"state": "removed", "reason": "..."}`. The UI drops stubs from lists, except blog `list_replies` and forum `thread`, where they render as a placeholder so replies stay anchored. See `src/lib/moderation.ts`.
+The code is in `src/lib/contentScan/` (protocol, worker list, feed index, browser client), `src/hooks/useScannedBody.ts` and `src/components/content/`.
 
-The browser still reads RPC directly (`RPC_ENDPOINT`) for tx broadcast, account and sequence lookups, the new-block ticker and x/shield. Keplr is configured with the same endpoints. Point it at the gateway's RPC side too.
+The browser still reads RPC directly (`RPC_ENDPOINT`) for tx broadcast, account and sequence lookups, the new-block ticker and x/shield. Keplr is configured with the same endpoints.
 
-Separately from the gateway, content that is moderation-hidden onchain (`*_STATUS_HIDDEN`) is concealed from everyone except its author and moderators.
+Separately, content that is moderation-hidden onchain (`*_STATUS_HIDDEN`) is concealed from everyone except its author and moderators.
 
 ## Testnet snapshots
 
@@ -105,11 +108,10 @@ npm run snapshot:capture -- --lcd https://api-test.sparkdream.io --label first-r
 
 Flags:
 
-- `--lcd <url>` (required) — the LCD REST endpoint to capture from. In production this is the content gateway.
+- `--lcd <url>` (required) — the LCD REST endpoint to capture from.
 - `--label <slug>` — optional human-friendly suffix on the snapshot id.
 - `--resume` — re-run without re-fetching anything already on disk.
 - `--force` — overwrite an existing snapshot directory.
-- `--allow-unchecked` — record responses that didn't come through the content gateway. Without it the capture stops at the first such response, since snapshots are stored and served as-is. Use it only for local captures straight from a node.
 
 The snapshot id is `<chainId>-<YYYYMMDD-HHmm>[-<label>]`. The script appends an entry to `public/archive/manifests.json` and self-prunes any local entries whose directory was deleted manually.
 

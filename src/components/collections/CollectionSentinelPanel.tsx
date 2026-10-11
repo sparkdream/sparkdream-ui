@@ -12,6 +12,7 @@ import {
   listCollectionHideRecordsBySentinel,
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
+import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { CollectMsgTypeUrls, RepMsgTypeUrls } from "@/lib/tx";
 import NumberInput from "@/components/NumberInput";
@@ -28,6 +29,7 @@ import {
   BONDED_ROLE_STATUS_LABELS,
 } from "@/types/rep";
 import type { BondedRole, BondedRoleConfig } from "@/types/rep";
+import { REP_APPEAL_BOND_USPARK, REP_APPEAL_DEADLINE_SECONDS } from "@/types/rep";
 import ErrorState from "@/components/ErrorState";
 import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
@@ -104,6 +106,7 @@ function isItemType(targetType: string): boolean {
  */
 export default function CollectionSentinelPanel({ onViewCollection }: Props) {
   const dream = useDreamDenom();
+  const { config: chainConfig } = useChainConfig();
   const { address, connected, signAndBroadcast } = useWallet();
   const isMember = useIsRepMember(address);
   const cannotBond = address ? isMember === false : false;
@@ -492,8 +495,6 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
             const maxFlags = numParam(collectParams, "max_flags_per_day");
             const commit = dreamParam(collectParams, "sentinel_commit_amount");
             const hideExpiry = numParam(collectParams, "hide_expiry_blocks");
-            const appealFee = dreamParam(collectParams, "appeal_fee");
-            const appealDeadline = numParam(collectParams, "appeal_deadline_blocks");
             const appealCooldown = numParam(collectParams, "appeal_cooldown_blocks");
             // New moderation throttles from chain commit 4ad8e38 (0.0.27).
             const maxHides = numParam(collectParams, "max_hides_per_sentinel_per_day");
@@ -504,8 +505,10 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
             if (commit !== null) rows.push({ label: "Commit / hide", value: `${commit} ${dream}`, amber: true });
             if (hideExpiry !== null) rows.push({ label: "Hide expiry", value: `${hideExpiry.toLocaleString()} blocks` });
             if (unhideWindow !== null) rows.push({ label: "Self-correct window", value: `${unhideWindow.toLocaleString()} blocks` });
-            if (appealFee !== null) rows.push({ label: "Appeal fee", value: `${appealFee} ${dream}`, amber: true });
-            if (appealDeadline !== null) rows.push({ label: "Appeal deadline", value: `${appealDeadline.toLocaleString()} blocks` });
+            // Appeals are x/rep moderation appeals now (chain commit 0a25eaf):
+            // rep's fixed SPARK bond and 14-day deadline, not collect params.
+            rows.push({ label: "Appeal bond", value: `${formatAmount(REP_APPEAL_BOND_USPARK)} ${chainConfig.displayDenom}` });
+            rows.push({ label: "Appeal decided within", value: `${Math.round(REP_APPEAL_DEADLINE_SECONDS / 86400)} days` });
             if (appealCooldown !== null) rows.push({ label: "Appeal cooldown", value: `${appealCooldown.toLocaleString()} blocks` });
             if (rows.length === 0) return null;
             return (

@@ -14,6 +14,10 @@ import { useDreamDenom } from "@/hooks/useDreamDenom";
 import AnonymousToggle from "@/components/AnonymousToggle";
 import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
+import MediaWriteNotice from "@/components/MediaWriteNotice";
+import { useMediaGate } from "@/hooks/useMediaGate";
+import { labelBody } from "@/lib/mediaLabels";
+import { describeTxError } from "@/lib/errors";
 
 interface CreatePostFormProps {
   onCreated?: () => void;
@@ -50,6 +54,17 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
   const [maxBond, setMaxBond] = useState<string | null>(null);
   const [anonymous, setAnonymous] = useState(false);
   const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
+  // The chain labels the body as stored (trimmed, as sent below) and gates
+  // media writes on trust level or an author bond (docs/content-scanning.md §9).
+  const mediaFlags = labelBody(contentType, body.trim());
+  const mediaGate = useMediaGate({
+    module: "blog",
+    flags: mediaFlags,
+    address,
+    anonymous,
+    authorBond: parseDreamToUdream(authorBond),
+    bondAllowed: true,
+  });
 
   useEffect(() => {
     getRepParams()
@@ -63,6 +78,10 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!connected || !title.trim() || !body.trim()) return;
+    if (mediaGate.blockReason) {
+      setError(mediaGate.blockReason);
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
@@ -113,7 +132,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
       if (onCreated) onCreated();
       else router.push("/imaginarium");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to publish dream");
+      setError(describeTxError(err, { dreamDenom: dream }) || "Failed to publish dream");
     } finally {
       setSubmitting(false);
     }
@@ -204,7 +223,8 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
         {showAdvanced ? "Hide" : "Show"} advanced options
       </button>
 
-      {showAdvanced && (
+      {/* Kept open while media needs the bond path, so the bond field is in reach. */}
+      {(showAdvanced || mediaGate.needsBond) && (
         <div className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
           <div>
             <label htmlFor="minReplyTrustLevel" className="mb-1.5 block text-sm font-medium text-zinc-300">
@@ -258,6 +278,8 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
         note="Anonymous dreams can't create new tags or carry an author bond, and they expire unless staked conviction keeps them alive."
       />
 
+      <MediaWriteNotice flags={mediaFlags} gate={mediaGate} noun="dream" />
+
       {error && (
         <div className="rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
           {error}
@@ -268,7 +290,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          disabled={submitting || !title.trim() || !body.trim()}
+          disabled={submitting || !title.trim() || !body.trim() || !!mediaGate.blockReason}
           className="sd-btn-gold px-6 py-2.5"
         >
           {anonPhase ? SHIELD_PHASE_LABELS[anonPhase] : submitting ? "Publishing..." : anonymous ? "Publish anonymously" : "Publish dream"}

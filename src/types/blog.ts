@@ -23,6 +23,14 @@ export interface Post {
   initiative_id: string;
   conviction_sustained: boolean;
   tags?: string[];
+  // Media labels (docs/content-scanning.md §3.3), chain-computed. Optional:
+  // absent on older chains. When media_flags != 0, list/show queries return
+  // body as "" and the full body comes from post_body (lib/contentScan).
+  /** OR of MediaFlag bits (uint32, a JSON number). */
+  media_flags?: number;
+  media_rules_version?: number;
+  /** sha256 of the body as stored; bytes, base64 in LCD JSON. */
+  body_hash?: string;
 }
 
 export interface Reply {
@@ -43,6 +51,11 @@ export interface Reply {
   pinned_by: string;
   pinned_at: string;
   conviction_sustained: boolean;
+  // Media labels, as on Post. Withheld bodies come from reply_body.
+  media_flags?: number;
+  media_rules_version?: number;
+  /** sha256 of the body as stored; base64. */
+  body_hash?: string;
 }
 
 export interface Reaction {
@@ -152,6 +165,16 @@ export interface BlogParams {
   max_reaction_fee_amount: string;
   conviction_renewal_threshold: string;
   conviction_renewal_period: string;
+  // Media rules (chain commit 246bf2b, docs/content-scanning.md §9). Apply to
+  // writes the chain labels as media (media_flags != 0). Optional: absent on
+  // chains before content scanning, and proto3 JSON omits a zero trust level.
+  /** Trust level (0-4) an active member needs to post media without a bond. */
+  media_min_trust_level?: number;
+  /** DREAM author bond (micro-DREAM math.Int) that lets a member below the
+   *  trust bar post media at creation. "0" disables the bond path. */
+  media_author_bond_min?: string;
+  /** Flat bond-denom (uspark math.Int) fee, burned, on every media write. */
+  media_scan_fee?: string;
 }
 
 export interface ParamsResponse {

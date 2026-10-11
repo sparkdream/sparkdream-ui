@@ -12,7 +12,7 @@ export type ErrorKind =
   | "offline" // node unreachable: network failure, timeout, gateway error
   | "not-found" // 404: the record genuinely isn't there
   | "unavailable" // 501 / missing archive endpoint: this node doesn't serve it
-  | "removed" // 451: the content gateway withholds this record on this site
+  | "removed" // 451: an upstream proxy withholds this record. Scanner removals are client-side (lib/contentScan)
   | "rejected" // 4xx: the request itself was refused
   | "server" // 5xx from the node's own app layer
   | "unknown";
@@ -68,8 +68,10 @@ export function errorKind(err: unknown): ErrorKind {
 
 /**
  * True when the endpoint or record simply isn't served, so an empty view is the
- * honest answer. A gateway removal (451) is deliberately not a miss: callers
- * would render it as "doesn't exist", so it falls through to ErrorState.
+ * honest answer. A 451 from a filtering proxy someone puts in front of the node
+ * is deliberately not a miss: callers would render it as "doesn't exist", so it
+ * falls through to ErrorState. (This UI's own removals come from scanner
+ * verdicts, docs/content-scanning.md §10, and never reach here.)
  */
 export function isMissingEndpoint(err: unknown): boolean {
   const kind = errorKind(err);
@@ -178,4 +180,172 @@ export function describeError(err: unknown, fallback?: string): ErrorDescription
     return { kind, title: base.title, message: base.message, detail: truncate(raw) };
   }
   return { kind, title: base.title, message: truncate(raw) };
+}
+
+// ── Transaction failures ─────────────────────────────────────────────
+//
+// A rejected tx reaches the UI as an Error whose message is one of:
+//   - CheckTx (cosmjs BroadcastTxError):
+//     "Broadcasting transaction failed with code 1232 (codespace: blog). Log: …"
+//   - DeliverTx (WalletContext): "Transaction failed: failed to execute
+//     message; message index: 0: <wrapped reason>: <registered message>"
+//   - the anonymous (shield) path: the raw log on its own.
+// Only the first carries the numeric code, so each entry also matches the
+// error's registered message, which the chain appends to every wrap.
+
+interface TxErrorEntry {
+  codespace: string;
+  code: number;
+  /** The chain's registered error message (errors.Register). */
+  registered: string;
+  /** Readable copy. Receives the wrapped reason (text before the registered
+   *  message), if any, and the caller's options. */
+  describe: (reason: string, opts: TxErrorOptions) => string;
+}
+
+export interface TxErrorOptions {
+  /** DREAM ticker for this chain (useDreamDenom), for bond amounts. */
+  dreamDenom?: string;
+}
+
+// Integer micro-units to a display amount, without importing lib/utils
+// (which would make this module's import graph heavier for every reader).
+function microToDisplay(raw: string): string {
+  try {
+    const n = BigInt(raw);
+    const whole = n / BigInt(1_000_000);
+    const frac = (n % BigInt(1_000_000)).toString().padStart(6, "0").replace(/0+$/, "");
+    return frac ? `${whole.toLocaleString()}.${frac}` : whole.toLocaleString();
+  } catch {
+    return raw;
+  }
+}
+
+// Reasons CheckMediaPermitted (x/common/types/media_labels.go) wraps into
+// ErrMediaNotPermitted, turned into author-facing copy.
+function describeMediaReason(reason: string, opts: TxErrorOptions): string {
+  if (/anonymous content cannot carry media/i.test(reason)) {
+    return "Anonymous posts can't carry media. Post it under your own name, or remove the media.";
+  }
+  if (/only active members can post media/i.test(reason)) {
+    return "Only active members can post media.";
+  }
+  const m = reason.match(/media needs trust level (\d+)(?: or an author bond of at least (\d+))?/i);
+  if (m) {
+    const bond = m[2] ? `, or an author bond of at least ${microToDisplay(m[2])} ${opts.dreamDenom || "DREAM"} when you create it` : "";
+    return `Posting media needs trust level ${m[1]} or higher${bond}.`;
+  }
+  return "You can't post media yet. It needs a higher trust level or an author bond.";
+}
+
+const TX_ERRORS: TxErrorEntry[] = [
+  {
+    codespace: "blog",
+    code: 1232,
+    registered: "media not permitted for this author",
+    describe: describeMediaReason,
+  },
+  {
+    codespace: "forum",
+    code: 2500,
+    registered: "media not permitted for this author",
+    describe: describeMediaReason,
+  },
+  {
+    codespace: "collect",
+    code: 1271,
+    registered: "data URIs are not allowed in collect fields",
+    describe: () =>
+      "Data URIs aren't allowed in collections. Link to the file where it's hosted instead of embedding it.",
+  },
+  {
+    codespace: "service",
+    code: 45,
+    registered: "invalid checkpoint",
+    describe: (reason) =>
+      `The checkpoint was rejected${reason ? `: ${reason}` : ""}. Its height must be above the previous checkpoint and not past the current block, and its root must be 32 bytes.`,
+  },
+  {
+    codespace: "service",
+    code: 46,
+    registered: "checkpoint not found",
+    describe: () => "This operator hasn't submitted a checkpoint yet.",
+  },
+  {
+    codespace: "rep",
+    code: 1112,
+    registered: "recipient has reached their transfer receive limit",
+    describe: () => "The recipient can't receive more DREAM this epoch or season. Try again later.",
+  },
+  {
+    codespace: "rep",
+    code: 1113,
+    registered: "exceeds initiative bounty limit",
+    describe: () =>
+      "This would go past a bounty limit: the initiative's cap, your funding allowance this epoch, or the number of contributions.",
+  },
+  // x/artifact (x/artifact/types/errors.go). Only codes whose registered
+  // message is distinctive enough to match by text are listed.
+  ...([
+    [1106, "creator is not a member at the required trust level nor a council body", "Creating a class needs a member at the required trust level, or a council."],
+    [1107, "maximum classes per creator reached", "You've reached the maximum number of classes one creator can make."],
+    [1109, "max supply exceeded", "This would mint past the class's max supply."],
+    [1110, "max supply can only be lowered", "Max supply can only be lowered, never raised or removed."],
+    [1111, "minting is closed for this class", "Minting is closed for this class."],
+    [1112, "public mint is not open", "Public minting isn't open for this class right now."],
+    [1113, "per-address public mint limit reached", "You've reached this class's public mint limit."],
+    [1114, "current price exceeds max price", "The mint price went up. Check the new price and try again."],
+    [1116, "class is not transferable", "Tokens in this class can't be transferred or sold."],
+    [1117, "token is locked", "This token is listed or waiting on a transfer. Delist it or cancel the transfer first."],
+    [1121, "recipient inbox is full", "The recipient's inbox is full. Try again later."],
+    [1123, "listing expired", "This listing has expired."],
+    [1124, "listing price or nonce changed", "The listing changed since you loaded it. Reload and check the new terms."],
+    [1125, "metadata hash mismatch", "The token's metadata changed since you loaded it. Reload and review it again."],
+    [1126, "market is disabled", "The market is turned off right now."],
+    [1128, "royalty can only be lowered", "The royalty can only be lowered."],
+    [1130, "DREAM is not accepted", "Prices must be in SPARK, not DREAM."],
+    [1132, "data URIs are not allowed", "Data URIs aren't allowed. Link to the file where it's hosted instead."],
+    [1133, "content license must be accepted", "You need to dedicate the content to the public domain (CC0) first."],
+    [1134, "content is hidden", "This content is hidden by moderation, so that action isn't allowed."],
+    [1135, "class still has live or reserved tokens", "A class can only be deleted once it has no live or pending tokens."],
+    [1136, "class does not let the issuer burn tokens", "This class doesn't let the issuer revoke tokens."],
+    [1141, "target already has an open hide record", "This is already hidden."],
+    [1142, "sentinel daily hide limit reached", "You've reached today's hide limit."],
+    [1143, "signer may not appeal this hide", "Only the token holder or class owner can appeal this hide."],
+    [1144, "appeal is not possible in the current state", "This hide can't be appealed or unhidden in its current state."],
+    [1150, "class does not let the holder burn tokens", "Only the issuer can remove tokens of this class."],
+    [1151, "invalid royalty split", "Royalty shares must name 1 to 10 different addresses with weights adding up to 100%."],
+  ] as const).map(
+    ([code, registered, copy]): TxErrorEntry => ({
+      codespace: "artifact",
+      code,
+      registered,
+      describe: () => copy,
+    })
+  ),
+];
+
+/**
+ * Readable copy for a failed transaction when the chain error is one we know,
+ * otherwise the original message. Safe to call on any thrown value.
+ */
+export function describeTxError(err: unknown, opts: TxErrorOptions = {}): string {
+  const raw = errorMessage(err);
+  if (!raw) return raw;
+
+  const coded = raw.match(/code (\d+) \(codespace: ([a-z0-9_-]+)\)/i);
+  for (const e of TX_ERRORS) {
+    const byCode = coded && Number(coded[1]) === e.code && coded[2] === e.codespace;
+    const at = raw.toLowerCase().lastIndexOf(e.registered.toLowerCase());
+    if (!byCode && at < 0) continue;
+    // The wrapped reason sits between the last "message index: N:" preamble
+    // (or "Log:") and the registered message.
+    let reason = at >= 0 ? raw.slice(0, at) : raw;
+    reason = reason
+      .replace(/^[\s\S]*(?:message index: \d+:|Log:)/i, "")
+      .replace(/:\s*$/, "")
+      .trim();
+    return e.describe(reason, opts);
+  }
+  return raw;
 }

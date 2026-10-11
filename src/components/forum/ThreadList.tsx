@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import { timeAgo, formatSpark } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
+import ScannedText from "@/components/content/ScannedText";
 import { useWallet } from "@/contexts/WalletContext";
 import type { ForumPost, PostFlag } from "@/types/forum";
 import { PostStatus, PostStatusValue, POST_STATUS_LABELS } from "@/types/forum";
@@ -336,9 +337,8 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
         <div className="space-y-2">
           {visible.map((post) => {
             const votes = (parseInt(post.upvote_count || "0", 10)) - (parseInt(post.downvote_count || "0", 10));
-            const contentPreview = post.content?.length > 120
-              ? post.content.slice(0, 120) + "..."
-              : post.content;
+            const preview = (text: string) =>
+              (text.length > 120 ? text.slice(0, 120) + "..." : text) || `Thread #${post.post_id}`;
 
             return (
               <button
@@ -349,9 +349,21 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="truncate font-medium text-zinc-100">
-                        {contentPreview || `Thread #${post.post_id}`}
-                      </span>
+                      <ScannedText
+                        input={{
+                          kind: "forum-post",
+                          id: post.post_id,
+                          body: post.content,
+                          media_flags: post.media_flags,
+                          body_hash: post.body_hash,
+                          author: post.author,
+                        }}
+                        noun="spark"
+                        compact
+                        format={preview}
+                        className="truncate font-medium text-zinc-100"
+                        noticeClassName="truncate text-sm"
+                      />
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
                       <NameOrAddress address={post.author} />

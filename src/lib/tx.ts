@@ -148,6 +148,12 @@ export const RepMsgTypeUrls = {
   // params.review_bounty_reclaim_delay blocks AND no verdict filed yet.
   FundReviewBounty: "/sparkdream.rep.v1.MsgFundReviewBounty",
   ReclaimReviewBounty: "/sparkdream.rep.v1.MsgReclaimReviewBounty",
+  // Initiative bounties (chain commit b9da52e): DREAM escrowed against an
+  // OPEN or ASSIGNED initiative by a non-affiliated member, paid to the
+  // assignee on completion and refunded on close/reject. Reclaim only while
+  // the initiative is OPEN and after params.initiative_bounty_reclaim_delay.
+  FundInitiativeBounty: "/sparkdream.rep.v1.MsgFundInitiativeBounty",
+  ReclaimInitiativeBounty: "/sparkdream.rep.v1.MsgReclaimInitiativeBounty",
   // Content challenges against author-bonded posts/replies (distinct from the
   // member challenge flow above).
   ChallengeContent: "/sparkdream.rep.v1.MsgChallengeContent",
@@ -375,6 +381,44 @@ export const FederationMsgTypeUrls = {
   // Phase 2 of an identity link, signed by the holder of the CLAIMED address
   // on this chain. Signing it is the proof of key ownership.
   ConfirmIdentityLink: "/sparkdream.federation.v1.MsgConfirmIdentityLink",
+} as const;
+
+// Artifact (x/artifact NFT) message type URLs. Build values with camelCase
+// fields per the sparkdreamjs TS types, every uint64/int64 as BigInt and every
+// enum as its int (xxxFromJSON). MsgUpdateParams and MsgUpdateOperationalParams
+// are council-only and have no member UI.
+export const ArtifactMsgTypeUrls = {
+  CreateClass: "/sparkdream.artifact.v1.MsgCreateClass",
+  UpdateClass: "/sparkdream.artifact.v1.MsgUpdateClass",
+  FreezeClassMetadata: "/sparkdream.artifact.v1.MsgFreezeClassMetadata",
+  SetMintPolicy: "/sparkdream.artifact.v1.MsgSetMintPolicy",
+  SetMinters: "/sparkdream.artifact.v1.MsgSetMinters",
+  SetMaxSupply: "/sparkdream.artifact.v1.MsgSetMaxSupply",
+  CloseMinting: "/sparkdream.artifact.v1.MsgCloseMinting",
+  ProposeClassOwner: "/sparkdream.artifact.v1.MsgProposeClassOwner",
+  AcceptClassOwner: "/sparkdream.artifact.v1.MsgAcceptClassOwner",
+  CancelClassOwner: "/sparkdream.artifact.v1.MsgCancelClassOwner",
+  DeleteClass: "/sparkdream.artifact.v1.MsgDeleteClass",
+  Mint: "/sparkdream.artifact.v1.MsgMint",
+  PublicMint: "/sparkdream.artifact.v1.MsgPublicMint",
+  Transfer: "/sparkdream.artifact.v1.MsgTransfer",
+  AcceptIncoming: "/sparkdream.artifact.v1.MsgAcceptIncoming",
+  RejectIncoming: "/sparkdream.artifact.v1.MsgRejectIncoming",
+  CancelOutgoing: "/sparkdream.artifact.v1.MsgCancelOutgoing",
+  SetReceivePolicy: "/sparkdream.artifact.v1.MsgSetReceivePolicy",
+  Burn: "/sparkdream.artifact.v1.MsgBurn",
+  Revoke: "/sparkdream.artifact.v1.MsgRevoke",
+  UpdateToken: "/sparkdream.artifact.v1.MsgUpdateToken",
+  FreezeTokenMetadata: "/sparkdream.artifact.v1.MsgFreezeTokenMetadata",
+  List: "/sparkdream.artifact.v1.MsgList",
+  UpdateListing: "/sparkdream.artifact.v1.MsgUpdateListing",
+  Delist: "/sparkdream.artifact.v1.MsgDelist",
+  Buy: "/sparkdream.artifact.v1.MsgBuy",
+  HideContent: "/sparkdream.artifact.v1.MsgHideContent",
+  UnhideContent: "/sparkdream.artifact.v1.MsgUnhideContent",
+  AppealHide: "/sparkdream.artifact.v1.MsgAppealHide",
+  UpdateParams: "/sparkdream.artifact.v1.MsgUpdateParams",
+  UpdateOperationalParams: "/sparkdream.artifact.v1.MsgUpdateOperationalParams",
 } as const;
 
 // Build a blog message for signing.

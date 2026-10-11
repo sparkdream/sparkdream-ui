@@ -16,6 +16,10 @@ import { useDreamDenom } from "@/hooks/useDreamDenom";
 import AnonymousToggle from "@/components/AnonymousToggle";
 import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
+import MediaWriteNotice from "@/components/MediaWriteNotice";
+import { useMediaGate } from "@/hooks/useMediaGate";
+import { labelBody } from "@/lib/mediaLabels";
+import { describeTxError } from "@/lib/errors";
 
 interface ReplyFormProps {
   postId: string;
@@ -69,6 +73,18 @@ export default function ReplyForm({
   const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
 
   const isEditing = !!editReplyId;
+  // Media rules (docs/content-scanning.md §9): the chain labels the trimmed
+  // body as sent; only a new reply can carry the author bond that lets a
+  // member below the trust bar post media.
+  const mediaFlags = labelBody(contentType, body.trim());
+  const mediaGate = useMediaGate({
+    module: "blog",
+    flags: mediaFlags,
+    address,
+    anonymous: !isEditing && anonymous,
+    authorBond: isMember === true ? parseDreamToUdream(authorBond) : null,
+    bondAllowed: !isEditing,
+  });
   // The post author may always reply within their own thread, so they skip the
   // membership / trust gates below (the chain allows creator self-replies,
   // subject only to moderation + rate limits).
@@ -113,6 +129,10 @@ export default function ReplyForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!connected || !body.trim()) return;
+    if (mediaGate.blockReason) {
+      setError(mediaGate.blockReason);
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
@@ -180,7 +200,7 @@ export default function ReplyForm({
       setBody("");
       onSubmitted?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : isEditing ? "Failed to update reply" : "Failed to submit reply");
+      setError(describeTxError(err, { dreamDenom: dream }) || (isEditing ? "Failed to update reply" : "Failed to submit reply"));
     } finally {
       setSubmitting(false);
     }
@@ -252,7 +272,7 @@ export default function ReplyForm({
         className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-3 text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
       />
 
-      {(showOptions || isEditing) && (
+      {(showOptions || isEditing || mediaGate.needsBond) && (
         <div className="flex items-center gap-3">
           <select
             value={contentType}
@@ -292,6 +312,8 @@ export default function ReplyForm({
         />
       )}
 
+      <MediaWriteNotice flags={mediaFlags} gate={mediaGate} noun="reply" />
+
       {error && <p className="text-xs text-red-400">{error}</p>}
 
       <ContentLicenseNotice what="Your reply" />
@@ -317,7 +339,7 @@ export default function ReplyForm({
           )}
           <button
             type="submit"
-            disabled={submitting || !body.trim()}
+            disabled={submitting || !body.trim() || !!mediaGate.blockReason}
             className={
               variant === "spark"
                 ? "sd-btn-ember px-4 py-1.5"

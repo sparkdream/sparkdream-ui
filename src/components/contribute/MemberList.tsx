@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { listRepMembers, membersByTrustLevel } from "@/lib/api";
 import NameOrAddress from "@/components/NameOrAddress";
+import { licenseLabel } from "@/lib/contentLicense";
 import type { RepMember } from "@/types/rep";
 import { TRUST_LEVEL_LABELS, MEMBER_STATUS_LABELS, MemberStatus, TrustLevel } from "@/types/rep";
 import ErrorState from "@/components/ErrorState";
@@ -204,6 +205,12 @@ export default function MemberList() {
                       <dt className="text-xs text-zinc-500">Interims</dt>
                       <dd className="text-zinc-300">{m.completed_interims_count}</dd>
                     </div>
+                    {m.content_license && (
+                      <div>
+                        <dt className="text-xs text-zinc-500">Content license</dt>
+                        <dd className="text-zinc-300">{licenseLabel(m.content_license)}</dd>
+                      </div>
+                    )}
                     {m.invited_by && (
                       <div>
                         <dt className="text-xs text-zinc-500">Invited by</dt>

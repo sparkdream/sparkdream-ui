@@ -8,6 +8,8 @@ import {
 import { defaults } from "@/lib/chain";
 import { buildRssFeed, type FeedItem } from "@/lib/rss";
 import { PostStatus } from "@/types/blog";
+import { serverRecordVerdict } from "@/lib/contentScan/feedIndex";
+import { base64HashToHex, mediaFlags } from "@/lib/contentScan/protocol";
 
 export const dynamic = "force-dynamic";
 // 60s edge cache so feed readers polling every minute don't hammer the LCD.
@@ -34,13 +36,21 @@ export async function GET(request: NextRequest) {
 
   const items: FeedItem[] = [];
 
-  for (const p of postsRes?.post || []) {
+  // Scanner verdicts (docs/content-scanning.md §6): a removed or held dream
+  // stays out of the feed. A media-labelled body is withheld by the chain
+  // (""), and the feed never fetches it, so those items carry no description.
+  const posts = postsRes?.post || [];
+  const verdicts = await Promise.all(
+    posts.map((p) => serverRecordVerdict(`blog/post/${p.id}`, base64HashToHex(p.body_hash) || undefined))
+  );
+  for (const [i, p] of posts.entries()) {
     if (p.status === PostStatus.DELETED || p.status === PostStatus.HIDDEN) continue;
+    if (verdicts[i] === "removed" || verdicts[i] === "held") continue;
     items.push({
       id: `sparkdream:post:${p.id}`,
       title: p.title || `Dream #${p.id}`,
       link: `${origin}/imaginarium/${p.id}`,
-      description: truncate(p.body || "", 600),
+      description: mediaFlags(p.media_flags) ? "" : truncate(p.body || "", 600),
       pubDate: p.created_at,
       author: p.creator,
       categories: ["Imaginarium", ...(p.tags || [])],

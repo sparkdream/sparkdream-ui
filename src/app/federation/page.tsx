@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { fediversePreview } from "@/lib/fediverse";
+import { useScannedBody } from "@/hooks/useScannedBody";
+import { noticeText } from "@/components/content/ContentNotice";
 import Link from "next/link";
 import {
   ContentPageLayout,
@@ -1913,11 +1915,18 @@ function QueueItem({
   showStatus?: boolean;
 }) {
   const who = c.creator_name || c.creator_identity;
+  // Scanner display policy: the body is withheld when labelled as media and
+  // shown only once cleared and hash-checked; removed or held hides it all.
+  const scanned = useScannedBody({ kind: "federated", id: c.id, body: c.body, media_flags: c.media_flags });
+  const bodyPreview =
+    scanned.status === "show" ? fediversePreview(scanned.text) : noticeText(scanned.status, scanned.reason, "post").title;
   // Moderation-hidden content keeps its text in state; don't preview it.
   const preview =
     c.status === FederatedContentStatus.HIDDEN
       ? "Hidden by moderation"
-      : fediversePreview(c.title) || fediversePreview(c.body) || "(untitled)";
+      : scanned.status === "removed" || scanned.status === "held"
+        ? bodyPreview
+        : fediversePreview(c.title) || bodyPreview || "(untitled)";
   return (
     <div className="sd-fed-queue-item">
       <div className="src-line" title={`${c.peer_id} · ${who}`}>

@@ -7,6 +7,7 @@ import { getPost, listReplies, getReactionCounts } from "@/lib/api";
 import type { Post, Reply, ReactionCounts } from "@/types/blog";
 import CopyableAddress from "@/components/CopyableAddress";
 import { formatTime } from "@/lib/utils";
+import ScannedText from "@/components/content/ScannedText";
 
 export default function ArchivePostPage({
   params,
@@ -73,7 +74,11 @@ export default function ArchivePostPage({
               <span>edited {formatTime(post.updated_at)}</span>
             )}
           </div>
-          <div className="whitespace-pre-wrap text-sm leading-relaxed">{post.body}</div>
+          <ScannedText
+            input={{ kind: "blog-post", id: post.id, body: post.body, media_flags: post.media_flags, body_hash: post.body_hash }}
+            noun="dream"
+            className="whitespace-pre-wrap text-sm leading-relaxed"
+          />
           {counts && (
             <div className="flex gap-4 text-xs opacity-70">
               <span>👍 {counts.like_count}</span>
@@ -95,7 +100,11 @@ export default function ArchivePostPage({
                   <CopyableAddress address={r.creator} />
                   {r.created_at && <span>{formatTime(r.created_at)}</span>}
                 </div>
-                <div className="whitespace-pre-wrap">{r.body}</div>
+                <ScannedText
+                  input={{ kind: "blog-reply", id: r.id, body: r.body, media_flags: r.media_flags, body_hash: r.body_hash }}
+                  noun="reply"
+                  className="whitespace-pre-wrap"
+                />
               </li>
             ))}
           </ul>

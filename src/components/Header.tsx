@@ -61,6 +61,17 @@ const PUBLISH_GROUP: NavGroup = {
       ),
     },
     {
+      href: "/artifacts",
+      label: "Artifacts",
+      desc: "Mint, hold and trade onchain tokens",
+      icon: (
+        <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M6 3h12l3 6-9 12L3 9l3-6z" />
+          <path d="M3 9h18M12 21 8.5 9 12 3l3.5 6L12 21" />
+        </svg>
+      ),
+    },
+    {
       href: "/license",
       label: "Public domain (CC0)",
       desc: "Everything published here is free for anyone to reuse",

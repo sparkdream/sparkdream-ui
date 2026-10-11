@@ -210,6 +210,11 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "maxPromotionsPerBlock", apiKey: "max_promotions_per_block", label: "Max Promotions Per Block", kind: "number" },
       { key: "makePermanentMinTrustLevel", apiKey: "make_permanent_min_trust_level", label: "Make Permanent Min Trust Level", kind: "number" },
       { key: "maxMakePermanentPerDay", apiKey: "max_make_permanent_per_day", label: "Max Make Permanent Per Day", kind: "number" },
+      // Media rules (chain docs/content-scanning.md §9): apply only to writes
+      // the chain labels as media.
+      { group: "Media", key: "mediaMinTrustLevel", apiKey: "media_min_trust_level", label: "Media Min Trust Level", kind: "number", hint: "Trust level (0-4) needed to post media without a bond" },
+      { group: "Media", key: "mediaAuthorBondMin", apiKey: "media_author_bond_min", label: "Media Author Bond Min", kind: "dream", hint: "Author bond that lets a member below the trust level post media; 0 disables the bond path" },
+      { group: "Media", key: "mediaScanFee", apiKey: "media_scan_fee", label: "Media Scan Fee", kind: "amount", hint: "Flat fee, burned, on every write labelled as media; 0 disables it" },
     ],
   },
   session: {
@@ -338,6 +343,11 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "Accepted-Reply Curation", key: "curationDreamReward", apiKey: "curation_dream_reward", label: "Curation Reward", kind: "dream", hint: "DREAM minted to a sentinel when their accepted-reply proposal is confirmed. <= 0 disables the reward" },
       { group: "Accepted-Reply Curation", key: "acceptProposalTimeout", apiKey: "accept_proposal_timeout", label: "Accept Proposal Timeout (seconds)", kind: "bigint", hint: "Seconds before a pending sentinel proposal auto-confirms if the author doesn't act. Must be positive (default 48h)" },
       { group: "Accepted-Reply Curation", key: "maxAcceptProposalsPerSentinelPerThread", apiKey: "max_accept_proposals_per_sentinel_per_thread", label: "Max Proposals / Sentinel / Thread", kind: "number", hint: "Caps accepted-reply proposals one sentinel may make on a thread (confirmed + rejected). 0 = no cap (default 2)" },
+      // Media rules (chain docs/content-scanning.md §9): apply only to writes
+      // the chain labels as media.
+      { group: "Media", key: "mediaMinTrustLevel", apiKey: "media_min_trust_level", label: "Media Min Trust Level", kind: "number", hint: "Trust level (0-4) needed to post media without a bond" },
+      { group: "Media", key: "mediaAuthorBondMin", apiKey: "media_author_bond_min", label: "Media Author Bond Min", kind: "dream", hint: "Author bond that lets a member below the trust level post media; 0 disables the bond path" },
+      { group: "Media", key: "mediaScanFee", apiKey: "media_scan_fee", label: "Media Scan Fee", kind: "amount", hint: "Flat fee, burned, on every write labelled as media; 0 disables it" },
     ],
   },
   futarchy: {
@@ -571,10 +581,10 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "Sentinel & Hiding", key: "sentinelUnhideWindowBlocks", apiKey: "sentinel_unhide_window_blocks", label: "Sentinel Unhide Window (blocks)", kind: "bigint", hint: "Must be below Hide Expiry" },
       { group: "Sentinel & Hiding", key: "maxHidesPerSentinelPerDay", apiKey: "max_hides_per_sentinel_per_day", label: "Max Hides / Sentinel / Day", kind: "number" },
 
-      // Appeals
-      { group: "Appeals", key: "appealFee", apiKey: "appeal_fee", label: "Appeal Fee", kind: "amount" },
+      // Appeals. appeal_fee and appeal_deadline_blocks were removed in chain
+      // commit 0a25eaf: hide appeals are x/rep moderation appeals, with rep's
+      // fixed bond and deadline.
       { group: "Appeals", key: "appealCooldownBlocks", apiKey: "appeal_cooldown_blocks", label: "Appeal Cooldown (blocks)", kind: "bigint" },
-      { group: "Appeals", key: "appealDeadlineBlocks", apiKey: "appeal_deadline_blocks", label: "Appeal Deadline (blocks)", kind: "bigint" },
 
       // Endorsements
       { group: "Endorsements", key: "endorsementCreationFee", apiKey: "endorsement_creation_fee", label: "Endorsement Creation Fee", kind: "amount" },
@@ -727,10 +737,12 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "maxOpsPerBatch", apiKey: "max_ops_per_batch", label: "Max Ops Per Batch", kind: "number" },
       { key: "tleMissWindow", apiKey: "tle_miss_window", label: "TLE Miss Window", kind: "bigint" },
       { key: "tleMissTolerance", apiKey: "tle_miss_tolerance", label: "TLE Miss Tolerance", kind: "bigint" },
-      { key: "tleJailDuration", apiKey: "tle_jail_duration", label: "TLE Jail Duration (blocks)", kind: "bigint" },
+      { key: "tleJailDuration", apiKey: "tle_jail_duration", label: "TLE Jail Duration (seconds)", kind: "bigint" },
       { key: "minTleValidators", apiKey: "min_tle_validators", label: "Min TLE Validators", kind: "number" },
       { key: "dkgWindowBlocks", apiKey: "dkg_window_blocks", label: "DKG Window (blocks)", kind: "bigint" },
       { key: "maxValidatorSetDrift", apiKey: "max_validator_set_drift", label: "Max Validator Set Drift", kind: "number" },
+      // Chain commit df97a76: ceiling on the fee the module pays per shielded exec.
+      { key: "maxFeePerExec", apiKey: "max_fee_per_exec", label: "Max Fee Per Exec", kind: "amount", hint: "Largest bond-denom fee the shield module pays for one MsgShieldedExec" },
     ],
   },
   rep: {
@@ -762,8 +774,13 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "DREAM Economics", key: "unstakedDecayRate", apiKey: "unstaked_decay_rate", label: "Unstaked Decay Rate (per epoch)", kind: "dec", hint: "0.002 ≈ 0.2% per epoch (~73% annualized)" },
       { group: "DREAM Economics", key: "transferTaxRate", apiKey: "transfer_tax_rate", label: "Transfer Tax Rate", kind: "dec" },
       { group: "DREAM Economics", key: "maxTipAmount", apiKey: "max_tip_amount", label: "Max Tip Amount", kind: "dream" },
-      { group: "DREAM Economics", key: "maxTipsPerEpoch", apiKey: "max_tips_per_epoch", label: "Max Tips Per Epoch", kind: "number" },
-      { group: "DREAM Economics", key: "maxGiftAmount", apiKey: "max_gift_amount", label: "Max Gift Amount", kind: "dream" },
+      // Chain commit b9da52e: tips capped by amount per sender (was a count),
+      // gifts by a lifetime total per invitee (was per gift + per epoch + a
+      // cooldown), and a recipient-side cap on tips + initiative bounty payouts.
+      { group: "DREAM Economics", key: "maxTipsSentPerEpoch", apiKey: "max_tips_sent_per_epoch", label: "Max Tips Sent / Epoch", kind: "dream", hint: "Total DREAM one sender may tip per epoch" },
+      { group: "DREAM Economics", key: "maxGiftPerInvitee", apiKey: "max_gift_per_invitee", label: "Max Gift / Invitee", kind: "dream", hint: "Lifetime total a sender may gift each of their own invitees" },
+      { group: "DREAM Economics", key: "maxTransferReceivedPerEpoch", apiKey: "max_transfer_received_per_epoch", label: "Max Transfer Received / Epoch", kind: "dream", hint: "DREAM one member may take in through tips and initiative bounty payouts per epoch. Gifts excluded" },
+      { group: "DREAM Economics", key: "maxTransferReceivedPerSeason", apiKey: "max_transfer_received_per_season", label: "Max Transfer Received / Season", kind: "dream", hint: "Season-scale counterpart of the epoch receive cap" },
       { group: "DREAM Economics", key: "giftOnlyToInvitees", apiKey: "gift_only_to_invitees", label: "Gift Only To Invitees", kind: "boolean" },
 
       // Initiative rewards
@@ -863,10 +880,6 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "Extended Staking", key: "allowSelfMemberStake", apiKey: "allow_self_member_stake", label: "Allow Self Member Stake", kind: "boolean" },
       { group: "Extended Staking", key: "maxInitiativeStakePerMember", apiKey: "max_initiative_stake_per_member", label: "Max Initiative Stake / Member", kind: "dream", hint: "Anti-whale cap on single-initiative stake" },
       { group: "Extended Staking", key: "minStakeAmount", apiKey: "min_stake_amount", label: "Min Stake Amount", kind: "dream", hint: "Anti-dust floor on every stake; below it an epoch's yield truncates to zero" },
-
-      // Gifts
-      { group: "Gifts", key: "giftCooldownBlocks", apiKey: "gift_cooldown_blocks", label: "Gift Cooldown (blocks)", kind: "bigint" },
-      { group: "Gifts", key: "maxGiftsPerSenderEpoch", apiKey: "max_gifts_per_sender_epoch", label: "Max Gifts / Sender / Epoch", kind: "dream" },
 
       // Content conviction staking
       { group: "Content Conviction", key: "contentConvictionHalfLifeEpochs", apiKey: "content_conviction_half_life_epochs", label: "Content Conviction Half-Life (epochs)", kind: "bigint" },
@@ -993,6 +1006,14 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "Initiative Review", key: "reviewFeeRate", apiKey: "review_fee_rate", label: "Review Fee Rate", kind: "dec", hint: "Fraction of the budget split across the round's reviewers, paid per verdict filed" },
       { group: "Initiative Review", key: "maxReviewRounds", apiKey: "max_review_rounds", label: "Max Review Rounds", kind: "number", hint: "Rounds before a rejection is terminal" },
       { group: "Initiative Review", key: "reviewBountyReclaimDelay", apiKey: "review_bounty_reclaim_delay", label: "Review Bounty Reclaim Delay (blocks)", kind: "bigint" },
+      // Initiative bounties (chain commit b9da52e): DREAM escrowed for the
+      // assignee, paid on completion. Distinct from the review bounty above.
+      { group: "Initiative Bounties", key: "initiativeBountyMaxBudgetRatio", apiKey: "initiative_bounty_max_budget_ratio", label: "Initiative Bounty Max Budget Ratio", kind: "dec", hint: "Cap on an initiative's total bounty as a fraction of its budget; 0 disables funding" },
+      { group: "Initiative Bounties", key: "maxInitiativeBountyPerFunderEpoch", apiKey: "max_initiative_bounty_per_funder_epoch", label: "Max Initiative Bounty / Funder / Epoch", kind: "dream" },
+      { group: "Initiative Bounties", key: "minInitiativeBountyContribution", apiKey: "min_initiative_bounty_contribution", label: "Min Initiative Bounty Contribution", kind: "dream" },
+      { group: "Initiative Bounties", key: "maxInitiativeBountyContributions", apiKey: "max_initiative_bounty_contributions", label: "Max Initiative Bounty Contributions", kind: "number", hint: "Contributions one initiative's bounty may hold" },
+      { group: "Initiative Bounties", key: "initiativeBountyReclaimDelay", apiKey: "initiative_bounty_reclaim_delay", label: "Initiative Bounty Reclaim Delay (blocks)", kind: "bigint", hint: "Age a contribution must reach before its funder may reclaim it, while the initiative is unassigned" },
+
       { group: "Initiative Review", key: "permissionlessMinReviewBountyRate", apiKey: "permissionless_min_review_bounty_rate", label: "Permissionless Min Review Bounty Rate", kind: "dec", hint: "Fraction of budget a permissionless initiative escrows at creation, above the review threshold" },
 
       // Jury economics and timing

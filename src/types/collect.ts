@@ -35,6 +35,11 @@ export interface Collection {
   // (expires_at == 0). Lifecycle promotion is MsgMakeCollectionPermanent
   // (chain commit 681ff73).
   pinned: boolean;
+  // Media labels (docs/content-scanning.md §3.3): EXTERNAL_URI when cover_uri
+  // is set. Collect records are never withheld; clients fetch the URI only
+  // after a clean scanner verdict. uint32, JSON numbers; absent on old chains.
+  media_flags?: number;
+  media_rules_version?: number;
 }
 
 export interface KeyValuePair {
@@ -87,6 +92,10 @@ export interface CollectionItem {
   status: string;
   upvote_count: number;
   downvote_count: number;
+  // Media labels: EXTERNAL_URI when image_uri is set or the reference is a
+  // LINK or NFT. See Collection.
+  media_flags?: number;
+  media_rules_version?: number;
 }
 
 export interface Collaborator {
@@ -331,9 +340,14 @@ export interface HideRecord {
   committed_amount: string;
   reason_code: string;
   reason_text: string;
+  // For an unappealed hide: hidden_at + hide_expiry_blocks, when it is
+  // deleted if nobody appeals. Not moved by an appeal any more (chain commit
+  // 0a25eaf): x/rep owns the appealed deadline, on the GovActionAppeal.
   appeal_deadline: string;
   appealed: boolean;
   resolved: boolean;
+  // x/rep GovActionAppeal id (GOV_ACTION_TYPE_COLLECT_HIDE) once appealed.
+  appeal_id?: string;
   // Sentinel self-correct (chain commit 4ad8e38, sparkdreamjs 0.0.27). True
   // when the hiding sentinel reversed itself via MsgUnhideContent; the record
   // is resolved but the committed bond stays reserved until the original

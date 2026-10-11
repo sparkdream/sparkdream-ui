@@ -15,6 +15,14 @@ import { useDreamDenom } from "@/hooks/useDreamDenom";
 import AnonymousToggle from "@/components/AnonymousToggle";
 import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
+import MediaWriteNotice from "@/components/MediaWriteNotice";
+import { useMediaGate } from "@/hooks/useMediaGate";
+import { labelBody } from "@/lib/mediaLabels";
+import { describeTxError } from "@/lib/errors";
+
+// MsgCreatePost.content_type (sparkdream.common.v1.ContentType). The forum
+// composer always sends plain text.
+const FORUM_CONTENT_TYPE_TEXT = 1;
 
 interface CreatePostFormProps {
   mode: "thread" | "reply";
@@ -41,15 +49,31 @@ export default function CreatePostForm({
   const [content, setContent] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [authorBond, setAuthorBond] = useState("");
-  const { busy: submitting, error: submitError, clearError, run } = useTxAction();
+  const { busy: submitting, error: submitError, clearError, setError, run } = useTxAction();
   const [anonymous, setAnonymous] = useState(false);
   const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
 
   const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
   const canCreateTags = useCanCreateTags(address);
 
+  // Media rules (docs/content-scanning.md §9): a data URI in the text makes
+  // this a media write, gated on trust level or an author bond at creation.
+  const mediaFlags = labelBody(FORUM_CONTENT_TYPE_TEXT, content.trim());
+  const mediaGate = useMediaGate({
+    module: "forum",
+    flags: mediaFlags,
+    address,
+    anonymous,
+    authorBond: isMember === true ? parseDreamToUdream(authorBond) : null,
+    bondAllowed: true,
+  });
+
   const handleSubmit = async () => {
     if (!address || !content.trim()) return;
+    if (mediaGate.blockReason) {
+      setError(mediaGate.blockReason);
+      return;
+    }
     await run("submit", async () => {
       const value: Record<string, unknown> = {
         creator: address,
@@ -57,7 +81,7 @@ export default function CreatePostForm({
         content: content.trim(),
         parentId: mode === "reply" ? BigInt(parentId || "0") : BigInt(0),
         tags,
-        contentType: 1, // CONTENT_TYPE_STANDARD
+        contentType: FORUM_CONTENT_TYPE_TEXT,
       };
       // Bonds lock the member's DREAM, so gate on confirmed membership like
       // the blog ReplyForm does (a stale value typed while isMember was
@@ -87,13 +111,13 @@ export default function CreatePostForm({
       setTags([]);
       setAuthorBond("");
       onCreated();
-    }, "Failed to send spark");
+    }, (raw) => describeTxError(raw, { dreamDenom: dream }) || "Failed to send spark");
   };
 
   return (
     <div className="sd-hull-tile rounded-xl p-4">
       <h3 className="mb-3 text-sm font-semibold text-white">
-        {mode === "thread" ? "New ´spark" : "Reply"}
+        {mode === "thread" ? "New spark" : "Reply"}
       </h3>
       <div className="space-y-3">
         {showEphemeralHint && ephemeralTtl !== null && (
@@ -153,12 +177,13 @@ export default function CreatePostForm({
           label={mode === "thread" ? "Send anonymously" : "Reply anonymously"}
           note="Anonymous posts can't create new tags or carry an author bond. You can send one anonymous spark or reply per epoch (a few minutes)."
         />
+        <MediaWriteNotice flags={mediaFlags} gate={mediaGate} noun={mode === "thread" ? "spark" : "reply"} />
         <ContentLicenseNotice what="Your post" />
         <ActionBanner message={submitError} onDismiss={clearError} />
         <div className="flex gap-2">
           <button
             onClick={handleSubmit}
-            disabled={!content.trim() || submitting}
+            disabled={!content.trim() || submitting || !!mediaGate.blockReason}
             className="sd-btn-ember px-4 py-2"
           >
             {anonPhase

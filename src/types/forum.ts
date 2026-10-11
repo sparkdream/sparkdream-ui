@@ -34,6 +34,13 @@ export interface ForumPost {
   // ephemeral or made permanent via author admission (chain v1.0.12).
   promoted_by: string;
   promoted_at: string;
+  // Media labels (docs/content-scanning.md §3.3), chain-computed. When
+  // media_flags != 0, content is "" here and comes from post_content.
+  /** OR of MediaFlag bits (uint32, a JSON number). */
+  media_flags?: number;
+  media_rules_version?: number;
+  /** sha256 of content as stored; bytes, base64 in LCD JSON. */
+  body_hash?: string;
 }
 
 export interface ThreadMetadata {
@@ -338,6 +345,12 @@ export const GovActionType = {
   THREAD_MOVE: "GOV_ACTION_TYPE_THREAD_MOVE",
   REPLY_PIN: "GOV_ACTION_TYPE_REPLY_PIN",
   POST_HIDE: "GOV_ACTION_TYPE_POST_HIDE",
+  REVIEW_REJECTION: "GOV_ACTION_TYPE_REVIEW_REJECTION",
+  // Module-owned appeal types (chain commit 0a25eaf): filed only through the
+  // owning module's MsgAppealHide; x/rep's MsgAppealGovAction rejects them.
+  // action_target is that module's HideRecord id.
+  COLLECT_HIDE: "GOV_ACTION_TYPE_COLLECT_HIDE",
+  ARTIFACT_HIDE: "GOV_ACTION_TYPE_ARTIFACT_HIDE",
 } as const;
 
 export const GOV_ACTION_TYPE_LABELS: Record<string, string> = {
@@ -350,6 +363,9 @@ export const GOV_ACTION_TYPE_LABELS: Record<string, string> = {
   [GovActionType.THREAD_MOVE]: "Thread Move",
   [GovActionType.REPLY_PIN]: "Reply Pin",
   [GovActionType.POST_HIDE]: "Spark Hide",
+  [GovActionType.REVIEW_REJECTION]: "Review rejection",
+  [GovActionType.COLLECT_HIDE]: "Collection hide",
+  [GovActionType.ARTIFACT_HIDE]: "Artifact hide",
 };
 
 export const GovAppealStatus = {
@@ -578,6 +594,14 @@ export interface ForumParams {
   // propose there again, disarming the re-propose harassment loop. Per-sentinel,
   // not thread-global. 0 disables the cap. Defaults to 2.
   max_accept_proposals_per_sentinel_per_thread: number;
+  // Media rules (chain commit 246bf2b, docs/content-scanning.md §9), same
+  // semantics as the blog params of the same names. Optional: absent on
+  // chains before content scanning, and proto3 JSON omits a zero trust level.
+  media_min_trust_level?: number;
+  /** micro-DREAM math.Int; "0" disables the bond path. */
+  media_author_bond_min?: string;
+  /** bond-denom (uspark) math.Int, burned on every media write. */
+  media_scan_fee?: string;
 }
 
 export interface ForumParamsResponse {

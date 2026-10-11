@@ -28,6 +28,7 @@ import { PostStatus } from "@/types/forum";
 import type { ForumPost } from "@/types/forum";
 import type { Category } from "@/types/commons";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import ScannedText from "@/components/content/ScannedText";
 
 type View =
   | "all-threads"
@@ -679,9 +680,8 @@ function TrendingSparksCard({ sparks, onSelect }: { sparks: ForumPost[]; onSelec
         </div>
       )}
       {sparks.map((p, i) => {
-        const preview = (p.content || "").length > 48
-          ? (p.content || "").slice(0, 48) + "…"
-          : (p.content || `Spark #${p.post_id}`);
+        const preview = (text: string) =>
+          text.length > 48 ? text.slice(0, 48) + "…" : text || `Spark #${p.post_id}`;
         const score = parseInt(p.upvote_count || "0", 10) - parseInt(p.downvote_count || "0", 10);
         return (
           <button
@@ -692,7 +692,22 @@ function TrendingSparksCard({ sparks, onSelect }: { sparks: ForumPost[]; onSelec
             style={{ background: "transparent", border: 0, width: "100%", textAlign: "left", cursor: "pointer" }}
           >
             <span className="num">{String(i + 1).padStart(2, "0")}</span>
-            <span className="title">{preview}</span>
+            <span className="title">
+              <ScannedText
+                input={{
+                  kind: "forum-post",
+                  id: p.post_id,
+                  body: p.content,
+                  media_flags: p.media_flags,
+                  body_hash: p.body_hash,
+                  author: p.author,
+                }}
+                noun="spark"
+                compact
+                format={preview}
+                as="span"
+              />
+            </span>
             <span className="c">{score}</span>
           </button>
         );

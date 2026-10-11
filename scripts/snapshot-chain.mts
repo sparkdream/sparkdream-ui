@@ -5,12 +5,13 @@
 //
 // Run via: npm run snapshot:capture -- --lcd <url> [--label <slug>]
 //                                       [--resume] [--force] [--out <dir>]
-//                                       [--allow-unchecked]
 //
-// Point --lcd at the content gateway. Snapshots are stored and served as-is,
-// so the script refuses any response the gateway didn't mark as checked
-// (X-Content-Policy-Version) unless --allow-unchecked is passed, e.g. for a
-// throwaway local capture straight from a node.
+// Snapshots hold LCD responses as-is. Media-labelled bodies are already
+// withheld ("") by the chain's list and show queries, and the archive views
+// render them under the same scanner display policy as live pages
+// (lib/contentScan), so no filtering proxy is needed in front of --lcd.
+// (--allow-unchecked, from the old content-gateway contract, is accepted and
+// ignored.)
 //
 // The script monkey-patches globalThis.fetch so every LCD response that api.ts
 // fetches is written to disk at the same path it would be served from in
@@ -46,8 +47,7 @@ function parseArgs(): Args {
     else if (t === "--help" || t === "-h") {
       console.log(
         "snapshot-chain --lcd <url> [--label <slug>] [--id <override>]\n" +
-          "               [--out public/archive] [--resume] [--force]\n" +
-          "               [--allow-unchecked]",
+          "               [--out public/archive] [--resume] [--force]",
       );
       exit(0);
     } else {
@@ -104,13 +104,6 @@ globalThis.fetch = async (input: any, init?: any) => {
     }
   }
   const res = await originalFetch(input, init);
-  if (!args.allowUnchecked && !res.headers.has("X-Content-Policy-Version")) {
-    console.error(
-      `Refusing to record ${lcdPath}: the response didn't come through the content gateway.\n` +
-        "Point --lcd at the gateway, or pass --allow-unchecked for a local capture.",
-    );
-    exit(1);
-  }
   if (res.ok && snapshotDir) {
     try {
       const clone = res.clone();
