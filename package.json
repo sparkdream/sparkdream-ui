@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "snapshot:capture": "tsx scripts/snapshot-chain.mts",
     "snapshot:upload": "node --env-file-if-exists=.env.local --import tsx scripts/snapshot-upload.mts",
     "snapshot:delete": "node --env-file-if-exists=.env.local --import tsx scripts/snapshot-delete.mts"

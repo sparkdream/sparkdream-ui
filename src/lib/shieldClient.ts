@@ -29,6 +29,7 @@ import {
   getTrustTree,
 } from "@/lib/api";
 import type { ShieldedOpRegistration } from "@/types/shield";
+import { resolveScope } from "@/lib/shieldScope";
 
 export const MSG_SHIELDED_EXEC = "/sparkdream.shield.v1.MsgShieldedExec";
 
@@ -236,39 +237,6 @@ function shieldRegistry(): Promise<Registry> {
 async function publicSubmitterWallet(prefix: string): Promise<DirectSecp256k1Wallet> {
   const key = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(PUBLIC_SUBMITTER_SEED)));
   return DirectSecp256k1Wallet.fromKey(key, prefix);
-}
-
-function snakeToCamel(s: string): string {
-  return s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
-}
-
-function scopeField(inner: Record<string, unknown>, path: string): bigint {
-  const v = inner[snakeToCamel(path)] ?? inner[path];
-  if (v === undefined || v === null) throw new Error(`missing ${path} for an anonymous action`);
-  return BigInt(v as string | number | bigint);
-}
-
-// The raw nullifier scope this op's registration binds the proof to. Mirrors
-// x/shield's resolveNullifierScope: a two-field path ("target_type,target_id")
-// packs the first field into the top byte (types.PackNullifierScope), so a
-// collection and an item with the same id get different scopes.
-function resolveScope(reg: ShieldedOpRegistration, inner: Record<string, unknown>, epoch: string): string {
-  switch (reg.nullifier_scope_type) {
-    case "NULLIFIER_SCOPE_MESSAGE_FIELD": {
-      const [first, second] = reg.scope_field_path.split(",");
-      if (second === undefined) return scopeField(inner, first).toString();
-      const qualifier = scopeField(inner, first);
-      const id = scopeField(inner, second);
-      if (qualifier >= BigInt(256) || id >= BigInt(1) << BigInt(56)) {
-        throw new Error(`${reg.scope_field_path} out of range for an anonymous action`);
-      }
-      return ((qualifier << BigInt(56)) | id).toString();
-    }
-    case "NULLIFIER_SCOPE_GLOBAL":
-      return "0";
-    default:
-      return epoch;
-  }
 }
 
 /** The registration that lets `typeUrl` be sent anonymously right now, or null. */

@@ -19,6 +19,9 @@ export interface ShieldedOpRegistration {
   nullifier_domain: number;
   nullifier_scope_type: NullifierScopeType;
   scope_field_path: string;
+  /** EPOCH scope only: one nullifier per this many shield epochs (uint64 as
+   *  a string; 0 or omitted means 1). The scope is current_epoch / window. */
+  epoch_window?: string;
   active: boolean;
   batch_mode: ShieldBatchMode;
   /** CONSUME (default; omitted by older nodes) or OWNERSHIP (managing
