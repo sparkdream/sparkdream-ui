@@ -33,6 +33,14 @@ services:
       # The bucket must CORS-allow this deployment's hostname — see
       # deploy/s3-cors.json for a sample policy.
       # - REMOTE_MANIFEST_URL=https://my-bucket.4everbucket.com/manifests.json
+      # Anonymous prover: the image serves each chain release's prover from
+      # public/zk/<version>/ (or set ZK_ASSETS_URL to a bucket). Pin the
+      # release and its files' sha256 (the "files" of that release's
+      # manifest.json, from the chain repo's prepare-release.sh) so a tampered
+      # directory is refused; unpinned, the node's version picks the release
+      # and its own manifest is trusted.
+      # - ZK_VERSION=v1.0.53
+      # - 'ZK_DIGESTS={"shield.wasm":"<sha256>","wasm_exec.js":"<sha256>","proving_key.raw.bin":"<sha256>","circuit.r1cs":"<sha256>"}'
 
 profiles:
   compute:

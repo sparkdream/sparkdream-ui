@@ -22,7 +22,27 @@ export async function GET() {
       process.env.REMOTE_MANIFEST_URL || process.env.NEXT_PUBLIC_REMOTE_MANIFEST_URL || "",
     peerChains: peerChains(process.env.PEER_CHAINS),
     zkAssetsUrl:  (process.env.ZK_ASSETS_URL || process.env.NEXT_PUBLIC_ZK_ASSETS_URL || "/zk").replace(/\/+$/, ""),
+    zkVersion:    process.env.ZK_VERSION || process.env.NEXT_PUBLIC_ZK_VERSION || "",
+    zkDigests:    zkDigests(process.env.ZK_DIGESTS || process.env.NEXT_PUBLIC_ZK_DIGESTS),
   });
+}
+
+// ZK_DIGESTS: {"shield.wasm": "<sha256 hex>", ...}, the "files" of the prover
+// release's manifest.json. Anything that does not parse as that shape is
+// ignored, and the client then falls back to the release's manifest.
+function zkDigests(raw: string | undefined): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (e): e is [string, string] => typeof e[1] === "string" && /^[0-9a-fA-F]{64}$/.test(e[1])
+      )
+    );
+  } catch {
+    return {};
+  }
 }
 
 // PEER_CHAINS: {"<chain id>": "<REST API URL>", ...} for the chains this one

@@ -22,6 +22,7 @@ import type { ChainConfig } from "@/lib/chain";
 import {
   getAccountNumber,
   getLatestBlockHeight,
+  getNodeAppVersion,
   getShieldEpoch,
   getShieldEpochInterval,
   getShieldedOps,
@@ -69,11 +70,65 @@ let worker: Worker | null = null;
 let nextId = 0;
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 
+/** One chain release's prover files and the sha256 each must have. */
+interface ProverAssets {
+  base: string;
+  digests: Record<string, string>;
+}
+
+let prover: Promise<ProverAssets> | null = null;
+
 function zkBase(config: ChainConfig): string {
   return (config.zkAssetsUrl || "/zk").replace(/\/+$/, "");
 }
 
-function shieldCall<T>(config: ChainConfig, fn: string, ...args: unknown[]): Promise<T> {
+/** Find the prover for the chain's release and make sure it is that release's.
+ *  A prover from another release can derive the proof's public inputs
+ *  differently from the chain, and its proofs then fail only at broadcast with
+ *  "ZK proof verification failed", so refuse up front instead. */
+async function resolveProver(config: ChainConfig): Promise<ProverAssets> {
+  const chainVersion = await getNodeAppVersion();
+  const version = config.zkVersion || chainVersion;
+  if (!version) throw new Error("Couldn't reach the chain to pick the anonymous prover. Please try again.");
+  const base = `${zkBase(config)}/${encodeURIComponent(version)}`;
+
+  let digests = config.zkDigests ?? {};
+  if (Object.keys(digests).length === 0) {
+    const res = await fetch(`${base}/manifest.json`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`This site doesn't have the anonymous prover for ${version} yet.`);
+    const manifest = (await res.json()) as { version?: string; files?: Record<string, string> };
+    if (manifest.version !== version || !manifest.files) {
+      throw new Error(`This site's anonymous prover manifest for ${version} is invalid.`);
+    }
+    digests = manifest.files;
+  }
+
+  const assets = { base, digests };
+  const built = await workerCall<{ version: string }>(assets, "version");
+  if (chainVersion && built.version !== chainVersion) {
+    throw new Error(
+      `This site's anonymous prover is for ${built.version}, but the chain runs ${chainVersion}. ` +
+        "Anonymous actions are unavailable until the site is updated."
+    );
+  }
+  return assets;
+}
+
+function proverAssets(config: ChainConfig): Promise<ProverAssets> {
+  if (!prover) {
+    prover = resolveProver(config).catch((err) => {
+      prover = null;
+      throw err;
+    });
+  }
+  return prover;
+}
+
+async function shieldCall<T>(config: ChainConfig, fn: string, ...args: unknown[]): Promise<T> {
+  return workerCall<T>(await proverAssets(config), fn, ...args);
+}
+
+function workerCall<T>(assets: ProverAssets, fn: string, ...args: unknown[]): Promise<T> {
   if (!worker) {
     worker = new Worker("/zk/shield-worker.js");
     worker.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string }>) => {
@@ -93,7 +148,7 @@ function shieldCall<T>(config: ChainConfig, fn: string, ...args: unknown[]): Pro
   const id = nextId++;
   return new Promise<T>((resolve, reject) => {
     pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
-    worker!.postMessage({ id, base: zkBase(config), fn, args });
+    worker!.postMessage({ id, assets, fn, args });
   });
 }
 
@@ -248,6 +303,11 @@ function friendlyChainError(log: string): string {
   if (/rate limit/i.test(log)) return "You've reached the limit for anonymous actions this epoch. Try again later.";
   if (/merkle root/i.test(log)) return "The member list changed while you were sending. Please try again.";
   if (/no verification key/i.test(log)) return "Anonymous actions aren't available on this chain yet. Its proof verification key hasn't been set up.";
+  if (/ZK proof verification failed/i.test(log)) {
+    // A proof this client made and the chain rejected: almost always a prover
+    // that doesn't match the chain's release or proving key.
+    return "The chain rejected the anonymous proof. This site's prover may not match the chain; please reload, and report it if it keeps happening.";
+  }
   return log;
 }
 

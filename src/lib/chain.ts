@@ -20,10 +20,19 @@ export interface ChainConfig {
    *  (PEER_CHAINS, set by the SparkDream launcher): the federation register
    *  form reads a peer chain's identity from them. */
   peerChains?: Record<string, string>;
-  /** Where the anonymous-action prover assets live (shield.wasm, wasm_exec.js,
-   *  proving_key.raw.bin, circuit.r1cs): "/zk" on this origin by default, or a
-   *  CORS-enabled bucket. */
+  /** Where the anonymous-action prover assets live: one directory per chain
+   *  release (<zkAssetsUrl>/<version>/ holding shield.wasm, wasm_exec.js,
+   *  proving_key.raw.bin, circuit.r1cs and manifest.json, as the chain repo's
+   *  prepare-release.sh builds them), under "/zk" on this origin by default or
+   *  a CORS-enabled bucket. */
   zkAssetsUrl?: string;
+  /** The prover release to load (ZK_VERSION). Unset, the node's own version
+   *  picks it, so a chain upgrade only needs the new directory published. */
+  zkVersion?: string;
+  /** Pinned sha256 (hex) of each prover file (ZK_DIGESTS, the "files" of that
+   *  release's manifest.json). Unset, the release's manifest.json is trusted,
+   *  which catches a stale or corrupt file but not a tampered directory. */
+  zkDigests?: Record<string, string>;
 }
 
 export const defaults: ChainConfig = {

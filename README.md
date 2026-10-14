@@ -75,8 +75,20 @@ All configuration is read at runtime. Set these as environment variables in the 
 | `NEXT_PUBLIC_CHAIN_NAME` | `Spark Dream` | Chain display name |
 | `NEXT_PUBLIC_REMOTE_MANIFEST_URL` | _(unset)_ | Optional. URL of `manifests.json` hosted in object storage. When set, the `/archive` picker reads from there instead of the local filesystem — lets you add snapshots after deploy without rebuilding the image. |
 | `LCD_ENDPOINT` / `RPC_ENDPOINT` | _(unset)_ | Runtime overrides of the `NEXT_PUBLIC_*` endpoints, no rebuild needed. |
+| `ZK_ASSETS_URL` | `/zk` | Where the anonymous prover lives: one directory per chain release, `<ZK_ASSETS_URL>/<version>/`. See [Anonymous prover](#anonymous-prover). |
+| `ZK_VERSION` | _(unset)_ | Prover release to load. Unset, the node's `application_version` picks it, so a chain upgrade needs only the new directory published. |
+| `ZK_DIGESTS` | _(unset)_ | Pinned sha256 of each prover file, as JSON: the `files` of that release's `manifest.json`. Unset, the release's `manifest.json` is trusted, which catches a stale or corrupt file but not a tampered directory; set it in production. |
 | `CONTENT_SCAN_FEED_URL` | _(unset)_ | Optional. One or more merged scanner feed files (comma or space separated, `https://`). When set, the server reads verdicts from these instead of fetching each worker's own feed. See [Content scanning](#content-scanning). |
 | `CONTENT_SCAN_MAX_LAG_BLOCKS` | `1800` | Freshness limit. When the scanners' effective scanned height trails the chain by more than this many blocks, flagged content stays "Being checked" (text keeps working). `0` turns the check off. Workers checkpoint every 600 blocks by default, so keep this well above that. |
+
+## Anonymous prover
+
+Anonymous actions (x/shield) are proved in the browser by `shield.wasm`, the chain's own Go prover, in a Web Worker ([public/zk/shield-worker.js](public/zk/shield-worker.js)). The prover must come from the same chain release as the node: one from another release can derive the proof's public inputs differently, and the chain then rejects every anonymous action with "ZK proof verification failed".
+
+- **Building.** The chain repo's `deploy/scripts/prepare-release.sh` builds each release's prover into `build/zk/<version>/`: `shield.wasm` (stamped with the version), `wasm_exec.js`, the ceremony's `proving_key.raw.bin` and `circuit.r1cs`, and a `manifest.json` with every file's sha256. It also copies it to `public/zk/<version>/` in this checkout when it sits beside the chain repo (`--zk-publish DIR` / `--no-zk-publish` to change that); for a bucket, copy it to `<ZK_ASSETS_URL>/<version>/` yourself. `public/zk/<version>/` is gitignored and baked into the image; only `public/zk/shield-worker.js` is tracked, so don't delete it when clearing old releases.
+- **Local chains.** The prover's version must equal the node's, and an `ignite chain build` node reports something like `1.0.52-246bf2b2`. Build a matching prover from the chain repo with `V=$(sparkdreamd version); VERSION=$V tools/zk/wasm/build.sh ../sparkdream-ui/public/zk/$V build/ceremony`.
+- **Loading.** The client picks the release (`ZK_VERSION`, else the node's version), checks every file against `ZK_DIGESTS` (else the release's manifest) before running or loading it, and asks the wasm which release it is. If that is not the node's version, anonymous actions are refused with a message saying so, instead of failing at broadcast.
+- **Chain upgrades.** Publish the new release's directory before (or with) the upgrade. With `ZK_VERSION`/`ZK_DIGESTS` pinned, update them too; until then anonymous actions are refused.
 
 ## Content scanning
 
