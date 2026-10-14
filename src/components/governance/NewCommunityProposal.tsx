@@ -3,7 +3,9 @@
 import { useState, useEffect } from "react";
 import type { Category, Group, Member } from "@/types/commons";
 import { CommonsMsgTypeUrls, ForumMsgTypeUrls } from "@/lib/tx";
-import { getCouncilMembers, getPolicyPermissions, listCategories, listGroups } from "@/lib/api";
+import { getCouncilMembers, getGrantsByGranter, getPolicyPermissions, getSessionParams, listCategories, listGroups } from "@/lib/api";
+import { formatPeriod, int, isLive } from "@/lib/grants";
+import type { Grant } from "@/types/session";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { truncateAddress } from "@/lib/utils";
@@ -18,6 +20,8 @@ export type ProposalType =
   | "invite"
   | "remove"
   | "treasury-spend"
+  | "recurring-spend"
+  | "cancel-recurring"
   | "update-config"
   | "create-category"
   | "delete-category"
@@ -26,6 +30,8 @@ export type ProposalType =
 const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string }[] = [
   { value: "general", label: "General vote", description: "Signaling vote with no executable action" },
   { value: "treasury-spend", label: "Treasury spend", description: "Propose sending funds from the council treasury" },
+  { value: "recurring-spend", label: "Recurring payment", description: "Pay an address a fixed amount each period, which it claims" },
+  { value: "cancel-recurring", label: "Cancel recurring payment", description: "Stop one of this council's recurring payments" },
   { value: "invite", label: "Invite member", description: "Propose adding a new council member" },
   { value: "remove", label: "Remove member", description: "Propose removing a council member" },
   { value: "update-config", label: "Update config", description: "Propose changing a child committee's settings" },
@@ -42,6 +48,8 @@ const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string 
 const REQUIRED_MESSAGES: Record<ProposalType, string[]> = {
   "general": [],
   "treasury-spend": [CommonsMsgTypeUrls.SpendFromCommons],
+  "recurring-spend": [CommonsMsgTypeUrls.ScheduleRecurringSpend],
+  "cancel-recurring": [CommonsMsgTypeUrls.CancelRecurringSpend],
   "invite": [CommonsMsgTypeUrls.UpdateGroupMembers],
   "remove": [CommonsMsgTypeUrls.UpdateGroupMembers],
   "update-config": [CommonsMsgTypeUrls.UpdateGroupConfig],
@@ -81,8 +89,9 @@ export default function NewCommunityProposal({
   // Reject a deep-linked initialType="treasury-spend" for non-spending groups
   // — otherwise the picker would hide the option but the spend form would
   // still render for the seeded `type`.
+  const spendTypes: ProposalType[] = ["treasury-spend", "recurring-spend", "cancel-recurring"];
   const safeInitialType: ProposalType | undefined =
-    initialType === "treasury-spend" && !canSpend ? "general" : initialType;
+    initialType && spendTypes.includes(initialType) && !canSpend ? "general" : initialType;
   const [type, setType] = useState<ProposalType>(safeInitialType ?? "general");
   // The group's chain-side AllowedMessages — `null` while loading so the
   // picker doesn't briefly hide options before settling.
@@ -164,6 +173,37 @@ export default function NewCommunityProposal({
   // Treasury spend fields
   const [spendRecipient, setSpendRecipient] = useState("");
   const [spendAmount, setSpendAmount] = useState("");
+
+  // Recurring payment fields. The chain bounds the period from below and the
+  // schedule's length from above (x/session params); a payment is claimed
+  // one period at a time by the recipient.
+  const [recurRecipient, setRecurRecipient] = useState("");
+  const [recurAmount, setRecurAmount] = useState("");
+  const [recurPeriodDays, setRecurPeriodDays] = useState("30");
+  const [recurEndDate, setRecurEndDate] = useState("");
+  const [recurNote, setRecurNote] = useState("");
+  const [recurBounds, setRecurBounds] = useState<{ minPeriod: number; maxDuration: number } | null>(null);
+  // This council's live recurring payments, for the cancel picker
+  const [schedules, setSchedules] = useState<Grant[]>([]);
+  const [cancelId, setCancelId] = useState("");
+  useEffect(() => {
+    if (type !== "recurring-spend" && type !== "cancel-recurring") return;
+    let cancelled = false;
+    getSessionParams()
+      .then((res) => {
+        if (cancelled) return;
+        const minPeriod = int(res.params?.min_recurring_period_seconds) || 86_400;
+        const maxDuration = int(res.params?.max_recurring_duration_seconds) || 365 * 86_400;
+        setRecurBounds({ minPeriod, maxDuration });
+        // default end: just inside the longest schedule the chain allows
+        setRecurEndDate((d) => d || new Date(Date.now() + maxDuration * 1000 - 86_400_000).toISOString().slice(0, 10));
+      })
+      .catch(() => {});
+    getGrantsByGranter(group.policy_address, "GRANT_TYPE_RECURRING_PULL")
+      .then((res) => !cancelled && setSchedules((res.grants || []).filter(isLive)))
+      .catch(() => !cancelled && setSchedules([]));
+    return () => { cancelled = true; };
+  }, [type, group.policy_address]);
 
   // Update config fields — targets a child group, not self
   const [childGroups, setChildGroups] = useState<Group[]>([]);
@@ -256,7 +296,7 @@ export default function NewCommunityProposal({
   // still loading we show every option to avoid a flash. update-config is
   // additionally hidden when there's nothing to configure.
   const visibleProposalTypes = PROPOSAL_TYPES.filter((pt) => {
-    if (pt.value === "treasury-spend" && !canSpend) return false;
+    if (spendTypes.includes(pt.value) && !canSpend) return false;
     if (pt.value === "update-config" && childGroups.length === 0) return false;
     if (allowedMessages === null) return true;
     const required = REQUIRED_MESSAGES[pt.value];
@@ -330,6 +370,51 @@ export default function NewCommunityProposal({
               recipient: spendRecipient.trim(),
               amount: [{ denom: config.denom, amount: microAmount }],
             })
+          ).finish(),
+        });
+      } else if (type === "recurring-spend") {
+        if (!recurRecipient.trim()) throw new Error("Recipient is required");
+        if (!recurAmount || parseFloat(recurAmount) <= 0) throw new Error("Amount per period is required");
+        const period = Math.round(parseFloat(recurPeriodDays) * 86_400);
+        if (!(period > 0)) throw new Error("Period is required");
+        if (recurBounds && period < recurBounds.minPeriod) {
+          throw new Error(`The period must be at least ${formatPeriod(recurBounds.minPeriod)}`);
+        }
+        if (!recurEndDate) throw new Error("End date is required");
+        const end = Math.floor(Date.parse(`${recurEndDate}T00:00:00Z`) / 1000);
+        // the schedule starts when the proposal executes: measure from now
+        const now = Math.floor(Date.now() / 1000);
+        if (end - now < period) throw new Error("The end date must leave room for at least one period");
+        if (recurBounds && end - now > recurBounds.maxDuration) {
+          throw new Error(`A schedule may run at most ${formatPeriod(recurBounds.maxDuration)}`);
+        }
+        const { MsgScheduleRecurringSpend } = await import(
+          "@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx"
+        );
+        innerMessages.push({
+          typeUrl: CommonsMsgTypeUrls.ScheduleRecurringSpend,
+          value: MsgScheduleRecurringSpend.encode(
+            MsgScheduleRecurringSpend.fromPartial({
+              authority: group.policy_address,
+              recipient: recurRecipient.trim(),
+              amountPerPeriod: [{ denom: config.denom, amount: (parseFloat(recurAmount) * 1_000_000).toFixed(0) }],
+              periodSeconds: BigInt(period),
+              // 0: the first window opens when the proposal executes
+              startTime: BigInt(0),
+              endTime: BigInt(end),
+              note: recurNote.trim(),
+            })
+          ).finish(),
+        });
+      } else if (type === "cancel-recurring") {
+        if (!cancelId) throw new Error("Pick a recurring payment to cancel");
+        const { MsgCancelRecurringSpend } = await import(
+          "@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx"
+        );
+        innerMessages.push({
+          typeUrl: CommonsMsgTypeUrls.CancelRecurringSpend,
+          value: MsgCancelRecurringSpend.encode(
+            MsgCancelRecurringSpend.fromPartial({ authority: group.policy_address, id: BigInt(cancelId) })
           ).finish(),
         });
       } else if (type === "update-config") {
@@ -413,6 +498,10 @@ export default function NewCommunityProposal({
           spendRecipient,
           spendAmount,
           displayDenom: config.displayDenom,
+          recurRecipient,
+          recurAmount,
+          recurPeriodDays,
+          cancelId,
           categoryTitle,
           deletedCategoryTitle,
           deletedCategoryId: deleteCategoryId,
@@ -593,6 +682,96 @@ export default function NewCommunityProposal({
               className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
+        </div>
+      )}
+
+      {type === "recurring-spend" && (
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-300">Recipient address</label>
+            <input
+              type="text"
+              value={recurRecipient}
+              onChange={(e) => setRecurRecipient(e.target.value)}
+              placeholder="sprkdrm1..."
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-300">
+                Amount per period ({config.displayDenom})
+              </label>
+              <NumberInput
+                step="any"
+                min="0"
+                value={recurAmount}
+                onChange={(e) => setRecurAmount(e.target.value)}
+                placeholder="0.00"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-300">Every (days)</label>
+              <NumberInput
+                step="any"
+                min="1"
+                value={recurPeriodDays}
+                onChange={(e) => setRecurPeriodDays(e.target.value)}
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-300">Ends on (UTC)</label>
+              <input
+                type="date"
+                value={recurEndDate}
+                onChange={(e) => setRecurEndDate(e.target.value)}
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-300">Note</label>
+              <input
+                type="text"
+                maxLength={256}
+                value={recurNote}
+                onChange={(e) => setRecurNote(e.target.value)}
+                placeholder="e.g. content-scanner operator pay"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-zinc-500">
+            The first period starts when the proposal executes. The recipient claims each period, one claim per period (missed
+            ones can be claimed later), from the Permissions page.
+            {recurBounds &&
+              ` The chain allows a period of at least ${formatPeriod(recurBounds.minPeriod)} and a schedule of at most ${formatPeriod(recurBounds.maxDuration)}.`}
+            {group.max_spend_per_epoch && group.max_spend_per_epoch !== "0" &&
+              ` Claims count toward this council's ${(Number(group.max_spend_per_epoch) / 1_000_000).toLocaleString()} ${config.displayDenom} daily spend cap, and pause if its term lapses.`}
+          </p>
+        </div>
+      )}
+
+      {type === "cancel-recurring" && (
+        <div className="space-y-2">
+          <label className="mb-1.5 block text-sm font-medium text-zinc-300">Recurring payment</label>
+          {schedules.length === 0 ? (
+            <div className="rounded-lg border border-zinc-700 bg-zinc-800/30 px-3 py-3 text-sm text-zinc-500">
+              This council has no active recurring payments.
+            </div>
+          ) : (
+            <select value={cancelId} onChange={(e) => setCancelId(e.target.value)} className="sd-select w-full">
+              <option value="">Choose a payment</option>
+              {schedules.map((g) => (
+                <option key={g.id} value={g.id}>
+                  #{g.id}: {(Number(g.recurring_pull?.amount_per_period?.amount || 0) / 1_000_000).toLocaleString()}{" "}
+                  {config.displayDenom} every {formatPeriod(int(g.recurring_pull?.period_seconds))} to {truncateAddress(g.grantee)}
+                  {g.note ? ` (${g.note})` : ""}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       )}
 
@@ -889,6 +1068,10 @@ function defaultMetadata(
     spendRecipient: string;
     spendAmount: string;
     displayDenom: string;
+    recurRecipient?: string;
+    recurAmount?: string;
+    recurPeriodDays?: string;
+    cancelId?: string;
     categoryTitle?: string;
     deletedCategoryTitle?: string;
     deletedCategoryId?: string;
@@ -904,6 +1087,10 @@ function defaultMetadata(
       return `Remove ${truncateAddress(ctx.removeAddress)} from council`;
     case "treasury-spend":
       return `Spend ${ctx.spendAmount} ${ctx.displayDenom} to ${truncateAddress(ctx.spendRecipient.trim())}`;
+    case "recurring-spend":
+      return `Pay ${ctx.recurAmount} ${ctx.displayDenom} every ${ctx.recurPeriodDays} days to ${truncateAddress((ctx.recurRecipient || "").trim())}`;
+    case "cancel-recurring":
+      return `Cancel recurring payment #${ctx.cancelId || "?"}`;
     case "update-config":
       return "Update council configuration";
     case "create-category":

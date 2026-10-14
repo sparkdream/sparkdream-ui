@@ -47,6 +47,10 @@ export const CommonsMsgTypeUrls = {
   ExecuteProposal: "/sparkdream.commons.v1.MsgExecuteProposal",
   UpdateGroupMembers: "/sparkdream.commons.v1.MsgUpdateGroupMembers",
   SpendFromCommons: "/sparkdream.commons.v1.MsgSpendFromCommons",
+  // Recurring council payments (session RecurringPull grants under the hood);
+  // signer is the council policy, so both travel inside a council proposal.
+  ScheduleRecurringSpend: "/sparkdream.commons.v1.MsgScheduleRecurringSpend",
+  CancelRecurringSpend: "/sparkdream.commons.v1.MsgCancelRecurringSpend",
   RenewGroup: "/sparkdream.commons.v1.MsgRenewGroup",
   RegisterGroup: "/sparkdream.commons.v1.MsgRegisterGroup",
   UpdateGroupConfig: "/sparkdream.commons.v1.MsgUpdateGroupConfig",

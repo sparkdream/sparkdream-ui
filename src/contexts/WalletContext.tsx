@@ -486,10 +486,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // on the first amino signature of any message, so the entry is dropped
       // rather than renamed. The two below are still missing theirs.
       //
-      // 0.0.38's commons (recurring spend) map has the same gap, left
-      // unpatched on purpose: this app signs none of those messages, and a
-      // converter nothing exercises is a converter whose staleness nobody
-      // would notice. Add them here if a view starts sending one. The session
+      // 0.0.38's commons (recurring spend) map has the same gap. The
+      // "Recurring payment" council proposal now sends MsgScheduleRecurringSpend
+      // and MsgCancelRecurringSpend as inner messages, so those two are patched
+      // below: scalar fields (authority, recipient, note; int64 period/start/end
+      // and uint64 id emitted as strings, omitted at zero) plus a non-empty
+      // Coin list, all as the chain's aminojson renders them. Claim and decline
+      // are still unpatched: this app claims through session's
+      // MsgClaimRecurringPull, which the session map covers. The session
       // map's gap (grant messages) is fixed in the package as of 0.0.41, whose
       // converters are checked against the chain's aminojson output.
       const { MsgSetThreadProposalsLock: ForumSetThreadProposalsLock } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/forum/v1/tx");
@@ -498,7 +502,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // missing too. Both are scalar-only (funder, uint64 initiative_id, and a
       // cosmos.Int amount string), so the statics are safe.
       const { MsgFundInitiativeBounty: RepFundInitiativeBounty, MsgReclaimInitiativeBounty: RepReclaimInitiativeBounty } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
+      const { MsgScheduleRecurringSpend: CommonsScheduleRecurringSpend, MsgCancelRecurringSpend: CommonsCancelRecurringSpend } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx");
       const latestMsgAmino = {
+        "/sparkdream.commons.v1.MsgScheduleRecurringSpend": { aminoType: "sparkdream/x/commons/MsgScheduleRecurringSpend", toAmino: CommonsScheduleRecurringSpend.toAmino, fromAmino: CommonsScheduleRecurringSpend.fromAmino },
+        "/sparkdream.commons.v1.MsgCancelRecurringSpend": { aminoType: "sparkdream/x/commons/MsgCancelRecurringSpend", toAmino: CommonsCancelRecurringSpend.toAmino, fromAmino: CommonsCancelRecurringSpend.fromAmino },
         "/sparkdream.forum.v1.MsgSetThreadProposalsLock": { aminoType: "sparkdream/x/forum/MsgSetThreadProposalsLock", toAmino: ForumSetThreadProposalsLock.toAmino, fromAmino: ForumSetThreadProposalsLock.fromAmino },
         "/sparkdream.collect.v1.MsgUnhideContent": { aminoType: "sparkdream/x/collect/MsgUnhideContent", toAmino: CollectUnhideContent.toAmino, fromAmino: CollectUnhideContent.fromAmino },
         "/sparkdream.rep.v1.MsgFundInitiativeBounty": { aminoType: "sparkdream/x/rep/MsgFundInitiativeBounty", toAmino: RepFundInitiativeBounty.toAmino, fromAmino: RepFundInitiativeBounty.fromAmino },
