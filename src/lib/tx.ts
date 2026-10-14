@@ -175,6 +175,16 @@ export const RepMsgTypeUrls = {
   CancelUnbondRole: "/sparkdream.rep.v1.MsgCancelUnbondRole",
 } as const;
 
+// x/service operator lifecycle message type URLs. Each is signed by the
+// operator itself (MsgRegisterOperator cannot go through x/session).
+export const ServiceMsgTypeUrls = {
+  RegisterOperator: "/sparkdream.service.v1.MsgRegisterOperator",
+  UpdateMetadata: "/sparkdream.service.v1.MsgUpdateMetadata",
+  TopUpBond: "/sparkdream.service.v1.MsgTopUpBond",
+  UnbondOperator: "/sparkdream.service.v1.MsgUnbondOperator",
+  ClaimUnbondedBond: "/sparkdream.service.v1.MsgClaimUnbondedBond",
+} as const;
+
 // Collect transaction message type URLs
 export const CollectMsgTypeUrls = {
   CreateCollection: "/sparkdream.collect.v1.MsgCreateCollection",

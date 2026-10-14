@@ -11,6 +11,7 @@ import {
   SidebarSection,
 } from "@/components/layout/ContentPageLayout";
 import { RoleCard } from "@/components/layout/RoleCard";
+import VerifierBondPanel from "@/components/federation/VerifierBondPanel";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { useWallet } from "@/contexts/WalletContext";
@@ -872,6 +873,8 @@ function FederationPageInner() {
           />
         </Section>
       )}
+
+      {shows("verifiers") && <VerifierBondPanel onChanged={reload} />}
 
       {shows("verifiers") && (
         <VerifiersSection

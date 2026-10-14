@@ -375,6 +375,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const { load: loadFutarchy } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/futarchy/v1/tx.registry");
       const { load: loadFederation } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx.registry");
       const { load: loadArtifact } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/artifact/v1/tx.registry");
+      const { load: loadService } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/service/v1/tx.registry");
       // Gov v1 + upgrade types (not in defaultRegistryTypes which only has v1beta1)
       const { MsgSubmitProposal: GovV1MsgSubmitProposal } = await import("cosmjs-types/cosmos/gov/v1/tx");
       const { MsgSoftwareUpgrade, MsgCancelUpgrade } = await import("cosmjs-types/cosmos/upgrade/v1beta1/tx");
@@ -395,6 +396,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       loadFutarchy(registry);
       loadFederation(registry);
       loadArtifact(registry);
+      loadService(registry);
 
       const { AminoConverter: blogAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx.amino");
       const { AminoConverter: sessionAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx.amino");
@@ -421,6 +423,25 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // affected converters, checked against the chain's aminojson.
       const { AminoConverter: artifactGeneratedAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/artifact/v1/tx.amino");
       const { artifactAminoOverrides } = await import("@/lib/artifactAmino");
+      // x/service: only the operator's own lifecycle messages, the ones the
+      // governance page signs (register, metadata, top-up, unbond, claim).
+      // Checked against the protos: string, Int-as-string and bytes fields
+      // only, amino names match each `option (amino.name)`. The report and
+      // jury messages carry uint64 ids, which these generated converters emit
+      // as numbers where aminojson wants strings, so they stay out until
+      // they have been checked.
+      const { AminoConverter: serviceGeneratedAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/service/v1/tx.amino");
+      const serviceAmino = Object.fromEntries(
+        [
+          "/sparkdream.service.v1.MsgRegisterOperator",
+          "/sparkdream.service.v1.MsgUpdateMetadata",
+          "/sparkdream.service.v1.MsgTopUpBond",
+          "/sparkdream.service.v1.MsgUnbondOperator",
+          "/sparkdream.service.v1.MsgClaimUnbondedBond",
+        ]
+          .filter((url) => url in serviceGeneratedAmino)
+          .map((url) => [url, serviceGeneratedAmino[url as keyof typeof serviceGeneratedAmino]])
+      );
 
       // The published sparkdreamjs (0.0.19) ships the registry + proto codecs
       // for the new Pin/MakePermanent-separation and forum post-conviction
@@ -792,7 +813,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         },
       };
 
-      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...federationAmino, ...federationPolicyAmino, ...artifactGeneratedAmino, ...artifactAminoOverrides, ...collectBytesAmino, ...pinSeparationAmino, ...latestMsgAmino, ...reviewAmino,...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
+      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...federationAmino, ...federationPolicyAmino, ...artifactGeneratedAmino, ...artifactAminoOverrides, ...serviceAmino, ...collectBytesAmino, ...pinSeparationAmino, ...latestMsgAmino, ...reviewAmino,...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
       // Cast: cosmjs's `lookupType` returns `GeneratedType` (union of TsProto +
       // Pbjs); the override only ever encounters TsProto types here.
       configureNestedAminoConverter({ registry: registry as unknown as Parameters<typeof configureNestedAminoConverter>[0]["registry"], aminoTypes });

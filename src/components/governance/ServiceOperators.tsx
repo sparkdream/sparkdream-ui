@@ -16,6 +16,7 @@ import {
   type ServiceTypeConfig,
 } from "@/types/service";
 import CopyableAddress from "@/components/CopyableAddress";
+import ScannerOperatorPanel from "@/components/governance/ScannerOperatorPanel";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
 
@@ -25,11 +26,12 @@ import { isMissingEndpoint } from "@/lib/errors";
 // via an x/commons Group ("controller"), which posts a `min_bond` SPARK
 // escrow per gov-allowlisted ServiceType. See docs/x-service-spec.md.
 //
-// This panel is read-only: registration / top-up / unbond / report all flow
-// through tx messages that, in turn, must be wrapped in a controller-group
-// proposal — outside the scope of a simple add. Listing surfaces the data so
-// COC members and observers can audit operator bond, status, and slash
-// history without dropping to the LCD.
+// The listing is read-only and surfaces the data so COC members and
+// observers can audit operator bond, status, and slash history without
+// dropping to the LCD. An operator registers itself (MsgRegisterOperator is
+// signed by the operator, naming the council as controller);
+// ScannerOperatorPanel does that for content scanners, the one type whose
+// operators are ordinary members rather than launcher-run daemons.
 
 function formatSpark(amount: string): string {
   if (!amount || amount === "0") return "0";
@@ -179,6 +181,8 @@ export default function ServiceOperators() {
           escalate to an x/rep jury.
         </p>
       </div>
+
+      <ScannerOperatorPanel onChanged={fetchData} />
 
       {/* Per-service-type summary + filter */}
       {types.length > 0 && (
