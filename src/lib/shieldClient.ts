@@ -130,7 +130,9 @@ async function shieldCall<T>(config: ChainConfig, fn: string, ...args: unknown[]
 
 function workerCall<T>(assets: ProverAssets, fn: string, ...args: unknown[]): Promise<T> {
   if (!worker) {
-    worker = new Worker("/zk/shield-worker.js");
+    // versioned by content (next.config.ts) so a cached worker from an older
+    // deploy is never paired with this page's code
+    worker = new Worker(`/zk/shield-worker.js?v=${process.env.NEXT_PUBLIC_SHIELD_WORKER_HASH ?? ""}`);
     worker.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string }>) => {
       const p = pending.get(e.data.id);
       if (!p) return;
