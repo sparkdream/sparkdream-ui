@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import type { Grant, GrantType, SessionParams } from "@/types/session";
 import { getAllowedMsgTypes, getGrantsByGrantee, getGrantsByGranter, getSessionParams } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
+import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { GRANT_TYPE_LABEL, isLive, recurringClaimable } from "@/lib/grants";
 import ErrorState from "@/components/ErrorState";
 import GrantCard from "@/components/permissions/GrantCard";
@@ -14,6 +15,7 @@ import ScheduledTransferForm from "@/components/permissions/ScheduledTransferFor
 import SessionKeyForm from "@/components/permissions/SessionKeyForm";
 import SignInGrantForm from "@/components/permissions/SignInGrantForm";
 import AnonymousIdentityPanel from "@/components/permissions/AnonymousIdentityPanel";
+import SessionRequestCard, { parseSessionRequest } from "@/components/permissions/SessionRequestCard";
 
 type Side = "given" | "received";
 type Kind = "recurring" | "allowance" | "scheduled" | "session" | "signin";
@@ -71,6 +73,10 @@ function rank(g: Grant): number {
 function PermissionsPageInner() {
   const searchParams = useSearchParams();
   const { signerAddress, connected, ready } = useWallet();
+  const { config } = useChainConfig();
+  // A session key the launcher asks this account to grant (prefilled link)
+  const request = useMemo(() => parseSessionRequest(searchParams, config.bech32Prefix), [searchParams, config.bech32Prefix]);
+  const [requestOpen, setRequestOpen] = useState(true);
 
   const [side, setSide] = useState<Side>(searchParams.get("tab") === "received" ? "received" : "given");
   const [filter, setFilter] = useState<GrantType | "all">("all");
@@ -167,7 +173,11 @@ function PermissionsPageInner() {
       <div className="sd-page">
         {header}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
-          <p className="text-zinc-400">Connect your wallet to manage permissions</p>
+          <p className="text-zinc-400">
+            {request && !("error" in request)
+              ? `Connect the wallet of ${request.granter} to grant this session key`
+              : "Connect your wallet to manage permissions"}
+          </p>
         </div>
       </div>
     );
@@ -177,6 +187,9 @@ function PermissionsPageInner() {
     <div className="sd-page">
       {header}
 
+      {request && requestOpen && (
+        <SessionRequestCard request={request} onDone={fetchAll} onCancel={() => setRequestOpen(false)} />
+      )}
       {creating === "pick" && (
         <div className="mb-8 rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
           <div className="mb-4 flex items-center justify-between">
