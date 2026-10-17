@@ -120,6 +120,7 @@ export default function GrantCard({
       )}
       {g.type === "GRANT_TYPE_SCHEDULED_ONESHOT" && <OneshotBody g={g} given={given} coin={coin} />}
       {g.type === "GRANT_TYPE_SESSION_KEY" && <SessionKeyBody g={g} coin={coin} />}
+      {g.type === "GRANT_TYPE_SIGN_IN" && <SignInBody g={g} given={given} />}
 
       <div className="mt-3 flex flex-wrap gap-4 text-xs text-zinc-500">
         <span>Created {fmtDate(tsSec(g.created_at))}</span>
@@ -345,5 +346,16 @@ function SessionKeyBody({ g, coin }: { g: Grant; coin: CoinFmt }) {
         {sk.last_used_at && tsSec(sk.last_used_at) > 0 && <Stat label="Last used">{fmtDate(tsSec(sk.last_used_at))}</Stat>}
       </div>
     </>
+  );
+}
+
+function SignInBody({ g, given }: { g: Grant; given: boolean }) {
+  const service = g.sign_in?.service ?? "";
+  return (
+    <p className="text-sm text-zinc-300">
+      {given ? "Can sign in to " : "You can sign in to "}
+      <span className="font-medium text-white">{service}</span>
+      {given ? " as you." : " as them: choose their account on the instance's wallet sign-in page."}
+    </p>
   );
 }

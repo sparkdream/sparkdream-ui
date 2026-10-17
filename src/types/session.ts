@@ -94,7 +94,8 @@ export type GrantType =
   | "GRANT_TYPE_SESSION_KEY"
   | "GRANT_TYPE_RECURRING_PULL"
   | "GRANT_TYPE_SPENDING_ALLOWANCE"
-  | "GRANT_TYPE_SCHEDULED_ONESHOT";
+  | "GRANT_TYPE_SCHEDULED_ONESHOT"
+  | "GRANT_TYPE_SIGN_IN";
 
 export type GrantStatus =
   | "GRANT_STATUS_UNSPECIFIED"
@@ -160,6 +161,12 @@ export interface ScheduledOneshotPayload {
   fire_error?: string;
 }
 
+// The grantee may sign in to this off-chain service (a lowercase hostname,
+// e.g. a Mastodon instance) as the granter. Nothing executes on chain.
+export interface SignInPayload {
+  service?: string;
+}
+
 export interface Grant {
   id: string;
   granter: string;
@@ -173,6 +180,7 @@ export interface Grant {
   recurring_pull?: RecurringPullPayload;
   spending_allowance?: SpendingAllowancePayload;
   scheduled_oneshot?: ScheduledOneshotPayload;
+  sign_in?: SignInPayload;
 }
 
 export interface GetGrantResponse {

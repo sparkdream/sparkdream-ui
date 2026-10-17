@@ -1,5 +1,5 @@
 // Helpers for x/session grants (recurring payments, spending allowances,
-// scheduled transfers, session keys). Time math mirrors the chain's keeper so
+// scheduled transfers, session keys, sign-in grants). Time math mirrors the chain's keeper so
 // the UI can say "claimable now" without a dry-run.
 
 import type { Coin, Grant, GrantStatus, GrantType, Session, SessionParams } from "@/types/session";
@@ -11,6 +11,7 @@ export const GRANT_TYPE_LABEL: Record<GrantType, string> = {
   GRANT_TYPE_RECURRING_PULL: "Recurring payment",
   GRANT_TYPE_SPENDING_ALLOWANCE: "Spending allowance",
   GRANT_TYPE_SCHEDULED_ONESHOT: "Scheduled transfer",
+  GRANT_TYPE_SIGN_IN: "Sign-in",
 };
 
 export const GRANT_STATUS_LABEL: Record<GrantStatus, string> = {
@@ -135,6 +136,28 @@ export function oneshotTransferDeposit(params: SessionParams | null): bigint {
   const fee = big(params?.oneshot_creation_fee);
   const min = big(params?.min_oneshot_deposit);
   return fee > min ? fee : min;
+}
+
+// ── Sign-in grants ─────────────────────────────────────────────────
+
+/**
+ * The hostname a sign-in grant names, from what someone pastes: a URL, a
+ * handle's domain or a bare host. Lowercased, with any scheme, path, port or
+ * trailing dot removed; "" when nothing usable is left.
+ */
+export function signInService(input: string): string {
+  let s = input.trim().toLowerCase();
+  s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//, "");
+  s = s.replace(/^[^/]*@/, ""); // a handle: user@host or @user@host
+  s = s.split(/[/?#]/)[0].replace(/:\d+$/, "").replace(/\.$/, "");
+  return s;
+}
+
+/** The chain's rule (x/session ValidSignInService): a lowercase DNS hostname of two or more labels. */
+export function validSignInService(s: string): boolean {
+  if (!s || s.length > 253) return false;
+  const labels = s.split(".");
+  return labels.length >= 2 && labels.every((l) => /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(l));
 }
 
 // ── Session keys ───────────────────────────────────────────────────

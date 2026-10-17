@@ -12,10 +12,11 @@ import RecurringPaymentForm from "@/components/permissions/RecurringPaymentForm"
 import SpendingAllowanceForm from "@/components/permissions/SpendingAllowanceForm";
 import ScheduledTransferForm from "@/components/permissions/ScheduledTransferForm";
 import SessionKeyForm from "@/components/permissions/SessionKeyForm";
+import SignInGrantForm from "@/components/permissions/SignInGrantForm";
 import AnonymousIdentityPanel from "@/components/permissions/AnonymousIdentityPanel";
 
 type Side = "given" | "received";
-type Kind = "recurring" | "allowance" | "scheduled" | "session";
+type Kind = "recurring" | "allowance" | "scheduled" | "session" | "signin";
 
 const KINDS: { kind: Kind; type: GrantType; title: string; desc: string }[] = [
   {
@@ -41,6 +42,12 @@ const KINDS: { kind: Kind; type: GrantType; title: string; desc: string }[] = [
     type: "GRANT_TYPE_SESSION_KEY",
     title: "Session key",
     desc: "Let another address sign selected actions as you, like posting or reacting.",
+  },
+  {
+    kind: "signin",
+    type: "GRANT_TYPE_SIGN_IN",
+    title: "Sign-in grant",
+    desc: "Let another address of yours sign in to your Mastodon account on a Spark Dream instance.",
   },
 ];
 
@@ -132,7 +139,7 @@ function PermissionsPageInner() {
     <header className="sd-page-header">
       <span className="crumb">System</span>
       <h1>Permissions</h1>
-      <p>Recurring payments, allowances, scheduled transfers and session keys</p>
+      <p>Recurring payments, allowances, scheduled transfers, session keys and sign-in grants</p>
       {connected && !creating && (
         <button
           type="button"
@@ -199,6 +206,7 @@ function PermissionsPageInner() {
       {!loading && creating === "session" && (
         <SessionKeyForm params={params} allowedTypes={allowedTypes} onDone={done} onCancel={cancel} />
       )}
+      {!loading && creating === "signin" && <SignInGrantForm params={params} onDone={done} onCancel={cancel} />}
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <div className="flex items-center rounded-lg border border-zinc-800 bg-zinc-900/50 p-0.5">
