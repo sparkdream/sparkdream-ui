@@ -128,7 +128,7 @@ function ArtifactsPageInner() {
   const item = (view: View, label: string, d: string, extra?: React.ReactNode) => (
     <button
       type="button"
-      className={`sd-side-item${route.view === view && !detail ? " active" : ""}`}
+      className={`sd-side-item artifact-item${route.view === view && !detail ? " active" : ""}`}
       onClick={() => switchView(view)}
     >
       <Icon d={d} />
@@ -149,7 +149,7 @@ function ArtifactsPageInner() {
           "inbox",
           "Inbox",
           "M3 13h5l1 3h6l1-3h5M5 5h14l2 8v6H3v-6l2-8z",
-          inboxCount ? <span className="ml-auto rounded-full bg-indigo-500/20 px-1.5 text-[11px] text-indigo-200">{inboxCount}</span> : null
+          inboxCount ? <span className="ml-auto rounded-full px-1.5 text-[11px]" style={{ background: "var(--verdigris-soft)", color: "var(--verdigris-hi)" }}>{inboxCount}</span> : null
         )}
         {item("my-classes", "My classes", "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z")}
         {item("my-listings", "My listings", "M7 7h10M7 12h10M7 17h6")}
@@ -175,7 +175,7 @@ function ArtifactsPageInner() {
       onSortChange={setSort}
       primaryAction={{
         label: "New class",
-        variant: "collection",
+        variant: "artifact",
         onClick: () => switchView("create"),
         disabled: !connected,
         title: connected ? "MsgCreateClass" : "Connect a wallet to create a class",
@@ -239,12 +239,13 @@ function ArtifactsPageInner() {
       sidebar={sidebar}
       toolbar={toolbar}
       railCards={
-        <div className="sd-rail-card">
+        <div className="sd-rail-card artifacts">
           <h5>How it works</h5>
-          <div style={{ fontSize: 12, color: "var(--ink-soft)", lineHeight: 1.55 }}>
-            Each token holds a small {config.displayDenom}{" "}deposit, returned to whoever burns it. Tokens from people you don&apos;t know wait in your inbox until you accept them.
-            Owning a token doesn&apos;t grant copyright.
-          </div>
+          <ol className="sd-rail-steps">
+            <li><span className="n">01</span><span>Each token holds a small {config.displayDenom} deposit, returned to whoever burns it.</span></li>
+            <li><span className="n">02</span><span>Tokens from people you don&apos;t know wait in your inbox until you accept them.</span></li>
+            <li><span className="n">03</span><span>Owning a token doesn&apos;t grant copyright.</span></li>
+          </ol>
         </div>
       }
     >

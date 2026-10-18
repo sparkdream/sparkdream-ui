@@ -60,8 +60,10 @@ export interface PrimaryAction {
       only for spark-creation actions. "dream" swaps to a gold gradient with a
       telescope/vision glyph — use only for dream-creation actions. "collection"
       swaps to a crystal (cyan/teal) gradient with a tome glyph — use only for
-      Wonders collection-creation actions. */
-  variant?: "default" | "spark" | "dream" | "collection";
+      Wonders collection-creation actions. "artifact" swaps to a verdigris
+      die-cut slab with a diamond glyph — use only for Artifacts class
+      creation. */
+  variant?: "default" | "spark" | "dream" | "collection" | "artifact";
   disabled?: boolean;
   title?: string;
 }
@@ -170,7 +172,9 @@ function PrimaryActionButton({ action }: { action: PrimaryAction }) {
             ? "sd-btn-dream"
             : action.variant === "collection"
               ? "sd-btn-collection"
-              : "sd-btn-primary"
+              : action.variant === "artifact"
+                ? "sd-btn-artifact"
+                : "sd-btn-primary"
       }`}
     >
       {action.variant === "spark" && (
@@ -223,6 +227,20 @@ function PrimaryActionButton({ action }: { action: PrimaryAction }) {
           <path d="M8 3 L9 11 L14 12 L9 13 L8 21 L7 13 L2 12 L7 11 Z" />
           <path d="M17 2.5 L17.82 4.87 L20.33 4.92 L18.33 6.43 L19.06 8.83 L17 7.4 L14.94 8.83 L15.67 6.43 L13.67 4.92 L16.18 4.87 Z" />
           <path d="M18 14.5 L18.5 16.5 L20.5 17 L18.5 17.5 L18 19.5 L17.5 17.5 L15.5 17 L17.5 16.5 Z" />
+        </svg>
+      ) : action.variant === "artifact" ? (
+        <svg
+          className="artifact-mark"
+          aria-hidden="true"
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.6"
+          strokeLinejoin="round"
+        >
+          <path d="M12 2.5 21.5 12 12 21.5 2.5 12z" />
         </svg>
       ) : (
         action.glyph && <span aria-hidden="true">{action.glyph}</span>

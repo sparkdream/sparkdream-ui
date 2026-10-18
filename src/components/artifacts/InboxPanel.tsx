@@ -178,7 +178,7 @@ export default function InboxPanel({ onSelectClass, onSelectToken }: Props) {
               disabled={busy}
               title={POLICY_HELP[p]}
               className={`rounded-lg border px-3 py-1.5 text-xs transition-colors disabled:opacity-50 ${
-                p === shownChoice ? "border-indigo-500/60 bg-indigo-500/10 text-indigo-200" : "border-zinc-700 text-zinc-400 hover:text-zinc-200"
+                p === shownChoice ? "border-[var(--verdigris-ring)] bg-[var(--verdigris-soft)] text-[var(--verdigris-hi)]" : "border-zinc-700 text-zinc-400 hover:text-zinc-200"
               }`}
             >
               {p === ReceivePolicy.UNSPECIFIED
@@ -197,7 +197,7 @@ export default function InboxPanel({ onSelectClass, onSelectToken }: Props) {
           <h3 className="text-sm font-semibold text-zinc-200">Inbox ({inboxCount})</h3>
           {chosen.length > 0 && (
             <div className="flex gap-2">
-              <button onClick={() => accept(chosen)} disabled={busy} className="sd-btn sd-btn-primary">
+              <button onClick={() => accept(chosen)} disabled={busy} className="sd-btn sd-btn-verdigris">
                 {pending === "accept-many" ? "Accepting…" : `Accept ${chosen.length}`}
               </button>
               <button onClick={() => reject(chosen)} disabled={busy} className="sd-btn sd-btn-secondary">
@@ -245,7 +245,7 @@ export default function InboxPanel({ onSelectClass, onSelectToken }: Props) {
                         <span>From</span>
                         {i.from && <CopyableAddress address={i.from} resolveName className="text-zinc-300" />}
                         <span>· in</span>
-                        <button onClick={() => onSelectClass(i.class_id)} className="text-indigo-300 hover:text-indigo-200">
+                        <button onClick={() => onSelectClass(i.class_id)} className="sd-artifact-link">
                           {cls ? classTitle(cls) : `Class #${i.class_id}`}
                         </button>
                         {i.expires_at && <span>· {timeRemaining(i.expires_at)}</span>}
@@ -265,7 +265,7 @@ export default function InboxPanel({ onSelectClass, onSelectToken }: Props) {
                       )}
                     </div>
                     <div className="flex shrink-0 flex-col gap-1.5">
-                      <button onClick={() => accept([i])} disabled={busy} className="sd-btn sd-btn-primary">
+                      <button onClick={() => accept([i])} disabled={busy} className="sd-btn sd-btn-verdigris">
                         {pending === `accept-${k}` ? "…" : "Accept"}
                       </button>
                       <button onClick={() => reject([i])} disabled={busy} className="sd-btn sd-btn-secondary">

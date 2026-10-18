@@ -371,7 +371,7 @@ function PublicMintCard({
         <>
           <div className="flex items-center gap-2">
             <NumberInput value={quantity} min={1} onChange={(e) => setQuantity(e.target.value)} wrapperClassName="w-24" />
-            <button onClick={mint} disabled={pending !== null || quote?.available === false} className="sd-btn sd-btn-primary">
+            <button onClick={mint} disabled={pending !== null || quote?.available === false} className="sd-btn sd-btn-verdigris">
               {pending === "public-mint" ? "Minting…" : `Mint ${qty}`}
             </button>
           </div>

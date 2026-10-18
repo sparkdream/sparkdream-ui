@@ -66,6 +66,15 @@
   --crystal-accent:    #d27be4;
   --crystal-accent-hi: #e49bf2;
 
+  /* Verdigris — reserved for Artifacts affordances. Aged-copper teal, a
+     little warm, so it reads as "coin" rather than fiat green. Keep
+     semantically tied to artifacts (classes, tokens, editions). */
+  --verdigris:       #34c4a4;
+  --verdigris-hi:    #8fe6cc;
+  --verdigris-lo:    #1b8f78;
+  --verdigris-soft:  rgba(52, 196, 164, 0.14);
+  --verdigris-ring:  rgba(52, 196, 164, 0.45);
+
   --blue:          #60a5fa;
   --blue-soft:     rgba(96, 165, 250, 0.12);
   --green:         #34d399;
@@ -381,6 +390,57 @@ input[type="number"] {
 }
 @media (prefers-reduced-motion: reduce) {
   .sd-jewel-field { display: none; }
+}
+
+/* ========== Patina field (Artifacts dot grid) ==========
+   A faint struck-coin dot grid. The base grid is static; a few soft masked
+   pools of brighter verdigris dots drift slowly across it, so the grid seems
+   to catch the light. The shimmer layers share the base grid's geometry
+   (same inset/background-size), so their dots sit exactly on the base dots.
+   Under reduced motion only the static grid remains. */
+.sd-patina-field {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+  --sd-dot-gap: 22px;
+}
+.sd-patina-grid,
+.sd-patina-shimmer {
+  position: absolute;
+  inset: 0;
+  background-size: var(--sd-dot-gap) var(--sd-dot-gap);
+  background-position: 0 0;
+}
+.sd-patina-grid {
+  background-image: radial-gradient(circle at 1px 1px, rgba(170, 220, 205, 0.09) 1px, transparent 1.4px);
+}
+.sd-patina-shimmer {
+  background-image: radial-gradient(circle at 1px 1px, rgba(var(--sd-patina-tint, 143, 230, 204), 1) 1px, transparent 1.6px);
+  -webkit-mask-image: radial-gradient(closest-side, #000 0%, rgba(0,0,0,0.45) 45%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 0%, rgba(0,0,0,0.45) 45%, transparent 100%);
+  -webkit-mask-size: var(--sd-patina-size, 520px) var(--sd-patina-size, 520px);
+  mask-size: var(--sd-patina-size, 520px) var(--sd-patina-size, 520px);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  opacity: 0;
+  will-change: opacity, mask-position;
+  animation:
+    sd-patina-drift var(--sd-patina-dur, 60s) ease-in-out infinite alternate,
+    sd-patina-breathe calc(var(--sd-patina-dur, 60s) / 4) ease-in-out infinite;
+  animation-delay: var(--sd-patina-delay, 0s);
+}
+@keyframes sd-patina-drift {
+  from { -webkit-mask-position: var(--sd-patina-from); mask-position: var(--sd-patina-from); }
+  to   { -webkit-mask-position: var(--sd-patina-to);   mask-position: var(--sd-patina-to); }
+}
+@keyframes sd-patina-breathe {
+  0%, 100% { opacity: calc(var(--sd-patina-peak, 0.3) * 0.35); }
+  50%      { opacity: var(--sd-patina-peak, 0.3); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sd-patina-shimmer { display: none; }
 }
 
 /* ========== Spark field (ambient background particles) ==========
@@ -797,7 +857,8 @@ body > * { position: relative; z-index: 1; }
    halo follows the cut shape (box-shadow would be clipped). */
 .sd-btn-spark,
 .sd-btn-dream,
-.sd-btn-collection {
+.sd-btn-collection,
+.sd-btn-artifact {
   border: 0;
   box-shadow: none;
   transition: transform .05s, background .15s, color .15s, filter .2s;
@@ -943,6 +1004,54 @@ body > * { position: relative; z-index: 1; }
     0 0 24px -2px rgba(255, 133, 208, 0.55);
 }
 
+/* Artifact — a struck-metal slab with the bottom-right corner clipped, like a
+   die-cut tag. Pale mint catching the light at the top-left, deepening to
+   verdigris. Pair with the diamond glyph. Halo via drop-shadow so it follows
+   the cut. */
+.sd-btn-artifact {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0.06) 40%, rgba(255,255,255,0) 60%),
+    linear-gradient(0deg, rgba(0,60,48,0.28) 0%, rgba(0,60,48,0) 36%),
+    linear-gradient(110deg, #c4f5e4 0%, var(--verdigris-hi) 30%, var(--verdigris) 78%, var(--verdigris-lo) 100%);
+  color: #04221b;
+  border-radius: 0;
+  padding-left: 20px;
+  padding-right: 20px;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+  clip-path: shape(
+    from 3px 0,
+    line to calc(100% - 3px) 0,
+    curve to 100% 3px with 100% 0,
+    line to 100% calc(100% - 12px),
+    curve to calc(100% - 1px) calc(100% - 9px) with 100% calc(100% - 10px),
+    line to calc(100% - 9px) calc(100% - 1px),
+    curve to calc(100% - 12px) 100% with calc(100% - 10px) 100%,
+    line to 3px 100%,
+    curve to 0 calc(100% - 3px) with 0 100%,
+    line to 0 3px,
+    curve to 3px 0 with 0 0,
+    close
+  );
+  filter:
+    drop-shadow(0 4px 12px rgba(52, 196, 164, 0.42))
+    drop-shadow(0 0 18px rgba(143, 230, 204, 0.32));
+}
+.sd-btn-artifact:hover {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.08) 40%, rgba(255,255,255,0) 60%),
+    linear-gradient(0deg, rgba(0,60,48,0.22) 0%, rgba(0,60,48,0) 36%),
+    linear-gradient(110deg, #d4f9ec 0%, var(--verdigris-hi) 34%, var(--verdigris) 100%);
+  filter:
+    drop-shadow(0 6px 16px rgba(52, 196, 164, 0.56))
+    drop-shadow(0 0 26px rgba(143, 230, 204, 0.46));
+}
+.sd-btn-artifact .artifact-mark { animation: sd-artifact-turn 4.8s ease-in-out infinite; }
+@keyframes sd-artifact-turn {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  50%      { transform: rotate(45deg) scale(0.92); }
+}
+.sd-btn:disabled .artifact-mark { animation: none; }
+
 /* ---------- Signature CTA ambient animations ----------
    One subtle, purpose-matched motion per entity, painted by a ::after overlay.
    pointer-events: none, and they pause under prefers-reduced-motion / disabled.
@@ -951,12 +1060,14 @@ body > * { position: relative; z-index: 1; }
    The spark/dream overlays are clipped to each button's clip-path silhouette;
    the collection overlay is clipped by overflow:hidden on the rounded slab. */
 .sd-btn-spark,
-.sd-btn-dream { position: relative; }
+.sd-btn-dream,
+.sd-btn-artifact { position: relative; }
 .sd-btn-collection { position: relative; overflow: hidden; }
 
 .sd-btn-spark::after,
 .sd-btn-dream::after,
-.sd-btn-collection::after {
+.sd-btn-collection::after,
+.sd-btn-artifact::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -1030,18 +1141,40 @@ body > * { position: relative; z-index: 1; }
   16%, 100% { transform: translateX(160%) skewX(-18deg); }
 }
 
+/* Artifact — light catching the clipped corner of a freshly struck piece:
+   a soft mint-white pool breathing at the bottom-right cut. */
+.sd-btn-artifact::after {
+  background: radial-gradient(70% 140% at 100% 100%, rgba(255,255,255,0.75) 0%, rgba(214,255,240,0.28) 30%, rgba(255,255,255,0) 62%);
+  animation: sd-coin-catch 4.2s ease-in-out infinite;
+}
+@keyframes sd-coin-catch {
+  0%, 100% { opacity: 0.2; }
+  50%      { opacity: 0.85; }
+}
+
 /* Stop the ambient motion when the CTA is disabled, and for reduced-motion. */
 .sd-btn:disabled::after { animation: none; }
 @media (prefers-reduced-motion: reduce) {
   .sd-btn-spark::after,
   .sd-btn-dream::after,
-  .sd-btn-collection::after { animation: none; }
+  .sd-btn-collection::after,
+  .sd-btn-artifact::after,
+  .sd-btn-artifact .artifact-mark { animation: none; }
 }
 
 /* Collection-nature hint for sidebar items. Crystal tint, mirrors spark/dream. */
 .sd-side-item.collection-item .ic { color: var(--crystal-accent); opacity: 0.85; }
 .sd-side-item.collection-item:hover .ic { color: var(--crystal-accent-hi); opacity: 1; }
 .sd-side-item.collection-item.active .ic { color: inherit; opacity: 0.9; }
+
+/* Artifact-nature hint for sidebar items. Verdigris tint, mirrors the others. */
+.sd-side-item.artifact-item .ic { color: var(--verdigris-hi); opacity: 0.85; }
+.sd-side-item.artifact-item:hover .ic { color: var(--verdigris); opacity: 1; }
+.sd-side-item.artifact-item.active .ic { color: inherit; opacity: 0.9; }
+
+/* In-page links on Artifacts (class name on a token, inbox class links). */
+.sd-artifact-link { color: var(--verdigris-hi); cursor: pointer; }
+.sd-artifact-link:hover { color: var(--verdigris); text-decoration: underline; }
 
 /* Secondary entity-tinted buttons (Reply, Send, Submit) — rectangular solid
    variants in the ember / gold / crystal palettes. Use these on content-page
@@ -1145,6 +1278,34 @@ body > * { position: relative; z-index: 1; }
     0 0 0 1px rgba(255,255,255,0.22) inset,
     0 7px 20px -6px var(--crystal-ring),
     0 0 24px -2px rgba(255, 133, 208, 0.55);
+}
+
+/* Verdigris form-submits (Mint / Buy / List / Accept on Artifacts) — glossy
+   mint→teal shading echoing the New class CTA. Layered on .sd-btn, which
+   supplies the layout. */
+.sd-btn-verdigris {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.06) 42%, rgba(255,255,255,0) 62%),
+    linear-gradient(150deg, var(--verdigris-hi) 0%, var(--verdigris) 55%, var(--verdigris-lo) 100%);
+  color: #04221b;
+  border-color: transparent;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.5) inset,
+    0 -9px 16px -10px rgba(0, 50, 40, 0.5) inset,
+    0 0 0 1px rgba(255,255,255,0.16) inset,
+    0 5px 16px -6px var(--verdigris-ring),
+    0 0 18px -2px rgba(143, 230, 204, 0.3);
+}
+.sd-btn-verdigris:hover:not(:disabled) {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.08) 42%, rgba(255,255,255,0) 62%),
+    linear-gradient(150deg, var(--verdigris-hi) 0%, var(--verdigris) 46%, var(--verdigris) 100%);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.55) inset,
+    0 -9px 16px -10px rgba(0, 50, 40, 0.45) inset,
+    0 0 0 1px rgba(255,255,255,0.22) inset,
+    0 7px 20px -6px var(--verdigris-ring),
+    0 0 24px -2px rgba(143, 230, 204, 0.45);
 }
 
 /* ========== Segmented ========== */
@@ -1769,6 +1930,11 @@ body > * { position: relative; z-index: 1; }
 .sd-rail-card.sparks { --trend-hover: var(--ember-hi); }
 .sd-rail-card.dreams { --trend-hover: var(--gold-hi); }
 .sd-rail-card.collections { --trend-hover: var(--crystal-accent-hi); }
+.sd-rail-card.artifacts { --trend-hover: var(--verdigris-hi); }
+/* Numbered how-it-works steps (Artifacts rail). */
+.sd-rail-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.sd-rail-steps li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; font-size: 12px; line-height: 1.55; color: var(--ink-soft); }
+.sd-rail-steps .n { font-family: var(--font-mono), ui-monospace, monospace; font-size: 11px; color: var(--verdigris); padding-top: 1px; }
 .sd-trend-row .num {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 11px;

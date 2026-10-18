@@ -272,7 +272,7 @@ export default function ClassManagePanel({ cls, params, isOwner, onChanged, onDe
   };
 
   const busy = pending !== null;
-  const btn = "sd-btn sd-btn-primary";
+  const btn = "sd-btn sd-btn-verdigris";
   const btnSecondary = "sd-btn sd-btn-secondary";
   const deposit = params?.token_deposit;
 

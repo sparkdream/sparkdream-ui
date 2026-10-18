@@ -266,7 +266,7 @@ export default function CreateClassForm({ onCreated, onCancel }: Props) {
           {KINDS.map((x) => (
             <label
               key={x.id}
-              className={`cursor-pointer rounded-lg border px-3 py-2 text-sm ${kind === x.id ? "border-indigo-500/60 bg-indigo-500/10" : "border-zinc-800 hover:border-zinc-700"}`}
+              className={`cursor-pointer rounded-lg border px-3 py-2 text-sm ${kind === x.id ? "border-[var(--verdigris-ring)] bg-[var(--verdigris-soft)]" : "border-zinc-800 hover:border-zinc-700"}`}
             >
               <span className="flex items-center gap-2 font-medium text-zinc-100">
                 <input type="radio" name="artifact-kind" checked={kind === x.id} onChange={() => setKind(x.id)} />
@@ -368,7 +368,7 @@ export default function CreateClassForm({ onCreated, onCancel }: Props) {
         <button
           onClick={submit}
           disabled={pending === "create" || !address}
-          className="sd-btn sd-btn-primary w-full justify-center"
+          className="sd-btn sd-btn-verdigris w-full justify-center"
         >
           {pending === "create" ? "Creating…" : "Create class"}
         </button>

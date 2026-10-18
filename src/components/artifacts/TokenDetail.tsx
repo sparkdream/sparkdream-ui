@@ -277,7 +277,7 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: P
                 <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">Frozen</span>
               )}
             </div>
-            <button onClick={() => onOpenClass(classId)} className="mt-1 text-sm text-indigo-300 hover:text-indigo-200">
+            <button onClick={() => onOpenClass(classId)} className="mt-1 text-sm sd-artifact-link">
               {classTitle(cls, isHidden(cls.status))} <span className="font-mono text-xs text-zinc-500">#{cls.id}</span>
             </button>
             <div className="mt-2">
@@ -361,7 +361,7 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: P
             <button
               onClick={buy}
               disabled={busy || !marketOn || tokenHidden || classHidden}
-              className="sd-btn sd-btn-primary"
+              className="sd-btn sd-btn-verdigris"
               title={!marketOn ? "The market is turned off right now" : undefined}
             >
               {pending === "buy" ? "Buying…" : `Buy for ${formatCoin(listing.price, config.displayDenom)}`}
@@ -421,7 +421,7 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: P
                 </FieldLabel>
               </div>
               <div className="flex gap-2">
-                <button onClick={listOrUpdate} disabled={busy || !price.trim()} className="sd-btn sd-btn-primary">
+                <button onClick={listOrUpdate} disabled={busy || !price.trim()} className="sd-btn sd-btn-verdigris">
                   {pending === "list" ? "Saving…" : lock === TokenLock.LISTED ? "Update listing" : "List for sale"}
                 </button>
                 {lock === TokenLock.LISTED && (
@@ -449,7 +449,7 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: P
               }}
             >
               <MetadataEditor value={meta ?? metadataFormFrom(md)} onChange={setMeta} />
-              <button onClick={saveMeta} disabled={busy || !meta} className="sd-btn sd-btn-primary">
+              <button onClick={saveMeta} disabled={busy || !meta} className="sd-btn sd-btn-verdigris">
                 {pending === "edit" ? "Saving…" : "Save metadata"}
               </button>
             </ActionSection>
