@@ -42,6 +42,9 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <link rel="me" href="https://mstdn.sparkdream.io/@kingofbitchain" />
+      </head>
       <body className="min-h-full flex flex-col">
         <BackgroundField />
         <ChainConfigProvider>
