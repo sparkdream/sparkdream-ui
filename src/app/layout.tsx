@@ -44,6 +44,7 @@ export default function RootLayout({
     >
       <head>
         <link rel="me" href="https://mstdn.sparkdream.io/@kingofbitchain" />
+        <link rel="me" href="https://mastodon.social/@kingofbitchain" />
       </head>
       <body className="min-h-full flex flex-col">
         <BackgroundField />
