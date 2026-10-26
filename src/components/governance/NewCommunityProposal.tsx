@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react";
 import type { Category, Group, Member } from "@/types/commons";
-import { CommonsMsgTypeUrls, ForumMsgTypeUrls } from "@/lib/tx";
-import { getCouncilMembers, getGrantsByGranter, getPolicyPermissions, getSessionParams, listCategories, listGroups } from "@/lib/api";
+import { CommonsMsgTypeUrls, ForumMsgTypeUrls, RepIdentityMsgTypeUrls } from "@/lib/tx";
+import { getCouncilMembers, getGrantsByGranter, getPolicyPermissions, getSessionParams, listCategories, listGroups, listRepMemberMigrations } from "@/lib/api";
+import type { MemberMigration } from "@/types/rep";
+import { MIGRATION_PATH_LABELS, MigrationPath, MigrationStatus } from "@/types/rep";
 import { formatPeriod, int, isLive } from "@/lib/grants";
 import type { Grant } from "@/types/session";
 import { useWallet } from "@/contexts/WalletContext";
@@ -25,7 +27,9 @@ export type ProposalType =
   | "update-config"
   | "create-category"
   | "delete-category"
-  | "unhide-post";
+  | "unhide-post"
+  | "force-migration"
+  | "cancel-migration";
 
 const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string }[] = [
   { value: "general", label: "General vote", description: "Signaling vote with no executable action" },
@@ -38,6 +42,8 @@ const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string 
   { value: "create-category", label: "Create Swarm category", description: "Propose creating a new Swarm category" },
   { value: "delete-category", label: "Delete Swarm category", description: "Propose removing an empty Swarm category" },
   { value: "unhide-post", label: "Unhide Swarm post", description: "Council override of a sentinel hide past the self-correct window" },
+  { value: "force-migration", label: "Move a membership", description: "Move a member who lost their key, with no recovery code, to a new address" },
+  { value: "cancel-migration", label: "Cancel a membership move", description: "Stop a pending key change or committee move" },
 ];
 
 // Inner message types each proposal kind would broadcast — used to filter the
@@ -56,6 +62,10 @@ const REQUIRED_MESSAGES: Record<ProposalType, string[]> = {
   "create-category": [CommonsMsgTypeUrls.CreateCategory],
   "delete-category": [CommonsMsgTypeUrls.DeleteCategory],
   "unhide-post": [ForumMsgTypeUrls.UnhidePost],
+  // x/rep member key migration: only the Commons Governance Committee (the
+  // chain's "hr" committee) and governance hold these permissions.
+  "force-migration": [RepIdentityMsgTypeUrls.ForceMigration],
+  "cancel-migration": [RepIdentityMsgTypeUrls.CancelMigration],
 };
 
 interface NewCommunityProposalProps {
@@ -230,6 +240,32 @@ export default function NewCommunityProposal({
   // governance page is reached via the SentinelPanel deep-link
   // (`/governance?...&action=unhide-post&post_id=N`).
   const [unhidePostId, setUnhidePostId] = useState(initialPostId ?? "");
+
+  // Member migration fields (Commons Governance Committee). The new address
+  // still has to accept, and the member may object to a jury during the
+  // council delay, so a mistaken or hostile move is not final on execution.
+  const [forceMember, setForceMember] = useState("");
+  const [forceNewAddress, setForceNewAddress] = useState("");
+  const [forceEvidence, setForceEvidence] = useState("");
+  // Pending KEY and COUNCIL migrations, for the cancel picker. A RECOVERY
+  // migration is cancellable by governance only.
+  const [cancellableMigrations, setCancellableMigrations] = useState<MemberMigration[]>([]);
+  const [cancelMigrationId, setCancelMigrationId] = useState("");
+  useEffect(() => {
+    if (type !== "cancel-migration") return;
+    let cancelled = false;
+    Promise.all(
+      [MigrationStatus.REQUESTED, MigrationStatus.ACCEPTED, MigrationStatus.OBJECTED].map((status) =>
+        listRepMemberMigrations({ status }, { limit: "100" }).then((r) => r.migrations ?? []).catch(() => [])
+      )
+    ).then((lists) => {
+      if (cancelled) return;
+      setCancellableMigrations(
+        lists.flat().filter((m) => m.path === MigrationPath.KEY || m.path === MigrationPath.COUNCIL)
+      );
+    });
+    return () => { cancelled = true; };
+  }, [type]);
 
   // Lazily load existing categories when the delete-category form is shown.
   useEffect(() => {
@@ -469,6 +505,32 @@ export default function NewCommunityProposal({
             })
           ).finish(),
         });
+      } else if (type === "force-migration") {
+        const member = forceMember.trim();
+        const newAddress = forceNewAddress.trim();
+        if (!member || !newAddress) throw new Error("Member and new address are required");
+        if (member === newAddress) throw new Error("The new address must differ from the member's address");
+        const { MsgForceMigration } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
+        innerMessages.push({
+          typeUrl: RepIdentityMsgTypeUrls.ForceMigration,
+          value: MsgForceMigration.encode(
+            MsgForceMigration.fromPartial({
+              authority: group.policy_address,
+              member,
+              newAddress,
+              evidenceUri: forceEvidence.trim(),
+            })
+          ).finish(),
+        });
+      } else if (type === "cancel-migration") {
+        if (!cancelMigrationId) throw new Error("Pick a migration to cancel");
+        const { MsgCancelMigration } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
+        innerMessages.push({
+          typeUrl: RepIdentityMsgTypeUrls.CancelMigration,
+          value: MsgCancelMigration.encode(
+            MsgCancelMigration.fromPartial({ signer: group.policy_address, migrationId: BigInt(cancelMigrationId) })
+          ).finish(),
+        });
       } else if (type === "unhide-post") {
         const trimmed = unhidePostId.trim();
         if (!trimmed) throw new Error("Post ID is required");
@@ -506,6 +568,9 @@ export default function NewCommunityProposal({
           deletedCategoryTitle,
           deletedCategoryId: deleteCategoryId,
           unhidePostId: unhidePostId.trim(),
+          forceMember: forceMember.trim(),
+          forceNewAddress: forceNewAddress.trim(),
+          cancelMigrationId,
         });
 
       if (anonymous) {
@@ -990,6 +1055,69 @@ export default function NewCommunityProposal({
         </div>
       )}
 
+      {type === "force-migration" && (
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-300">Member address</label>
+            <input
+              type="text"
+              value={forceMember}
+              onChange={(e) => setForceMember(e.target.value)}
+              placeholder={`${config.bech32Prefix}1...`}
+              spellCheck={false}
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 font-mono text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-300">New address</label>
+            <input
+              type="text"
+              value={forceNewAddress}
+              onChange={(e) => setForceNewAddress(e.target.value)}
+              placeholder={`${config.bech32Prefix}1...`}
+              spellCheck={false}
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 font-mono text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-300">Evidence link</label>
+            <input
+              type="text"
+              value={forceEvidence}
+              onChange={(e) => setForceEvidence(e.target.value)}
+              placeholder="https://..."
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <p className="text-xs text-zinc-500">
+            For a member who lost their key and has no recovery code. Once executed, the new address must accept, and
+            the move happens after the committee delay. The member can object during that delay and a jury decides.
+            The new address must be fresh: not a member, no names, no pending invitation.
+          </p>
+        </div>
+      )}
+
+      {type === "cancel-migration" && (
+        <div className="space-y-2">
+          <label className="mb-1.5 block text-sm font-medium text-zinc-300">Pending migration</label>
+          {cancellableMigrations.length === 0 ? (
+            <div className="rounded-lg border border-zinc-700 bg-zinc-800/30 px-3 py-3 text-sm text-zinc-500">
+              No pending key changes or committee moves.
+            </div>
+          ) : (
+            <select value={cancelMigrationId} onChange={(e) => setCancelMigrationId(e.target.value)} className="sd-select w-full">
+              <option value="">Choose a migration</option>
+              {cancellableMigrations.map((m) => (
+                <option key={m.id} value={m.id}>
+                  #{m.id}: {MIGRATION_PATH_LABELS[m.path ?? ""] ?? m.path}, {truncateAddress(m.from_address)} to {truncateAddress(m.to_address)}
+                </option>
+              ))}
+            </select>
+          )}
+          <p className="text-xs text-zinc-500">Only a governance proposal can cancel a recovery.</p>
+        </div>
+      )}
+
       {/* Metadata / description — hide when update-config has no children */}
       {!(type === "update-config" && childGroups.length === 0) && <div>
         <label className="mb-1.5 block text-sm font-medium text-zinc-300">
@@ -1042,7 +1170,9 @@ export default function NewCommunityProposal({
             submitting ||
             (type === "update-config" && childGroups.length === 0) ||
             (type === "delete-category" && existingCategories.length === 0) ||
-            (type === "unhide-post" && !unhidePostId.trim())
+            (type === "unhide-post" && !unhidePostId.trim()) ||
+            (type === "force-migration" && (!forceMember.trim() || !forceNewAddress.trim())) ||
+            (type === "cancel-migration" && !cancelMigrationId)
           }
           className="sd-btn sd-btn-primary"
         >
@@ -1076,6 +1206,9 @@ function defaultMetadata(
     deletedCategoryTitle?: string;
     deletedCategoryId?: string;
     unhidePostId?: string;
+    forceMember?: string;
+    forceNewAddress?: string;
+    cancelMigrationId?: string;
   }
 ): string {
   switch (type) {
@@ -1099,6 +1232,10 @@ function defaultMetadata(
       return `Delete Swarm category "${ctx.deletedCategoryTitle || ""}" (#${ctx.deletedCategoryId || "?"})`;
     case "unhide-post":
       return `Council override: unhide Swarm post #${ctx.unhidePostId || "?"}`;
+    case "force-migration":
+      return `Move membership ${truncateAddress(ctx.forceMember || "")} to ${truncateAddress(ctx.forceNewAddress || "")}`;
+    case "cancel-migration":
+      return `Cancel membership move #${ctx.cancelMigrationId || "?"}`;
     default:
       return "";
   }

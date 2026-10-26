@@ -32,6 +32,7 @@ import {
 } from "@/types/rep";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 interface Props {
   initiative: Initiative;
@@ -79,6 +80,7 @@ export default function InitiativeReviewPanel({
 }: Props) {
   const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
 
   const [reviews, setReviews] = useState<InitiativeReviewsResponse | null>(null);
   const [bounty, setBounty] = useState<ReviewBountyResponse | null>(null);
@@ -197,10 +199,10 @@ export default function InitiativeReviewPanel({
   // invitation-neighbourhood exclusions are enforced chain-side only: both need
   // reads this card does not do, and both surface as a broadcast error.
   const isConflicted =
-    !!address && (address === initiative.assignee || address === projectCreator);
+    isMine(initiative.assignee) || isMine(projectCreator);
 
   const alreadyReviewed = (rounds.find((r) => r.round === currentRound)?.reviews ?? []).some(
-    (r) => r.reviewer === address,
+    (r) => isMine(r.reviewer),
   );
 
   const canFileVerdict =
@@ -211,7 +213,7 @@ export default function InitiativeReviewPanel({
     !alreadyReviewed &&
     reviewerBondStatus === BondedRoleStatus.NORMAL;
 
-  const myContribution = (bounty?.reclaim_status ?? []).find((c) => c.funder === address);
+  const myContribution = (bounty?.reclaim_status ?? []).find((c) => isMine(c.funder));
   const canReclaim = !!myContribution?.reclaimable;
   const bountyTotal = bounty?.bounty?.amount ?? "0";
   const hasBounty = bountyTotal !== "0" && bountyTotal !== "";

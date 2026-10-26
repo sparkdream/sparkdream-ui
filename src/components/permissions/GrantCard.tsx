@@ -6,6 +6,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { useTxAction } from "@/hooks/useTxAction";
 import { SessionMsgTypeUrls } from "@/lib/tx";
+import { getTxMsgResponses } from "@/lib/api";
 import { formatSpark, parseSparkToUspark } from "@/lib/utils";
 import {
   GRANT_STATUS_LABEL, GRANT_TYPE_LABEL, allowanceRemaining, formatCoin, formatPeriod,
@@ -45,9 +46,14 @@ export default function GrantCard({
   const coin = (c: Parameters<typeof formatCoin>[0]) => formatCoin(c, DENOM, DISPLAY);
   const id = BigInt(g.id);
 
+  // A claim or pull against an underfunded or closed grant succeeds with
+  // nothing moved; only the Msg response's paused/completed flags say so.
+  const [notice, setNotice] = useState<string | null>(null);
   const send = (key: string, msgs: { typeUrl: string; value: unknown }[], fail: string) =>
     tx.run(key, async () => {
-      await signAndBroadcast(msgs);
+      setNotice(null);
+      const hash = await signAndBroadcast(msgs);
+      if (key === "claim" || key === "pull") setNotice(await nothingMovedNotice(hash, given));
       onChanged();
     }, fail);
 
@@ -127,9 +133,39 @@ export default function GrantCard({
         {live && <span>Ends {fmtDate(tsSec(g.expires_at))}</span>}
       </div>
 
+      {notice && <p className="mt-3 text-xs text-amber-300">{notice}</p>}
       <ActionBanner message={tx.error} onDismiss={tx.clearError} className="mt-3" />
     </article>
   );
+}
+
+/** Explains a claim or pull that went through without moving funds, or null. */
+async function nothingMovedNotice(hash: string, given: boolean): Promise<string | null> {
+  try {
+    const { MsgClaimRecurringPullResponse, MsgPullAllowanceResponse } = await import(
+      "@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx"
+    );
+    let paused = false;
+    let completed = false;
+    for (const r of await getTxMsgResponses(hash)) {
+      if (r.typeUrl === "/sparkdream.session.v1.MsgClaimRecurringPullResponse") {
+        const res = MsgClaimRecurringPullResponse.decode(r.value);
+        paused ||= res.paused;
+        completed ||= res.completed;
+      } else if (r.typeUrl === "/sparkdream.session.v1.MsgPullAllowanceResponse") {
+        paused ||= MsgPullAllowanceResponse.decode(r.value).paused;
+      }
+    }
+    if (paused) {
+      return given
+        ? "Nothing was sent: your balance was too low. The grant is paused until you top up."
+        : "Nothing was received: the sender's balance was too low. The grant is paused until they top up.";
+    }
+    if (completed) return "Nothing more to claim: this grant has paid out in full.";
+    return null;
+  } catch {
+    return null; // the tx landed; the notice is a nicety
+  }
 }
 
 type Send = (key: string, msgs: { typeUrl: string; value: unknown }[], fail: string) => Promise<boolean>;

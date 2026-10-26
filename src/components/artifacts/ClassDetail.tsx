@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
+import { useMyAliases } from "@/hooks/useMyAliases";
 import { useTxAction } from "@/hooks/useTxAction";
 import ActionBanner from "@/components/ActionBanner";
 import CopyableAddress from "@/components/CopyableAddress";
@@ -16,17 +17,20 @@ import {
   getArtifactPendingClassOwner,
   getArtifactPublicMintQuote,
   invalidateArtifacts,
+  listArtifactEditions,
   listArtifactTokens,
 } from "@/lib/artifactApi";
-import { formatTime, timeRemaining } from "@/lib/utils";
+import { formatSpark, formatTime, timeRemaining } from "@/lib/utils";
 import type {
   ArtifactClass,
   ArtifactParams,
+  EditionView,
   HideRecord,
   PendingClassOwner,
   PublicMintQuoteResponse,
   TokenView,
 } from "@/types/artifact";
+import { EXPIRY_MODE_LABELS, ExpiryMode, MintPricing, REVEAL_KIND_LABELS, RevealKind } from "@/types/artifact";
 import type {
   MsgAcceptClassOwner,
   MsgCancelClassOwner,
@@ -34,7 +38,9 @@ import type {
 } from "@sparkdreamnft/sparkdreamjs/sparkdream/artifact/v1/tx";
 import ArtifactModeration from "./ArtifactModeration";
 import ClassManagePanel from "./ClassManagePanel";
+import CraftPanel from "./CraftPanel";
 import TokenGrid from "./TokenGrid";
+import { CollectionOffers } from "./TokenMarket";
 import {
   ArtifactMedia,
   BackButton,
@@ -42,7 +48,11 @@ import {
   bpsToPercent,
   classTitle,
   formatCoin,
+  formatSeconds,
+  isEditionsClass,
+  isHarbergerClass,
   isHidden,
+  isMarketable,
   isTransferable,
   txFailure,
 } from "./shared";
@@ -51,18 +61,23 @@ interface Props {
   classId: string;
   onBack: () => void;
   onSelectToken: (classId: string, tokenId: string) => void;
+  onOpenEdition: (classId: string, editionId: string) => void;
+  onOpenRedeem: (classId: string) => void;
+  onOpenClass: (classId: string) => void;
 }
 
 const TOKENS_PAGE = "30";
 
-export default function ClassDetail({ classId, onBack, onSelectToken }: Props) {
+export default function ClassDetail({ classId, onBack, onSelectToken, onOpenEdition, onOpenRedeem, onOpenClass }: Props) {
   const { address, signAndBroadcast } = useWallet();
   const { config } = useChainConfig();
+  const { isMine } = useMyAliases();
   const { pending, error: txError, clearError, run } = useTxAction();
 
   const [cls, setCls] = useState<ArtifactClass | null>(null);
   const [withheld, setWithheld] = useState(false);
   const [tokens, setTokens] = useState<TokenView[]>([]);
+  const [editions, setEditions] = useState<EditionView[]>([]);
   const [nextKey, setNextKey] = useState<string | null>(null);
   const [handover, setHandover] = useState<PendingClassOwner | null>(null);
   const [hides, setHides] = useState<HideRecord[]>([]);
@@ -73,14 +88,20 @@ export default function ClassDetail({ classId, onBack, onSelectToken }: Props) {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [c, t] = await Promise.all([
-        getArtifactClass(classId),
-        listArtifactTokens(classId, { limit: TOKENS_PAGE }),
-      ]);
+      const c = await getArtifactClass(classId);
       setCls(c.class.class);
       setWithheld(!!c.class.withheld);
-      setTokens(t.tokens || []);
-      setNextKey(t.pagination?.next_key || null);
+      if (isEditionsClass(c.class.class)) {
+        const e = await listArtifactEditions(classId, { limit: TOKENS_PAGE });
+        setEditions(e.editions || []);
+        setTokens([]);
+        setNextKey(e.pagination?.next_key || null);
+      } else {
+        const t = await listArtifactTokens(classId, { limit: TOKENS_PAGE });
+        setTokens(t.tokens || []);
+        setEditions([]);
+        setNextKey(t.pagination?.next_key || null);
+      }
       getArtifactPendingClassOwner(classId).then(setHandover).catch(() => setHandover(null));
       getArtifactHideRecords(classId).then(setHides).catch(() => setHides([]));
       getArtifactParams().then((r) => setParams(r.params)).catch(() => setParams(null));
@@ -99,6 +120,12 @@ export default function ClassDetail({ classId, onBack, onSelectToken }: Props) {
   const loadMore = async () => {
     if (!nextKey) return;
     try {
+      if (cls && isEditionsClass(cls)) {
+        const e = await listArtifactEditions(classId, { limit: TOKENS_PAGE, key: nextKey });
+        setEditions((prev) => [...prev, ...(e.editions || [])]);
+        setNextKey(e.pagination?.next_key || null);
+        return;
+      }
       const t = await listArtifactTokens(classId, { limit: TOKENS_PAGE, key: nextKey });
       setTokens((prev) => [...prev, ...(t.tokens || [])]);
       setNextKey(t.pagination?.next_key || null);
@@ -124,8 +151,11 @@ export default function ClassDetail({ classId, onBack, onSelectToken }: Props) {
     );
   }
 
-  const isOwner = !!address && cls.owner === address;
-  const isMinter = !!address && (cls.minters || []).includes(address);
+  const isOwner = isMine(cls.owner);
+  const isMinter = (cls.minters || []).some((m) => isMine(m));
+  const editionsModel = isEditionsClass(cls);
+  const expiring = !!cls.expiry?.mode && cls.expiry.mode !== ExpiryMode.NONE;
+  const revealKind = cls.reveal?.kind && cls.reveal.kind !== RevealKind.NONE ? cls.reveal.kind : null;
   const hidden = withheld || isHidden(cls.status);
   const cap = cls.max_supply && cls.max_supply !== "0" ? cls.max_supply : null;
   const policy = cls.mint_policy;
@@ -191,7 +221,7 @@ export default function ClassDetail({ classId, onBack, onSelectToken }: Props) {
 
         <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
           <div>
-            <dt className="text-xs text-zinc-500">Live tokens</dt>
+            <dt className="text-xs text-zinc-500">{editionsModel ? "Editions" : "Live tokens"}</dt>
             <dd className="text-zinc-200">{cls.supply || "0"}</dd>
           </div>
           <div>
@@ -211,6 +241,45 @@ export default function ClassDetail({ classId, onBack, onSelectToken }: Props) {
               <dt className="text-xs text-zinc-500">Royalty</dt>
               <dd className="text-zinc-200" title="Paid on sales through the Spark Dream market">
                 {bpsToPercent(cls.royalty_bps)}
+              </dd>
+            </div>
+          )}
+          {expiring && (
+            <div>
+              <dt className="text-xs text-zinc-500">Expiry</dt>
+              <dd className="text-zinc-200" title={EXPIRY_MODE_LABELS[cls.expiry!.mode!]}>
+                {formatSeconds(cls.expiry?.term)} per term
+                {cls.expiry?.renewal_price?.amount && cls.expiry.renewal_price.amount !== "0"
+                  ? `, renews for ${formatCoin(cls.expiry.renewal_price, config.displayDenom)}`
+                  : ""}
+              </dd>
+            </div>
+          )}
+          {revealKind && (
+            <div>
+              <dt className="text-xs text-zinc-500">{REVEAL_KIND_LABELS[revealKind]}</dt>
+              <dd className="text-zinc-200">
+                {cls.reveal?.revealed_at && cls.reveal.revealed_at !== "0"
+                  ? `Revealed ${formatTime(cls.reveal.revealed_at)}`
+                  : cls.reveal?.deadline
+                    ? `Reveal by ${formatTime(cls.reveal.deadline)}`
+                    : "Not revealed"}
+              </dd>
+            </div>
+          )}
+          {isHarbergerClass(cls) && (
+            <div>
+              <dt className="text-xs text-zinc-500">Harberger tax</dt>
+              <dd className="text-zinc-200">
+                {bpsToPercent(cls.harberger?.tax_bps_per_year)} a year, every {formatSeconds(cls.harberger?.tax_period)}
+              </dd>
+            </div>
+          )}
+          {cls.renderer?.pkg_path && (
+            <div className="col-span-2">
+              <dt className="text-xs text-zinc-500">Renderer</dt>
+              <dd className="break-all font-mono text-[11px] text-zinc-300" title={cls.renderer.source_hash}>
+                {cls.renderer.pkg_path}
               </dd>
             </div>
           )}
@@ -251,7 +320,7 @@ export default function ClassDetail({ classId, onBack, onSelectToken }: Props) {
               <CopyableAddress address={handover.proposed_owner} resolveName className="text-sky-100" />
               {handover.expires_at && <span className="text-sky-300/70">({timeRemaining(handover.expires_at)})</span>}
             </span>
-            {address === handover.proposed_owner && (
+            {isMine(handover.proposed_owner) && (
               <button onClick={acceptHandover} disabled={pending !== null} className="rounded-md border border-sky-600 px-2.5 py-1 font-medium hover:bg-sky-900/40 disabled:opacity-50">
                 {pending === "accept-owner" ? "Accepting…" : "Accept ownership"}
               </button>
@@ -288,11 +357,24 @@ export default function ClassDetail({ classId, onBack, onSelectToken }: Props) {
           isOwner={isOwner}
           onChanged={load}
           onDeleted={onBack}
+          onOpenRedeem={() => onOpenRedeem(cls.id)}
         />
       )}
 
-      <h3 className="mb-2 mt-6 text-sm font-semibold text-zinc-300">Tokens</h3>
-      <TokenGrid tokens={tokens} onSelect={onSelectToken} empty="No tokens minted yet." />
+      {!hidden && <CraftPanel cls={cls} params={params} mode="craft" onChanged={load} onOpenClass={onOpenClass} />}
+      {isMarketable(cls) && !hidden && <CollectionOffers cls={cls} params={params} onChanged={load} />}
+
+      {editionsModel ? (
+        <>
+          <h3 className="mb-2 mt-6 text-sm font-semibold text-zinc-300">Editions</h3>
+          <EditionList editions={editions} onSelect={(id) => onOpenEdition(cls.id, id)} displayDenom={config.displayDenom} />
+        </>
+      ) : (
+        <>
+          <h3 className="mb-2 mt-6 text-sm font-semibold text-zinc-300">Tokens</h3>
+          <TokenGrid tokens={tokens} onSelect={onSelectToken} empty="No tokens minted yet." />
+        </>
+      )}
       {nextKey && (
         <button
           onClick={loadMore}
@@ -337,6 +419,10 @@ function PublicMintCard({
     };
   }, [cls.id, address, qty]);
 
+  // The quote prices this batch under the class's curve; fall back to the policy price.
+  const unitNow = quote?.unit_price?.amount ? quote.unit_price : price;
+  const maxUnit = quote?.max_unit_price?.amount ? quote.max_unit_price : price;
+
   const mint = () =>
     run("public-mint", async () => {
       if (!address) return;
@@ -344,8 +430,12 @@ function PublicMintCard({
         buyer: address,
         classId: BigInt(cls.id),
         quantity: qty,
-        // Per-token ceiling: the price shown here. A raise in the meantime fails the tx.
-        maxPrice: { denom: price.denom || denom, amount: price.amount || "0" },
+        // Per-token ceiling: the dearest unit of this batch as quoted (prices can rise
+        // with supply or fall over time). A raise in the meantime fails the tx.
+        maxPrice: {
+          denom: maxUnit.denom || denom,
+          amount: maxUnit.amount || "0",
+        },
       };
       await signAndBroadcast([{ typeUrl: ArtifactMsgTypeUrls.PublicMint, value }]);
       invalidateArtifacts();
@@ -354,16 +444,21 @@ function PublicMintCard({
 
   const start = Number(policy.start_time || "0");
   const end = Number(policy.end_time || "0");
+  const curve = !!policy.pricing && policy.pricing !== MintPricing.FIXED;
 
   return (
     <div className="sd-hull-tile mt-4 space-y-3 rounded-xl p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-sm font-semibold text-white">Public mint</h3>
-        <span className="text-sm text-zinc-200">{formatCoin(price, displayDenom)} each</span>
+        <span className="text-sm text-zinc-200">
+          {formatCoin(unitNow, displayDenom)} {curve ? "now" : "each"}
+        </span>
       </div>
       <p className="text-xs text-zinc-500">
         {start > now ? `Opens ${formatTime(String(start))}. ` : ""}
         {end ? (end > now ? `Closes ${formatTime(String(end))}. ` : "Closed. ") : ""}
+        {policy.pricing === MintPricing.LINEAR_SUPPLY ? "The price rises with every token minted. " : ""}
+        {policy.pricing === MintPricing.DUTCH ? "The price falls until minting closes. " : ""}
         {policy.per_address_limit ? `Up to ${policy.per_address_limit} per address. ` : ""}
         Each token also holds a refundable deposit.
       </p>
@@ -387,6 +482,58 @@ function PublicMintCard({
         <p className="text-xs text-zinc-500">Connect a wallet to mint.</p>
       )}
       <ActionBanner message={error} onDismiss={clearError} />
+    </div>
+  );
+}
+
+function EditionList({
+  editions,
+  onSelect,
+  displayDenom,
+}: {
+  editions: EditionView[];
+  onSelect: (editionId: string) => void;
+  displayDenom: string;
+}) {
+  if (editions.length === 0) {
+    return (
+      <div className="sd-hull-tile rounded-xl p-10 text-center">
+        <p className="text-sm text-zinc-400">No editions yet.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {editions.map((v) => {
+        const e = v.edition;
+        const hidden = v.withheld || isHidden(e.status) || isHidden(v.class_status);
+        const cap = e.max_supply && e.max_supply !== "0" ? e.max_supply : null;
+        return (
+          <button
+            key={e.id}
+            onClick={() => onSelect(e.id)}
+            className="sd-hull-tile interactive flex items-center gap-3 rounded-xl px-3 py-2.5 text-left"
+          >
+            <ArtifactMedia uri="" size="sm" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="truncate text-sm font-medium text-zinc-100">
+                  {hidden ? `Edition #${e.id}` : e.metadata?.name?.trim() || `Edition #${e.id}`}
+                </span>
+                {(e.claim?.scope || e.claim?.initiative_id) && !hidden && (
+                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">Impact</span>
+                )}
+                {hidden && <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-medium text-red-400">Hidden</span>}
+              </div>
+              <div className="truncate text-[11px] text-zinc-500">
+                <span className="font-mono">{e.class_id}/{e.id}</span> · {e.supply || "0"} unit{e.supply === "1" ? "" : "s"}
+                {cap ? ` of ${cap}` : ""} · {e.holders || "0"} holder{e.holders === "1" ? "" : "s"}
+                {e.rewards_funded && e.rewards_funded !== "0" ? ` · ${formatSpark(e.rewards_funded)} ${displayDenom} funded` : ""}
+              </div>
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }

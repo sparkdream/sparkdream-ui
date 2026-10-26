@@ -7,6 +7,7 @@ import { ForumMsgTypeUrls } from "@/lib/tx";
 import { getForumParams } from "@/lib/api";
 import type { PostConvictionStake } from "@/types/forum";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 // ESTABLISHED trust rank (see useTrustRank): the chain requires ESTABLISHED+
 // to open a post-conviction stake.
@@ -41,6 +42,7 @@ interface Props {
 export default function PostConvictionControl({ postId, author, stakes, onChanged }: Props) {
   const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const rank = useTrustRank(address);
 
   const [showForm, setShowForm] = useState(false);
@@ -59,8 +61,9 @@ export default function PostConvictionControl({ postId, author, stakes, onChange
   }, []);
 
   // Don't surface anything to the author (they can't stake on their own post)
-  // or to disconnected viewers with nothing staked.
-  if (!address || address === author) return null;
+  // or to disconnected viewers with nothing staked. The ban covers every
+  // address the author has held, not just this one.
+  if (!address || isMine(author)) return null;
   const eligible = rank !== null && rank >= ESTABLISHED_RANK;
   if (!eligible && stakes.length === 0) {
     return (

@@ -35,6 +35,7 @@ import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
 import { isMissingEndpoint } from "@/lib/errors";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 interface Props {
   onViewCollection?: (collectionId: string) => void;
@@ -108,6 +109,7 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
   const dream = useDreamDenom();
   const { config: chainConfig } = useChainConfig();
   const { address, connected, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const isMember = useIsRepMember(address);
   const cannotBond = address ? isMember === false : false;
 
@@ -287,7 +289,7 @@ export default function CollectionSentinelPanel({ onViewCollection }: Props) {
     ? (BigInt(currentBond) - BigInt(totalCommitted)).toString()
     : "0";
 
-  const myHides = hideEntries.filter((e) => e.record.sentinel === address);
+  const myHides = hideEntries.filter((e) => isMine(e.record.sentinel));
 
   // Self-correct window in blocks (collect timestamps are heights, unlike
   // forum's seconds-denominated sentinel_unhide_window).

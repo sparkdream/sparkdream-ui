@@ -6,6 +6,7 @@ import { RepMsgTypeUrls } from "@/lib/tx";
 import type { RepProject, VerificationPolicy } from "@/types/rep";
 import { ProjectStatus, REVIEW_PROCESS_LABELS, ReviewProcess } from "@/types/rep";
 import { reviewProcessFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/project";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 interface Props {
   project: RepProject;
@@ -45,6 +46,7 @@ export default function VerificationPolicyPanel({
   onChanged,
 }: Props) {
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const policy: VerificationPolicy | undefined = project.verification_policy;
 
   const [open, setOpen] = useState(false);
@@ -70,7 +72,7 @@ export default function VerificationPolicyPanel({
   const canEdit =
     !!address &&
     project.status === ProjectStatus.ACTIVE &&
-    (address === project.creator || isOpsCommitteeMember);
+    (isMine(project.creator) || isOpsCommitteeMember);
 
   const handleSave = async () => {
     if (!address) return;

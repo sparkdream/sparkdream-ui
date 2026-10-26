@@ -29,6 +29,7 @@ import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
 import { isMissingEndpoint } from "@/lib/errors";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 const SENTINEL_ROLE = RoleType.CONTENT_SENTINEL;
 
@@ -136,6 +137,7 @@ function accuracySeries(
 
 export default function SentinelPanel() {
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const dream = useDreamDenom();
   const isMember = useIsRepMember(address);
   const cannotBond = address ? isMember === false : false;
@@ -342,7 +344,7 @@ export default function SentinelPanel() {
   // past-window (COC override queue). Empty hidden_at or unknown window
   // are treated as "past window" so the COC always has a path to act.
   const nowSec = Math.floor(Date.now() / 1000);
-  const myHides = allHides.filter((r) => r.sentinel !== "" && r.sentinel === address);
+  const myHides = allHides.filter((r) => r.sentinel !== "" && isMine(r.sentinel));
   const pastWindowHides = allHides.filter((r) => {
     // Gov-authority hides (empty sentinel marker) are council-domain from the
     // moment they're created: there's no sentinel self-correct window for them,

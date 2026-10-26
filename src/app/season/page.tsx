@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import { SeasonMsgTypeUrls } from "@/lib/tx";
 import { useWallet } from "@/contexts/WalletContext";
+import { useMyAliases } from "@/hooks/useMyAliases";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import CopyableAddress from "@/components/CopyableAddress";
 import type {
@@ -144,6 +145,7 @@ function formatNum(n: string | number | undefined): string {
 
 export default function SeasonPage() {
   const { connected, address, ready, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const isRepMember = useIsRepMember(address);
   const [view, setView] = useState<View>("overview");
   const [rarityFilter, setRarityFilter] = useState<RarityFilter>("all");
@@ -511,10 +513,10 @@ export default function SeasonPage() {
     if (!address) return null;
     return (
       memberships.find(
-        (m) => m.member === address && (!m.left_epoch || m.left_epoch === "0")
+        (m) => isMine(m.member) && (!m.left_epoch || m.left_epoch === "0")
       ) || null
     );
-  }, [memberships, address]);
+  }, [memberships, address, isMine]);
 
   const myGuild = useMemo(() => {
     if (!myMembership || !myMembership.guild_id || myMembership.guild_id === "0") return null;
@@ -523,10 +525,10 @@ export default function SeasonPage() {
 
   const myRole = useMemo<"founder" | "officer" | "member" | null>(() => {
     if (!myGuild || !address) return null;
-    if (myGuild.founder === address) return "founder";
-    if ((myGuild.officers || []).includes(address)) return "officer";
+    if (isMine(myGuild.founder)) return "founder";
+    if ((myGuild.officers || []).some(isMine)) return "officer";
     return "member";
-  }, [myGuild, address]);
+  }, [myGuild, address, isMine]);
 
   const myInvites = useMemo(() => {
     if (!address) return [] as Guild[];
@@ -709,7 +711,7 @@ export default function SeasonPage() {
               >
                 Mine
                 <span className="badge">
-                  {address ? nominations.filter((n) => n.nominator === address).length : 0}
+                  {address ? nominations.filter((n) => isMine(n.nominator)).length : 0}
                 </span>
               </button>
               <button
@@ -2692,7 +2694,6 @@ function GuildDetailView({
   guild,
   members,
   role,
-  address,
   txPending,
   onLeave,
   onInvite,
@@ -2721,6 +2722,7 @@ function GuildDetailView({
   onSetInviteOnly: (guildId: string, inviteOnly: boolean) => void;
   onUpdateDescription: (guildId: string, description: string) => void;
 }) {
+  const { isMine } = useMyAliases();
   const [inviteAddr, setInviteAddr] = useState("");
   const [newDescription, setNewDescription] = useState(guild.description);
   const [transferTo, setTransferTo] = useState("");
@@ -2809,7 +2811,7 @@ function GuildDetailView({
           {sortedMembers.map((m) => {
             const isFounderMember = m.member === guild.founder;
             const isOfficer = officers.has(m.member);
-            const isSelf = m.member === address;
+            const isSelf = isMine(m.member);
             return (
               <div
                 key={m.member}
@@ -3089,6 +3091,7 @@ function NominationsView({
   onStake: (id: string, amount: string) => void;
   onUnstake: (id: string) => void;
 }) {
+  const { isMine } = useMyAliases();
   if (subview === "create") {
     if (connected && isRepMember === false) {
       return (
@@ -3126,7 +3129,7 @@ function NominationsView({
 
   const list =
     subview === "mine" && address
-      ? nominations.filter((n) => n.nominator === address)
+      ? nominations.filter((n) => isMine(n.nominator))
       : nominations;
 
   const sorted = [...list].sort(
@@ -3194,7 +3197,6 @@ function NominationsView({
 function NominationCard({
   nomination,
   minConviction,
-  address,
   connected,
   isRepMember,
   txPending,
@@ -3210,12 +3212,13 @@ function NominationCard({
   onStake: (id: string, amount: string) => void;
   onUnstake: (id: string) => void;
 }) {
+  const aliases = useMyAliases();
   const dream = useDreamDenom();
   const canStake = isRepMember === true;
   const [stakeInput, setStakeInput] = useState("");
   const conviction = Number(nomination.conviction || 0);
   const pct = minConviction > 0 ? Math.min(100, Math.round((conviction / minConviction) * 100)) : 0;
-  const isMine = address === nomination.nominator;
+  const isMine = aliases.isMine(nomination.nominator);
   const stakeKey = `__stake__:${nomination.id}`;
   const unstakeKey = `__unstake__:${nomination.id}`;
 

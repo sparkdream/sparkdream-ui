@@ -15,7 +15,7 @@ import {
 import { isMissingEndpoint } from "@/lib/errors";
 import { timeRemaining } from "@/lib/utils";
 import type { Listing } from "@/types/artifact";
-import { classTitle, formatCoin, tokenRef, tokenTitle } from "./shared";
+import { classTitle, formatCoin, shownToken, tokenRef, tokenTitle } from "./shared";
 
 const PAGE = "30";
 
@@ -64,7 +64,7 @@ export default function MarketList({ mode, search, sort, onSelectToken }: Props)
         setLabels((prev) => ({
           ...prev,
           [k]: {
-            token: t ? tokenTitle(t.token.token, t.token.withheld) : `Token #${l.token_id}`,
+            token: t ? tokenTitle(shownToken(t.token), t.token.withheld) : `Token #${l.token_id}`,
             cls: c ? classTitle(c.class.class, c.class.withheld) : `Class #${l.class_id}`,
           },
         }));

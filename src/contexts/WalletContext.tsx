@@ -4,7 +4,7 @@ import React, { createContext, useContext, useRef, useState, useCallback, useEff
 import { useChainConfig } from "./ChainConfigContext";
 import type { Session } from "@/types/session";
 import { getCommonsParams, getSessionsByGrantee, isArchiveModeActive } from "@/lib/api";
-import { CommonsMsgTypeUrls, SessionMsgTypeUrls } from "@/lib/tx";
+import { CommonsMsgTypeUrls, SESSION_FORBIDDEN_TYPES, SessionMsgTypeUrls } from "@/lib/tx";
 
 /**
  * Phases a tx walks through, in order. Callers pass `onPhase` to drive UI
@@ -349,9 +349,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Wallet not connected");
       }
 
-      const { SigningStargateClient, AminoTypes, defaultRegistryTypes, createDefaultAminoConverters } = await import("@cosmjs/stargate");
-      const { Registry } = await import("@cosmjs/proto-signing");
-      type GeneratedType = import("@cosmjs/proto-signing").GeneratedType;
+      const { SigningStargateClient } = await import("@cosmjs/stargate");
       type EncodeObject = import("@cosmjs/proto-signing").EncodeObject;
       // Both the TsProto and Pbjs codecs that ship in cosmjs-types have
       // `encode`/`fromPartial` but with incompatible argument shapes — the
@@ -363,467 +361,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         fromPartial: (val: unknown) => unknown;
       };
 
-      const { load: loadBlog } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx.registry");
-      const { load: loadSession } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx.registry");
-      const { load: loadCommons } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx.registry");
-      const { load: loadRep } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx.registry");
-      const { load: loadCollect } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/tx.registry");
-      const { load: loadName } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/name/v1/tx.registry");
-      const { load: loadForum } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/forum/v1/tx.registry");
-      const { load: loadSeason } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/season/v1/tx.registry");
-      const { load: loadReveal } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/reveal/v1/tx.registry");
-      const { load: loadFutarchy } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/futarchy/v1/tx.registry");
-      const { load: loadFederation } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx.registry");
-      const { load: loadArtifact } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/artifact/v1/tx.registry");
-      const { load: loadService } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/service/v1/tx.registry");
-      // Gov v1 + upgrade types (not in defaultRegistryTypes which only has v1beta1)
-      const { MsgSubmitProposal: GovV1MsgSubmitProposal } = await import("cosmjs-types/cosmos/gov/v1/tx");
-      const { MsgSoftwareUpgrade, MsgCancelUpgrade } = await import("cosmjs-types/cosmos/upgrade/v1beta1/tx");
-
-      const registry = new Registry(defaultRegistryTypes);
-      registry.register("/cosmos.gov.v1.MsgSubmitProposal", GovV1MsgSubmitProposal as unknown as GeneratedType);
-      registry.register("/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade", MsgSoftwareUpgrade as unknown as GeneratedType);
-      registry.register("/cosmos.upgrade.v1beta1.MsgCancelUpgrade", MsgCancelUpgrade as unknown as GeneratedType);
-      loadBlog(registry);
-      loadSession(registry);
-      loadCommons(registry);
-      loadRep(registry);
-      loadCollect(registry);
-      loadName(registry);
-      loadForum(registry);
-      loadSeason(registry);
-      loadReveal(registry);
-      loadFutarchy(registry);
-      loadFederation(registry);
-      loadArtifact(registry);
-      loadService(registry);
-
-      const { AminoConverter: blogAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx.amino");
-      const { AminoConverter: sessionAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/session/v1/tx.amino");
-      const { AminoConverter: commonsAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx.amino");
-      const { AminoConverter: repAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx.amino");
-      const { AminoConverter: collectAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/tx.amino");
-      const { AminoConverter: nameAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/name/v1/tx.amino");
-      const { AminoConverter: forumAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/forum/v1/tx.amino");
-      const { AminoConverter: seasonAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/season/v1/tx.amino");
-      const { AminoConverter: revealAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/reveal/v1/tx.amino");
-      const { AminoConverter: futarchyAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/futarchy/v1/tx.amino");
-      // 0.0.39 ships a complete federation AminoConverter map (25 entries).
-      // The four the federation page signs -- MsgLinkIdentity,
-      // MsgUnlinkIdentity, and MsgRegisterPeer / MsgResumePeer / MsgSuspendPeer
-      // as council proposal inner messages -- were checked against the protos:
-      // all generated (no stale hand-written overrides), amino names match each
-      // `option (amino.name)`, no repeated fields, and no uint64. The one enum,
-      // MsgRegisterPeer.type, is emitted as a plain int, which is what the
-      // chain's aminojson renders. No shadowing needed.
-      const { AminoConverter: federationAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx.amino");
-      // 0.0.44's generated artifact map covers every message, but its
-      // converters get empty lists (omitted, or null for dont_omitempty ones)
-      // and Coin amounts ("0", not "") wrong. artifactAmino shadows the
-      // affected converters, checked against the chain's aminojson.
-      const { AminoConverter: artifactGeneratedAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/artifact/v1/tx.amino");
-      const { artifactAminoOverrides } = await import("@/lib/artifactAmino");
-      // x/service: only the operator's own lifecycle messages, the ones the
-      // governance page signs (register, metadata, top-up, unbond, claim).
-      // Checked against the protos: string, Int-as-string and bytes fields
-      // only, amino names match each `option (amino.name)`. The report and
-      // jury messages carry uint64 ids, which these generated converters emit
-      // as numbers where aminojson wants strings, so they stay out until
-      // they have been checked.
-      const { AminoConverter: serviceGeneratedAmino } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/service/v1/tx.amino");
-      const serviceAmino = Object.fromEntries(
-        [
-          "/sparkdream.service.v1.MsgRegisterOperator",
-          "/sparkdream.service.v1.MsgUpdateMetadata",
-          "/sparkdream.service.v1.MsgTopUpBond",
-          "/sparkdream.service.v1.MsgUnbondOperator",
-          "/sparkdream.service.v1.MsgClaimUnbondedBond",
-        ]
-          .filter((url) => url in serviceGeneratedAmino)
-          .map((url) => [url, serviceGeneratedAmino[url as keyof typeof serviceGeneratedAmino]])
-      );
-
-      // The published sparkdreamjs (0.0.19) ships the registry + proto codecs
-      // for the new Pin/MakePermanent-separation and forum post-conviction
-      // messages but its generated AminoConverter maps omit them, so
-      // amino-signing (Keplr/Ledger) these would fail with "does not exist in
-      // the Amino message type register".
-      // The proto message classes still carry the telescope-generated
-      // toAmino/fromAmino statics (the messages have no repeated fields, so the
-      // omit-empty traps that forced the src-overrides overlays don't apply
-      // here), so wire converters by delegating to them, mirroring exactly how
-      // the package's own tx.amino does it. Amino names match the chain's
-      // `option (amino.name)` in each module's tx.proto.
-      const { MsgMakePostPermanent: BlogMakePostPermanent, MsgMakeReplyPermanent: BlogMakeReplyPermanent, MsgUnpinPost: BlogUnpinPost, MsgUnpinReply: BlogUnpinReply } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/blog/v1/tx");
-      const { MsgMakePostPermanent: ForumMakePostPermanent, MsgStakePostConviction: ForumStakePostConviction, MsgReleasePostConviction: ForumReleasePostConviction } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/forum/v1/tx");
-      const { MsgMakeCollectionPermanent: CollectMakeCollectionPermanent, MsgUnpinCollection: CollectUnpinCollection } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/tx");
-      const pinSeparationAmino = {
-        "/sparkdream.blog.v1.MsgMakePostPermanent": { aminoType: "sparkdream/x/blog/MsgMakePostPermanent", toAmino: BlogMakePostPermanent.toAmino, fromAmino: BlogMakePostPermanent.fromAmino },
-        "/sparkdream.blog.v1.MsgMakeReplyPermanent": { aminoType: "sparkdream/x/blog/MsgMakeReplyPermanent", toAmino: BlogMakeReplyPermanent.toAmino, fromAmino: BlogMakeReplyPermanent.fromAmino },
-        "/sparkdream.blog.v1.MsgUnpinPost": { aminoType: "sparkdream/x/blog/MsgUnpinPost", toAmino: BlogUnpinPost.toAmino, fromAmino: BlogUnpinPost.fromAmino },
-        "/sparkdream.blog.v1.MsgUnpinReply": { aminoType: "sparkdream/x/blog/MsgUnpinReply", toAmino: BlogUnpinReply.toAmino, fromAmino: BlogUnpinReply.fromAmino },
-        "/sparkdream.forum.v1.MsgMakePostPermanent": { aminoType: "sparkdream/x/forum/MsgMakePostPermanent", toAmino: ForumMakePostPermanent.toAmino, fromAmino: ForumMakePostPermanent.fromAmino },
-        "/sparkdream.forum.v1.MsgStakePostConviction": { aminoType: "sparkdream/x/forum/MsgStakePostConviction", toAmino: ForumStakePostConviction.toAmino, fromAmino: ForumStakePostConviction.fromAmino },
-        "/sparkdream.forum.v1.MsgReleasePostConviction": { aminoType: "sparkdream/x/forum/MsgReleasePostConviction", toAmino: ForumReleasePostConviction.toAmino, fromAmino: ForumReleasePostConviction.fromAmino },
-        "/sparkdream.collect.v1.MsgMakeCollectionPermanent": { aminoType: "sparkdream/x/collect/MsgMakeCollectionPermanent", toAmino: CollectMakeCollectionPermanent.toAmino, fromAmino: CollectMakeCollectionPermanent.fromAmino },
-        "/sparkdream.collect.v1.MsgUnpinCollection": { aminoType: "sparkdream/x/collect/MsgUnpinCollection", toAmino: CollectUnpinCollection.toAmino, fromAmino: CollectUnpinCollection.fromAmino },
-      };
-
-      // Same gap for the 0.0.26 additions: the registry + proto codecs ship
-      // MsgSetThreadProposalsLock (forum) and MsgCancelUnbondRole (rep) but the
-      // generated AminoConverter maps still omit them. Neither has repeated
-      // fields (MsgCancelUnbondRole's role_type is an enum the converter emits
-      // as a plain int, matching the chain's aminojson), so delegating to the
-      // telescope toAmino/fromAmino statics is safe.
-      // And again for 0.0.27: MsgUnhideContent (collect sentinel self-correct,
-      // chain commit 4ad8e38) is in the registry but not the amino map. Two
-      // scalar fields (creator, uint64 hide_record_id emitted as a string),
-      // so the statics are safe here too.
-      // 0.0.38 closed the rep half of this gap — MsgCancelUnbondRole is in the
-      // generated map now, and MsgCancelInitiative is gone entirely, renamed to
-      // MsgCloseInitiative (chain commit 50c6fb6) and shipped with a converter.
-      // Importing the old name here would have resolved to undefined and thrown
-      // on the first amino signature of any message, so the entry is dropped
-      // rather than renamed. The two below are still missing theirs.
-      //
-      // 0.0.38's commons (recurring spend) map has the same gap. The
-      // "Recurring payment" council proposal now sends MsgScheduleRecurringSpend
-      // and MsgCancelRecurringSpend as inner messages, so those two are patched
-      // below: scalar fields (authority, recipient, note; int64 period/start/end
-      // and uint64 id emitted as strings, omitted at zero) plus a non-empty
-      // Coin list, all as the chain's aminojson renders them. Claim and decline
-      // are still unpatched: this app claims through session's
-      // MsgClaimRecurringPull, which the session map covers. The session
-      // map's gap (grant messages) is fixed in the package as of 0.0.41, whose
-      // converters are checked against the chain's aminojson output.
-      const { MsgSetThreadProposalsLock: ForumSetThreadProposalsLock } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/forum/v1/tx");
-      const { MsgUnhideContent: CollectUnhideContent } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/tx");
-      // 0.0.44: the rep initiative-bounty messages (chain commit b9da52e) are
-      // missing too. Both are scalar-only (funder, uint64 initiative_id, and a
-      // cosmos.Int amount string), so the statics are safe.
-      const { MsgFundInitiativeBounty: RepFundInitiativeBounty, MsgReclaimInitiativeBounty: RepReclaimInitiativeBounty } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
-      const { MsgScheduleRecurringSpend: CommonsScheduleRecurringSpend, MsgCancelRecurringSpend: CommonsCancelRecurringSpend } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx");
-      const latestMsgAmino = {
-        "/sparkdream.commons.v1.MsgScheduleRecurringSpend": { aminoType: "sparkdream/x/commons/MsgScheduleRecurringSpend", toAmino: CommonsScheduleRecurringSpend.toAmino, fromAmino: CommonsScheduleRecurringSpend.fromAmino },
-        "/sparkdream.commons.v1.MsgCancelRecurringSpend": { aminoType: "sparkdream/x/commons/MsgCancelRecurringSpend", toAmino: CommonsCancelRecurringSpend.toAmino, fromAmino: CommonsCancelRecurringSpend.fromAmino },
-        "/sparkdream.forum.v1.MsgSetThreadProposalsLock": { aminoType: "sparkdream/x/forum/MsgSetThreadProposalsLock", toAmino: ForumSetThreadProposalsLock.toAmino, fromAmino: ForumSetThreadProposalsLock.fromAmino },
-        "/sparkdream.collect.v1.MsgUnhideContent": { aminoType: "sparkdream/x/collect/MsgUnhideContent", toAmino: CollectUnhideContent.toAmino, fromAmino: CollectUnhideContent.fromAmino },
-        "/sparkdream.rep.v1.MsgFundInitiativeBounty": { aminoType: "sparkdream/x/rep/MsgFundInitiativeBounty", toAmino: RepFundInitiativeBounty.toAmino, fromAmino: RepFundInitiativeBounty.fromAmino },
-        "/sparkdream.rep.v1.MsgReclaimInitiativeBounty": { aminoType: "sparkdream/x/rep/MsgReclaimInitiativeBounty", toAmino: RepReclaimInitiativeBounty.toAmino, fromAmino: RepReclaimInitiativeBounty.fromAmino },
-      };
-
-      // 0.0.38 finally ships the whole rep AminoConverter map: every
-      // bonded-reviewer, jury-summons and review-bounty message that 0.0.36
-      // left out now has a generated entry, including MsgSubmitInitiativeReview
-      // with the correct undefined-when-empty criteria_votes. Those shadows are
-      // gone; the two below stay, because they are the other failure mode from
-      // [[sparkdreamjs-amino-converter-gap]] — the package's HAND-WRITTEN
-      // overrides, which are not regenerated and so go stale silently. Both are
-      // still wrong in 0.0.38, verified against the package source:
-      //
-      //   - MsgCreateInitiative still emits the removed template_id and drops
-      //     acceptance_criteria entirely, so any initiative created WITH
-      //     criteria signs bytes the chain never reconstructs.
-      //   - MsgCreateChallenge still predates the criteria_id the challenger
-      //     cites, so a challenge naming a criterion signs without it. (A
-      //     free-form challenge signs fine either way, which is what makes this
-      //     the kind of bug that ships.)
-      //
-      // Re-check both on the next bump: a fixed package override and this
-      // shadow agreeing is the only safe way to drop them.
-      const {
-        MsgCreateInitiative: RepCreateInitiative,
-        MsgCreateChallenge: RepCreateChallenge,
-      } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
-      const { VerificationCriteria: RepVerificationCriteria } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/acceptance_criteria");
-      const reviewAmino = {
-        "/sparkdream.rep.v1.MsgCreateInitiative": {
-          aminoType: "sparkdream/x/rep/MsgCreateInitiative",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          toAmino: (message: any) => ({
-            creator: message.creator === "" ? undefined : message.creator,
-            project_id: message.projectId !== BigInt(0) ? message.projectId?.toString() : undefined,
-            title: message.title === "" ? undefined : message.title,
-            description: message.description === "" ? undefined : message.description,
-            tags: (message.tags?.length ?? 0) > 0 ? message.tags : undefined,
-            tier: message.tier !== BigInt(0) ? message.tier?.toString() : undefined,
-            category: message.category !== BigInt(0) ? message.category?.toString() : undefined,
-            budget: message.budget === "" ? undefined : message.budget,
-            acceptance_criteria: (message.acceptanceCriteria?.length ?? 0) > 0
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ? message.acceptanceCriteria.map((e: any) => RepVerificationCriteria.toAmino(e))
-              : undefined,
-          }),
-          fromAmino: RepCreateInitiative.fromAmino,
-        },
-        "/sparkdream.rep.v1.MsgCreateChallenge": {
-          aminoType: "sparkdream/x/rep/MsgCreateChallenge",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          toAmino: (message: any) => ({
-            challenger: message.challenger === "" ? undefined : message.challenger,
-            initiative_id: message.initiativeId !== BigInt(0) ? message.initiativeId?.toString() : undefined,
-            reason: message.reason === "" ? undefined : message.reason,
-            evidence: (message.evidence?.length ?? 0) > 0 ? message.evidence : undefined,
-            staked_dream: message.stakedDream === "" ? undefined : message.stakedDream,
-            criteria_id: message.criteriaId === "" ? undefined : message.criteriaId,
-          }),
-          fromAmino: RepCreateChallenge.fromAmino,
-        },
-      };
-
-      // 0.0.39's generated federation map is correct for every message this
-      // app signs EXCEPT MsgUpdatePeerPolicy, which carries the only federation
-      // message with repeated fields. PeerPolicy.toAmino emits them with a
-      // truthiness test:
-      //
-      //     if (message.outboundContentTypes) { obj.x = [...] } else { obj.x = ... }
-      //
-      // and `[]` is truthy, so an empty list signs as `"blocked_identities": []`
-      // where the chain's aminojson omits the key per omitempty. blocked_
-      // identities is empty in the ordinary case, so this fails sigverify as
-      // "unauthorized" on essentially every policy update — the first trap in
-      // [[amino-sigverify-traps]]. Shadow the whole converter, spread after the
-      // package map so ours wins.
-      //
-      // The uint64 rate limits are the second trap: the converter tests
-      // `!== BigInt(0)`, so callers must pass BigInt. PeerPolicy.fromPartial
-      // already coerces, and the policy form encodes through it.
-      //
-      // Every PeerPolicy field must be listed here: a field the shadow drops
-      // is still in the protobuf body, so the chain's sign-doc has a key ours
-      // lacks. content_hosts and allowed_identities follow the same omit-when-
-      // empty rule as the other lists. `curation` is a nullable message and
-      // follows cosmossdk.io/x/tx@v0.14.0 signing/aminojson marshalMessage:
-      // a field is skipped only when !msg.Has(f), and for a singular message
-      // field Has means PRESENT, not non-zero. So unset (nil) is omitted, but
-      // a set curation whose only field is zero -- collection 0, a real
-      // collection -- is emitted as `"curation":{}`, its zero collection_id
-      // omitted inside. A set non-zero id is `{"collection_id":"7"}` (uint64
-      // as a string). Checked against the chain's encoder, not just read off
-      // the source. The generated fromAmino turns `{}` back into a present
-      // IdentityCuration, whose encode writes the empty field 13 the chain
-      // then sees as set, so the round trip agrees on both sides.
-      const { MsgUpdatePeerPolicy: FederationUpdatePeerPolicy } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const peerPolicyToAmino = (p: any) => ({
-        peer_id: p?.peerId === "" ? undefined : p?.peerId,
-        outbound_content_types: (p?.outboundContentTypes?.length ?? 0) > 0 ? p.outboundContentTypes : undefined,
-        inbound_content_types: (p?.inboundContentTypes?.length ?? 0) > 0 ? p.inboundContentTypes : undefined,
-        min_outbound_trust_level: p?.minOutboundTrustLevel === 0 ? undefined : p?.minOutboundTrustLevel,
-        inbound_rate_limit_per_epoch: p?.inboundRateLimitPerEpoch !== BigInt(0) ? p?.inboundRateLimitPerEpoch?.toString() : undefined,
-        outbound_rate_limit_per_epoch: p?.outboundRateLimitPerEpoch !== BigInt(0) ? p?.outboundRateLimitPerEpoch?.toString() : undefined,
-        allow_reputation_queries: p?.allowReputationQueries === false ? undefined : p?.allowReputationQueries,
-        accept_reputation_attestations: p?.acceptReputationAttestations === false ? undefined : p?.acceptReputationAttestations,
-        require_review: p?.requireReview === false ? undefined : p?.requireReview,
-        blocked_identities: (p?.blockedIdentities?.length ?? 0) > 0 ? p.blockedIdentities : undefined,
-        content_hosts: (p?.contentHosts?.length ?? 0) > 0 ? p.contentHosts : undefined,
-        allowed_identities: (p?.allowedIdentities?.length ?? 0) > 0 ? p.allowedIdentities : undefined,
-        curation: p?.curation
-          ? {
-              collection_id:
-                BigInt(p.curation.collectionId ?? 0) !== BigInt(0)
-                  ? BigInt(p.curation.collectionId).toString()
-                  : undefined,
-            }
-          : undefined,
-      });
-      const federationPolicyAmino = {
-        "/sparkdream.federation.v1.MsgUpdatePeerPolicy": {
-          aminoType: "sparkdream/x/federation/MsgUpdatePeerPolicy",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          toAmino: (message: any) => ({
-            authority: message.authority === "" ? undefined : message.authority,
-            peer_id: message.peerId === "" ? undefined : message.peerId,
-            // policy is (gogoproto.nullable) = false, so the chain always has
-            // one to render and we always send one.
-            policy: message.policy ? peerPolicyToAmino(message.policy) : undefined,
-          }),
-          fromAmino: FederationUpdatePeerPolicy.fromAmino,
-        },
-      };
-
-      // The package's collect converters render `encrypted_data` with a
-      // truthiness test on a Uint8Array, and an empty one is truthy, so it
-      // signs `"encrypted_data": ""` where the chain's aminojson omits the
-      // empty bytes field. A message the app builds by hand leaves the field
-      // undefined and escapes this, but one DECODED from bytes always carries
-      // an empty Uint8Array -- which is every collect message inside an
-      // Operations Committee proposal (nested-amino decodes each inner Any
-      // before converting it). The federation curation panel proposes
-      // MsgCreateCollection and MsgAddItem that way, so wrap the four
-      // converters that carry the field and drop an empty value.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const dropEmptyEncryptedData = (conv: any) => ({
-        ...conv,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        toAmino: (message: any) => {
-          const obj = conv.toAmino(message);
-          if (!obj.encrypted_data) delete obj.encrypted_data;
-          return obj;
-        },
-      });
-      const collectBytesAmino = Object.fromEntries(
-        [
-          "/sparkdream.collect.v1.MsgCreateCollection",
-          "/sparkdream.collect.v1.MsgUpdateCollection",
-          "/sparkdream.collect.v1.MsgAddItem",
-          "/sparkdream.collect.v1.MsgUpdateItem",
-        ]
-          .filter((url) => url in collectAmino)
-          .map((url) => [url, dropEmptyEncryptedData(collectAmino[url as keyof typeof collectAmino])])
-      );
-
-      // Telescope's auto-generated amino converters don't recursively decode
-      // `repeated google.protobuf.Any` fields, so MsgSubmitProposal /
-      // MsgSubmitAnonymousProposal / MsgExecSession need the registry + the
-      // assembled AminoTypes wired into sparkdreamjs's hand-written override
-      // before any amino signing can happen (otherwise Ledger users hit
-      // "JSON Dictionaries are not sorted" / "signature verification failed").
-      // The same helpers also back our hand-rolled /cosmos.gov.v1.MsgSubmitProposal
-      // converter below, so import them eagerly here.
-      const { configureNestedAminoConverter, anyToAmino, aminoToAny } = await import("@sparkdreamnft/sparkdreamjs/nested-amino");
-
-      // CosmJS's createGovAminoConverters() only registers v1beta1
-      // (https://github.com/cosmos/cosmjs/issues/1442), so amino-signing a
-      // chain proposal otherwise fails with
-      // `Type URL '/cosmos.gov.v1.MsgSubmitProposal' does not exist in the
-      // Amino message type register`. Sign bytes must match
-      // cosmossdk.io/x/tx/signing/aminojson on the chain: snake_case keys,
-      // fields at their zero value omitted (matching aminojson's omitempty),
-      // and the inner `messages` Anys recursively amino-converted via the
-      // same nested-amino helpers the commons MsgSubmitProposal converter
-      // already uses.
-      const govV1AminoConverters = {
-        "/cosmos.gov.v1.MsgSubmitProposal": {
-          aminoType: "cosmos-sdk/v1/MsgSubmitProposal",
-          toAmino: (msg: {
-            messages?: { typeUrl: string; value: Uint8Array }[];
-            initialDeposit?: { denom: string; amount: string }[];
-            proposer?: string;
-            metadata?: string;
-            title?: string;
-            summary?: string;
-            expedited?: boolean;
-          }) => ({
-            messages:
-              (msg.messages?.length ?? 0) > 0
-                ? msg.messages!.map((m) => anyToAmino(m))
-                : undefined,
-            // initial_deposit is `(amino.dont_omitempty)=true` +
-            // `(amino.encoding)="legacy_coins"` in cosmos-sdk's gov/v1/tx.proto,
-            // so cosmossdk.io/x/tx/signing/aminojson always emits the key
-            // (chain's `nullSliceAsEmptyEncoder` writes `[]` for empty Coins).
-            // Dropping it to `undefined` for zero-deposit proposals signed JSON
-            // without the key while the chain reconstructed `"initial_deposit":[]`,
-            // failing sigverify as "unauthorized" — that's what was killing every
-            // ParamChangeForm submission with no deposit (and every other
-            // zero-deposit gov-v1 proposal flow: software-upgrade, register-council,
-            // cancel-market, plain signaling).
-            initial_deposit: msg.initialDeposit ?? [],
-            proposer: msg.proposer ? msg.proposer : undefined,
-            metadata: msg.metadata ? msg.metadata : undefined,
-            title: msg.title ? msg.title : undefined,
-            summary: msg.summary ? msg.summary : undefined,
-            expedited: msg.expedited ? msg.expedited : undefined,
-          }),
-          fromAmino: (obj: {
-            messages?: { type: string; value: unknown }[];
-            initial_deposit?: { denom: string; amount: string }[];
-            proposer?: string;
-            metadata?: string;
-            title?: string;
-            summary?: string;
-            expedited?: boolean;
-          }) => ({
-            messages: (obj.messages ?? []).map((m) => aminoToAny(m)),
-            initialDeposit: Array.from(obj.initial_deposit ?? []),
-            proposer: obj.proposer ?? "",
-            metadata: obj.metadata ?? "",
-            title: obj.title ?? "",
-            summary: obj.summary ?? "",
-            expedited: obj.expedited ?? false,
-          }),
-        },
-      };
-
-      // cosmjs ships no upgrade-module amino converters at all (only
-      // SoftwareUpgradeProposal v1beta1 legacy content type, not the Msg-based
-      // v1 flow), so amino-signing a MsgSoftwareUpgrade — directly or wrapped
-      // in MsgSubmitProposal — otherwise fails with
-      // `Type URL '/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade' does not exist
-      // in the Amino message type register`. The amino name comes from the
-      // chain's proto (`option (amino.name) = "cosmos-sdk/MsgSoftwareUpgrade"`).
-      // Plan.upgraded_client_state is deprecated and the SDK rejects upgrades
-      // that set it, so we omit it entirely. Plan.time is *also* deprecated,
-      // but its proto field has `(amino.dont_omitempty) = true` (see
-      // cosmossdk.io@v0.53.0/proto/cosmos/upgrade/v1beta1/upgrade.proto:31),
-      // so the chain's aminojson always emits it as `marshalTimestamp(default
-      // Timestamp) = "1970-01-01T00:00:00Z"` even though the upgrade keeper
-      // rejects any non-zero value. Omitting `time` from our sign bytes broke
-      // every software-upgrade proposal as "signature verification failed"
-      // because the JS-signed JSON lacked the key the chain reconstructed.
-      // Mirror the chain by always emitting the zero-time string. Other Plan
-      // fields (name / height / info) have no dont_omitempty annotation, so
-      // they follow aminojson's standard omit-when-zero/empty behavior.
-      const upgradeV1beta1AminoConverters = {
-        "/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade": {
-          aminoType: "cosmos-sdk/MsgSoftwareUpgrade",
-          toAmino: (msg: {
-            authority?: string;
-            plan?: { name?: string; height?: bigint | string; info?: string };
-          }) => ({
-            authority: msg.authority ? msg.authority : undefined,
-            // MsgSoftwareUpgrade.plan is `(amino.dont_omitempty)=true` +
-            // `(gogoproto.nullable)=false` — the chain always emits the `plan`
-            // key (with `{}` for an absent plan after the inner-field
-            // omitempties drop name/height/info). In practice every code path
-            // populates msg.plan, but match the chain's shape unconditionally.
-            plan: {
-              name: msg.plan?.name ? msg.plan.name : undefined,
-              // Mirror the chain's marshalTimestamp output for the default
-              // Timestamp (seconds=0, nanos=0) — this is what the keeper sees
-              // and re-encodes into sign bytes.
-              time: "1970-01-01T00:00:00Z",
-              height:
-                msg.plan?.height !== undefined && msg.plan.height.toString() !== "0"
-                  ? msg.plan.height.toString()
-                  : undefined,
-              info: msg.plan?.info ? msg.plan.info : undefined,
-            },
-          }),
-          fromAmino: (obj: {
-            authority?: string;
-            plan?: { name?: string; height?: string; info?: string };
-          }) => ({
-            authority: obj.authority ?? "",
-            plan: {
-              name: obj.plan?.name ?? "",
-              // We never round-trip a non-default time (chain rejects it
-              // anyway), so leave the proto field undefined; cosmjs's
-              // Plan.fromPartial seeds it back to Timestamp.fromPartial({})
-              // which matches the wire shape we produced on the way in.
-              time: undefined,
-              height: BigInt(obj.plan?.height ?? "0"),
-              info: obj.plan?.info ?? "",
-              upgradedClientState: undefined,
-            },
-          }),
-        },
-        "/cosmos.upgrade.v1beta1.MsgCancelUpgrade": {
-          aminoType: "cosmos-sdk/MsgCancelUpgrade",
-          toAmino: (msg: { authority?: string }) => ({
-            authority: msg.authority ? msg.authority : undefined,
-          }),
-          fromAmino: (obj: { authority?: string }) => ({
-            authority: obj.authority ?? "",
-          }),
-        },
-      };
-
-      const aminoTypes = new AminoTypes({ ...createDefaultAminoConverters(), ...blogAmino, ...sessionAmino, ...commonsAmino, ...repAmino, ...collectAmino, ...nameAmino, ...forumAmino, ...seasonAmino, ...revealAmino, ...futarchyAmino, ...federationAmino, ...federationPolicyAmino, ...artifactGeneratedAmino, ...artifactAminoOverrides, ...serviceAmino, ...collectBytesAmino, ...pinSeparationAmino, ...latestMsgAmino, ...reviewAmino,...govV1AminoConverters, ...upgradeV1beta1AminoConverters });
-      // Cast: cosmjs's `lookupType` returns `GeneratedType` (union of TsProto +
-      // Pbjs); the override only ever encounters TsProto types here.
-      configureNestedAminoConverter({ registry: registry as unknown as Parameters<typeof configureNestedAminoConverter>[0]["registry"], aminoTypes });
+      const { buildSigningTypes } = await import("@/lib/signingTypes");
+      const { registry, aminoTypes } = await buildSigningTypes();
 
       // Keplr's default `signAmino`/`signDirect` quietly overrides the fee in
       // our sign doc with its own gas-price calculation, which falls under
@@ -857,12 +396,64 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         { registry, aminoTypes }
       );
 
+      // Wrap messages in MsgExecSession when session mode is active,
+      // unless the messages are session management operations themselves.
+      // Identity and vault messages can never go through a session key, and
+      // in session mode `address` is the granter the hot wallet cannot sign
+      // for, so they need session mode switched off.
+      let finalMsgs = msgs;
+      const isSessionMgmt = msgs.some((m) => SESSION_MGMT_TYPES.has(m.typeUrl));
+      if (activeSession && msgs.some((m) => SESSION_FORBIDDEN_TYPES.has(m.typeUrl))) {
+        throw new Error("This action can't be done with a session key. Switch off session mode and sign with your main wallet.");
+      }
+      if (activeSession && !isSessionMgmt) {
+        // Validate session hasn't expired
+        if (activeSession.expiration && new Date(activeSession.expiration) < new Date()) {
+          setActiveSession(null);
+          localStorage.removeItem("session_granter");
+          throw new Error("Session has expired. Session mode has been deactivated.");
+        }
+
+        // Encode each inner message to protobuf Any
+        const encodedInnerMsgs = msgs.map((msg) => {
+          const msgType = registry.lookupType(msg.typeUrl);
+          if (!msgType) {
+            throw new Error(`Unknown message type: ${msg.typeUrl}`);
+          }
+          const codec = msgType as unknown as RegistryCodec;
+          const encoded = codec.encode(codec.fromPartial(msg.value)).finish();
+          return { typeUrl: msg.typeUrl, value: encoded };
+        });
+
+        finalMsgs = [
+          {
+            typeUrl: SessionMsgTypeUrls.ExecSession,
+            value: {
+              grantee: rawAddress,
+              granter: activeSession.granter,
+              msgs: encodedInnerMsgs,
+            },
+          },
+        ];
+      }
+
       // Derive the minimum fee from the chain's registered gas price
       // (average step). This matches what validators accept as `min-gas-prices`
       // — using a hard-coded 5000 underpaid 0.025 × 300000 = 7500 and the chain
       // rejected with "insufficient fee" once we stopped letting Keplr silently
       // bump the fee for us. Fallback to 0.025 if chainInfo somehow omits it.
-      const gas = 300000;
+      //
+      // Gas comes from a simulation of the exact messages (identity-alias
+      // checks and vault executions can run well past a flat limit), padded
+      // 40%, and never below the 300000 every flow was tuned against. If the
+      // simulation fails, the flat limit stands and broadcast reports the error.
+      let gas = 300000;
+      try {
+        const simulated = await client.simulate(rawAddress, finalMsgs as readonly EncodeObject[], memo);
+        gas = Math.max(gas, Math.ceil(simulated * 1.4));
+      } catch {
+        // keep the flat limit
+      }
       const gasPrice = chainInfo.feeCurrencies?.[0]?.gasPriceStep?.average ?? 0.025;
       const minFeeAmount = Math.ceil(gasPrice * gas);
       let fee = {
@@ -894,41 +485,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             `Failed to look up commons proposal fee: ${err instanceof Error ? err.message : err}`
           );
         }
-      }
-
-      // Wrap messages in MsgExecSession when session mode is active,
-      // unless the messages are session management operations themselves.
-      let finalMsgs = msgs;
-      const isSessionMgmt = msgs.some((m) => SESSION_MGMT_TYPES.has(m.typeUrl));
-      if (activeSession && !isSessionMgmt) {
-        // Validate session hasn't expired
-        if (activeSession.expiration && new Date(activeSession.expiration) < new Date()) {
-          setActiveSession(null);
-          localStorage.removeItem("session_granter");
-          throw new Error("Session has expired. Session mode has been deactivated.");
-        }
-
-        // Encode each inner message to protobuf Any
-        const encodedInnerMsgs = msgs.map((msg) => {
-          const msgType = registry.lookupType(msg.typeUrl);
-          if (!msgType) {
-            throw new Error(`Unknown message type: ${msg.typeUrl}`);
-          }
-          const codec = msgType as unknown as RegistryCodec;
-          const encoded = codec.encode(codec.fromPartial(msg.value)).finish();
-          return { typeUrl: msg.typeUrl, value: encoded };
-        });
-
-        finalMsgs = [
-          {
-            typeUrl: SessionMsgTypeUrls.ExecSession,
-            value: {
-              grantee: rawAddress,
-              granter: activeSession.granter,
-              msgs: encodedInnerMsgs,
-            },
-          },
-        ];
       }
 
       // Split sign vs broadcast vs confirm so the caller can drive a phased

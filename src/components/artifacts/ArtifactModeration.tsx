@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
+import { useMyAliases } from "@/hooks/useMyAliases";
 import { useIsEligibleSentinel } from "@/hooks/useIsEligibleSentinel";
 import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
 import { useTxAction } from "@/hooks/useTxAction";
@@ -20,27 +21,36 @@ import type {
 import type { ModerationReason } from "@sparkdreamnft/sparkdreamjs/sparkdream/common/v1/moderation_reason";
 import { fieldCls, txFailure } from "./shared";
 
+// Hide target per kind; an edition's id travels in token_id.
+const TARGET_KIND = {
+  class: "HIDE_TARGET_KIND_CLASS",
+  token: "HIDE_TARGET_KIND_TOKEN",
+  edition: "HIDE_TARGET_KIND_EDITION",
+} as const;
+
 interface Props {
-  kind: "class" | "token";
+  kind: keyof typeof TARGET_KIND;
   classId: string;
+  /** The token id, or the edition id for kind "edition". */
   tokenId?: string;
   /** Hide records for this target, from hide_records_by_target. */
   records: HideRecord[];
   /** Whether the target is currently hidden (status HIDDEN). */
   hidden: boolean;
-  /** Who may appeal: the class owner (class hide) or the token holder (token hide). */
+  /** Who may appeal: the class owner (class or edition hide) or the token holder (token hide). */
   appellant: string | null;
   onChanged: () => void;
 }
 
 /**
- * Sentinel and council moderation for one class or token: hide (sentinel or
+ * Sentinel and council moderation for one class, token or edition: hide (sentinel or
  * Commons Operations), unhide before appeal, and the owner's appeal through
  * the x/rep jury. The chain picks the authority path itself: an eligible
  * sentinel hides on its bond, otherwise the Commons Operations authority.
  */
 export default function ArtifactModeration({ kind, classId, tokenId, records, hidden, appellant, onChanged }: Props) {
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const isSentinel = useIsEligibleSentinel(address);
   const { isOpsCommitteeMember } = useCommonsCouncil(address);
   const { pending, error, clearError, run } = useTxAction();
@@ -53,7 +63,7 @@ export default function ArtifactModeration({ kind, classId, tokenId, records, hi
 
   const active = records.find((r) => r.outcome === HideOutcome.PENDING) ?? null;
   const canHide = !!address && (isSentinel || isOpsCommitteeMember);
-  const noun = kind === "class" ? "class" : "token";
+  const noun = kind;
 
   const done = async () => {
     invalidateArtifacts();
@@ -65,9 +75,9 @@ export default function ArtifactModeration({ kind, classId, tokenId, records, hi
       if (!address) return;
       const value: MsgHideContent = {
         authority: address,
-        targetKind: hideTargetKindFromJSON(kind === "class" ? "HIDE_TARGET_KIND_CLASS" : "HIDE_TARGET_KIND_TOKEN"),
+        targetKind: hideTargetKindFromJSON(TARGET_KIND[kind]),
         classId: BigInt(classId),
-        tokenId: BigInt(kind === "token" ? tokenId || "0" : "0"),
+        tokenId: BigInt(kind === "class" ? "0" : tokenId || "0"),
         reason: reason as ModerationReason,
         reasonText: reasonText.trim(),
       };
@@ -114,17 +124,17 @@ export default function ArtifactModeration({ kind, classId, tokenId, records, hi
               {active.appealed && <span className="ml-1 text-amber-300">Appeal in progress.</span>}
             </span>
             <span className="flex shrink-0 gap-2">
-              {!active.appealed && address && (active.sentinel === address || isOpsCommitteeMember) && (
+              {!active.appealed && address && (isMine(active.sentinel) || isOpsCommitteeMember) && (
                 <button
                   onClick={() => unhide(active.id)}
                   disabled={pending === "unhide"}
-                  title={active.sentinel === address ? "Undo your hide while the self-correct window is open" : "Unhide as the Commons Operations Committee"}
+                  title={isMine(active.sentinel) ? "Undo your hide while the self-correct window is open" : "Unhide as the Commons Operations Committee"}
                   className="rounded-md border border-zinc-600 px-2.5 py-1 font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
                 >
                   {pending === "unhide" ? "Unhiding…" : "Unhide"}
                 </button>
               )}
-              {!active.appealed && address && appellant === address && (
+              {!active.appealed && address && isMine(appellant) && (
                 <button
                   onClick={() => setAppealOpen((v) => !v)}
                   className="rounded-md border border-red-700/60 px-2.5 py-1 font-medium text-red-200 hover:bg-red-900/30"
@@ -138,7 +148,8 @@ export default function ArtifactModeration({ kind, classId, tokenId, records, hi
             <div className="mt-2 space-y-2">
               <p className="text-zinc-400">
                 A jury reviews the appeal. Filing it takes the standard appeal bond, refunded if you win.
-                If nobody appeals before the deadline, the {noun}&apos;s content is removed for good. You keep the token either way.
+                If nobody appeals before the deadline, the {noun}&apos;s content is removed for good.{" "}
+                {kind === "edition" ? "Units stay with their holders either way." : "You keep the token either way."}
               </p>
               <input
                 value={appealReason}

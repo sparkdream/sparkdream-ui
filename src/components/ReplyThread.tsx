@@ -18,6 +18,7 @@ import { invalidatePost, invalidateReplies } from "@/lib/api";
 import ContentNotice from "@/components/content/ContentNotice";
 import { useOwnBody, useScannedBody } from "@/hooks/useScannedBody";
 import AuthorBondPanel from "./AuthorBondPanel";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 // StakeTargetType numeric value for x/blog reply author bonds (replies have
 // their own id sequence, separate from post bonds at 7).
@@ -64,6 +65,7 @@ function ReplyItem({
 }) {
   const childReplies = replyMap.get(reply.id) || [];
   const { address, connected, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const permits = useSessionPermits();
   const canPin = useCanPin(address);
   const canMakePermanent = useCanMakePermanent(address);
@@ -86,8 +88,8 @@ function ReplyItem({
       : null
   );
 
-  const isOwner = connected && address === reply.creator;
-  const isPostOwner = connected && address === postCreator;
+  const isOwner = connected && isMine(reply.creator);
+  const isPostOwner = connected && isMine(postCreator);
 
   if (reply.status === ReplyStatus.DELETED) {
     return (

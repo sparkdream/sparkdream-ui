@@ -30,6 +30,7 @@ import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import ErrorState from "@/components/ErrorState";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import { isAnonymousAddress } from "@/lib/shield";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 type SortOption = "newest" | "oldest";
 type FilterOption = "my-posts" | "members" | "all";
@@ -82,6 +83,7 @@ function ImaginariumPageInner() {
     setSelectedPostId(urlPostId);
   }, [urlPostId]);
   const { connected, address, sessionActive, activeSession } = useWallet();
+  const { isMine } = useMyAliases();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -289,7 +291,7 @@ function ImaginariumPageInner() {
   const filteredAndSorted = useMemo(() => {
     let result = bondedOnly ? bondedPosts ?? [] : posts;
     if (filter === "my-posts" && address) {
-      result = result.filter((p) => p.creator === address);
+      result = result.filter((p) => isMine(p.creator));
     } else if (filter === "members" && memberAddresses.size > 0) {
       result = result.filter((p) => memberAddresses.has(p.creator));
     }
@@ -328,7 +330,7 @@ function ImaginariumPageInner() {
       );
     }
     return result;
-  }, [posts, filter, sort, memberAddresses, address, trustFilter, trustAddresses, tagFilter, searchQuery, bondedOnly, bondedPosts, bondMap, bondSort]);
+  }, [posts, filter, sort, memberAddresses, address, isMine, trustFilter, trustAddresses, tagFilter, searchQuery, bondedOnly, bondedPosts, bondMap, bondSort]);
 
   const featured = useMemo(
     () => filteredAndSorted.find((p) => !!p.pinned_by) || null,
@@ -340,7 +342,7 @@ function ImaginariumPageInner() {
   );
 
   const myPostCount = address
-    ? posts.filter((p) => p.creator === address).length
+    ? posts.filter((p) => isMine(p.creator)).length
     : 0;
   const memberPostCount = posts.filter((p) => memberAddresses.has(p.creator)).length;
 

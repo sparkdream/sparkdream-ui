@@ -10,6 +10,7 @@ import { useDreamDenom } from "@/hooks/useDreamDenom";
 import BlockEta from "@/components/BlockEta";
 import type { Initiative, InitiativeBountyResponse } from "@/types/rep";
 import { InitiativeStatus } from "@/types/rep";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 interface Props {
   initiative: Initiative;
@@ -85,6 +86,7 @@ const FUNDABLE = new Set<string>([InitiativeStatus.OPEN, InitiativeStatus.ASSIGN
 export default function InitiativeBountyPanel({ initiative, projectCreator, onChanged }: Props) {
   const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
 
   const [bounty, setBounty] = useState<InitiativeBountyResponse | null>(null);
   const [params, setParams] = useState<BountyParams | null>(null);
@@ -147,7 +149,7 @@ export default function InitiativeBountyPanel({ initiative, projectCreator, onCh
 
   const total = toBig(bounty?.bounty?.amount);
   const contributions = bounty?.bounty?.contributions ?? [];
-  const mine = (bounty?.reclaim_status ?? []).filter((c) => c.funder === address);
+  const mine = (bounty?.reclaim_status ?? []).filter((c) => isMine(c.funder));
   const myTotal = mine.reduce((sum, c) => sum + toBig(c.amount), ZERO);
   const myReclaimable = mine.filter((c) => c.reclaimable).reduce((sum, c) => sum + toBig(c.amount), ZERO);
   const nextMaturity = mine
@@ -173,7 +175,7 @@ export default function InitiativeBountyPanel({ initiative, projectCreator, onCh
   const affiliated =
     !!address &&
     [initiative.assignee, initiative.apprentice, initiative.creator, projectCreator].some(
-      (a) => !!a && a === address,
+      (a) => isMine(a),
     );
   const canFund = !!address && fundable && !affiliated && !disabled && !contributionsFull && room !== ZERO;
 

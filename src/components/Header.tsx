@@ -190,6 +190,18 @@ const SYSTEM_GROUP: NavGroup = {
       ),
     },
     {
+      href: "/vaults",
+      label: "Vaults",
+      desc: "Shared accounts with co-signers",
+      icon: (
+        <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <circle cx="12" cy="12" r="3.5" />
+          <path d="M12 8.5V7M12 17v-1.5M15.5 12H17M7 12h1.5" />
+        </svg>
+      ),
+    },
+    {
       href: "/transfer",
       label: "Send to other chains",
       desc: "Move tokens over IBC",

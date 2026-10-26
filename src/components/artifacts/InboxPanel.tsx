@@ -22,6 +22,7 @@ import {
   RECEIVE_POLICY_LABELS,
   ReceivePolicy,
   type ArtifactClass,
+  isUnitInboxKind,
   type InboxItem,
 } from "@/types/artifact";
 import { receivePolicyFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/artifact/v1/types";
@@ -40,7 +41,22 @@ const POLICY_HELP: Record<string, string> = {
   [ReceivePolicy.UNSPECIFIED]: "Use the network default.",
 };
 
-const key = (i: InboxItem) => tokenRef(i.class_id, i.token_id);
+// Edition units arrive with class_id 0 and the pending id as token_id; the
+// edition's class is unit_class_id.
+const key = (i: InboxItem) => (isUnitInboxKind(i.kind) ? `units/${i.token_id}` : tokenRef(i.class_id, i.token_id));
+const classOf = (i: InboxItem) => (isUnitInboxKind(i.kind) ? i.unit_class_id || "0" : i.class_id);
+
+function itemTitle(i: InboxItem): string {
+  if (isUnitInboxKind(i.kind)) return `${i.amount || "0"} units of edition #${i.edition_id || "0"}`;
+  return i.withheld ? `Token #${i.token_id}` : i.metadata?.name || `Token #${i.token_id}`;
+}
+
+const KIND_LABEL: Record<string, string> = {
+  [InboxKind.MINT]: "New mint",
+  [InboxKind.TRANSFER]: "Transfer",
+  [InboxKind.UNIT_MINT]: "New units",
+  [InboxKind.UNIT_TRANSFER]: "Units transfer",
+};
 
 interface Props {
   onSelectClass: (classId: string) => void;
@@ -81,7 +97,7 @@ export default function InboxPanel({ onSelectClass, onSelectToken }: Props) {
         .then((r) => setDefaultPolicy(r.params.default_receive_policy || null))
         .catch(() => setDefaultPolicy(null));
       // Class flags matter here: an issuer-only class's token can never be discarded once accepted.
-      const ids = Array.from(new Set([...(ib.items || []), ...(ob.items || [])].map((i) => i.class_id)));
+      const ids = Array.from(new Set([...(ib.items || []), ...(ob.items || [])].map(classOf))).filter((id) => id !== "0");
       Promise.all(ids.map((id) => getArtifactClass(id).then((r) => r.class.class).catch(() => null))).then((list) => {
         const map: Record<string, ArtifactClass> = {};
         for (const c of list) if (c) map[c.id] = c;
@@ -212,8 +228,8 @@ export default function InboxPanel({ onSelectClass, onSelectToken }: Props) {
           <div className="space-y-2">
             {inbox.map((i) => {
               const k = key(i);
-              const cls = classes[i.class_id];
-              const stuck = cls && burnAuth(cls) === BurnAuthorization.ISSUER;
+              const cls = classes[classOf(i)];
+              const stuck = cls && (burnAuth(cls) === BurnAuthorization.ISSUER || burnAuth(cls) === BurnAuthorization.NEITHER);
               const md = i.metadata;
               return (
                 <div key={k} className="sd-hull-tile rounded-xl p-3">
@@ -233,11 +249,11 @@ export default function InboxPanel({ onSelectClass, onSelectToken }: Props) {
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex flex-wrap items-baseline gap-2">
                         <span className="font-medium text-zinc-100">
-                          {i.withheld ? `Token #${i.token_id}` : md?.name || `Token #${i.token_id}`}
+                          {itemTitle(i)}
                         </span>
                         <span className="font-mono text-xs text-zinc-500">{k}</span>
                         <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-400">
-                          {i.kind === InboxKind.MINT ? "New mint" : "Transfer"}
+                          {KIND_LABEL[i.kind ?? ""] ?? "Transfer"}
                         </span>
                         {i.withheld && <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] text-red-400">Hidden</span>}
                       </div>
@@ -245,8 +261,8 @@ export default function InboxPanel({ onSelectClass, onSelectToken }: Props) {
                         <span>From</span>
                         {i.from && <CopyableAddress address={i.from} resolveName className="text-zinc-300" />}
                         <span>· in</span>
-                        <button onClick={() => onSelectClass(i.class_id)} className="sd-artifact-link">
-                          {cls ? classTitle(cls) : `Class #${i.class_id}`}
+                        <button onClick={() => onSelectClass(classOf(i))} className="sd-artifact-link">
+                          {cls ? classTitle(cls) : `Class #${classOf(i)}`}
                         </button>
                         {i.expires_at && <span>· {timeRemaining(i.expires_at)}</span>}
                       </div>
@@ -298,13 +314,13 @@ export default function InboxPanel({ onSelectClass, onSelectToken }: Props) {
           <div className="space-y-2">
             {outbox.map((i) => {
               const k = key(i);
-              const cls = classes[i.class_id];
+              const cls = classes[classOf(i)];
               return (
                 <div key={k} className="sd-hull-tile flex items-center justify-between gap-3 rounded-xl px-3 py-2">
                   <div className="min-w-0 text-xs text-zinc-400">
                     <span className="font-mono text-zinc-300">{k}</span>
                     {cls && <span className="ml-2">{classTitle(cls)}</span>}
-                    <span className="ml-2">{i.kind === InboxKind.MINT ? "Mint" : "Transfer"} to</span>{" "}
+                    <span className="ml-2">{KIND_LABEL[i.kind ?? ""] ?? "Transfer"} to</span>{" "}
                     {i.to && <CopyableAddress address={i.to} resolveName className="text-zinc-300" />}
                     {i.expires_at && <span className="ml-2">{timeRemaining(i.expires_at)}</span>}
                   </div>

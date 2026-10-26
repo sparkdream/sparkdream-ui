@@ -1,7 +1,7 @@
 "use client";
 
 import type { TokenView } from "@/types/artifact";
-import { ArtifactMedia, LockBadge, isHidden, lockOf, tokenRef, tokenTitle } from "./shared";
+import { ArtifactMedia, LockBadge, TokenStateBadges, isHidden, lockOf, shownToken, tokenRef, tokenTitle } from "./shared";
 
 interface Props {
   tokens: TokenView[];
@@ -21,7 +21,9 @@ export default function TokenGrid({ tokens, onSelect, classNames, empty }: Props
   }
   return (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-      {tokens.map(({ token: t, withheld, class_status }) => {
+      {tokens.map((view) => {
+        const { withheld, class_status } = view;
+        const t = shownToken(view);
         const hidden = withheld || isHidden(t.status) || isHidden(class_status);
         return (
           <button
@@ -34,6 +36,7 @@ export default function TokenGrid({ tokens, onSelect, classNames, empty }: Props
               <div className="flex items-center gap-2">
                 <span className="truncate text-sm font-medium text-zinc-100">{tokenTitle(t, withheld)}</span>
                 <LockBadge lock={lockOf(t)} />
+                <TokenStateBadges view={view} />
                 {hidden && (
                   <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-medium text-red-400">Hidden</span>
                 )}

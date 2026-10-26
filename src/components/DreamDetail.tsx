@@ -28,6 +28,7 @@ import ErrorState from "@/components/ErrorState";
 import ContentNotice from "@/components/content/ContentNotice";
 import { useScannedBody } from "@/hooks/useScannedBody";
 import { bodyForUpdate } from "@/lib/contentScan/body";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 export default function DreamDetail({
   postId,
@@ -41,6 +42,7 @@ export default function DreamDetail({
   onTagClick?: (tag: string) => void;
 }) {
   const { address, connected, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const permits = useSessionPermits();
   const canPin = useCanPin(address);
   const canMakePermanent = useCanMakePermanent(address);
@@ -247,7 +249,7 @@ export default function DreamDetail({
     );
   }
 
-  const isOwner = connected && address === post.creator;
+  const isOwner = connected && isMine(post.creator);
   const isHidden = post.status === PostStatus.HIDDEN;
   const isDeleted = post.status === PostStatus.DELETED;
   // Conceal a hidden dream's title and body from the public (e.g. a direct

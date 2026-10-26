@@ -8,6 +8,7 @@ import { formatDream } from "@/lib/reveal-fmt";
 import { MarketStatus, MARKET_STATUS_LABELS, type Market } from "@/types/futarchy";
 import CopyableAddress from "@/components/CopyableAddress";
 import ActionPanel from "./ActionPanel";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 /**
  * Creator-only flow for pulling the residual subsidy back out after a market
@@ -29,11 +30,12 @@ export default function WithdrawLiquidityPanel({
   onWithdrawn: () => void;
 }) {
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const { config } = useChainConfig();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isCreator = address === market.creator;
+  const isCreator = isMine(market.creator);
   const eligibleStatus =
     market.status === MarketStatus.RESOLVED_YES ||
     market.status === MarketStatus.RESOLVED_NO ||

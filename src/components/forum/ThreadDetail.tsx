@@ -37,6 +37,7 @@ import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
 import AnonymousToggle from "@/components/AnonymousToggle";
 import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 // Promoting an ephemeral post to permanent is a member action gated on
 // make_permanent_min_trust_level (default PROVISIONAL). Pinning a thread,
@@ -86,6 +87,7 @@ interface ThreadDetailProps {
 
 export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const [anonVotes, setAnonVotes] = useState(false);
   const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
   const rank = useTrustRank(address);
@@ -290,7 +292,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
   // membership is still resolving rather than flashing the notice.
   const adminOnlyWrite = category?.admin_only_write ?? false;
   const membersOnlyWrite = category?.members_only_write ?? false;
-  const isThreadAuthor = !!address && address === rootPost?.author;
+  const isThreadAuthor = isMine(rootPost?.author);
   const canReply =
     isOpsCommitteeMember ||
     isThreadAuthor ||
@@ -683,7 +685,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
 
   const renderPost = (post: ForumPost, isRoot: boolean) => {
     const votes = parseInt(post.upvote_count || "0", 10) - parseInt(post.downvote_count || "0", 10);
-    const isAuthor = post.author === address;
+    const isAuthor = isMine(post.author);
     const depth = parseInt(post.depth || "0", 10);
     const indent = isRoot ? 0 : Math.min(depth - 1, 3);
     const isAcceptedReply = metadata?.accepted_reply_id === post.post_id;
@@ -709,8 +711,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       pinnedRecord.is_sentinel_pin &&
       !pinnedRecord.disputed &&
       isActive &&
-      !!address &&
-      address === rootPost.author &&
+      isMine(rootPost.author) &&
       permits(ForumMsgTypeUrls.DisputePin);
     // Accepted-reply curation affordances (replies only). The thread author may
     // accept any active reply directly, change to a different one, or clear the
@@ -722,12 +723,12 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       !isRoot &&
       isActive &&
       !isAcceptedReply &&
-      address === rootPost.author &&
+      isMine(rootPost.author) &&
       permits(ForumMsgTypeUrls.MarkAcceptedReply);
     const canClearAccepted =
       !isRoot &&
       isAcceptedReply &&
-      address === rootPost.author &&
+      isMine(rootPost.author) &&
       permits(ForumMsgTypeUrls.MarkAcceptedReply);
     // An eligible sentinel on someone else's thread may propose a reply, unless
     // the author has closed the thread to curation (proposals_locked) — the
@@ -739,14 +740,14 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       !hasPendingProposal &&
       !proposalsLocked &&
       !isAuthor &&
-      address !== rootPost.author &&
+      !isMine(rootPost.author) &&
       isEligibleSentinel &&
       permits(ForumMsgTypeUrls.MarkAcceptedReply);
     // Thread author resolves a pending proposal on this reply (confirm/reject).
     const canResolveProposal =
       isProposedReply &&
       isActive &&
-      address === rootPost.author &&
+      isMine(rootPost.author) &&
       permits(ForumMsgTypeUrls.ConfirmProposedReply);
     // Conceal hidden content from non-author, non-moderator viewers (e.g. a
     // direct link to a hidden spark). The header still shows the "Hidden" badge.
@@ -771,8 +772,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
       isActive &&
       !!bounty &&
       bounty.status === BountyStatus.ACTIVE &&
-      !!address &&
-      address === bounty.creator &&
+      isMine(bounty.creator) &&
       !bountyAward &&
       (bounty.awards?.length || 0) < MAX_BOUNTY_WINNERS &&
       permits(ForumMsgTypeUrls.AssignBountyToReply);
@@ -977,7 +977,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
             </button>
           )}
           {isRoot && post.locked && canUnlockThread &&
-            (isOpsCommitteeMember || post.locked_by === address) && (
+            (isOpsCommitteeMember || isMine(post.locked_by)) && (
             <button
               onClick={() => handleUnlock(post.post_id)}
               disabled={actionLoading === `unlock-${post.post_id}`}
@@ -1004,7 +1004,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
           {/* Thread author opens/closes the thread to sentinel accepted-reply
               proposals (chain commit b991fc9). Only meaningful while no reply is
               accepted; once one is, curation is moot. */}
-          {isRoot && isActive && address === rootPost.author &&
+          {isRoot && isActive && isMine(rootPost.author) &&
             (!metadata?.accepted_reply_id || metadata.accepted_reply_id === "0") &&
             permits(ForumMsgTypeUrls.SetThreadProposalsLock) && (
             <button

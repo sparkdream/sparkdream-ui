@@ -23,6 +23,9 @@ export const TokenLock = {
   NONE: "TOKEN_LOCK_NONE",
   LISTED: "TOKEN_LOCK_LISTED",
   PENDING_TRANSFER: "TOKEN_LOCK_PENDING_TRANSFER",
+  RENTED: "TOKEN_LOCK_RENTED",
+  NESTED: "TOKEN_LOCK_NESTED",
+  AUCTION: "TOKEN_LOCK_AUCTION",
 } as const;
 
 export const ReceivePolicy = {
@@ -36,12 +39,20 @@ export const InboxKind = {
   UNSPECIFIED: "INBOX_KIND_UNSPECIFIED",
   TRANSFER: "INBOX_KIND_TRANSFER",
   MINT: "INBOX_KIND_MINT",
+  UNIT_TRANSFER: "INBOX_KIND_UNIT_TRANSFER",
+  UNIT_MINT: "INBOX_KIND_UNIT_MINT",
 } as const;
+
+/** Unit (edition) inbox items carry class_id 0; the token_id is the pending id. */
+export function isUnitInboxKind(kind?: string): boolean {
+  return kind === InboxKind.UNIT_TRANSFER || kind === InboxKind.UNIT_MINT;
+}
 
 export const HideTargetKind = {
   UNSPECIFIED: "HIDE_TARGET_KIND_UNSPECIFIED",
   CLASS: "HIDE_TARGET_KIND_CLASS",
   TOKEN: "HIDE_TARGET_KIND_TOKEN",
+  EDITION: "HIDE_TARGET_KIND_EDITION",
 } as const;
 
 export const HideOutcome = {
@@ -60,7 +71,51 @@ export const BurnAuthorization = {
   HOLDER: "BURN_AUTHORIZATION_HOLDER",
   ISSUER: "BURN_AUTHORIZATION_ISSUER",
   HOLDER_OR_ISSUER: "BURN_AUTHORIZATION_HOLDER_OR_ISSUER",
+  NEITHER: "BURN_AUTHORIZATION_NEITHER",
 } as const;
+
+// Zero values: NONE / FIXED / NONE / UNIQUE, so a class that never set them
+// may omit the field.
+export const ExpiryMode = {
+  NONE: "EXPIRY_MODE_NONE",
+  MARK: "EXPIRY_MODE_MARK",
+  BURN: "EXPIRY_MODE_BURN",
+} as const;
+
+export const MintPricing = {
+  FIXED: "MINT_PRICING_FIXED",
+  LINEAR_SUPPLY: "MINT_PRICING_LINEAR_SUPPLY",
+  DUTCH: "MINT_PRICING_DUTCH",
+} as const;
+
+export const RevealKind = {
+  NONE: "REVEAL_KIND_NONE",
+  BLIND_METADATA: "REVEAL_KIND_BLIND_METADATA",
+  GENERATIVE_SEED: "REVEAL_KIND_GENERATIVE_SEED",
+} as const;
+
+export const TokenModel = {
+  UNIQUE: "TOKEN_MODEL_UNIQUE",
+  EDITIONS: "TOKEN_MODEL_EDITIONS",
+} as const;
+
+export const EXPIRY_MODE_LABELS: Record<string, string> = {
+  [ExpiryMode.NONE]: "Never expires",
+  [ExpiryMode.MARK]: "Marked expired",
+  [ExpiryMode.BURN]: "Burned on expiry",
+};
+
+export const MINT_PRICING_LABELS: Record<string, string> = {
+  [MintPricing.FIXED]: "Fixed price",
+  [MintPricing.LINEAR_SUPPLY]: "Rises with supply",
+  [MintPricing.DUTCH]: "Falls over time (Dutch)",
+};
+
+export const REVEAL_KIND_LABELS: Record<string, string> = {
+  [RevealKind.NONE]: "None",
+  [RevealKind.BLIND_METADATA]: "Blind mint",
+  [RevealKind.GENERATIVE_SEED]: "Generative seed",
+};
 
 export const RECEIVE_POLICY_LABELS: Record<string, string> = {
   [ReceivePolicy.UNSPECIFIED]: "Network default",
@@ -84,6 +139,7 @@ export const BURN_AUTHORIZATION_LABELS: Record<string, string> = {
   [BurnAuthorization.HOLDER]: "Holder",
   [BurnAuthorization.ISSUER]: "Issuer only",
   [BurnAuthorization.HOLDER_OR_ISSUER]: "Holder or issuer",
+  [BurnAuthorization.NEITHER]: "No one",
 };
 
 // ---- State objects --------------------------------------------------------
@@ -92,6 +148,12 @@ export interface ClassFlags {
   transferable?: boolean;
   burn_authorization?: string;
   token_metadata_mutable?: boolean;
+  /** Mint and transfer need the recipient's acceptance (badges). */
+  mutual?: boolean;
+  /** Tokens can be redeemed (tickets). */
+  redeemable?: boolean;
+  /** Redeemed tokens stay transferable. */
+  redeemed_transferable?: boolean;
 }
 
 export interface MintPolicy {
@@ -103,6 +165,43 @@ export interface MintPolicy {
   end_time?: string;
   /** 0 = unlimited. */
   per_address_limit?: number;
+  pricing?: string;
+  /** math.Int, LINEAR_SUPPLY: added to the price per public mint so far. */
+  price_step?: string;
+  /** math.Int, DUTCH: the price falls linearly from `price` at start_time to this at end_time. */
+  floor_price?: string;
+}
+
+export interface ExpiryPolicy {
+  mode?: string;
+  /** Seconds a token lives (from mint or last renewal). */
+  term?: string;
+  renewal_price?: Coin;
+}
+
+export interface RevealPolicy {
+  kind?: string;
+  /** Hex Merkle root (blind) or seed commitment (generative). */
+  commitment?: string;
+  /** Unix seconds by which the reveal must happen. */
+  deadline?: string;
+  revealed_at?: string;
+  /** Hex seed, once revealed. */
+  seed?: string;
+}
+
+export interface Renderer {
+  pkg_path?: string;
+  source_hash?: string;
+  state_version?: number;
+}
+
+export interface HarbergerPolicy {
+  tax_bps_per_year?: number;
+  /** Seconds between tax pulls. */
+  tax_period?: string;
+  /** Seconds a delinquent token waits before foreclosure. */
+  foreclosure_duration?: string;
 }
 
 export interface RoyaltyShare {
@@ -140,6 +239,15 @@ export interface ArtifactClass {
   /** Unix seconds. */
   created_at?: string;
   updated_at?: string;
+  expiry?: ExpiryPolicy;
+  reveal?: RevealPolicy;
+  renderer?: Renderer;
+  royalty_locked?: boolean;
+  public_minted?: string;
+  token_model?: string;
+  harberger?: HarbergerPolicy;
+  crafting_locked?: boolean;
+  next_recipe_id?: string;
 }
 
 export interface Attribute {
@@ -171,6 +279,173 @@ export interface Token {
   media_rules_version?: number;
   /** Unix seconds. */
   minted_at?: string;
+  /** Unix seconds; "0" = never. */
+  expires_at?: string;
+  /** Unix seconds; "0" = not redeemed. */
+  redeemed_at?: string;
+  schedule?: MetadataStage[];
+  media_versions?: TokenMetadata[];
+  /** 0 = the stored metadata; n = media_versions[n-1]. */
+  displayed_version?: number;
+  unrevealed?: boolean;
+  /** uspark held in escrow until reveal. */
+  paid?: string;
+  next_media_proposal_id?: string;
+  harberger?: HarbergerState;
+  parent?: TokenRef;
+  descendants?: number;
+}
+
+export interface TokenRef {
+  class_id: string;
+  token_id: string;
+}
+
+export interface MetadataStage {
+  /** Unix seconds from which this stage displays. */
+  from_time?: string;
+  metadata?: TokenMetadata;
+}
+
+export interface MediaProposal {
+  class_id: string;
+  token_id: string;
+  id: string;
+  proposer: string;
+  metadata?: TokenMetadata;
+  created_at?: string;
+}
+
+export interface HarbergerState {
+  /** math.Int self-assessed price, uspark. */
+  price?: string;
+  grant_id?: string;
+  next_due?: string;
+  grace_until?: string;
+  foreclosed_at?: string;
+  tax_paid?: string;
+}
+
+export interface Rental {
+  class_id: string;
+  token_id: string;
+  owner: string;
+  user: string;
+  started_at?: string;
+  expires_at?: string;
+  owner_may_end?: boolean;
+  price?: Coin;
+}
+
+export interface RentalOffer {
+  class_id: string;
+  token_id: string;
+  owner: string;
+  /** "" = anyone may accept. */
+  user?: string;
+  price?: Coin;
+  /** Seconds the rental lasts once accepted. */
+  duration?: string;
+  owner_may_end?: boolean;
+  created_at?: string;
+  expires_at?: string;
+  nonce?: string;
+}
+
+export interface ImpactClaim {
+  scope?: string;
+  contributors?: string[];
+  work_start?: string;
+  work_end?: string;
+  initiative_id?: string;
+}
+
+export interface Edition {
+  class_id: string;
+  id: string;
+  creator: string;
+  metadata?: TokenMetadata;
+  metadata_frozen?: boolean;
+  /** "0" = unlimited. */
+  max_supply?: string;
+  supply?: string;
+  burned?: string;
+  reserved?: string;
+  status?: string;
+  media_flags?: number;
+  media_rules_version?: number;
+  created_at?: string;
+  claim?: ImpactClaim;
+  reward_per_unit?: string;
+  rewards_funded?: string;
+  holders?: string;
+}
+
+export interface Balance {
+  class_id: string;
+  edition_id: string;
+  owner: string;
+  amount?: string;
+  locked?: string;
+  deposit?: string;
+  reward_debt?: string;
+  unclaimed?: string;
+}
+
+export interface UnitListing {
+  id: string;
+  class_id: string;
+  edition_id: string;
+  seller: string;
+  quantity?: string;
+  unit_price?: Coin;
+  created_at?: string;
+  expires_at?: string;
+}
+
+export interface CraftInput {
+  class_id: string;
+  edition_id: string;
+  quantity?: string;
+}
+
+export interface CraftRecipe {
+  class_id: string;
+  id: string;
+  inputs?: CraftInput[];
+  output_metadata?: TokenMetadata;
+  /** "0" = the output is a unique token. */
+  output_edition_id?: string;
+  output_quantity?: string;
+  crafts?: string;
+}
+
+export interface Offer {
+  id: string;
+  bidder: string;
+  class_id: string;
+  /** "0" = a collection offer on any token of the class. */
+  token_id: string;
+  price?: Coin;
+  created_at?: string;
+  expires_at?: string;
+  expected_metadata_hash?: string;
+  expected_contents_hash?: string;
+}
+
+export interface Auction {
+  id: string;
+  class_id: string;
+  token_id: string;
+  seller: string;
+  reserve_price?: Coin;
+  min_increment_bps?: number;
+  created_at?: string;
+  ends_at?: string;
+  high_bidder?: string;
+  /** math.Int, in the reserve price's denom. */
+  high_bid?: string;
+  bids?: number;
 }
 
 export interface Listing {
@@ -224,6 +499,34 @@ export interface TokenView {
   withheld?: boolean;
   metadata_hash?: string;
   class_status?: string;
+  /** What to show: schedule stage, accepted media version, renderer output, or the stored metadata. */
+  displayed_metadata?: TokenMetadata;
+  /** "stored" | "schedule" | "media_version" | "renderer" | "unrevealed". */
+  display_source?: string;
+  /** Set when a renderer failed and the view fell back. */
+  render_error?: string;
+  expired?: boolean;
+  /** Hex seed of a revealed generative class. */
+  seed?: string;
+  /** Single-token query only: hash over nested contents. */
+  contents_hash?: string;
+  /** Single-token query only: the renter while rented. */
+  user?: string;
+  /** Single-token query only: Harberger self-assessed price. */
+  harberger_price?: string;
+}
+
+export interface EditionView {
+  edition: Edition;
+  withheld?: boolean;
+  metadata_hash?: string;
+  class_status?: string;
+}
+
+export interface BalanceView {
+  balance: Balance;
+  /** uspark of retro funding claimable now. */
+  claimable?: string;
 }
 
 export interface InboxItem {
@@ -239,6 +542,10 @@ export interface InboxItem {
   metadata?: TokenMetadata;
   metadata_hash?: string;
   withheld?: boolean;
+  /** Unit items: the edition's class (class_id is 0). */
+  unit_class_id?: string;
+  edition_id?: string;
+  amount?: string;
 }
 
 export interface ArtifactParams {
@@ -273,6 +580,19 @@ export interface ArtifactParams {
   sentinel_unhide_window_blocks?: string;
   hide_expiry_blocks?: string;
   sentinel_hide_commit_dream?: string;
+  max_issue_batch_size?: number;
+  max_schedule_stages?: number;
+  max_media_proposals_per_token?: number;
+  max_media_versions_per_token?: number;
+  renderers_enabled?: boolean;
+  max_nest_depth?: number;
+  max_nested_tokens?: number;
+  /** Seconds. */
+  max_rental_duration?: string;
+  max_craft_recipes_per_class?: number;
+  max_offers_per_bidder?: number;
+  /** Seconds a late bid extends an auction by. */
+  auction_extension?: string;
 }
 
 // ---- Responses ------------------------------------------------------------
@@ -294,6 +614,8 @@ export interface TokenResponse {
   token: TokenView;
   /** Set when the token is listed. */
   listing?: Listing | null;
+  /** Set while the token is auctioned. */
+  auction?: Auction | null;
 }
 
 export interface TokensResponse {
@@ -354,4 +676,96 @@ export interface PublicMintQuoteResponse {
   remaining_allowance?: string;
   available?: boolean;
   reason?: string;
+  /** Price of the next unit under the class's pricing curve. */
+  unit_price?: Coin;
+  /** The highest unit price in the requested quantity: pass as MsgPublicMint's max_price. */
+  max_unit_price?: Coin;
+}
+
+export interface MediaProposalsResponse {
+  proposals: MediaProposal[];
+}
+
+export interface EditionResponse {
+  edition: EditionView;
+}
+
+export interface EditionsResponse {
+  editions: EditionView[];
+  pagination?: Pagination;
+}
+
+export interface BalanceResponse {
+  balance: BalanceView;
+}
+
+export interface BalancesResponse {
+  balances: BalanceView[];
+  pagination?: Pagination;
+}
+
+export interface UnitListingResponse {
+  listing: UnitListing;
+}
+
+export interface UnitListingsResponse {
+  listings: UnitListing[];
+  pagination?: Pagination;
+}
+
+export interface CraftRecipesResponse {
+  recipes: CraftRecipe[];
+  locked?: boolean;
+}
+
+export interface RentalResponse {
+  rental: Rental;
+}
+
+export interface RentalOfferResponse {
+  offer: RentalOffer;
+}
+
+export interface RentalsResponse {
+  rentals: Rental[];
+  pagination?: Pagination;
+}
+
+export interface RentalOffersResponse {
+  offers: RentalOffer[];
+  pagination?: Pagination;
+}
+
+export interface ChildrenResponse {
+  children: TokenRef[];
+  contents_hash?: string;
+  descendants?: number;
+}
+
+export interface HarbergerQuoteResponse {
+  state?: HarbergerState;
+  current_price?: string;
+  tax_per_period?: string;
+  foreclosed?: boolean;
+  for_sale?: boolean;
+}
+
+export interface OfferResponse {
+  offer: Offer;
+}
+
+export interface OffersResponse {
+  offers: Offer[];
+  pagination?: Pagination;
+}
+
+export interface AuctionResponse {
+  auction: Auction;
+  /** math.Int: the lowest bid the chain accepts now. */
+  min_next_bid?: string;
+}
+
+export interface AuctionsResponse {
+  auctions: Auction[];
+  pagination?: Pagination;
 }

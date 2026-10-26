@@ -58,6 +58,7 @@ import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 import { ImageLoadBar, ScannedLink } from "@/components/content/ScannedMedia";
 import { containsDataURI, DATA_URI_FIELD_ERROR } from "@/lib/mediaLabels";
 import { describeTxError } from "@/lib/errors";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 interface CollectionDetailProps {
   collectionId: string;
@@ -82,6 +83,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const dream = useDreamDenom();
   const { config } = useChainConfig();
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const [anonVotes, setAnonVotes] = useState(false);
   const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
   const isMember = useIsRepMember(address);
@@ -183,14 +185,14 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const customValueError = newItemRefType === ReferenceType.CUSTOM ? dataUriErr(newItemCustomValue) : null;
   const itemHasDataUri = !!(imageUriError || linkUriError || nftTokenUriError || customValueError);
 
-  const isOwner = collection?.owner === address;
+  const isOwner = isMine(collection?.owner);
   const isEphemeral = Boolean(collection?.expires_at && collection.expires_at !== "0");
   const isCollectionActive = collection?.status === CollectionStatus.ACTIVE;
   const isImmutable = Boolean(collection?.immutable);
 
   // The caller's own collaborator record (if any) drives write/manage gating,
   // mirroring x/collect's HasWriteAccess / IsOwnerOrAdmin helpers.
-  const myCollab = collaborators.find((c) => c.address === address);
+  const myCollab = collaborators.find((c) => isMine(c.address));
   const myRole = isOwner ? "owner" : myCollab?.role;
   const isAdminCollab = myRole === CollaboratorRole.ADMIN;
   // Owner or EDITOR/ADMIN collaborator may add/remove items (chain also
@@ -1376,7 +1378,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
             ) : (
               <div className="space-y-2">
                 {collaborators.map((c) => {
-                  const isSelf = c.address === address;
+                  const isSelf = isMine(c.address);
                   const targetIsAdmin = c.role === CollaboratorRole.ADMIN;
                   // Owner removes anyone; ADMIN removes non-admins; anyone may
                   // self-remove (mirrors RemoveCollaborator gating).
@@ -1551,7 +1553,7 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                 <h3 className="mb-3 text-sm font-semibold text-zinc-300">Reviews</h3>
                 <ul className="space-y-2">
                   {reviews.map((r) => {
-                    const ownReview = r.curator === address;
+                    const ownReview = isMine(r.curator);
                     return (
                       <li key={r.id} className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2">
                         <div className="flex items-start justify-between gap-3">

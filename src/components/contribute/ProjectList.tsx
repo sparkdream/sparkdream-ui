@@ -31,6 +31,7 @@ import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 // Chain defaults (x/rep params) — used as fallbacks if the params query
 // hasn't completed when the form renders.
@@ -131,6 +132,7 @@ const SCOPES: { key: Scope; label: string }[] = [
 export default function ProjectList() {
   const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   // Ops committee members may set any project's verification policy, not just
   // one they created.
   const { isOpsCommitteeMember } = useCommonsCouncil(address ?? null);
@@ -380,8 +382,8 @@ export default function ProjectList() {
   // on the old-node fallback path.
   const scopedProjects = useMemo(() => {
     if (effectiveScope !== "authored") return projects;
-    return address ? projects.filter((p) => p.creator === address) : [];
-  }, [projects, effectiveScope, address]);
+    return address ? projects.filter((p) => isMine(p.creator)) : [];
+  }, [projects, effectiveScope, address, isMine]);
 
   const searchedProjects = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();

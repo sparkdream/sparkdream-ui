@@ -38,6 +38,7 @@ import {
   type Collection,
   type CollectionItem,
 } from "@/types/collect";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 // Who does what here follows the chain, not a UI role:
 //
@@ -89,6 +90,7 @@ export default function PeerCurationPanel({
   onClose: () => void;
 }) {
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const { busy, pending, error, clearError, setError, run } = useTxAction();
   const [preferVote, setPreferVote] = useState(false);
   const { route, committee, onCommittee } = usePeerAuthRoute("policy", address, preferVote);
@@ -219,8 +221,7 @@ export default function PeerCurationPanel({
   const isCurator =
     !!address &&
     !!current?.collection &&
-    (current.collection.owner === address ||
-      current.collaborators.some((c) => c.address === address));
+    (isMine(current.collection.owner) || current.collaborators.some((c) => isMine(c.address)));
   const canProposeAsCommittee = onCommittee === true && !!opsPolicy;
 
   // ── Policy: which collection curates this peer ──

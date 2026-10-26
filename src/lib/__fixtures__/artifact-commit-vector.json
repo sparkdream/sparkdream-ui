@@ -1,0 +1,123 @@
+{
+  "_comment": "Generated in the chain repo: go run ./cmd/artifactcommit tree 42 entries.json, and artifactcommit seed 0123456789abcdef.",
+  "class_id": 42,
+  "entries": [
+    {
+      "token_id": 1,
+      "salt": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+      "metadata": {
+        "name": "Dragon #1",
+        "description": "A red dragon",
+        "uri": "ipfs://bafy1",
+        "uri_hash": "aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11",
+        "attributes": [
+          {
+            "key": "color",
+            "value": "red"
+          },
+          {
+            "key": "rarity",
+            "value": "legendary"
+          }
+        ]
+      }
+    },
+    {
+      "token_id": 2,
+      "salt": "01",
+      "metadata": {
+        "name": "Dragon #2",
+        "attributes": [
+          {
+            "key": "color",
+            "value": "blue"
+          }
+        ]
+      }
+    },
+    {
+      "token_id": 3,
+      "salt": "deadbeef",
+      "metadata": {}
+    },
+    {
+      "token_id": 7,
+      "salt": "cafe",
+      "metadata": {
+        "name": "Ünïcødé ✨ 龍",
+        "description": "multi\nline"
+      }
+    },
+    {
+      "token_id": 1000000000000,
+      "salt": "ff",
+      "metadata": {
+        "uri": "https://example.com/x.png",
+        "attributes": [
+          {
+            "key": "a",
+            "value": ""
+          }
+        ]
+      }
+    }
+  ],
+  "tree": {
+    "class_id": 42,
+    "root": "f37251d29d2a017f2fbf534cab8b986b44a4d673004e1357b83d418c78cc206e",
+    "leaves": [
+      {
+        "token_id": 1,
+        "salt": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+        "metadata_hash": "f3d4196c75e1b2cb5c689084356cba4f01ca6ba3398e2f20a3bd1808bcb3f620",
+        "proof": [
+          "10ed5a12e959bb3baaa8a4801bd7849aec6be269df698837e24370da3c82a536",
+          "364a9ea17e629fa3d32a79f7d9fc4cbf218a598ab3a4970468fa500cd87095e1",
+          "9dbf568559900225617346bf462ee799c198d2fc16127dd0788c59c988dd972f"
+        ]
+      },
+      {
+        "token_id": 2,
+        "salt": "01",
+        "metadata_hash": "13ca3e7579dddec626bdb70cb6cd72a624e6e4919d498ecf336e87330a5d62fd",
+        "proof": [
+          "71354b0a877c0536d3e13d35628f5931a31e441db67305cb5ca05377675d9c4b",
+          "364a9ea17e629fa3d32a79f7d9fc4cbf218a598ab3a4970468fa500cd87095e1",
+          "9dbf568559900225617346bf462ee799c198d2fc16127dd0788c59c988dd972f"
+        ]
+      },
+      {
+        "token_id": 3,
+        "salt": "deadbeef",
+        "metadata_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "proof": [
+          "efb329fa9dbca5c931423da0fcd3c7ff324f69d852d2961310862d0ba34ca2b1",
+          "ed214accb7fee510148a3284cc08afe76ce44e715ea52f332aba0ae3ded4984e",
+          "9dbf568559900225617346bf462ee799c198d2fc16127dd0788c59c988dd972f"
+        ]
+      },
+      {
+        "token_id": 7,
+        "salt": "cafe",
+        "metadata_hash": "a674dff82d32c705c6256cfed3dca5013a67ef051ae8f7475dd659ea68483dbc",
+        "proof": [
+          "312b0abbff73b598c95a07a82034fdd09840154f2362c756674ef5e11e965f55",
+          "ed214accb7fee510148a3284cc08afe76ce44e715ea52f332aba0ae3ded4984e",
+          "9dbf568559900225617346bf462ee799c198d2fc16127dd0788c59c988dd972f"
+        ]
+      },
+      {
+        "token_id": 1000000000000,
+        "salt": "ff",
+        "metadata_hash": "9d57ec280b440da404b15f3a7fd29b7de528a157360c2a72bc83a99d294f4412",
+        "proof": [
+          "983a042ae7c3120790696778ca7a8f46e33388fc19ffc788f947e9a8eb19cb3c"
+        ]
+      }
+    ]
+  },
+  "seed": {
+    "seed": "0123456789abcdef",
+    "commitment": "55c53f5d490297900cefa825d0c8e8e9532ee8a118abe7d8570762cd38be9818"
+  }
+}

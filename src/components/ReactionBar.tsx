@@ -6,6 +6,7 @@ import type { ReactionCounts } from "@/types/blog";
 import { ReactionType, REACTION_INFO } from "@/types/blog";
 import { getReactionCounts, getUserReaction, invalidateReactions } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
+import { useMyAliases } from "@/hooks/useMyAliases";
 import { useIsReadOnly } from "@/contexts/ArchiveContext";
 import { useSessionPermits } from "@/hooks/useSessionPermits";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
@@ -44,13 +45,14 @@ function reactionErrorMessage(err: unknown): string {
 
 export default function ReactionBar({ postId, replyId = "0", minReplyTrustLevel = 0, postCreator }: ReactionBarProps) {
   const { address, connected, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const permits = useSessionPermits();
   const isReadOnly = useIsReadOnly();
   const isMember = useIsRepMember(address);
   const trustRank = useTrustRank(address);
   const openToAll = minReplyTrustLevel === -1;
   // The post author bypasses the membership / trust gates on their own thread.
-  const isAuthor = connected && !!postCreator && address === postCreator;
+  const isAuthor = connected && !!postCreator && isMine(postCreator);
   const cannotReactMember = !openToAll && !isAuthor && connected && isMember === false;
   // As of chain commit 1124a9b reactions consult the same min_reply_trust_level
   // as replies. A value >= 1 means a member must additionally meet the trust

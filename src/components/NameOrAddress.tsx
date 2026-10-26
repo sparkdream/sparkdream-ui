@@ -12,7 +12,9 @@ interface NameOrAddressProps {
 
 /**
  * Displays a resolved name if the address has a primary name, otherwise
- * falls back to a truncated address. The full address copies to the
+ * falls back to a truncated address. An address the member migrated away
+ * from shows as their current identity (see useDisplayName). The full
+ * address as stored copies to the
  * clipboard on click — implemented as a thin wrapper around
  * `<CopyableAddress resolveName />`.
  *

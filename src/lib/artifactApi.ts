@@ -10,6 +10,24 @@ import { isMissingEndpoint } from "./errors";
 import type { PaginationRequest } from "@/types/blog";
 import type {
   ArtifactParamsResponse,
+  AuctionResponse,
+  AuctionsResponse,
+  BalanceView,
+  BalancesResponse,
+  ChildrenResponse,
+  CraftRecipesResponse,
+  EditionResponse,
+  EditionsResponse,
+  HarbergerQuoteResponse,
+  MediaProposalsResponse,
+  OfferResponse,
+  OffersResponse,
+  Rental,
+  RentalOffer,
+  RentalOffersResponse,
+  RentalsResponse,
+  UnitListing,
+  UnitListingsResponse,
   ClassResponse,
   ClassesResponse,
   HideRecord,
@@ -225,4 +243,232 @@ export function getArtifactPublicMintQuote(
   return lcdGet<PublicMintQuoteResponse>(
     `/sparkdream/artifact/v1/public_mint_quote/${classId}/${buyer}/${quantity}`
   );
+}
+
+// ---- Media versions --------------------------------------------------------
+
+export async function getArtifactMediaProposals(classId: string, tokenId: string): Promise<MediaProposalsResponse> {
+  return cachedFetch(
+    `${PREFIX}media_proposals|${classId}|${tokenId}`,
+    () => lcdGet<MediaProposalsResponse>(`/sparkdream/artifact/v1/media_proposals/${classId}/${tokenId}`),
+    TTL
+  );
+}
+
+// ---- Editions (semi-fungible units) ------------------------------------------
+
+export function getArtifactEdition(classId: string, editionId: string): Promise<EditionResponse> {
+  return cachedFetch(
+    `${PREFIX}edition|${classId}|${editionId}`,
+    () => lcdGet<EditionResponse>(`/sparkdream/artifact/v1/edition/${classId}/${editionId}`),
+    TTL
+  );
+}
+
+export function listArtifactEditions(classId: string, p?: PaginationRequest): Promise<EditionsResponse> {
+  return cachedFetch(
+    `${PREFIX}editions|${classId}|${pageKey(p)}`,
+    () => lcdGet<EditionsResponse>(`/sparkdream/artifact/v1/editions/${classId}`, paginationParams(p)),
+    TTL
+  );
+}
+
+/** The holder's balance of an edition, or null when they hold none. */
+export async function getArtifactBalance(classId: string, editionId: string, owner: string): Promise<BalanceView | null> {
+  try {
+    const res = await cachedFetch(
+      `${PREFIX}balance|${classId}|${editionId}|${owner}`,
+      () => lcdGet<{ balance: BalanceView }>(`/sparkdream/artifact/v1/balance/${classId}/${editionId}/${owner}`),
+      TTL
+    );
+    return res.balance ?? null;
+  } catch (err) {
+    if (isMissingEndpoint(err)) return null;
+    throw err;
+  }
+}
+
+export function listArtifactBalancesByOwner(owner: string, p?: PaginationRequest): Promise<BalancesResponse> {
+  return cachedFetch(
+    `${PREFIX}balances_by_owner|${owner}|${pageKey(p)}`,
+    () => lcdGet<BalancesResponse>(`/sparkdream/artifact/v1/balances_by_owner/${owner}`, paginationParams(p)),
+    TTL
+  );
+}
+
+export function listArtifactEditionHolders(classId: string, editionId: string, p?: PaginationRequest): Promise<BalancesResponse> {
+  return cachedFetch(
+    `${PREFIX}edition_holders|${classId}|${editionId}|${pageKey(p)}`,
+    () => lcdGet<BalancesResponse>(`/sparkdream/artifact/v1/edition_holders/${classId}/${editionId}`, paginationParams(p)),
+    TTL
+  );
+}
+
+/** A unit listing, or null when it is gone or expired. */
+export async function getArtifactUnitListing(listingId: string): Promise<UnitListing | null> {
+  try {
+    const res = await cachedFetch(
+      `${PREFIX}unit_listing|${listingId}`,
+      () => lcdGet<{ listing: UnitListing }>(`/sparkdream/artifact/v1/unit_listing/${listingId}`),
+      TTL
+    );
+    return res.listing ?? null;
+  } catch (err) {
+    if (isMissingEndpoint(err)) return null;
+    throw err;
+  }
+}
+
+export function listArtifactUnitListings(classId: string, editionId: string, p?: PaginationRequest): Promise<UnitListingsResponse> {
+  return cachedFetch(
+    `${PREFIX}unit_listings|${classId}|${editionId}|${pageKey(p)}`,
+    () => lcdGet<UnitListingsResponse>(`/sparkdream/artifact/v1/unit_listings/${classId}/${editionId}`, paginationParams(p)),
+    TTL
+  );
+}
+
+// ---- Crafting ---------------------------------------------------------------
+
+export function getArtifactCraftRecipes(classId: string): Promise<CraftRecipesResponse> {
+  return cachedFetch(
+    `${PREFIX}craft_recipes|${classId}`,
+    () => lcdGet<CraftRecipesResponse>(`/sparkdream/artifact/v1/craft_recipes/${classId}`),
+    TTL
+  );
+}
+
+// ---- Rentals and nesting -----------------------------------------------------
+
+/** A token's active rental, or null. */
+export async function getArtifactRental(classId: string, tokenId: string): Promise<Rental | null> {
+  try {
+    const res = await cachedFetch(
+      `${PREFIX}rental|${classId}|${tokenId}`,
+      () => lcdGet<{ rental: Rental }>(`/sparkdream/artifact/v1/rental/${classId}/${tokenId}`),
+      TTL
+    );
+    return res.rental ?? null;
+  } catch (err) {
+    if (isMissingEndpoint(err)) return null;
+    throw err;
+  }
+}
+
+/** A token's open rental offer, or null (none, or expired). */
+export async function getArtifactRentalOffer(classId: string, tokenId: string): Promise<RentalOffer | null> {
+  try {
+    const res = await cachedFetch(
+      `${PREFIX}rental_offer|${classId}|${tokenId}`,
+      () => lcdGet<{ offer: RentalOffer }>(`/sparkdream/artifact/v1/rental_offer/${classId}/${tokenId}`),
+      TTL
+    );
+    return res.offer ?? null;
+  } catch (err) {
+    if (isMissingEndpoint(err)) return null;
+    throw err;
+  }
+}
+
+export function listArtifactRentalsByUser(user: string, p?: PaginationRequest): Promise<RentalsResponse> {
+  return cachedFetch(
+    `${PREFIX}rentals_by_user|${user}|${pageKey(p)}`,
+    () => lcdGet<RentalsResponse>(`/sparkdream/artifact/v1/rentals_by_user/${user}`, paginationParams(p)),
+    TTL
+  );
+}
+
+/** Unexpired rental offers; with user, only those addressed to that user. */
+export function listArtifactRentalOffers(user?: string, p?: PaginationRequest): Promise<RentalOffersResponse> {
+  return cachedFetch(
+    `${PREFIX}rental_offers|${user ?? ""}|${pageKey(p)}`,
+    () => {
+      const params = paginationParams(p);
+      if (user) params.set("user", user);
+      return lcdGet<RentalOffersResponse>("/sparkdream/artifact/v1/rental_offers", params);
+    },
+    TTL
+  );
+}
+
+export function getArtifactChildren(classId: string, tokenId: string): Promise<ChildrenResponse> {
+  return cachedFetch(
+    `${PREFIX}children|${classId}|${tokenId}`,
+    () => lcdGet<ChildrenResponse>(`/sparkdream/artifact/v1/children/${classId}/${tokenId}`),
+    TTL
+  );
+}
+
+// ---- Harberger ----------------------------------------------------------------
+
+export function getArtifactHarbergerQuote(classId: string, tokenId: string): Promise<HarbergerQuoteResponse> {
+  // Not cached: the price and tax depend on block time.
+  return lcdGet<HarbergerQuoteResponse>(`/sparkdream/artifact/v1/harberger_quote/${classId}/${tokenId}`);
+}
+
+// ---- Offers ---------------------------------------------------------------------
+
+export function getArtifactOffer(offerId: string): Promise<OfferResponse> {
+  return cachedFetch(
+    `${PREFIX}offer|${offerId}`,
+    () => lcdGet<OfferResponse>(`/sparkdream/artifact/v1/offer/${offerId}`),
+    TTL
+  );
+}
+
+/** Unexpired offers on a token, or collection offers on a class (tokenId "0"). */
+export function listArtifactOffers(classId: string, tokenId: string, p?: PaginationRequest): Promise<OffersResponse> {
+  return cachedFetch(
+    `${PREFIX}offers|${classId}|${tokenId}|${pageKey(p)}`,
+    () => lcdGet<OffersResponse>(`/sparkdream/artifact/v1/offers/${classId}/${tokenId}`, paginationParams(p)),
+    TTL
+  );
+}
+
+export function listArtifactOffersByBidder(bidder: string, p?: PaginationRequest): Promise<OffersResponse> {
+  return cachedFetch(
+    `${PREFIX}offers_by_bidder|${bidder}|${pageKey(p)}`,
+    () => lcdGet<OffersResponse>(`/sparkdream/artifact/v1/offers_by_bidder/${bidder}`, paginationParams(p)),
+    TTL
+  );
+}
+
+// ---- Auctions ---------------------------------------------------------------------
+
+/** An open auction and the lowest bid accepted now, or null when it settled or was cancelled. */
+export async function getArtifactAuction(auctionId: string): Promise<AuctionResponse | null> {
+  try {
+    // Not cached: min_next_bid moves with every bid.
+    return await lcdGet<AuctionResponse>(`/sparkdream/artifact/v1/auction/${auctionId}`);
+  } catch (err) {
+    if (isMissingEndpoint(err)) return null;
+    throw err;
+  }
+}
+
+/** Open auctions, optionally of one class. */
+export function listArtifactAuctions(classId?: string, p?: PaginationRequest): Promise<AuctionsResponse> {
+  return cachedFetch(
+    `${PREFIX}auctions|${classId ?? "0"}|${pageKey(p)}`,
+    () => lcdGet<AuctionsResponse>(`/sparkdream/artifact/v1/auctions/${classId || "0"}`, paginationParams(p)),
+    TTL
+  );
+}
+
+export function listArtifactAuctionsBySeller(seller: string, p?: PaginationRequest): Promise<AuctionsResponse> {
+  return cachedFetch(
+    `${PREFIX}auctions_by_seller|${seller}|${pageKey(p)}`,
+    () => lcdGet<AuctionsResponse>(`/sparkdream/artifact/v1/auctions_by_seller/${seller}`, paginationParams(p)),
+    TTL
+  );
+}
+
+
+/**
+ * The id the next created class will get. Pass it as MsgCreateClass's
+ * expected_class_id when it is bound into data first (a blind-mint
+ * commitment). Not cached: it moves with every class created.
+ */
+export async function getArtifactNextClassId(): Promise<string> {
+  const res = await lcdGet<{ next_class_id?: string }>("/sparkdream/artifact/v1/next_class_id");
+  return res.next_class_id || "1";
 }

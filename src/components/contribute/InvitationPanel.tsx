@@ -17,6 +17,7 @@ import { isMissingEndpoint } from "@/lib/errors";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import { useContentLicense } from "@/hooks/useContentLicense";
 import Link from "next/link";
+import RecoveryCodeSetup from "@/components/identity/RecoveryCodeSetup";
 
 function statusColor(status: string): string {
   switch (status) {
@@ -49,6 +50,13 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
   // acceptance without the license field, so Accept waits for the checkbox.
   const contentLicense = useContentLicense();
   const [agreedToLicense, setAgreedToLicense] = useState(false);
+  // Optional recovery commitment carried by the acceptance. It is the only
+  // one that takes effect at once (there is nothing to steal yet); later ones
+  // wait out recovery_change_delay. On by default, as the chain intends.
+  const [withRecovery, setWithRecovery] = useState(true);
+  const [recoveryCommitment, setRecoveryCommitment] = useState<Uint8Array | null>(null);
+  const onRecoveryReady = useCallback((c: Uint8Array | null) => setRecoveryCommitment(c), []);
+  const recoveryReady = !withRecovery || !!recoveryCommitment;
 
   // Auto-close the invite form once we learn the user isn't a member,
   // even if it was opened by `defaultShowForm`.
@@ -186,7 +194,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
   };
 
   const handleAccept = async (invitationId: string) => {
-    if (!address || !agreedToLicense) return;
+    if (!address || !agreedToLicense || !recoveryReady) return;
     try {
       setActionLoading(`accept-${invitationId}`);
       await signAndBroadcast([{
@@ -195,7 +203,13 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
         // `!== BigInt(0)` zero-omit branch fires under JS strict equality.
         // accepted_content_license is the signed agreement to publish under
         // CC0 (x/rep refuses anything but the chain's license).
-        value: { invitee: address, invitationId: BigInt(invitationId), acceptedContentLicense: contentLicense.license },
+        // recovery_commitment is SHA-256(domain || code); the code itself never leaves the browser.
+        value: {
+          invitee: address,
+          invitationId: BigInt(invitationId),
+          acceptedContentLicense: contentLicense.license,
+          recoveryCommitment: withRecovery && recoveryCommitment ? recoveryCommitment : new Uint8Array(),
+        },
       }]);
       await fetchInvitations();
     } catch (err) {
@@ -250,6 +264,27 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
               </span>
             </label>
           </div>
+          {address && (
+            <div className="mb-3 rounded-xl sd-hull-tile p-4">
+              <label className="flex cursor-pointer items-start gap-2 text-sm text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={withRecovery}
+                  onChange={(e) => setWithRecovery(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  Set up a recovery code now (recommended). If you lose this wallet, the code moves your membership to a
+                  new address. Set up now, it works right away; added later, it waits a delay first.
+                </span>
+              </label>
+              {withRecovery && (
+                <div className="mt-3">
+                  <RecoveryCodeSetup member={address} onReady={onRecoveryReady} />
+                </div>
+              )}
+            </div>
+          )}
           <div className="space-y-2">
             {pendingForMe.map((inv) => (
               <div key={inv.id} className="flex items-center justify-between rounded-xl border border-yellow-800/50 bg-yellow-900/10 px-4 py-3">
@@ -265,8 +300,14 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
                 </div>
                 <button
                   onClick={() => handleAccept(inv.id)}
-                  disabled={!agreedToLicense || actionLoading === `accept-${inv.id}`}
-                  title={agreedToLicense ? undefined : "Agree to publish under CC0 first"}
+                  disabled={!agreedToLicense || !recoveryReady || actionLoading === `accept-${inv.id}`}
+                  title={
+                    !agreedToLicense
+                      ? "Agree to publish under CC0 first"
+                      : !recoveryReady
+                        ? "Save your recovery code first, or untick the recovery option"
+                        : undefined
+                  }
                   className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
                 >
                   {actionLoading === `accept-${inv.id}` ? "Accepting..." : "Accept and agree"}

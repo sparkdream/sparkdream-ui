@@ -58,6 +58,7 @@ import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 type Tab = "all" | "available" | "mine" | "authored";
 
@@ -629,6 +630,7 @@ function AssigneeName({ address }: { address: string }) {
 export default function InitiativeList() {
   const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const router = useRouter();
   const searchParams = useSearchParams();
   const isMember = useIsRepMember(address);
@@ -1404,7 +1406,7 @@ export default function InitiativeList() {
   // verbatim and the amino converter passes straight through.
   const handleUnstake = async (initiativeId: string) => {
     if (!address) return;
-    const mine = (stakeInfo[initiativeId]?.stakes ?? []).filter((s) => s.staker === address);
+    const mine = (stakeInfo[initiativeId]?.stakes ?? []).filter((s) => isMine(s.staker));
     if (mine.length === 0) return;
     let remaining = parseDreamToMicro(stakeAmount);
     if (remaining <= BigInt(0)) return;
@@ -1529,7 +1531,7 @@ export default function InitiativeList() {
   // If the parent project wasn't in the loaded page we can't prove creator
   // standing, so fall back to the committee check alone.
   const canAssignOthers = (ini: Initiative) =>
-    !!address && (projectCreatorById.get(ini.project_id) === address || isOpsCommitteeMember);
+    !!address && (isMine(projectCreatorById.get(ini.project_id)) || isOpsCommitteeMember);
 
   // The tab filters are a safety net over what fetchPage returned: they're
   // no-ops when the tab's own chain endpoint answered (its results already
@@ -1540,12 +1542,12 @@ export default function InitiativeList() {
   // still be assigned.
   const tabInitiatives = useMemo(() => {
     if (tab === "available") return initiatives.filter((i) => i.status === InitiativeStatus.OPEN);
-    if (tab === "mine") return address ? initiatives.filter((i) => i.assignee === address) : [];
+    if (tab === "mine") return address ? initiatives.filter((i) => isMine(i.assignee)) : [];
     // `creator` is absent on initiatives written before the field existed, so
     // this narrows to nothing rather than mislabelling them as anyone's.
-    if (tab === "authored") return address ? initiatives.filter((i) => i.creator === address) : [];
+    if (tab === "authored") return address ? initiatives.filter((i) => isMine(i.creator)) : [];
     return initiatives;
-  }, [initiatives, tab, address]);
+  }, [initiatives, tab, address, isMine]);
 
   const closedCount = useMemo(
     () => tabInitiatives.filter((i) => CLOSED_STATUSES.has(i.status)).length,
@@ -2074,7 +2076,7 @@ export default function InitiativeList() {
             // undefined so the tooltip omits the DREAM backing rather than
             // claiming none. The conviction bar itself doesn't wait on it.
             const info = stakeInfo[ini.id];
-            const mineStakes = address ? (info?.stakes ?? []).filter((s) => s.staker === address) : [];
+            const mineStakes = address ? (info?.stakes ?? []).filter((s) => isMine(s.staker)) : [];
             const yoursMicro = mineStakes.reduce((s, x) => s + BigInt(x.amount || "0"), BigInt(0));
             const poolMicro = info ? BigInt(info.poolTotal) : undefined;
             const hasStake = yoursMicro > BigInt(0);
@@ -2141,10 +2143,10 @@ export default function InitiativeList() {
               ini.status === InitiativeStatus.IN_REVIEW;
             const isConflicted =
               !!address &&
-              (ini.assignee === address || projectCreatorById.get(ini.project_id) === address);
+              (isMine(ini.assignee) || isMine(projectCreatorById.get(ini.project_id)));
             const canReview =
               inReview && !!address && !isConflicted && (hasStake || isOpsCommitteeMember);
-            const youApproved = !!address && (ini.approvals ?? []).includes(address);
+            const youApproved = (ini.approvals ?? []).some((a) => isMine(a));
             // Shared stake/unstake panel values. Only this row's panel reads
             // them, but they're cheap and keep the JSX below branch-free. In
             // unstake mode the amount is bounded by the signer's position.
@@ -2829,7 +2831,7 @@ export default function InitiativeList() {
 
                   {/* Actions */}
                   {(ini.status === InitiativeStatus.OPEN ||
-                    (ini.status === InitiativeStatus.ASSIGNED && ini.assignee === address) ||
+                    (ini.status === InitiativeStatus.ASSIGNED && isMine(ini.assignee)) ||
                     canReview) && (
                   <div className="mt-3 flex flex-wrap gap-2 border-t border-zinc-800 pt-3">
                     {ini.status === InitiativeStatus.OPEN && (
@@ -2856,7 +2858,7 @@ export default function InitiativeList() {
                           setActionError(null);
                         }}
                         title={
-                          projectCreatorById.get(ini.project_id) === address
+                          isMine(projectCreatorById.get(ini.project_id))
                             ? "You created this project"
                             : "Commons Operations Committee"
                         }
@@ -2866,7 +2868,7 @@ export default function InitiativeList() {
                       </button>
                     )}
                     {ini.status === InitiativeStatus.ASSIGNED &&
-                      ini.assignee === address &&
+                      isMine(ini.assignee) &&
                       submitWorkFor !== ini.id && (
                       <button
                         type="button"
@@ -2887,7 +2889,7 @@ export default function InitiativeList() {
                         still theirs to step down from. Once submitted, only the
                         committee can pull it, so the assignee's button stops at
                         ASSIGNED and the committee's covers the rest. */}
-                    {ini.assignee === address && ini.status === InitiativeStatus.ASSIGNED && (
+                    {isMine(ini.assignee) && ini.status === InitiativeStatus.ASSIGNED && (
                       <button
                         type="button"
                         onClick={() => handleRelease(ini.id)}
@@ -2900,7 +2902,7 @@ export default function InitiativeList() {
                     )}
                     {isOpsCommitteeMember &&
                       ini.assignee &&
-                      ini.assignee !== address &&
+                      !isMine(ini.assignee) &&
                       RELEASABLE_STATUSES.has(ini.status) && (
                       <button
                         type="button"
@@ -2924,7 +2926,7 @@ export default function InitiativeList() {
                         onClick={() => handleClose(ini.id)}
                         disabled={actionLoading === `close-${ini.id}`}
                         title={
-                          projectCreatorById.get(ini.project_id) === address
+                          isMine(projectCreatorById.get(ini.project_id))
                             ? "You created this project. The budget returns to it, net of review fees."
                             : "Commons Operations Committee"
                         }

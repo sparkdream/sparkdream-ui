@@ -9,6 +9,8 @@ import BlockTime from "@/components/BlockTime";
 import { isMissingEndpoint } from "@/lib/errors";
 import { VERDICT_LABELS, Verdict } from "@/types/rep";
 import type { Initiative, JuryReview } from "@/types/rep";
+import MigrationObjectionSummary, { parseMigrationObjection } from "@/components/identity/MigrationObjection";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 // Numeric values for MsgSubmitJurorVote.verdict. PENDING (0) is not a vote.
 const VerdictValue = {
@@ -42,6 +44,7 @@ function decString(input: string, max?: number): string {
  */
 export default function JuryDutyPanel() {
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const [reviews, setReviews] = useState<JuryReview[]>([]);
   const [initiatives, setInitiatives] = useState<Record<string, Initiative>>({});
   const [supported, setSupported] = useState(true);
@@ -128,9 +131,10 @@ export default function JuryDutyPanel() {
 
       <ul className="mt-3 space-y-2">
         {reviews.map((r) => {
-          const accepted = (r.accepted ?? []).includes(address ?? "");
-          const voted = (r.votes ?? []).some((v) => v.juror === address);
+          const accepted = (r.accepted ?? []).some((a) => isMine(a));
+          const voted = (r.votes ?? []).some((v) => isMine(v.juror));
           const initiative = initiatives[r.initiative_id];
+          const objection = parseMigrationObjection(r.challenger_claim, r.review_deliverable);
           const criteria = initiative?.acceptance_criteria ?? [];
           return (
             <li key={r.id} className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
@@ -143,6 +147,8 @@ export default function JuryDutyPanel() {
                     >
                       #{r.initiative_id} {initiative.title}
                     </Link>
+                  ) : objection ? (
+                    `Membership move objection (migration #${objection.migration_id})`
                   ) : r.content_challenge_id && r.content_challenge_id !== "0" ? (
                     "Content challenge"
                   ) : (
@@ -163,7 +169,9 @@ export default function JuryDutyPanel() {
                 )}
               </div>
 
-              {r.challenger_claim && (
+              {objection ? (
+                <MigrationObjectionSummary objection={objection} />
+              ) : r.challenger_claim && (
                 <p className="mt-1 text-xs text-zinc-400">{r.challenger_claim}</p>
               )}
               <p className="mt-1 text-xs text-zinc-500">
@@ -229,8 +237,8 @@ export default function JuryDutyPanel() {
                 <div className="mt-2.5 border-t border-zinc-800 pt-2.5">
                   <div className="flex flex-wrap gap-2">
                     {[
-                      [VerdictValue.UPHOLD_CHALLENGE, "Uphold challenge"],
-                      [VerdictValue.REJECT_CHALLENGE, "Reject challenge"],
+                      [VerdictValue.UPHOLD_CHALLENGE, objection ? "Uphold objection (stop the move)" : "Uphold challenge"],
+                      [VerdictValue.REJECT_CHALLENGE, objection ? "Reject objection (allow the move)" : "Reject challenge"],
                       [VerdictValue.INCONCLUSIVE, "Inconclusive"],
                     ].map(([val, label]) => (
                       <button

@@ -12,11 +12,14 @@ import NumberInput from "@/components/NumberInput";
 import { ArtifactMsgTypeUrls } from "@/lib/tx";
 import { invalidateArtifacts } from "@/lib/artifactApi";
 import { formatSpark } from "@/lib/utils";
-import type { ArtifactClass, ArtifactParams } from "@/types/artifact";
+import { RevealKind, type ArtifactClass, type ArtifactParams } from "@/types/artifact";
 import type {
   MsgCloseMinting,
+  MsgCreateEdition,
   MsgDeleteClass,
   MsgFreezeClassMetadata,
+  MsgIssue,
+  MsgLockRoyalty,
   MsgMint,
   MsgProposeClassOwner,
   MsgRevoke,
@@ -25,27 +28,34 @@ import type {
   MsgSetMinters,
   MsgUpdateClass,
 } from "@sparkdreamnft/sparkdreamjs/sparkdream/artifact/v1/tx";
-import { MintPolicyFields, mintPolicyToMsg, type MintPolicyState } from "./CreateClassForm";
+import { MintPolicyFields, mintPolicyStateFrom, mintPolicyToMsg, type MintPolicyState } from "./CreateClassForm";
+import CraftPanel from "./CraftPanel";
+import RevealTools from "./RevealTools";
 import {
   ActionSection,
   FieldLabel,
   MetadataEditor,
   RoyaltySplitEditor,
+  ScheduleEditor,
   bpsToPercent,
   emptyMetadataForm,
   fieldCls,
+  isEditionsClass,
   isHidden,
   isTransferable,
   issuedCount,
   issuerCanRevoke,
+  localInputToUnix,
   looksLikeAddress,
   metadataFormToMsg,
+  parseAddressList,
   royaltyRowsToShares,
+  stagesToMsg,
   txFailure,
-  unixToLocalInput,
   validateMetadataForm,
   type MetadataForm,
   type RoyaltyRow,
+  type StageForm,
 } from "./shared";
 
 interface Props {
@@ -55,10 +65,15 @@ interface Props {
   isOwner: boolean;
   onChanged: () => void;
   onDeleted: () => void;
+  /** Opens the door scanner for a redeemable class. */
+  onOpenRedeem?: () => void;
 }
 
 type Section =
   | "mint"
+  | "issue"
+  | "edition"
+  | "royalty-lock"
   | "edit"
   | "policy"
   | "minters"
@@ -71,9 +86,12 @@ type Section =
 interface MintRow {
   recipient: string;
   metadata: MetadataForm;
+  stages: StageForm[];
 }
 
-export default function ClassManagePanel({ cls, params, isOwner, onChanged, onDeleted }: Props) {
+const emptyRow = (): MintRow => ({ recipient: "", metadata: emptyMetadataForm(), stages: [] });
+
+export default function ClassManagePanel({ cls, params, isOwner, onChanged, onDeleted, onOpenRedeem }: Props) {
   const { address, signAndBroadcast } = useWallet();
   const { config } = useChainConfig();
   const license = useContentLicense();
@@ -86,6 +104,11 @@ export default function ClassManagePanel({ cls, params, isOwner, onChanged, onDe
   const soulbound = !isTransferable(cls);
   const prefix = config.bech32Prefix;
   const maxBatch = params?.max_batch_size || 50;
+  const maxIssue = params?.max_issue_batch_size || maxBatch;
+  const maxStages = params?.max_schedule_stages ?? 0;
+  const editions = isEditionsClass(cls);
+  // Blind-mint classes mint empty metadata (no schedule) and reveal it later.
+  const blind = cls.reveal?.kind === RevealKind.BLIND_METADATA;
 
   const send = async (key: string, typeUrl: string, value: unknown, fail: string, after?: () => void) =>
     run(key, async () => {
@@ -96,26 +119,107 @@ export default function ClassManagePanel({ cls, params, isOwner, onChanged, onDe
     }, txFailure(fail));
 
   // ---- Mint ----
-  const [mintRows, setMintRows] = useState<MintRow[]>([{ recipient: "", metadata: emptyMetadataForm() }]);
+  const [mintRows, setMintRows] = useState<MintRow[]>([emptyRow()]);
   const [mintAgreed, setMintAgreed] = useState(false);
   const mint = () => {
     if (!address) return;
+    const entries = [];
     for (const r of mintRows) {
       if (r.recipient.trim() && !looksLikeAddress(r.recipient, prefix)) return setError(`"${r.recipient}" isn't a valid address.`);
-      const bad = validateMetadataForm(r.metadata);
+      const bad = blind ? null : validateMetadataForm(r.metadata);
       if (bad) return setError(bad);
+      const st = blind ? { stages: [], error: null } : stagesToMsg(r.stages);
+      if (st.error) return setError(st.error);
+      entries.push({
+        recipient: r.recipient.trim(),
+        metadata: blind ? metadataFormToMsg(emptyMetadataForm()) : metadataFormToMsg(r.metadata),
+        schedule: st.stages,
+      });
     }
     if (!mintAgreed) return setError("Confirm the public domain dedication first.");
-    const value: MsgMint = {
-      minter: address,
-      classId,
-      entries: mintRows.map((r) => ({ recipient: r.recipient.trim(), metadata: metadataFormToMsg(r.metadata) })),
-      acceptedContentLicense: license.license,
-    };
+    const value: MsgMint = { minter: address, classId, entries, acceptedContentLicense: license.license };
     return send("mint", ArtifactMsgTypeUrls.Mint, value, "Mint failed", () => {
-      setMintRows([{ recipient: "", metadata: emptyMetadataForm() }]);
+      setMintRows([emptyRow()]);
       setMintAgreed(false);
     });
+  };
+
+  // ---- Issue (one metadata, many recipients) ----
+  const [issueTo, setIssueTo] = useState("");
+  const [issueMeta, setIssueMeta] = useState<MetadataForm>(emptyMetadataForm);
+  const [issueAgreed, setIssueAgreed] = useState(false);
+  const recipients = parseAddressList(issueTo);
+  const issue = () => {
+    if (!address) return;
+    if (recipients.length === 0) return setError("Add at least one recipient.");
+    if (recipients.length > maxIssue) return setError(`At most ${maxIssue} recipients at a time.`);
+    const badAddr = recipients.find((r) => !looksLikeAddress(r, prefix));
+    if (badAddr) return setError(`"${badAddr}" isn't a valid address.`);
+    const bad = blind ? null : validateMetadataForm(issueMeta);
+    if (bad) return setError(bad);
+    if (!issueAgreed) return setError("Confirm the public domain dedication first.");
+    const value: MsgIssue = {
+      minter: address,
+      classId,
+      recipients,
+      metadata: metadataFormToMsg(blind ? emptyMetadataForm() : issueMeta),
+      acceptedContentLicense: license.license,
+    };
+    return send("issue", ArtifactMsgTypeUrls.Issue, value, "Issue failed", () => {
+      setIssueTo("");
+      setIssueMeta(emptyMetadataForm());
+      setIssueAgreed(false);
+    });
+  };
+
+  // ---- Editions ----
+  const [edMeta, setEdMeta] = useState<MetadataForm>(emptyMetadataForm);
+  const [edCap, setEdCap] = useState("0");
+  const [edClaim, setEdClaim] = useState(false);
+  const [claim, setClaim] = useState({ scope: "", contributors: "", start: "", end: "", initiative: "" });
+  const [edAgreed, setEdAgreed] = useState(false);
+  const createEdition = () => {
+    if (!address) return;
+    const bad = validateMetadataForm(edMeta);
+    if (bad) return setError(bad);
+    if (!/^\d+$/.test(edCap || "0")) return setError("The unit cap must be a whole number.");
+    let c = { scope: "", contributors: [] as string[], workStart: BigInt(0), workEnd: BigInt(0), initiativeId: BigInt(0) };
+    if (edClaim) {
+      const contributors = parseAddressList(claim.contributors);
+      const badC = contributors.find((a) => !looksLikeAddress(a, prefix));
+      if (badC) return setError(`"${badC}" isn't a valid contributor address.`);
+      if (contributors.length > 20) return setError("An impact claim names at most 20 contributors.");
+      if (!claim.scope.trim()) return setError("Describe the work the certificate covers.");
+      if (claim.initiative.trim() && !/^\d+$/.test(claim.initiative.trim())) return setError("The initiative id must be a number.");
+      const workStart = localInputToUnix(claim.start ? `${claim.start}T00:00` : "");
+      const workEnd = localInputToUnix(claim.end ? `${claim.end}T23:59` : "");
+      if (workStart > BigInt(0) && workEnd > BigInt(0) && workEnd < workStart) return setError("The work can't end before it starts.");
+      c = { scope: claim.scope.trim(), contributors, workStart, workEnd, initiativeId: BigInt(claim.initiative.trim() || "0") };
+    }
+    if (!edAgreed) return setError("Confirm the public domain dedication first.");
+    const value: MsgCreateEdition = {
+      minter: address,
+      classId,
+      metadata: metadataFormToMsg(edMeta),
+      maxSupply: BigInt(edCap || "0"),
+      claim: c,
+      acceptedContentLicense: license.license,
+    };
+    return send("edition", ArtifactMsgTypeUrls.CreateEdition, value, "Couldn't create the edition", () => {
+      setEdMeta(emptyMetadataForm());
+      setEdCap("0");
+      setEdClaim(false);
+      setClaim({ scope: "", contributors: "", start: "", end: "", initiative: "" });
+      setEdAgreed(false);
+    });
+  };
+
+  // ---- Royalty lock ----
+  const lockRoyalty = () => {
+    if (!address) return;
+    if (!confirm("Lock the royalty and its split for good? Not even you can lower or reroute it after this.")) return;
+    const value: MsgLockRoyalty = { owner: address, classId };
+    return send("royalty-lock", ArtifactMsgTypeUrls.LockRoyalty, value, "Couldn't lock the royalty");
   };
 
   // ---- Edit class ----
@@ -177,13 +281,7 @@ export default function ClassManagePanel({ cls, params, isOwner, onChanged, onDe
   };
 
   // ---- Mint policy ----
-  const [policy, setPolicy] = useState<MintPolicyState>(() => ({
-    enabled: !!cls.mint_policy?.public_mint_enabled,
-    price: formatSpark(cls.mint_policy?.price?.amount || "0").replace(/,/g, ""),
-    start: unixToLocalInput(cls.mint_policy?.start_time),
-    end: unixToLocalInput(cls.mint_policy?.end_time),
-    limit: String(cls.mint_policy?.per_address_limit ?? 0),
-  }));
+  const [policy, setPolicy] = useState<MintPolicyState>(() => mintPolicyStateFrom(cls.mint_policy));
   const savePolicy = () => {
     if (!address) return;
     const mp = mintPolicyToMsg(policy, soulbound, cls.mint_policy?.price?.denom || config.denom);
@@ -213,7 +311,7 @@ export default function ClassManagePanel({ cls, params, isOwner, onChanged, onDe
     if (cap === BigInt(0)) return setError("A cap can't be removed once set.");
     if (cap < issued) return setError(`The cap can't be below the ${issued} tokens already issued.`);
     if (currentCap !== BigInt(0) && cap >= currentCap) return setError("The cap can only be lowered.");
-    const value: MsgSetMaxSupply = { owner: address, classId, maxSupply: cap };
+    const value: MsgSetMaxSupply = { owner: address, classId, maxSupply: cap, editionId: BigInt(0) };
     return send("cap", ArtifactMsgTypeUrls.SetMaxSupply, value, "Couldn't set the cap", () => setNewCap(""));
   };
   const closeMinting = () => {
@@ -281,7 +379,64 @@ export default function ClassManagePanel({ cls, params, isOwner, onChanged, onDe
       <h3 className="text-sm font-semibold text-white">{isOwner ? "Manage this class" : "Mint as a minter"}</h3>
       <ActionBanner message={error} onDismiss={clearError} />
 
-      {!cls.minting_closed && !hidden && (
+      {cls.flags?.redeemable && onOpenRedeem && !editions && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-400">
+          <span>Redeem tickets at the door. Works with a session key too.</span>
+          <button type="button" onClick={onOpenRedeem} className="sd-btn sd-btn-verdigris shrink-0">Open door scanner</button>
+        </div>
+      )}
+
+      {!cls.minting_closed && !hidden && editions && (
+        <ActionSection title="New edition" open={open === "edition"} onToggle={() => toggle("edition")}>
+          <p className="text-xs text-zinc-500">
+            An edition is a run of identical units. Creating one burns
+            {deposit && deposit !== "0" ? ` ${formatSpark(deposit)} ${config.displayDenom}` : " a token deposit"}{" "}as a fee. Mint its units from the
+            edition&apos;s page.
+          </p>
+          <MetadataEditor value={edMeta} onChange={setEdMeta} />
+          <FieldLabel label="Unit cap" hint="0 for no cap. It can be lowered later, never raised.">
+            <NumberInput value={edCap} min={0} onChange={(e) => setEdCap(e.target.value)} className={fieldCls} />
+          </FieldLabel>
+          <label className="flex items-start gap-2 text-xs text-zinc-300">
+            <input type="checkbox" checked={edClaim} onChange={(e) => setEdClaim(e.target.checked)} className="mt-0.5" />
+            <span>
+              Make it an impact certificate
+              <span className="block text-zinc-500">A record of a piece of work that funders can buy units of, and that anyone can reward later.</span>
+            </span>
+          </label>
+          {edClaim && (
+            <div className="space-y-2 rounded-lg border border-zinc-800 p-3">
+              <FieldLabel label="Scope" hint="What work the certificate covers.">
+                <textarea value={claim.scope} onChange={(e) => setClaim({ ...claim, scope: e.target.value })} rows={2} className={fieldCls} />
+              </FieldLabel>
+              <FieldLabel label="Contributors" hint="Addresses, one per line. Up to 20.">
+                <textarea value={claim.contributors} onChange={(e) => setClaim({ ...claim, contributors: e.target.value })} rows={2} className={`${fieldCls} font-mono text-xs`} />
+              </FieldLabel>
+              <div className="grid grid-cols-2 gap-2">
+                <FieldLabel label="Work started">
+                  <input type="date" value={claim.start} onChange={(e) => setClaim({ ...claim, start: e.target.value })} className={fieldCls} />
+                </FieldLabel>
+                <FieldLabel label="Work ended">
+                  <input type="date" value={claim.end} onChange={(e) => setClaim({ ...claim, end: e.target.value })} className={fieldCls} />
+                </FieldLabel>
+              </div>
+              <FieldLabel label="Initiative id" hint="Optional. A completed initiative you were assigned. Each initiative gets one certificate.">
+                <input value={claim.initiative} onChange={(e) => setClaim({ ...claim, initiative: e.target.value })} inputMode="numeric" className={fieldCls} />
+              </FieldLabel>
+            </div>
+          )}
+          <ContentLicenseNotice what="Edition metadata and media" />
+          <label className="flex items-start gap-2 text-xs text-zinc-300">
+            <input type="checkbox" checked={edAgreed} onChange={(e) => setEdAgreed(e.target.checked)} className="mt-0.5" />
+            <span>I dedicate this content to the public domain (CC0), and it&apos;s mine to dedicate or already public domain.</span>
+          </label>
+          <button onClick={createEdition} disabled={busy} className={btn}>
+            {pending === "edition" ? "Creating…" : "Create edition"}
+          </button>
+        </ActionSection>
+      )}
+
+      {!cls.minting_closed && !hidden && !editions && (
         <ActionSection title="Mint tokens" open={open === "mint"} onToggle={() => toggle("mint")}>
           <p className="text-xs text-zinc-500">
             {deposit && deposit !== "0" ? `Each token holds a ${formatSpark(deposit)} ${config.displayDenom} deposit from you, refunded to whoever burns it. ` : ""}
@@ -308,16 +463,34 @@ export default function ClassManagePanel({ cls, params, isOwner, onChanged, onDe
                 placeholder="Recipient address (blank for yourself)"
                 className={`${fieldCls} font-mono text-xs`}
               />
-              <MetadataEditor
-                value={r.metadata}
-                onChange={(m) => setMintRows(mintRows.map((x, j) => (j === i ? { ...x, metadata: m } : x)))}
-              />
+              {!blind && (
+                <MetadataEditor
+                  value={r.metadata}
+                  onChange={(m) => setMintRows(mintRows.map((x, j) => (j === i ? { ...x, metadata: m } : x)))}
+                />
+              )}
+              {!blind && maxStages > 0 && (
+                <details className="text-xs text-zinc-400" open={r.stages.length > 0}>
+                  <summary className="cursor-pointer select-none text-zinc-300">Metadata schedule ({r.stages.length}/{maxStages})</summary>
+                  <p className="my-2 text-zinc-500">
+                    Later stages replace what the token shows, from their start time. They&apos;re fixed at mint and can&apos;t be changed.
+                  </p>
+                  <ScheduleEditor
+                    stages={r.stages}
+                    max={maxStages}
+                    onChange={(st) => setMintRows(mintRows.map((x, j) => (j === i ? { ...x, stages: st } : x)))}
+                  />
+                </details>
+              )}
             </div>
           ))}
+          {blind && (
+            <p className="text-xs text-zinc-500">Blind mint: tokens are minted with no metadata. Reveal each one later from Reveal below.</p>
+          )}
           {mintRows.length < maxBatch && (
             <button
               type="button"
-              onClick={() => setMintRows([...mintRows, { recipient: "", metadata: emptyMetadataForm() }])}
+              onClick={() => setMintRows([...mintRows, emptyRow()])}
               className="text-xs text-zinc-400 hover:text-zinc-200"
             >
               + Add another token
@@ -333,6 +506,33 @@ export default function ClassManagePanel({ cls, params, isOwner, onChanged, onDe
           </button>
         </ActionSection>
       )}
+
+      {!cls.minting_closed && !hidden && !editions && (
+        <ActionSection title="Issue to many" open={open === "issue"} onToggle={() => toggle("issue")}>
+          <p className="text-xs text-zinc-500">
+            One token each, all with the same metadata, for attendance or participation badges. Up to {maxIssue} recipients at a time.
+            {deposit && deposit !== "0" ? ` Each token holds a ${formatSpark(deposit)} ${config.displayDenom} deposit from you.` : ""}
+          </p>
+          <FieldLabel label={`Recipients (${recipients.length})`} hint="Addresses, one per line or separated by commas.">
+            <textarea value={issueTo} onChange={(e) => setIssueTo(e.target.value)} rows={4} className={`${fieldCls} font-mono text-xs`} />
+          </FieldLabel>
+          {blind ? (
+            <p className="text-xs text-zinc-500">Blind mint: the tokens are issued with no metadata and revealed later.</p>
+          ) : (
+            <MetadataEditor value={issueMeta} onChange={setIssueMeta} />
+          )}
+          <ContentLicenseNotice what="Token metadata and media" />
+          <label className="flex items-start gap-2 text-xs text-zinc-300">
+            <input type="checkbox" checked={issueAgreed} onChange={(e) => setIssueAgreed(e.target.checked)} className="mt-0.5" />
+            <span>I dedicate this content to the public domain (CC0), and it&apos;s mine to dedicate or already public domain.</span>
+          </label>
+          <button onClick={issue} disabled={busy || recipients.length === 0} className={btn}>
+            {pending === "issue" ? "Issuing…" : `Issue ${recipients.length} token${recipients.length === 1 ? "" : "s"}`}
+          </button>
+        </ActionSection>
+      )}
+
+      {!editions && cls.reveal?.kind && cls.reveal.kind !== RevealKind.NONE && <RevealTools cls={cls} isOwner={isOwner} onChanged={onChanged} />}
 
       {isOwner && (
         <>
@@ -359,7 +559,7 @@ export default function ClassManagePanel({ cls, params, isOwner, onChanged, onDe
             <FieldLabel label="Payout address">
               <input value={edit.payout} onChange={(e) => setEdit({ ...edit, payout: e.target.value })} className={`${fieldCls} font-mono text-xs`} />
             </FieldLabel>
-            {!soulbound && (
+            {!soulbound && !cls.royalty_locked && (
               <>
                 <FieldLabel label="Royalty (%)" hint={`Currently ${bpsToPercent(cls.royalty_bps)}. It can only go down.`}>
                   <input value={edit.royaltyPct} onChange={(e) => setEdit({ ...edit, royaltyPct: e.target.value })} inputMode="decimal" className={`${fieldCls} w-24`} />
@@ -368,12 +568,27 @@ export default function ClassManagePanel({ cls, params, isOwner, onChanged, onDe
                 <RoyaltySplitEditor rows={edit.royaltyRows} onChange={(rows) => setEdit({ ...edit, royaltyRows: rows })} />
               </>
             )}
+            {!soulbound && cls.royalty_locked && (
+              <p className="text-xs text-zinc-500">The royalty ({bpsToPercent(cls.royalty_bps)}) and its split are locked.</p>
+            )}
             <button onClick={updateClass} disabled={busy || hidden} className={btn}>
               {pending === "edit" ? "Saving…" : "Save changes"}
             </button>
           </ActionSection>
 
-          {!cls.minting_closed && (
+          {!soulbound && !cls.royalty_locked && (
+            <ActionSection title="Lock royalty" open={open === "royalty-lock"} onToggle={() => toggle("royalty-lock")}>
+              <p className="text-xs text-zinc-500">
+                Freezes the {bpsToPercent(cls.royalty_bps)}{" "}royalty and its split for good, so buyers and royalty recipients know it can&apos;t
+                be lowered or rerouted. One way.
+              </p>
+              <button onClick={lockRoyalty} disabled={busy} className="rounded-lg border border-emerald-700/50 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-900/20 disabled:opacity-50">
+                {pending === "royalty-lock" ? "Locking…" : "Lock royalty"}
+              </button>
+            </ActionSection>
+          )}
+
+          {!cls.minting_closed && !editions && !cls.flags?.mutual && (
             <ActionSection title="Public mint" open={open === "policy"} onToggle={() => toggle("policy")}>
               <MintPolicyFields value={policy} onChange={setPolicy} soulbound={soulbound} displayDenom={config.displayDenom} disabled={hidden} />
               <p className="text-xs text-zinc-500">A price change applies right away. Buyers are protected by the price they saw.</p>
@@ -454,7 +669,7 @@ export default function ClassManagePanel({ cls, params, isOwner, onChanged, onDe
             </div>
           </ActionSection>
 
-          {issuerCanRevoke(cls) && (
+          {issuerCanRevoke(cls) && !editions && (
             <ActionSection title="Revoke tokens" open={open === "revoke"} onToggle={() => toggle("revoke")} tone="danger">
               <p className="text-xs text-zinc-500">Burns holders&apos; tokens. Each deposit goes back to its holder, not to you.</p>
               <input value={revokeIds} onChange={(e) => setRevokeIds(e.target.value)} placeholder="Token ids, e.g. 3, 7, 12" className={fieldCls} />
@@ -464,6 +679,8 @@ export default function ClassManagePanel({ cls, params, isOwner, onChanged, onDe
               </button>
             </ActionSection>
           )}
+
+          <CraftPanel cls={cls} params={params} mode="manage" onChanged={onChanged} />
 
           <ActionSection title="Delete class" open={open === "delete"} onToggle={() => toggle("delete")} tone="danger">
             {canDelete ? (

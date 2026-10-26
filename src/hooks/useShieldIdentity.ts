@@ -17,6 +17,20 @@ import {
 import { TrustLevel } from "@/types/rep";
 
 export const MSG_REGISTER_ZK_PUBLIC_KEY = "/sparkdream.rep.v1.MsgRegisterZkPublicKey";
+export const MSG_CLEAR_ZK_PUBLIC_KEY = "/sparkdream.rep.v1.MsgClearZkPublicKey";
+
+/**
+ * Short fingerprint of a ZK public key, the same as `sparkdreamd
+ * zk-key-fingerprint`: the first 8 bytes of its SHA-256 as hex, in groups of
+ * four. Lets a multisig's co-signers check whose key a registration carries.
+ */
+export async function zkKeyFingerprint(publicKeyBase64: string): Promise<string> {
+  const bytes = fromBase64(publicKeyBase64);
+  if (bytes.length === 0) return "";
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes as BufferSource));
+  const hex = Array.from(digest.slice(0, 8), (b) => b.toString(16).padStart(2, "0")).join("");
+  return hex.match(/.{4}/g)!.join(" ");
+}
 
 const TRUST_LEVEL_ORDER: string[] = [
   TrustLevel.NEW,
@@ -29,23 +43,48 @@ const TRUST_LEVEL_ORDER: string[] = [
 /**
  * - `unavailable`: no wallet, session mode, or not an active member
  * - `unregistered`: a member with no anonymous key on chain yet
+ * - `pending`: this wallet's key is registered but waits for its activation
+ *   epoch (every key change does, so it can't act twice in an open window)
  * - `locked`: a key is registered, but not unlocked in this tab
  * - `ready`: unlocked, and it matches the registered key
  * - `mismatch`: unlocked, but the chain holds a different key (re-register)
  */
-export type ShieldIdentityStatus = "loading" | "unavailable" | "unregistered" | "locked" | "ready" | "mismatch";
+export type ShieldIdentityStatus = "loading" | "unavailable" | "unregistered" | "pending" | "locked" | "ready" | "mismatch";
 
-async function loadMemberRecord(address: string) {
+interface MemberKeyRecord {
+  address: string;
+  isMember: boolean;
+  registeredKey: string | null;
+  pendingKey: string | null;
+  /** Rep epoch at which pendingKey becomes the registered key. */
+  activatesAtEpoch: string | null;
+  /** Season of the last key change; one change per season unless exempt. */
+  lastChangeSeason: string | null;
+  cooldownExempt: boolean;
+  trustLevel: number | null;
+}
+
+async function loadMemberRecord(address: string): Promise<MemberKeyRecord> {
   try {
     const { member } = await getRepMember(address);
+    // A tombstoned (migrated-away) address resolves to the member it moved to;
+    // its keys aren't this wallet's to use.
+    const own = member.address === address;
     return {
       address,
-      isMember: member.status === "MEMBER_STATUS_ACTIVE",
+      isMember: own && member.status === "MEMBER_STATUS_ACTIVE",
       registeredKey: member.zk_public_key || null,
+      pendingKey: member.pending_zk_public_key || null,
+      activatesAtEpoch: member.pending_zk_public_key ? member.zk_key_activates_at_epoch || null : null,
+      lastChangeSeason: member.last_zk_key_change_season || null,
+      cooldownExempt: !!member.zk_key_cooldown_exempt,
       trustLevel: TRUST_LEVEL_ORDER.indexOf(member.trust_level),
     };
   } catch {
-    return { address, isMember: false, registeredKey: null, trustLevel: null };
+    return {
+      address, isMember: false, registeredKey: null, pendingKey: null, activatesAtEpoch: null,
+      lastChangeSeason: null, cooldownExempt: false, trustLevel: null,
+    };
   }
 }
 
@@ -56,12 +95,7 @@ export function useShieldIdentity() {
   const { signerAddress, connected, sessionActive, signAndBroadcast } = useWallet();
   // Both are keyed by the address they belong to, so switching wallets never
   // shows the previous wallet's state.
-  const [record, setRecord] = useState<{
-    address: string;
-    isMember: boolean;
-    registeredKey: string | null;
-    trustLevel: number | null;
-  } | null>(null);
+  const [record, setRecord] = useState<MemberKeyRecord | null>(null);
   const [unlocked, setUnlocked] = useState<{ address: string; identity: ShieldIdentity } | null>(null);
 
   const refresh = useCallback(async () => {
@@ -90,9 +124,11 @@ export function useShieldIdentity() {
   if (!connected || !signerAddress || sessionActive) status = "unavailable";
   else if (!current) status = "loading";
   else if (!current.isMember) status = "unavailable";
-  else if (!current.registeredKey) status = "unregistered";
+  else if (!current.registeredKey) status = current.pendingKey ? "pending" : "unregistered";
   else if (!identity) status = "locked";
-  else status = samePublicKey(current.registeredKey, identity.publicKey) ? "ready" : "mismatch";
+  else if (samePublicKey(current.registeredKey, identity.publicKey)) status = "ready";
+  else if (current.pendingKey && samePublicKey(current.pendingKey, identity.publicKey)) status = "pending";
+  else status = "mismatch";
 
   /** Ask Keplr for the identity signature (once per tab). */
   const unlock = useCallback(async () => {
@@ -116,7 +152,27 @@ export function useShieldIdentity() {
     return id;
   }, [signerAddress, unlock, signAndBroadcast, refresh]);
 
-  return { status, identity, trustLevel, unlock, register, refresh };
+  /** Zero the registered key (a leaked key): immediate, no cooldown. Registering again still waits the activation delay. */
+  const clear = useCallback(async () => {
+    if (!signerAddress) throw new Error("Connect your wallet first.");
+    await signAndBroadcast([{ typeUrl: MSG_CLEAR_ZK_PUBLIC_KEY, value: { member: signerAddress } }]);
+    await refresh();
+  }, [signerAddress, signAndBroadcast, refresh]);
+
+  return {
+    status,
+    identity,
+    trustLevel,
+    registeredKey: current?.registeredKey ?? null,
+    pendingKey: current?.pendingKey ?? null,
+    activatesAtEpoch: current?.activatesAtEpoch ?? null,
+    lastChangeSeason: current?.lastChangeSeason ?? null,
+    cooldownExempt: current?.cooldownExempt ?? false,
+    unlock,
+    register,
+    clear,
+    refresh,
+  };
 }
 
 /** Send a message anonymously. `buildValue` gets the shield module address,
@@ -134,6 +190,9 @@ export function useAnonymousSubmit() {
     ) => {
       if (shield.status === "unregistered" || shield.status === "mismatch") {
         throw new Error("Set up your anonymous identity first (Permissions page).");
+      }
+      if (shield.status === "pending") {
+        throw new Error(`Your anonymous identity activates at epoch ${shield.activatesAtEpoch ?? "?"}. Try again then.`);
       }
       try {
         const identity = shield.identity ?? (await shield.unlock());

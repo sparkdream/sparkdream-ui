@@ -11,6 +11,7 @@ import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
 import type { Bounty } from "@/types/forum";
 import { BountyStatus } from "@/types/forum";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 // Mirrors x/forum DefaultMaxBountyWinners: at most 5 replies can be awarded.
 export const MAX_BOUNTY_WINNERS = 5;
@@ -54,6 +55,7 @@ interface BountyPanelProps {
 // ThreadDetail next to each reply.
 export default function BountyPanel({ threadId, bounty, isThreadAuthor, onChanged }: BountyPanelProps) {
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const permits = useSessionPermits();
 
   const [bountiesEnabled, setBountiesEnabled] = useState(true);
@@ -79,7 +81,7 @@ export default function BountyPanel({ threadId, bounty, isThreadAuthor, onChange
 
   const isActive = bounty?.status === BountyStatus.ACTIVE;
   const isSuspended = bounty?.status === BountyStatus.MODERATION_PENDING;
-  const isBountyCreator = !!bounty && !!address && address === bounty.creator;
+  const isBountyCreator = !!bounty && isMine(bounty.creator);
   const awards = bounty?.awards || [];
   const shares = provisionalShares(bounty?.amount || "0", awards.length);
 

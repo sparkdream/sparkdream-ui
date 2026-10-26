@@ -50,6 +50,180 @@ export interface RepMember {
    * invitation acceptance (or in genesis for founders) and never changed. The
    * agreement was made at joined_at / joined_at_height. */
   content_license?: string;
+  /** Unix seconds of each finalized KEY-path migration in the rolling window. */
+  key_migration_times?: string[];
+  /** Unix seconds of the last finalized migration (any path); "0" = never. */
+  last_migrated_at?: string;
+  /** base64 ZK public key waiting for zk_key_activates_at_epoch. */
+  pending_zk_public_key?: string;
+  zk_key_activates_at_epoch?: string;
+  /** Season of the last ZK key change: one change per season. */
+  last_zk_key_change_season?: string;
+  zk_key_changed?: boolean;
+  /** Set by a RECOVERY or COUNCIL migration: the next key change skips the season cap. */
+  zk_key_cooldown_exempt?: boolean;
+  /** The key was cleared (MsgClearZkPublicKey); the next registration still waits the delay. */
+  zk_key_cleared?: boolean;
+}
+
+// ---- Member key migration ----------------------------------------------------
+
+export const MigrationPath = {
+  UNSPECIFIED: "MIGRATION_PATH_UNSPECIFIED",
+  KEY: "MIGRATION_PATH_KEY",
+  RECOVERY: "MIGRATION_PATH_RECOVERY",
+  COUNCIL: "MIGRATION_PATH_COUNCIL",
+} as const;
+
+export const MigrationStatus = {
+  UNSPECIFIED: "MIGRATION_STATUS_UNSPECIFIED",
+  REQUESTED: "MIGRATION_STATUS_REQUESTED",
+  ACCEPTED: "MIGRATION_STATUS_ACCEPTED",
+  OBJECTED: "MIGRATION_STATUS_OBJECTED",
+  FINALIZED: "MIGRATION_STATUS_FINALIZED",
+  CANCELLED: "MIGRATION_STATUS_CANCELLED",
+  EXPIRED: "MIGRATION_STATUS_EXPIRED",
+  FAILED: "MIGRATION_STATUS_FAILED",
+} as const;
+
+/** Enum numbers, for query parameters: the REST gateway only takes an enum by number. */
+export const MIGRATION_STATUS_NUMBER: Record<string, number> = {
+  [MigrationStatus.UNSPECIFIED]: 0,
+  [MigrationStatus.REQUESTED]: 1,
+  [MigrationStatus.ACCEPTED]: 2,
+  [MigrationStatus.OBJECTED]: 3,
+  [MigrationStatus.FINALIZED]: 4,
+  [MigrationStatus.CANCELLED]: 5,
+  [MigrationStatus.EXPIRED]: 6,
+  [MigrationStatus.FAILED]: 7,
+};
+
+export const MIGRATION_PATH_LABELS: Record<string, string> = {
+  [MigrationPath.UNSPECIFIED]: "Unknown",
+  [MigrationPath.KEY]: "Key change",
+  [MigrationPath.RECOVERY]: "Recovery",
+  [MigrationPath.COUNCIL]: "Committee decision",
+};
+
+export const MIGRATION_STATUS_LABELS: Record<string, string> = {
+  [MigrationStatus.UNSPECIFIED]: "Unknown",
+  [MigrationStatus.REQUESTED]: "Waiting for the new address",
+  [MigrationStatus.ACCEPTED]: "Accepted, waiting out the delay",
+  [MigrationStatus.OBJECTED]: "Objected, before a jury",
+  [MigrationStatus.FINALIZED]: "Done",
+  [MigrationStatus.CANCELLED]: "Cancelled",
+  [MigrationStatus.EXPIRED]: "Expired",
+  [MigrationStatus.FAILED]: "Failed",
+};
+
+export function isPendingMigrationStatus(status?: string): boolean {
+  return status === MigrationStatus.REQUESTED || status === MigrationStatus.ACCEPTED || status === MigrationStatus.OBJECTED;
+}
+
+export interface MemberMigration {
+  id: string;
+  from_address: string;
+  to_address: string;
+  path?: string;
+  status?: string;
+  /** Unix seconds. */
+  requested_at?: string;
+  accepted_at?: string;
+  /** Unix seconds at which the EndBlocker finalizes an accepted migration. */
+  executes_at?: string;
+  jury_review_id?: string;
+  evidence_uri?: string;
+  objector?: string;
+  /** uspark. */
+  objection_bond?: string;
+  failure_reason?: string;
+  finalized_at?: string;
+}
+
+export interface RecoveryCommitment {
+  /** base64 SHA-256 commitment. */
+  commitment: string;
+  /** Unix seconds from which it can be revealed. */
+  effective_at?: string;
+}
+
+export interface PendingCommitmentRemoval {
+  commitment: string;
+  removal_at?: string;
+}
+
+export interface RecoveryCommitmentSet {
+  commitments?: RecoveryCommitment[];
+  pending_removals?: PendingCommitmentRemoval[];
+}
+
+/** A sealed recovery commit (MsgCommitRecovery), waiting for its reveal. */
+export interface RecoveryCommit {
+  /** base64 seal. */
+  sealed: string;
+  submitter: string;
+  /** Block height it landed at: the reveal waits recovery_reveal_min_blocks from here. */
+  height: string;
+  /** Unix seconds; the deposit burns if it isn't revealed by then. */
+  expires_at: string;
+  /** uspark. */
+  deposit?: string;
+}
+
+export interface CanonicalResponse {
+  /** The identity's current address (the address itself when it never migrated). */
+  canonical: string;
+  tombstoned?: boolean;
+  path?: string;
+}
+
+export interface AliasesResponse {
+  canonical: string;
+  /** Canonical first, then every predecessor. */
+  addresses?: string[];
+  /** Canonical plus predecessors inside the dedup horizon. */
+  recent?: string[];
+}
+
+export interface MemberMigrationResponse {
+  migration: MemberMigration;
+}
+
+export interface MemberMigrationsResponse {
+  migrations: MemberMigration[];
+  pagination?: { next_key?: string | null; total?: string };
+}
+
+export interface RecoveryCommitmentsResponse {
+  set?: RecoveryCommitmentSet;
+}
+
+/**
+ * The member key migration slice of the rep params, as the LCD renders it
+ * (int64 and Int as strings). Durations are seconds unless noted. Read it
+ * out of RepParamsResponse.params with readMigrationParams (src/lib/migration.ts).
+ */
+export interface RepMigrationParams {
+  migration_enabled?: boolean;
+  /** Off when gov considers account signatures broken ("Q-day switch"); recovery and council still work. */
+  key_path_enabled?: boolean;
+  key_migration_delay?: string;
+  recovery_migration_delay?: string;
+  council_migration_delay?: string;
+  migration_accept_window?: string;
+  migration_cooldown?: string;
+  max_key_migrations_per_window?: number | string;
+  key_migration_window?: string;
+  recovery_change_delay?: string;
+  /** Blocks, not seconds. */
+  recovery_reveal_min_blocks?: string;
+  recovery_commit_ttl?: string;
+  /** uspark. */
+  recovery_commit_deposit?: string;
+  /** uspark. */
+  migration_objection_bond?: string;
+  /** Epochs. */
+  zk_key_activation_delay?: string;
 }
 
 export interface VerificationPolicy {

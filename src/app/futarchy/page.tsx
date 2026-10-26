@@ -30,6 +30,7 @@ import TradePanel from "@/components/futarchy/TradePanel";
 import RedeemPanel from "@/components/futarchy/RedeemPanel";
 import WithdrawLiquidityPanel from "@/components/futarchy/WithdrawLiquidityPanel";
 import CancelMarketProposalPanel from "@/components/futarchy/CancelMarketProposalPanel";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 // Sidebar view selectors. Each maps to a different filter/projection over the
 // same underlying market list.
@@ -64,6 +65,7 @@ function isConfidenceMarket(m: Market): boolean {
 
 export default function FutarchyPage() {
   const { address: rawAddress } = useWallet();
+  const { isMine } = useMyAliases();
   const { config } = useChainConfig();
 
   // Wallet state is client-only (auto-reconnect happens in a useEffect inside
@@ -327,8 +329,8 @@ export default function FutarchyPage() {
   // view and to count creator-eligible withdrawals in the sidebar badge.
   const createdMarkets = useMemo(() => {
     if (!address) return [];
-    return markets.filter((m) => m.creator === address);
-  }, [markets, address]);
+    return markets.filter((m) => isMine(m.creator));
+  }, [markets, address, isMine]);
 
   const withdrawableCount = useMemo(() => {
     return createdMarkets.filter((m) => {

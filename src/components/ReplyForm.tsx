@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useWallet } from "@/contexts/WalletContext";
+import { useMyAliases } from "@/hooks/useMyAliases";
 import { useIsReadOnly } from "@/contexts/ArchiveContext";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { useTrustRank } from "@/hooks/useTrustRank";
@@ -58,6 +59,7 @@ export default function ReplyForm({
   postCreator,
 }: ReplyFormProps) {
   const { address, connected, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const dream = useDreamDenom();
   const isReadOnly = useIsReadOnly();
   const isMember = useIsRepMember(address);
@@ -88,7 +90,7 @@ export default function ReplyForm({
   // The post author may always reply within their own thread, so they skip the
   // membership / trust gates below (the chain allows creator self-replies,
   // subject only to moderation + rate limits).
-  const isAuthor = connected && !!postCreator && address === postCreator;
+  const isAuthor = connected && !!postCreator && isMine(postCreator);
   // For new replies, mirror the chain's MsgCreateReply gate. Editing bypasses
   // this because chain UpdateReply only checks creator == reply.creator.
   const openToAll = minReplyTrustLevel === -1;

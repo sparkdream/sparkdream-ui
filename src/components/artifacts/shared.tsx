@@ -1,18 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
-import { formatSpark } from "@/lib/utils";
+import { useWallet } from "@/contexts/WalletContext";
+import { useTxAction } from "@/hooks/useTxAction";
+import { getArtifactParams, invalidateArtifacts } from "@/lib/artifactApi";
+import { formatDurationApprox, formatSpark, parseSparkToUspark } from "@/lib/utils";
 import { describeTxError } from "@/lib/errors";
 import {
   BurnAuthorization,
   ContentStatus,
   TokenLock,
   type ArtifactClass,
+  type ArtifactParams,
   type Attribute,
   type Coin,
+  ExpiryMode,
+  TokenModel,
   type Token,
   type TokenMetadata,
+  type TokenView,
 } from "@/types/artifact";
 import type { TokenMetadata as MsgTokenMetadata } from "@sparkdreamnft/sparkdreamjs/sparkdream/artifact/v1/types";
 
@@ -28,6 +35,15 @@ export function tokenTitle(t: Pick<Token, "id" | "metadata"> | null | undefined,
   if (!t) return "Token";
   if (withheld) return `Token #${t.id}`;
   return t.metadata?.name?.trim() || `Token #${t.id}`;
+}
+
+/**
+ * The token as it should be shown: its metadata replaced by what the chain
+ * says to display (a schedule stage, an accepted media version or renderer
+ * output). Edit forms keep using view.token, the stored metadata.
+ */
+export function shownToken(view: TokenView): Token {
+  return view.displayed_metadata ? { ...view.token, metadata: view.displayed_metadata } : view.token;
 }
 
 /** Canonical "<class_id>/<token_id>" reference. */
@@ -70,7 +86,8 @@ export function issuerCanRevoke(c: ArtifactClass | null | undefined): boolean {
 }
 
 export function holderCanBurn(c: ArtifactClass | null | undefined): boolean {
-  return burnAuth(c) !== BurnAuthorization.ISSUER;
+  const b = burnAuth(c);
+  return b === BurnAuthorization.HOLDER || b === BurnAuthorization.HOLDER_OR_ISSUER;
 }
 
 export function isHidden(status: string | undefined): boolean {
@@ -407,8 +424,20 @@ export function ClassBadges({ cls, withheld }: { cls: ArtifactClass; withheld?: 
       {issuerCanRevoke(cls) && (
         <Badge tone="bg-amber-500/15 text-amber-300" title="The class owner can burn holders' tokens">Revocable</Badge>
       )}
-      {b === BurnAuthorization.ISSUER && (
+      {(b === BurnAuthorization.ISSUER || b === BurnAuthorization.NEITHER) && (
         <Badge tone="bg-amber-500/15 text-amber-300" title="Holders can't burn these tokens">Cannot be discarded</Badge>
+      )}
+      {cls.flags?.mutual && (
+        <Badge tone="bg-sky-500/15 text-sky-300" title="Recipients accept each mint and transfer from their inbox">Accept to receive</Badge>
+      )}
+      {cls.flags?.redeemable && (
+        <Badge tone="bg-sky-500/15 text-sky-300" title="Tokens can be redeemed once, like a ticket">Redeemable</Badge>
+      )}
+      {cls.expiry?.mode && cls.expiry.mode !== ExpiryMode.NONE && (
+        <Badge tone="bg-zinc-700/50 text-zinc-300" title="Tokens expire unless renewed">Expires</Badge>
+      )}
+      {cls.royalty_locked && (
+        <Badge tone="bg-emerald-500/15 text-emerald-300" title="The royalty and its split can no longer change">Royalty locked</Badge>
       )}
       {cls.flags?.token_metadata_mutable && !cls.metadata_frozen && (
         <Badge tone="bg-zinc-700/50 text-zinc-300" title="The class owner can still edit token metadata">Editable</Badge>
@@ -426,7 +455,22 @@ export function ClassBadges({ cls, withheld }: { cls: ArtifactClass; withheld?: 
 export function LockBadge({ lock }: { lock: string }) {
   if (lock === TokenLock.LISTED) return <Badge tone="bg-amber-500/15 text-amber-300">Listed</Badge>;
   if (lock === TokenLock.PENDING_TRANSFER) return <Badge tone="bg-sky-500/15 text-sky-300">Transfer pending</Badge>;
+  if (lock === TokenLock.RENTED) return <Badge tone="bg-sky-500/15 text-sky-300">Rented</Badge>;
+  if (lock === TokenLock.NESTED) return <Badge tone="bg-zinc-700/50 text-zinc-300">Nested</Badge>;
+  if (lock === TokenLock.AUCTION) return <Badge tone="bg-amber-500/15 text-amber-300">In auction</Badge>;
   return null;
+}
+
+/** Expired, redeemed and unrevealed states from a token view. */
+export function TokenStateBadges({ view }: { view: TokenView }) {
+  const t = view.token;
+  return (
+    <>
+      {view.expired && <Badge tone="bg-red-500/15 text-red-400" title="Past its expiry; the holder can renew it">Expired</Badge>}
+      {t.redeemed_at && t.redeemed_at !== "0" && <Badge tone="bg-zinc-700/50 text-zinc-300">Redeemed</Badge>}
+      {t.unrevealed && <Badge tone="bg-violet-500/15 text-violet-300" title="Its metadata is revealed later">Unrevealed</Badge>}
+    </>
+  );
 }
 
 export function BackButton({ onClick, label = "Back" }: { onClick: () => void; label?: string }) {
@@ -569,4 +613,200 @@ export function FieldLabel({ label, hint, children }: { label: string; hint?: Re
       {hint && <span className="block text-[11px] text-zinc-500">{hint}</span>}
     </label>
   );
+}
+
+// ---- Wave 1-4 helpers --------------------------------------------------------
+
+export function isEditionsClass(c: ArtifactClass | null | undefined): boolean {
+  return c?.token_model === TokenModel.EDITIONS;
+}
+
+export function isHarbergerClass(c: ArtifactClass | null | undefined): boolean {
+  return (c?.harberger?.tax_bps_per_year ?? 0) > 0;
+}
+
+/** Offers, auctions and rentals need a transferable UNIQUE class that is not Harberger. */
+export function isMarketable(c: ArtifactClass | null | undefined): boolean {
+  return !!c && isTransferable(c) && !isEditionsClass(c) && !isHarbergerClass(c);
+}
+
+/** A uint64 decimal string, or null. */
+export function parseUint(s: string): bigint | null {
+  const v = s.trim();
+  return /^\d+$/.test(v) ? BigInt(v) : null;
+}
+
+/** Split a list of ids on whitespace and commas, deduplicated; null when any isn't a whole number. */
+export function parseIdList(s: string): string[] | null {
+  const ids = Array.from(new Set(s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean)));
+  return ids.every((i) => /^\d+$/.test(i)) ? ids : null;
+}
+
+/** Days as typed (decimals allowed) to whole seconds, or null. */
+export function daysToSeconds(s: string): number | null {
+  const n = Number(s.trim());
+  if (!s.trim() || !Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 86400);
+}
+
+/** Seconds (string or number) as "3d 4h". */
+export function formatSeconds(s: string | number | undefined): string {
+  return formatDurationApprox(Number(s || 0));
+}
+
+/** A positive display amount to micro units, or null. */
+export function parsePositiveAmount(s: string): string | null {
+  const a = parseSparkToUspark(s.trim());
+  return a && BigInt(a) > BigInt(0) ? a : null;
+}
+
+/** Unix seconds now. */
+export function nowUnix(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
+/** The artifact params, loaded once per mount (cached by the API layer). */
+export function useArtifactParams(): ArtifactParams | null {
+  const [params, setParams] = useState<ArtifactParams | null>(null);
+  useEffect(() => {
+    let live = true;
+    getArtifactParams()
+      .then((r) => live && setParams(r.params))
+      .catch(() => live && setParams(null));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return params;
+}
+
+/**
+ * useTxAction plus the artifact broadcast routine: sign, drop the artifact
+ * cache, then run the caller's follow-up. `send` resolves to the tx hash, or
+ * null when the tx failed (the banner shows why).
+ */
+export function useArtifactTx(onChanged?: () => void) {
+  const { signAndBroadcast } = useWallet();
+  const tx = useTxAction();
+  const { run } = tx;
+  const send = useCallback(
+    async (
+      key: string,
+      msgs: { typeUrl: string; value: unknown } | { typeUrl: string; value: unknown }[],
+      fail: string,
+      after?: (hash: string) => void | Promise<void>
+    ): Promise<string | null> => {
+      let hash: string | null = null;
+      const ok = await run(key, async () => {
+        hash = await signAndBroadcast(Array.isArray(msgs) ? msgs : [msgs]);
+        invalidateArtifacts();
+        await after?.(hash);
+        onChanged?.();
+      }, txFailure(fail));
+      return ok ? hash : null;
+    },
+    [run, signAndBroadcast, onChanged]
+  );
+  return { ...tx, send };
+}
+
+/** A token or edition reference as a clickable verdigris link. */
+export function RefLink({ label, onClick, mono = true }: { label: string; onClick?: () => void; mono?: boolean }) {
+  if (!onClick) return <span className={mono ? "font-mono" : ""}>{label}</span>;
+  return (
+    <button type="button" onClick={onClick} className={`sd-artifact-link ${mono ? "font-mono" : ""}`}>
+      {label}
+    </button>
+  );
+}
+
+/** Small boxed note under a panel heading. */
+export function Note({ children, tone = "muted" }: { children: React.ReactNode; tone?: "muted" | "warn" | "info" }) {
+  const cls =
+    tone === "warn"
+      ? "border-amber-800/50 bg-amber-900/15 text-amber-200"
+      : tone === "info"
+        ? "border-sky-800/50 bg-sky-900/15 text-sky-200"
+        : "border-zinc-800 bg-zinc-900/40 text-zinc-400";
+  return <div className={`rounded-lg border px-3 py-2 text-xs ${cls}`}>{children}</div>;
+}
+
+// ---- Metadata schedule ---------------------------------------------------------
+
+export interface StageForm {
+  /** datetime-local value. */
+  from: string;
+  metadata: MetadataForm;
+}
+
+/** Stages to the camelCase MetadataStage list, or an error. Stages must be in the future and strictly increasing. */
+export function stagesToMsg(stages: StageForm[]): { stages: { fromTime: bigint; metadata: MsgTokenMetadata }[]; error: string | null } {
+  const out: { fromTime: bigint; metadata: MsgTokenMetadata }[] = [];
+  let last = BigInt(nowUnix());
+  for (let i = 0; i < stages.length; i++) {
+    const s = stages[i];
+    const at = localInputToUnix(s.from);
+    if (at === BigInt(0)) return { stages: [], error: `Stage ${i + 1} needs a start time.` };
+    if (at <= last) return { stages: [], error: `Stage ${i + 1} must start in the future and after the stage before it.` };
+    const bad = validateMetadataForm(s.metadata);
+    if (bad) return { stages: [], error: `Stage ${i + 1}: ${bad}` };
+    last = at;
+    out.push({ fromTime: at, metadata: metadataFormToMsg(s.metadata) });
+  }
+  return { stages: out, error: null };
+}
+
+/** Editor for a token's metadata schedule: later stages replace what's shown, from their start time. */
+export function ScheduleEditor({
+  stages,
+  onChange,
+  max,
+}: {
+  stages: StageForm[];
+  onChange: (s: StageForm[]) => void;
+  max: number;
+}) {
+  if (max <= 0) return null;
+  return (
+    <div className="space-y-2">
+      {stages.map((s, i) => (
+        <div key={i} className="space-y-2 rounded-lg border border-zinc-800/80 p-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-zinc-400">Stage {i + 1} shows from</span>
+            <button
+              type="button"
+              onClick={() => onChange(stages.filter((_, j) => j !== i))}
+              className="text-xs text-zinc-500 hover:text-red-400"
+            >
+              Remove
+            </button>
+          </div>
+          <input
+            type="datetime-local"
+            value={s.from}
+            onChange={(e) => onChange(stages.map((x, j) => (j === i ? { ...x, from: e.target.value } : x)))}
+            className={fieldCls}
+          />
+          <MetadataEditor
+            value={s.metadata}
+            onChange={(m) => onChange(stages.map((x, j) => (j === i ? { ...x, metadata: m } : x)))}
+          />
+        </div>
+      ))}
+      {stages.length < max && (
+        <button
+          type="button"
+          onClick={() => onChange([...stages, { from: "", metadata: emptyMetadataForm() }])}
+          className="text-xs text-zinc-400 hover:text-zinc-200"
+        >
+          + Add a later stage
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** A non-negative display amount to micro units (blank = 0), or null. */
+export function parseSparkToUsparkOrZero(s: string): string | null {
+  return parseSparkToUspark(s.trim() || "0");
 }

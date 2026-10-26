@@ -23,6 +23,7 @@ import {
 } from "@/types/rep";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 interface Props {
   initiative: Initiative;
@@ -69,6 +70,7 @@ function statusColor(status: string): string {
 export default function InitiativeChallengePanel({ initiative, onChanged }: Props) {
   const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const isMember = useIsRepMember(address);
 
   const [challenges, setChallenges] = useState<Challenge[]>([]);
@@ -236,7 +238,7 @@ export default function InitiativeChallengePanel({ initiative, onChanged }: Prop
   const openToChallenge =
     initiative.status === InitiativeStatus.SUBMITTED ||
     initiative.status === InitiativeStatus.IN_REVIEW;
-  const isAssignee = !!address && address === initiative.assignee;
+  const isAssignee = isMine(initiative.assignee);
   // Two gates, both enforced on-chain. Membership: the stake is locked on the
   // member record, so a non-member's challenge fails at LockDREAM. Assignee:
   // CreateChallenge rejects a self-challenge outright (ErrSelfChallenge, 1408),

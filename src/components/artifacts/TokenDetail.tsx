@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
+import { useMyAliases } from "@/hooks/useMyAliases";
 import { useTxAction } from "@/hooks/useTxAction";
 import ActionBanner from "@/components/ActionBanner";
 import CopyableAddress from "@/components/CopyableAddress";
@@ -16,7 +17,17 @@ import {
   invalidateArtifacts,
 } from "@/lib/artifactApi";
 import { formatSpark, formatTime, parseSparkToUspark, timeRemaining } from "@/lib/utils";
-import { TokenLock, type ArtifactClass, type ArtifactParams, type HideRecord, type Listing, type TokenView } from "@/types/artifact";
+import {
+  ExpiryMode,
+  RevealKind,
+  TokenLock,
+  type ArtifactClass,
+  type ArtifactParams,
+  type Auction,
+  type HideRecord,
+  type Listing,
+  type TokenView,
+} from "@/types/artifact";
 import type {
   MsgBurn,
   MsgBuy,
@@ -24,12 +35,19 @@ import type {
   MsgDelist,
   MsgFreezeTokenMetadata,
   MsgList,
+  MsgRedeem,
+  MsgRenew,
   MsgRevoke,
   MsgTransfer,
   MsgUpdateListing,
   MsgUpdateToken,
 } from "@sparkdreamnft/sparkdreamjs/sparkdream/artifact/v1/tx";
 import ArtifactModeration from "./ArtifactModeration";
+import HarbergerPanel from "./HarbergerPanel";
+import MediaVersions from "./MediaVersions";
+import NestPanel from "./NestPanel";
+import RentalPanel from "./RentalPanel";
+import { TokenAuction, TokenOffers } from "./TokenMarket";
 import {
   ActionSection,
   ArtifactMedia,
@@ -38,13 +56,18 @@ import {
   ClassBadges,
   FieldLabel,
   LockBadge,
+  TokenStateBadges,
+  shownToken,
   MetadataEditor,
   bpsToPercent,
   classTitle,
   fieldCls,
   formatCoin,
+  formatSeconds,
   holderCanBurn,
+  isHarbergerClass,
   isHidden,
+  isMarketable,
   isTransferable,
   issuerCanRevoke,
   lockOf,
@@ -64,17 +87,21 @@ interface Props {
   tokenId: string;
   onBack: () => void;
   onOpenClass: (classId: string) => void;
+  /** Opens another token (nested children and parents). */
+  onOpenToken: (classId: string, tokenId: string) => void;
 }
 
 type Section = "transfer" | "list" | "edit" | "burn" | "revoke";
 
-export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: Props) {
+export default function TokenDetail({ classId, tokenId, onBack, onOpenClass, onOpenToken }: Props) {
   const { address, signAndBroadcast } = useWallet();
   const { config } = useChainConfig();
+  const { isMine } = useMyAliases();
   const { pending, error: txError, clearError, setError: setTxError, run } = useTxAction();
 
   const [view, setView] = useState<TokenView | null>(null);
   const [listing, setListing] = useState<Listing | null>(null);
+  const [auction, setAuction] = useState<Auction | null>(null);
   const [cls, setCls] = useState<ArtifactClass | null>(null);
   const [hides, setHides] = useState<HideRecord[]>([]);
   const [params, setParams] = useState<ArtifactParams | null>(null);
@@ -96,6 +123,7 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: P
       const [t, c] = await Promise.all([getArtifactToken(classId, tokenId), getArtifactClass(classId)]);
       setView(t.token);
       setListing(t.listing && t.listing.seller ? t.listing : null);
+      setAuction(t.auction && t.auction.seller ? t.auction : null);
       setCls(c.class.class);
       setMeta(null);
       getArtifactHideRecords(classId, tokenId).then(setHides).catch(() => setHides([]));
@@ -134,8 +162,13 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: P
   const tokenHidden = isHidden(t.status);
   const classHidden = isHidden(view.class_status) || isHidden(cls.status);
   const lock = lockOf(t);
-  const isHolder = !!address && t.owner === address;
-  const isClassOwner = !!address && cls.owner === address;
+  const isHolder = isMine(t.owner);
+  const isClassOwner = isMine(cls.owner);
+  const isMinter = isClassOwner || (cls.minters || []).some((m) => isMine(m));
+  const harberger = isHarbergerClass(cls);
+  const expiring = !!cls.expiry?.mode && cls.expiry.mode !== ExpiryMode.NONE;
+  const redeemed = !!t.redeemed_at && t.redeemed_at !== "0";
+  const expiresAt = t.expires_at && t.expires_at !== "0" ? t.expires_at : null;
   const transferable = isTransferable(cls);
   const marketOn = params?.market_enabled !== false;
   const maxListingDays = params?.max_listing_duration ? Math.floor(Number(params.max_listing_duration) / 86400) : 30;
@@ -206,6 +239,8 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: P
       expectedNonce: BigInt(listing.nonce || "0"),
       // Pin what the buyer saw, so a metadata swap in the meantime fails the buy.
       expectedMetadataHash: view.metadata_hash || "",
+      // And the nested contents, for a token holding other tokens.
+      expectedContentsHash: view.contents_hash || "",
     };
     return send("buy", ArtifactMsgTypeUrls.Buy, value, "Purchase failed");
   };
@@ -245,7 +280,36 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: P
     return send("edit", ArtifactMsgTypeUrls.UpdateToken, value, "Couldn't update metadata");
   };
 
-  const md = t.metadata;
+  const renewalPrice = cls.expiry?.renewal_price;
+  const renew = () => {
+    if (!address) return;
+    // Issuers renew free; holders pay the class's renewal price, capped at what's shown.
+    const value: MsgRenew = {
+      signer: address,
+      classId: classIdN,
+      tokenId: tokenIdN,
+      maxPrice: { denom: renewalPrice?.denom || config.denom, amount: isMinter ? "0" : renewalPrice?.amount || "0" },
+    };
+    return send("renew", ArtifactMsgTypeUrls.Renew, value, "Renewal failed");
+  };
+
+  const redeem = () => {
+    if (!address) return;
+    if (!confirm("Mark this token redeemed? It can't be undone.")) return;
+    const value: MsgRedeem = { signer: address, classId: classIdN, tokenIds: [tokenIdN] };
+    return send("redeem", ArtifactMsgTypeUrls.Redeem, value, "Redeem failed");
+  };
+
+  // What to display (schedule stage, media version, renderer output); edits use t.metadata.
+  const shown = shownToken(view);
+  // Past the reveal deadline with nothing revealed: burning refunds the escrowed mint price.
+  const revealDeadline = Number(cls.reveal?.deadline || 0);
+  const revealOverdue =
+    revealDeadline > 0 &&
+    Date.now() / 1000 > revealDeadline &&
+    ((cls.reveal?.kind === RevealKind.BLIND_METADATA && !!t.unrevealed) ||
+      (cls.reveal?.kind === RevealKind.GENERATIVE_SEED && (!cls.reveal.revealed_at || cls.reveal.revealed_at === "0")));
+  const md = shown.metadata;
   const deposit = t.deposit && t.deposit !== "0" ? `${formatSpark(t.deposit)} ${config.displayDenom}` : null;
   const saleFeeBps = params?.sale_fee_bps ?? 0;
   const royaltyBps = Math.min(cls.royalty_bps ?? 0, params?.max_royalty_bps ?? cls.royalty_bps ?? 0);
@@ -262,14 +326,15 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: P
                 Withheld
               </div>
             ) : (
-              <ArtifactMedia key={tokenMediaUri(t, cls)} uri={tokenMediaUri(t, cls)} />
+              <ArtifactMedia key={tokenMediaUri(shown, cls)} uri={tokenMediaUri(shown, cls)} />
             )}
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline gap-2">
-              <h2 className="text-xl font-bold text-white">{tokenTitle(t, withheld)}</h2>
+              <h2 className="text-xl font-bold text-white">{tokenTitle(shown, withheld)}</h2>
               <span className="font-mono text-sm text-zinc-500">{tokenRef(classId, tokenId)}</span>
               <LockBadge lock={lock} />
+              <TokenStateBadges view={view} />
               {(tokenHidden || classHidden) && (
                 <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-medium text-red-400">Hidden</span>
               )}
@@ -288,6 +353,12 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: P
               <p className="mt-3 text-sm italic text-zinc-500">This token&apos;s content is hidden by moderation. It still belongs to its holder.</p>
             ) : (
               md?.description && <p className="mt-3 whitespace-pre-wrap text-sm text-zinc-300">{md.description}</p>
+            )}
+            {!withheld && view.display_source && DISPLAY_SOURCE_NOTE[view.display_source] && (
+              <p className="mt-2 text-xs text-zinc-500">{DISPLAY_SOURCE_NOTE[view.display_source]}</p>
+            )}
+            {!withheld && view.render_error && (
+              <p className="mt-1 text-xs text-amber-300">The renderer failed, so the stored metadata is shown.</p>
             )}
 
             <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
@@ -311,6 +382,32 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: P
                 <div>
                   <dt className="text-xs text-zinc-500">Deposit</dt>
                   <dd className="text-zinc-200" title="Refunded to whoever burns the token">{deposit}</dd>
+                </div>
+              )}
+              {expiring && (
+                <div>
+                  <dt className="text-xs text-zinc-500">{view.expired ? "Expired" : "Expires"}</dt>
+                  <dd className={view.expired ? "text-red-300" : "text-zinc-200"}>
+                    {expiresAt ? `${formatTime(expiresAt)}${view.expired ? "" : ` (${timeRemaining(expiresAt)})`}` : "When accepted"}
+                  </dd>
+                </div>
+              )}
+              {cls.flags?.redeemable && (
+                <div>
+                  <dt className="text-xs text-zinc-500">Ticket</dt>
+                  <dd className="text-zinc-200">{redeemed ? `Redeemed ${formatTime(t.redeemed_at!)}` : "Not redeemed"}</dd>
+                </div>
+              )}
+              {view.user && (
+                <div>
+                  <dt className="text-xs text-zinc-500">Rented to</dt>
+                  <dd className="text-xs text-zinc-200"><CopyableAddress address={view.user} resolveName /></dd>
+                </div>
+              )}
+              {!withheld && view.seed && (
+                <div className="col-span-2">
+                  <dt className="text-xs text-zinc-500">Seed</dt>
+                  <dd className="break-all font-mono text-[11px] text-zinc-400">{view.seed}</dd>
                 </div>
               )}
               {view.metadata_hash && (
@@ -371,7 +468,47 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: P
         </div>
       )}
 
+      {harberger && <HarbergerPanel cls={cls} view={view} params={params} isHolder={isHolder} onChanged={load} />}
+
+      {isMarketable(cls) && (auction || isHolder) && (
+        <TokenAuction cls={cls} view={view} auction={auction} params={params} isHolder={isHolder} onChanged={load} />
+      )}
+      {isMarketable(cls) && !auction && <TokenOffers view={view} params={params} isHolder={isHolder} onChanged={load} />}
+
       <ActionBanner message={txError} onDismiss={clearError} className="mt-3" />
+
+      {(isHolder || isMinter) && (expiring || (cls.flags?.redeemable && !redeemed && isMinter)) && (
+        <div className="sd-hull-tile mt-4 space-y-2 rounded-xl p-4">
+          <h3 className="text-sm font-semibold text-white">{expiring ? "Expiry" : "Ticket"}</h3>
+          {expiring && (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-400">
+              <span>
+                Renewing adds {formatSeconds(cls.expiry?.term)}{expiresAt && !view.expired ? " to the current expiry" : " from now"}.{" "}
+                {isMinter
+                  ? "As the issuer, you renew for free."
+                  : renewalPrice?.amount && renewalPrice.amount !== "0"
+                    ? `It costs ${formatCoin(renewalPrice, config.displayDenom)}.`
+                    : "It's free."}
+              </span>
+              <button onClick={renew} disabled={busy || tokenHidden || classHidden} className="sd-btn sd-btn-verdigris">
+                {pending === "renew" ? "Renewing…" : "Renew"}
+              </button>
+            </div>
+          )}
+          {cls.flags?.redeemable && !redeemed && isMinter && (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-400">
+              <span>Mark this ticket used. The holder keeps the token.</span>
+              <button
+                onClick={redeem}
+                disabled={busy || !!view.expired || lock === TokenLock.PENDING_TRANSFER || tokenHidden || classHidden}
+                className="sd-btn sd-btn-secondary"
+              >
+                {pending === "redeem" ? "Redeeming…" : "Redeem"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {(isHolder || isClassOwner) && (
         <div className="sd-hull-tile mt-4 space-y-2 rounded-xl p-4">
@@ -402,7 +539,7 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: P
             </ActionSection>
           )}
 
-          {isHolder && transferable && (lock === TokenLock.NONE || lock === TokenLock.LISTED) && marketOn && !tokenHidden && !classHidden && (
+          {isHolder && transferable && !harberger && (lock === TokenLock.NONE || lock === TokenLock.LISTED) && marketOn && !tokenHidden && !classHidden && (
             <ActionSection
               title={lock === TokenLock.LISTED ? "Change listing" : "Sell"}
               open={open === "list"}
@@ -473,6 +610,7 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: P
               <p className="text-xs text-zinc-500">
                 Destroys the token for good{lock === TokenLock.LISTED ? " and cancels its listing" : ""}.
                 {deposit ? ` Its ${deposit} deposit comes back to you.` : ""}
+                {revealOverdue ? " The reveal deadline has passed, so the mint price you paid comes back too." : ""}
               </p>
               <button onClick={burn} disabled={busy} className="rounded-lg border border-red-800/50 px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/20 disabled:opacity-50">
                 {pending === "burn" ? "Burning…" : "Burn token"}
@@ -494,6 +632,19 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass }: P
           )}
         </div>
       )}
+
+      {!withheld && (
+        <MediaVersions cls={cls} view={view} params={params} isHolder={isHolder} isClassOwner={isClassOwner} onChanged={load} />
+      )}
+      {transferable && !harberger && <RentalPanel cls={cls} view={view} params={params} isHolder={isHolder} onChanged={load} />}
+      <NestPanel cls={cls} view={view} params={params} isHolder={isHolder} onChanged={load} onOpenToken={onOpenToken} />
     </div>
   );
 }
+
+const DISPLAY_SOURCE_NOTE: Record<string, string> = {
+  schedule: "Shown as the current stage of its metadata schedule.",
+  media_version: "Shown as the media version its holder chose.",
+  renderer: "Shown as rendered onchain by the class's renderer.",
+  unrevealed: "Not revealed yet. What's shown is a placeholder.",
+};

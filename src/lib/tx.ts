@@ -179,6 +179,49 @@ export const RepMsgTypeUrls = {
   CancelUnbondRole: "/sparkdream.rep.v1.MsgCancelUnbondRole",
 } as const;
 
+// x/rep identity messages: member key migration, recovery commitments and the
+// ZK key. The chain refuses every one of them through a session key, a shield
+// proof or a vault (x/rep IdentityMsgTypeURLs), so they are always signed by
+// the connected wallet itself. Every bytes field is a Uint8Array.
+export const RepIdentityMsgTypeUrls = {
+  RequestMigration: "/sparkdream.rep.v1.MsgRequestMigration",
+  AcceptMigration: "/sparkdream.rep.v1.MsgAcceptMigration",
+  CancelMigration: "/sparkdream.rep.v1.MsgCancelMigration",
+  SetRecoveryCommitment: "/sparkdream.rep.v1.MsgSetRecoveryCommitment",
+  RemoveRecoveryCommitment: "/sparkdream.rep.v1.MsgRemoveRecoveryCommitment",
+  CommitRecovery: "/sparkdream.rep.v1.MsgCommitRecovery",
+  RevealRecovery: "/sparkdream.rep.v1.MsgRevealRecovery",
+  ObjectMigration: "/sparkdream.rep.v1.MsgObjectMigration",
+  SweepTombstone: "/sparkdream.rep.v1.MsgSweepTombstone",
+  // A Commons Governance Committee proposal's inner message.
+  ForceMigration: "/sparkdream.rep.v1.MsgForceMigration",
+  RegisterZkPublicKey: "/sparkdream.rep.v1.MsgRegisterZkPublicKey",
+  ClearZkPublicKey: "/sparkdream.rep.v1.MsgClearZkPublicKey",
+} as const;
+
+// x/vault shared-account messages. Like the identity messages, never sent
+// through a session key. MsgUpdateVault is only valid as a proposal's inner
+// message (its signer is the vault address).
+export const VaultMsgTypeUrls = {
+  CreateVault: "/sparkdream.vault.v1.MsgCreateVault",
+  Propose: "/sparkdream.vault.v1.MsgPropose",
+  Approve: "/sparkdream.vault.v1.MsgApprove",
+  RevokeApproval: "/sparkdream.vault.v1.MsgRevokeApproval",
+  Execute: "/sparkdream.vault.v1.MsgExecute",
+  CancelProposal: "/sparkdream.vault.v1.MsgCancelProposal",
+  UpdateVault: "/sparkdream.vault.v1.MsgUpdateVault",
+} as const;
+
+/**
+ * Messages the chain never accepts inside MsgExecSession (x/session
+ * ForbiddenAllowlistMsgs: the rep identity list and every vault message), so
+ * the wallet signs them directly even while session mode is active.
+ */
+export const SESSION_FORBIDDEN_TYPES: ReadonlySet<string> = new Set<string>([
+  ...Object.values(RepIdentityMsgTypeUrls),
+  ...Object.values(VaultMsgTypeUrls),
+]);
+
 // x/service operator lifecycle message type URLs. Each is signed by the
 // operator itself (MsgRegisterOperator cannot go through x/session).
 export const ServiceMsgTypeUrls = {
@@ -433,6 +476,49 @@ export const ArtifactMsgTypeUrls = {
   AppealHide: "/sparkdream.artifact.v1.MsgAppealHide",
   UpdateParams: "/sparkdream.artifact.v1.MsgUpdateParams",
   UpdateOperationalParams: "/sparkdream.artifact.v1.MsgUpdateOperationalParams",
+  // Issuing: batch issue, expiry, tickets, royalty lock, reveals, media versions.
+  Issue: "/sparkdream.artifact.v1.MsgIssue",
+  Renew: "/sparkdream.artifact.v1.MsgRenew",
+  Redeem: "/sparkdream.artifact.v1.MsgRedeem",
+  LockRoyalty: "/sparkdream.artifact.v1.MsgLockRoyalty",
+  Reveal: "/sparkdream.artifact.v1.MsgReveal",
+  RevealSeed: "/sparkdream.artifact.v1.MsgRevealSeed",
+  ProposeMedia: "/sparkdream.artifact.v1.MsgProposeMedia",
+  AcceptMedia: "/sparkdream.artifact.v1.MsgAcceptMedia",
+  RejectMedia: "/sparkdream.artifact.v1.MsgRejectMedia",
+  SetDisplayedMedia: "/sparkdream.artifact.v1.MsgSetDisplayedMedia",
+  // Editions and impact certificates (semi-fungible units).
+  CreateEdition: "/sparkdream.artifact.v1.MsgCreateEdition",
+  MintUnits: "/sparkdream.artifact.v1.MsgMintUnits",
+  TransferUnits: "/sparkdream.artifact.v1.MsgTransferUnits",
+  BurnUnits: "/sparkdream.artifact.v1.MsgBurnUnits",
+  RevokeUnits: "/sparkdream.artifact.v1.MsgRevokeUnits",
+  ListUnits: "/sparkdream.artifact.v1.MsgListUnits",
+  UpdateUnitListing: "/sparkdream.artifact.v1.MsgUpdateUnitListing",
+  DelistUnits: "/sparkdream.artifact.v1.MsgDelistUnits",
+  BuyUnits: "/sparkdream.artifact.v1.MsgBuyUnits",
+  FundEdition: "/sparkdream.artifact.v1.MsgFundEdition",
+  ClaimEditionRewards: "/sparkdream.artifact.v1.MsgClaimEditionRewards",
+  // Crafting, rentals, nesting.
+  AddCraftRecipe: "/sparkdream.artifact.v1.MsgAddCraftRecipe",
+  RemoveCraftRecipe: "/sparkdream.artifact.v1.MsgRemoveCraftRecipe",
+  Craft: "/sparkdream.artifact.v1.MsgCraft",
+  OfferRental: "/sparkdream.artifact.v1.MsgOfferRental",
+  CancelRentalOffer: "/sparkdream.artifact.v1.MsgCancelRentalOffer",
+  AcceptRental: "/sparkdream.artifact.v1.MsgAcceptRental",
+  EndRental: "/sparkdream.artifact.v1.MsgEndRental",
+  Nest: "/sparkdream.artifact.v1.MsgNest",
+  Detach: "/sparkdream.artifact.v1.MsgDetach",
+  // Harberger, offers, auctions.
+  SetHarbergerPrice: "/sparkdream.artifact.v1.MsgSetHarbergerPrice",
+  ForceBuy: "/sparkdream.artifact.v1.MsgForceBuy",
+  MakeOffer: "/sparkdream.artifact.v1.MsgMakeOffer",
+  CancelOffer: "/sparkdream.artifact.v1.MsgCancelOffer",
+  AcceptOffer: "/sparkdream.artifact.v1.MsgAcceptOffer",
+  StartAuction: "/sparkdream.artifact.v1.MsgStartAuction",
+  Bid: "/sparkdream.artifact.v1.MsgBid",
+  SettleAuction: "/sparkdream.artifact.v1.MsgSettleAuction",
+  CancelAuction: "/sparkdream.artifact.v1.MsgCancelAuction",
 } as const;
 
 // Build a blog message for signing.

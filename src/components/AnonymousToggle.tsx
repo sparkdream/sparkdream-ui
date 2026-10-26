@@ -15,7 +15,7 @@ interface AnonymousToggleProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   /** From useAnonymousSubmit().shield */
-  shield: { status: ShieldIdentityStatus; trustLevel: number | null };
+  shield: { status: ShieldIdentityStatus; trustLevel: number | null; activatesAtEpoch?: string | null };
   label?: string;
   /** Extra limits of this form when anonymous (e.g. "Author bonds and new tags aren't available."). */
   note?: string;
@@ -58,7 +58,7 @@ export default function AnonymousToggle({
 
   if (!reg || shield.status === "unavailable" || shield.status === "loading") return null;
 
-  const needsSetup = shield.status === "unregistered" || shield.status === "mismatch";
+  const needsSetup = shield.status === "unregistered" || shield.status === "mismatch" || shield.status === "pending";
   const tooLow = shield.trustLevel !== null && shield.trustLevel < reg.min_trust_level;
   const disabled = !hasVk || needsSetup || tooLow;
 
@@ -83,7 +83,12 @@ export default function AnonymousToggle({
               {"Anonymous actions aren't available on this chain yet. Its proof verification key hasn't been set up."}
             </span>
           )}
-          {hasVk && needsSetup && (
+          {hasVk && shield.status === "pending" && (
+            <span className="mt-1 block text-xs text-zinc-400">
+              Your anonymous identity activates at epoch {shield.activatesAtEpoch ?? "?"}.
+            </span>
+          )}
+          {hasVk && needsSetup && shield.status !== "pending" && (
             <span className="mt-1 block text-xs text-zinc-400">
               <Link href="/permissions#anonymous" className="underline hover:text-white">
                 Set up an anonymous identity

@@ -11,6 +11,7 @@ import { TRUST_LEVEL_LABELS, MEMBER_STATUS_LABELS, TrustLevel } from "@/types/re
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import Link from "next/link";
 
 function trustLevelColor(level: string): string {
   switch (level) {
@@ -165,20 +166,38 @@ export default function MemberProfile() {
         <p className="mt-1 text-xs text-zinc-500">
           An existing member needs to invite you to join
         </p>
+        <p className="mt-3 text-xs text-zinc-500">
+          Moving an existing membership to this address?{" "}
+          <Link href="/permissions#identity" className="text-indigo-400 hover:text-indigo-300">
+            Accept it on the Permissions page
+          </Link>
+        </p>
       </div>
     );
   }
 
   const repTags = Object.entries(member.reputation_scores || {});
 
+  // The chain answers an old (migrated-away) address with the moved record.
+  const movedFrom = member.address !== address ? address : null;
+
   return (
     <div className="space-y-4">
+      {movedFrom && (
+        <div className="rounded-xl border border-amber-800/60 bg-amber-900/10 p-4 text-sm text-amber-300">
+          This wallet&apos;s membership moved to{" "}
+          <CopyableAddress address={member.address} className="font-mono" />. Connect that address to act as this member.
+        </div>
+      )}
       {/* Balance & trust level card */}
       <div className="rounded-xl sd-hull-tile p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs text-zinc-500">Member</p>
             <CopyableAddress className="mt-0.5 font-mono text-sm text-zinc-300" address={member.address} prefixLen={14} suffixLen={6} style={{ display: "block" }} />
+            <Link href="/permissions#identity" className="mt-1 block text-xs text-indigo-400 hover:text-indigo-300">
+              Address and recovery
+            </Link>
           </div>
           <div className="flex items-center gap-2">
             <span className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${trustLevelColor(member.trust_level)}`}>

@@ -17,6 +17,7 @@ import { useSessionPermits } from "@/hooks/useSessionPermits";
 import CopyableAddress from "./CopyableAddress";
 import NumberInput from "./NumberInput";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 // StakeTargetType numeric value for x/blog author bonds (Imaginarium posts).
 const BLOG_AUTHOR_BOND = 7;
@@ -41,6 +42,7 @@ export default function AuthorBondPanel({
   noun?: string;
 }) {
   const { address, connected, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const dreamDenom = useDreamDenom();
   const isMember = useIsRepMember(address);
   const permits = useSessionPermits();
@@ -104,7 +106,7 @@ export default function AuthorBondPanel({
 
   if (!hasBond && !activeChallenge) return null;
 
-  const isAuthor = connected && address === bond?.author;
+  const isAuthor = connected && isMine(bond?.author);
   const canWithdraw =
     isAuthor && hasBond && !activeChallenge && permits(RepMsgTypeUrls.Unstake);
   const canChallenge =

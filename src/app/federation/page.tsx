@@ -73,6 +73,7 @@ import PeerProposalForm, { type PeerAction, type RegisterPrefill } from "@/compo
 import PeerPolicyForm from "@/components/federation/PeerPolicyForm";
 import PeerCurationPanel from "@/components/federation/PeerCurationPanel";
 import LicenseBadge from "@/components/license/LicenseBadge";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 // View slot in the sidebar. "overview" stacks every section; the rest narrow
 // the page down to one slice. See VIEW_SECTIONS below for the mapping.
@@ -256,6 +257,7 @@ function FederationPageInner() {
   const dream = useDreamDenom();
   const { config } = useChainConfig();
   const { address } = useWallet();
+  const { isMine } = useMyAliases();
   const searchParams = useSearchParams();
   // read once: the composer it opens is the user's to close
   const [deepLink] = useState(() => parseFederationLink(new URLSearchParams(searchParams.toString())));
@@ -514,8 +516,8 @@ function FederationPageInner() {
   // Filter live identity links to the connected wallet (the "my" view).
   const myIdentityLinks = useMemo(() => {
     if (!address) return [];
-    return identityLinks.filter((l) => l.local_address === address);
-  }, [identityLinks, address]);
+    return identityLinks.filter((l) => isMine(l.local_address));
+  }, [identityLinks, address, isMine]);
 
   // Counts per peer status used by the KPI strip.
   const counts = useMemo(() => {
@@ -608,7 +610,7 @@ function FederationPageInner() {
         delta: `${status} · ${bond} ${dream} bonded${unbonding ? ", withdrawal queued" : ""}`,
       };
     }
-    const myBindings = bridges.filter((b) => b.address === address);
+    const myBindings = bridges.filter((b) => isMine(b.address));
     if (myBindings.length > 0) {
       const suspended = myBindings.filter((b) => b.suspended).length;
       return {
@@ -649,6 +651,7 @@ function FederationPageInner() {
     verifierRoleConfig,
     verifierBondWhole,
     dream,
+    isMine,
   ]);
 
   // Window the verifier gets to confirm inbound content, straight from params
@@ -1681,7 +1684,6 @@ function VerifiersSection({
   params,
   pool,
   loading,
-  address,
 }: {
   verifiers: BondedRole[];
   activity: Record<string, VerifierActivityView>;
@@ -1692,6 +1694,7 @@ function VerifiersSection({
   address: string | null;
 }) {
   const dream = useDreamDenom();
+  const { isMine } = useMyAliases();
   const { config: chain } = useChainConfig();
   const spark = chain.displayDenom;
   const normal = verifiers.filter((v) => v.bond_status === BondedRoleStatus.NORMAL).length;
@@ -1752,7 +1755,7 @@ function VerifiersSection({
               {verifiers.map((v) => {
                 const a = activity[v.address];
                 const acc = accuracy(a);
-                const mine = address !== null && v.address === address;
+                const mine = isMine(v.address);
                 return (
                   <tr
                     key={v.address}

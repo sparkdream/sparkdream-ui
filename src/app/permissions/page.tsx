@@ -16,6 +16,7 @@ import SessionKeyForm from "@/components/permissions/SessionKeyForm";
 import SignInGrantForm from "@/components/permissions/SignInGrantForm";
 import AnonymousIdentityPanel from "@/components/permissions/AnonymousIdentityPanel";
 import SessionRequestCard, { parseSessionRequest } from "@/components/permissions/SessionRequestCard";
+import IdentitySection from "@/components/identity/IdentitySection";
 
 type Side = "given" | "received";
 type Kind = "recurring" | "allowance" | "scheduled" | "session" | "signin";
@@ -145,7 +146,7 @@ function PermissionsPageInner() {
     <header className="sd-page-header">
       <span className="crumb">System</span>
       <h1>Permissions</h1>
-      <p>Recurring payments, allowances, scheduled transfers, session keys and sign-in grants</p>
+      <p>Recurring payments, allowances, scheduled transfers, session keys, sign-in grants and your membership address</p>
       {connected && !creating && (
         <button
           type="button"
@@ -282,6 +283,7 @@ function PermissionsPageInner() {
       )}
 
       <AnonymousIdentityPanel />
+      <IdentitySection />
     </div>
   );
 }

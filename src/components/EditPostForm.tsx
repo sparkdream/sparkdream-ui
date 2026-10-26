@@ -15,6 +15,7 @@ import { useMediaGate } from "@/hooks/useMediaGate";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import { labelBody } from "@/lib/mediaLabels";
 import { describeTxError } from "@/lib/errors";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 interface EditPostFormProps {
   post: Post;
@@ -23,6 +24,7 @@ interface EditPostFormProps {
 export default function EditPostForm({ post }: EditPostFormProps) {
   const router = useRouter();
   const { address, connected, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const [title, setTitle] = useState(post.title);
   const [body, setBody] = useState(post.body);
   const [contentType, setContentType] = useState<number>(parseInt(post.content_type) || 0);
@@ -95,7 +97,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
     }
   };
 
-  if (!connected || address !== post.creator) {
+  if (!connected || !isMine(post.creator)) {
     return (
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
         <p className="text-zinc-400">You can only edit your own dreams</p>

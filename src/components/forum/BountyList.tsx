@@ -4,11 +4,11 @@ import { useEffect, useState, useCallback } from "react";
 import { listForumBounties } from "@/lib/api";
 import { timeAgo, timeRemaining, formatSpark } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
-import { useWallet } from "@/contexts/WalletContext";
 import type { Bounty } from "@/types/forum";
 import { BountyStatus, BOUNTY_STATUS_LABELS } from "@/types/forum";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
+import { useMyAliases } from "@/hooks/useMyAliases";
 
 function bountyStatusBadge(status: string) {
   const colors: Record<string, string> = {
@@ -33,7 +33,7 @@ interface BountyListProps {
 }
 
 export default function BountyList({ mode, onSelectThread }: BountyListProps) {
-  const { address } = useWallet();
+  const { isMine } = useMyAliases();
   const [bounties, setBounties] = useState<Bounty[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -45,8 +45,8 @@ export default function BountyList({ mode, onSelectThread }: BountyListProps) {
   // list and filter client-side (status for "active", creator for "my").
   const matchesMode = useCallback(
     (b: Bounty) =>
-      mode === "my" ? !!address && b.creator === address : b.status === BountyStatus.ACTIVE,
-    [mode, address]
+      mode === "my" ? isMine(b.creator) : b.status === BountyStatus.ACTIVE,
+    [mode, isMine]
   );
 
   const fetchBounties = useCallback(async () => {

@@ -4,7 +4,7 @@ import { defaults } from "./chain";
 import type { ContentLicense } from "@/types/contentLicense";
 import { FALLBACK_CONTENT_LICENSE } from "@/lib/contentLicense";
 import { cachedFetch, invalidate, invalidateAll } from "./queryCache";
-import { ApiError, errorMessage, isNodeUnreachable } from "./errors";
+import { ApiError, errorMessage, isMissingEndpoint, isNodeUnreachable } from "./errors";
 import { reportChainReachable, reportChainUnreachable } from "./chainStatus";
 import type {
   ListPostResponse,
@@ -119,7 +119,16 @@ import type {
   GetTagBudgetResponse,
   ListTagBudgetResponse,
   TagBudgetAwardsResponse,
+  AliasesResponse,
+  CanonicalResponse,
+  MemberMigration,
+  MemberMigrationResponse,
+  MemberMigrationsResponse,
+  RecoveryCommit,
+  RecoveryCommitmentSet,
+  RecoveryCommitmentsResponse,
 } from "@/types/rep";
+import { MIGRATION_STATUS_NUMBER } from "@/types/rep";
 import type {
   NameParamsResponse,
   ResolveResponse,
@@ -908,7 +917,21 @@ export async function getBlockClock(): Promise<BlockClock | null> {
 
 interface TxEventAttribute { key: string; value: string }
 interface TxEvent { type: string; attributes: TxEventAttribute[] }
-interface TxResponseEnvelope { tx_response?: { events?: TxEvent[] } }
+interface TxResponseEnvelope { tx_response?: { events?: TxEvent[]; data?: string } }
+
+/**
+ * The Msg responses of a committed tx, in message order, as encoded Anys
+ * (decode each with the response type's codec). Read from the TxMsgData the
+ * REST gateway returns hex-encoded in tx_response.data.
+ */
+export async function getTxMsgResponses(hash: string): Promise<{ typeUrl: string; value: Uint8Array }[]> {
+  const res = await get<TxResponseEnvelope>(`/cosmos/tx/v1beta1/txs/${hash}`);
+  const hex = res.tx_response?.data;
+  if (!hex) return [];
+  const { TxMsgData } = await import("cosmjs-types/cosmos/base/abci/v1beta1/abci");
+  const bytes = new Uint8Array(hex.match(/../g)?.map((b) => parseInt(b, 16)) ?? []);
+  return TxMsgData.decode(bytes).msgResponses.map((m) => ({ typeUrl: m.typeUrl, value: m.value }));
+}
 
 /**
  * Fetch a committed tx by hash and return the attributes of the first event
@@ -1030,6 +1053,95 @@ export async function getGovProposalDeposits(
 
 export async function getRepMember(address: string): Promise<GetMemberResponse> {
   return get<GetMemberResponse>(`/sparkdream/rep/v1/member/${address}`);
+}
+
+// ── Member key migration and the alias contract ─────────────────────
+
+/** The identity's current address, and whether `address` is a tombstone. */
+export function getRepCanonical(address: string): Promise<CanonicalResponse> {
+  return cachedFetch(
+    `rep|canonical|${address}`,
+    () => get<CanonicalResponse>(`/sparkdream/rep/v1/canonical/${address}`),
+    { ttl: 60_000, swr: true }
+  );
+}
+
+/** Every address a member has held, canonical first. */
+export function getRepAliases(member: string): Promise<AliasesResponse> {
+  return cachedFetch(
+    `rep|aliases|${member}`,
+    () => get<AliasesResponse>(`/sparkdream/rep/v1/aliases/${member}`),
+    { ttl: 60_000, swr: true }
+  );
+}
+
+export function invalidateRepMigration(): void {
+  invalidate("rep|canonical|");
+  invalidate("rep|aliases|");
+}
+
+export async function getRepMemberMigration(id: string): Promise<MemberMigration> {
+  const res = await get<MemberMigrationResponse>(`/sparkdream/rep/v1/member_migration/${id}`);
+  return res.migration;
+}
+
+/** Migrations by id, optionally filtered by status and by an address on either side. */
+export function listRepMemberMigrations(
+  opts: { status?: string; address?: string } = {},
+  pagination?: PaginationRequest
+): Promise<MemberMigrationsResponse> {
+  const params = paginationParams(pagination);
+  if (opts.status) params.set("status", String(MIGRATION_STATUS_NUMBER[opts.status] ?? 0));
+  if (opts.address) params.set("address", opts.address);
+  return get<MemberMigrationsResponse>("/sparkdream/rep/v1/member_migrations", params);
+}
+
+async function pendingMigration(path: string): Promise<MemberMigration | null> {
+  try {
+    const res = await get<MemberMigrationResponse>(path);
+    return res.migration?.id && res.migration.id !== "0" ? res.migration : null;
+  } catch (err) {
+    // NotFound means nothing is pending.
+    if (isMissingEndpoint(err)) return null;
+    throw err;
+  }
+}
+
+/** The pending migration away from `member` (the old address), or null. */
+export function getRepPendingMigration(member: string): Promise<MemberMigration | null> {
+  return pendingMigration(`/sparkdream/rep/v1/pending_migration/${member}`);
+}
+
+/** The pending migration whose new address is `address`, or null. */
+export function getRepPendingMigrationByTarget(address: string): Promise<MemberMigration | null> {
+  return pendingMigration(`/sparkdream/rep/v1/pending_migration_by_target/${address}`);
+}
+
+/** The unexpired sealed recovery commit with this seal (hex), or null. */
+export async function getRepRecoveryCommit(sealedHex: string): Promise<RecoveryCommit | null> {
+  try {
+    const res = await get<{ commit: RecoveryCommit }>(`/sparkdream/rep/v1/recovery_commit/${sealedHex}`);
+    return res.commit ?? null;
+  } catch (err) {
+    if (isMissingEndpoint(err)) return null;
+    throw err;
+  }
+}
+
+/** The unexpired sealed recovery commits an address submitted. */
+export async function listRepRecoveryCommitsBySubmitter(submitter: string): Promise<RecoveryCommit[]> {
+  try {
+    const res = await get<{ commits?: RecoveryCommit[] }>(`/sparkdream/rep/v1/recovery_commits_by_submitter/${submitter}`);
+    return res.commits ?? [];
+  } catch (err) {
+    if (isMissingEndpoint(err)) return [];
+    throw err;
+  }
+}
+
+export async function getRepRecoveryCommitments(member: string): Promise<RecoveryCommitmentSet> {
+  const res = await get<RecoveryCommitmentsResponse>(`/sparkdream/rep/v1/recovery_commitments/${member}`);
+  return res.set ?? {};
 }
 
 export async function listRepMembers(
@@ -2718,3 +2830,35 @@ export async function getAccountNumber(address: string): Promise<string | null> 
     throw err;
   }
 }
+
+// ── Account keys (multisig awareness) ───────────────────────────────
+
+/** One key of an account's public key, as the auth module renders it. */
+export interface AccountPubKey {
+  "@type"?: string;
+  /** base64 key bytes (single keys). */
+  key?: string;
+  /** Multisig (LegacyAminoPubKey) only. */
+  threshold?: number | string;
+  public_keys?: AccountPubKey[];
+}
+
+export const MULTISIG_PUBKEY_TYPE = "/cosmos.crypto.multisig.LegacyAminoPubKey";
+
+/**
+ * The account's public key, or null while the chain has none on record: a
+ * key is only stored once the account has signed a transaction, so a fresh
+ * multisig shows as null until its first multisigned tx.
+ */
+export async function getAccountPubKey(address: string): Promise<AccountPubKey | null> {
+  try {
+    const res = await get<{ account?: { pub_key?: AccountPubKey | null } }>(
+      `/cosmos/auth/v1beta1/accounts/${address}`
+    );
+    return res.account?.pub_key ?? null;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+

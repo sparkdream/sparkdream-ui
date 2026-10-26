@@ -7,6 +7,7 @@ import Header from "@/components/Header";
 import Ticker from "@/components/Ticker";
 import BackgroundField from "@/components/BackgroundField";
 import ChainStatusBanner from "@/components/ChainStatusBanner";
+import TombstoneBanner from "@/components/identity/TombstoneBanner";
 import VersionFooter from "@/components/VersionFooter";
 
 const geistSans = Geist({
@@ -53,6 +54,7 @@ export default function RootLayout({
             <Ticker />
             <Header />
             <ChainStatusBanner />
+            <TombstoneBanner />
             <main className="flex-1">{children}</main>
             <VersionFooter />
           </WalletProvider>

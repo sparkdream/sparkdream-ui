@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, type ReactNode } from "react";
 import { useWallet } from "@/contexts/WalletContext";
+import { useMyAliases } from "@/hooks/useMyAliases";
 import {
   getContribution,
   getTrancheTally,
@@ -44,6 +45,7 @@ export default function ContributionDetail({
 }) {
   const dream = useDreamDenom();
   const { address } = useWallet();
+  const { isMine } = useMyAliases();
   const [contribution, setContribution] = useState<Contribution | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +96,7 @@ export default function ContributionDetail({
     );
   }
 
-  const isContributor = address && address === contribution.contributor;
+  const isContributor = isMine(contribution.contributor);
 
   return (
     <div className="space-y-4">
@@ -192,12 +194,12 @@ function TrancheCard({
   refreshKey: number;
 }) {
   const dream = useDreamDenom();
-  const { address } = useWallet();
+  const { isMine } = useMyAliases();
   const [tally, setTally] = useState<TrancheTally | null>(null);
   const [stakes, setStakes] = useState<RevealStake[]>([]);
 
-  const isContributor = address && address === contributor;
-  const isStaker = stakes.some((s) => s.staker === address);
+  const isContributor = isMine(contributor);
+  const isStaker = stakes.some((s) => isMine(s.staker));
 
   useEffect(() => {
     let cancelled = false;
@@ -387,10 +389,11 @@ function StakeRow({
 }) {
   const dream = useDreamDenom();
   const { address, signAndBroadcast } = useWallet();
+  const { isMine } = useMyAliases();
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const isOwner = !!address && address === stake.staker;
+  const isOwner = isMine(stake.staker);
   const canWithdraw =
     isOwner &&
     (trancheStatus === TrancheStatus.STAKING || trancheStatus === TrancheStatus.BACKED);
