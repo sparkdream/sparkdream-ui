@@ -231,6 +231,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "Sessions", key: "maxSessionsPerGranter", apiKey: "max_sessions_per_granter", label: "Max Sessions Per Granter", kind: "bigint" },
       { group: "Sessions", key: "maxMsgTypesPerSession", apiKey: "max_msg_types_per_session", label: "Max Msg Types Per Session", kind: "bigint" },
       { group: "Sessions", key: "maxExpiration", apiKey: "max_expiration", label: "Max Expiration", kind: "duration", unit: "days", unitDivisor: 86400 },
+      { group: "Sessions", key: "narrowSessionMaxExpiration", apiKey: "narrow_session_max_expiration", label: "Narrow Session Max Expiration", kind: "duration", unit: "days", unitDivisor: 86400, hint: "Cap for keys with at most 2 actions and no self-revoke; must be at least Max Expiration" },
       { group: "Sessions", key: "maxSpendLimit", apiKey: "max_spend_limit_amount", label: "Max Spend Limit", kind: "amount" },
       { group: "Sessions", key: "maxExecCount", apiKey: "max_exec_count", label: "Max Exec Count", kind: "bigint" },
       { group: "Sessions", key: "maxGrantLifetimeSeconds", apiKey: "max_grant_lifetime_seconds", label: "Max Grant Lifetime (seconds)", kind: "bigint" },

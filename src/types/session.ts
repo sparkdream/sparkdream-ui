@@ -24,6 +24,9 @@ export interface SessionParams {
   max_sessions_per_granter: string;
   max_msg_types_per_session: string;
   max_expiration: string;
+  // Cap for narrow keys: at most 2 action types and no self-revoke
+  // (chain v1.0.56+; older chains omit it and every key gets max_expiration).
+  narrow_session_max_expiration?: string;
   max_spend_limit_amount: string;
   max_exec_count: string;
   // RecurringPull (P3)

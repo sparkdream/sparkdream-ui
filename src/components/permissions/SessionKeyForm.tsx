@@ -11,6 +11,10 @@ import NumberInput from "@/components/NumberInput";
 import { AddressInput, Field, FormActions, FormShell, INPUT_CLASS, useResolvedAddress } from "./fields";
 
 const DAY = 86_400;
+// A key naming at most this many actions, without self-revoke, may live up
+// to narrow_session_max_expiration instead of max_expiration (chain constant
+// NarrowSessionMaxMsgTypes).
+const NARROW_MAX_TYPES = 2;
 
 export default function SessionKeyForm({
   params,
@@ -27,7 +31,12 @@ export default function SessionKeyForm({
   const { config: { denom: DENOM, displayDenom: DISPLAY } } = useChainConfig();
 
   // Caps from live params; fallbacks match the chain defaults.
-  const maxDays = Math.max(1, Math.floor((durationSeconds(params?.max_expiration) || 7 * DAY) / DAY));
+  const broadMaxDays = Math.max(1, Math.floor((durationSeconds(params?.max_expiration) || 7 * DAY) / DAY));
+  // No fallback: a chain without the param applies max_expiration to every key.
+  const narrowMaxDays = Math.max(
+    broadMaxDays,
+    Math.floor(durationSeconds(params?.narrow_session_max_expiration) / DAY),
+  );
   const maxSpend = (int(params?.max_spend_limit_amount) || 100_000_000) / 1_000_000;
   const maxExec = int(params?.max_exec_count) || 10_000;
   const maxTypes = int(params?.max_msg_types_per_session) || allowedTypes.length;
@@ -36,7 +45,7 @@ export default function SessionKeyForm({
   const resolved = useResolvedAddress(grantee);
   const [types, setTypes] = useState<string[]>([]);
   const [spend, setSpend] = useState(String(maxSpend));
-  const [days, setDays] = useState(String(maxDays));
+  const [days, setDays] = useState(String(broadMaxDays));
   const [execs, setExecs] = useState(String(maxExec));
   const [selfRevoke, setSelfRevoke] = useState(false);
   const [note, setNote] = useState("");
@@ -47,6 +56,8 @@ export default function SessionKeyForm({
   const d = parseInt(days, 10) || 0;
   const n = parseInt(execs, 10) || 0;
   const typeCount = types.length + (selfRevoke ? 1 : 0);
+  const narrow = types.length <= NARROW_MAX_TYPES && !selfRevoke;
+  const maxDays = narrow ? narrowMaxDays : broadMaxDays;
 
   function validate(): string | null {
     if (!resolved.address) return "Enter a valid address for the key";
@@ -158,7 +169,17 @@ export default function SessionKeyForm({
             className={INPUT_CLASS}
           />
         </Field>
-        <Field id="sk-days" label="Expires in (days)" help={`Max ${maxDays} day${maxDays === 1 ? "" : "s"}`}>
+        <Field
+          id="sk-days"
+          label="Expires in (days)"
+          help={
+            narrowMaxDays > broadMaxDays
+              ? narrow
+                ? `Max ${maxDays} days for a key with ${NARROW_MAX_TYPES} or fewer actions`
+                : `Max ${maxDays} day${maxDays === 1 ? "" : "s"}; ${narrowMaxDays} with ${NARROW_MAX_TYPES} or fewer actions and no self-revoke`
+              : `Max ${maxDays} day${maxDays === 1 ? "" : "s"}`
+          }
+        >
           <NumberInput
             id="sk-days"
             min="1"
