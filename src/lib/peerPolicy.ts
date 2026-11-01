@@ -101,6 +101,48 @@ export async function peerPolicyUpdateMsgs(opts: {
   ];
 }
 
+/**
+ * The messages to broadcast for a display name / metadata correction, routed
+ * like a policy update. Both fields are replaced, so pass the current metadata
+ * to keep it.
+ */
+export async function peerInfoUpdateMsgs(opts: {
+  address: string;
+  route: SubmitRoute;
+  peerId: string;
+  displayName: string;
+  peerMetadata: string;
+  metadata: string;
+}): Promise<EncodeObject[]> {
+  const { address, route, peerId, displayName, peerMetadata, metadata } = opts;
+  const { MsgUpdatePeerInfo } = await import(
+    "@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx"
+  );
+  const authority = route.kind === "direct" ? address : route.policyAddress;
+  const msg = MsgUpdatePeerInfo.fromPartial({
+    authority,
+    peerId,
+    displayName,
+    metadata: peerMetadata,
+  });
+  if (route.kind === "direct") {
+    return [{ typeUrl: FederationMsgTypeUrls.UpdatePeerInfo, value: msg }];
+  }
+  return [
+    committeeProposal(
+      address,
+      route.policyAddress,
+      [
+        {
+          typeUrl: FederationMsgTypeUrls.UpdatePeerInfo,
+          value: MsgUpdatePeerInfo.encode(msg).finish(),
+        },
+      ],
+      metadata
+    ),
+  ];
+}
+
 /** The curation collection id as a string, or null when unset. */
 export function curationId(policy: PeerPolicy | null | undefined): string | null {
   if (!policy?.curation) return null;

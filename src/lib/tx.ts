@@ -448,6 +448,9 @@ export const FederationMsgTypeUrls = {
   // Operations Committee, not the Commons Council -- the keeper gates this one
   // on the "operations" committee and the Council policy does not allow it.
   UpdatePeerPolicy: "/sparkdream.federation.v1.MsgUpdatePeerPolicy",
+  // Display name and metadata only. Same authorities as UpdatePeerPolicy, and
+  // carried by both the committee and the Council policy.
+  UpdatePeerInfo: "/sparkdream.federation.v1.MsgUpdatePeerInfo",
   // Creator-signed: the author publishes their own content to a peer. Not a
   // governance action, and never automatic -- creating content federates
   // nothing on its own.

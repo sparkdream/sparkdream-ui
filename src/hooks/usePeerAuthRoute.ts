@@ -13,7 +13,7 @@ export const COMMITTEE_NAME = "Commons Operations Committee";
  * Two independent grants decide this and they do not agree, which is why this
  * cannot be a single constant:
  *
- *  - The x/federation keeper decides who may SIGN. Four of the five peer
+ *  - The x/federation keeper decides who may SIGN. Five of the six peer
  *    messages use IsCouncilAuthorized, which accepts gov, the council policy,
  *    the committee policy, OR any individual Operations Committee member.
  *    MsgResumePeer uses IsCouncilOrCommitteePolicy, which drops the
@@ -21,7 +21,7 @@ export const COMMITTEE_NAME = "Commons Operations Committee";
  *  - x/commons decides which POLICY may carry the message in a proposal, via
  *    that policy's allowed_messages. RegisterPeer / RemovePeer / SuspendPeer
  *    sit only on the council; UpdatePeerPolicy and ResumePeer sit on the
- *    committee.
+ *    committee. UpdatePeerInfo sits on both; votes go to the committee.
  *
  * So "open a vote" has a different destination per message, and sending one to
  * the wrong body produces a proposal that sits SUBMITTED until its voting
@@ -32,7 +32,8 @@ export type PeerMsgKind =
   | "resume"
   | "suspend"
   | "remove"
-  | "policy";
+  | "policy"
+  | "info";
 
 /** The policy whose allowed_messages carries each message. */
 export const VOTE_TARGET: Record<PeerMsgKind, "council" | "committee"> = {
@@ -40,6 +41,7 @@ export const VOTE_TARGET: Record<PeerMsgKind, "council" | "committee"> = {
   remove: "council",
   suspend: "council",
   policy: "committee",
+  info: "committee",
   resume: "committee",
 };
 
@@ -49,6 +51,7 @@ export const FORCES_VOTE: Record<PeerMsgKind, boolean> = {
   remove: false,
   suspend: false,
   policy: false,
+  info: false,
   resume: true,
 };
 

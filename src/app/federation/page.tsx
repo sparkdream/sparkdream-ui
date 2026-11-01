@@ -73,6 +73,7 @@ import LinkIdentityForm from "@/components/federation/LinkIdentityForm";
 import PendingIdentityChallenges from "@/components/federation/PendingIdentityChallenges";
 import PeerProposalForm, { type PeerAction, type RegisterPrefill } from "@/components/federation/PeerProposalForm";
 import PeerPolicyForm from "@/components/federation/PeerPolicyForm";
+import PeerInfoForm from "@/components/federation/PeerInfoForm";
 import PeerCurationPanel from "@/components/federation/PeerCurationPanel";
 import LicenseBadge from "@/components/license/LicenseBadge";
 import { useMyAliases } from "@/hooks/useMyAliases";
@@ -267,7 +268,7 @@ function FederationPageInner() {
   const [view, setView] = useState<View>(deepLink ? "peers" : "overview");
   // Which compose form is open, if any. Both are council/wallet gated inside
   // the form rather than here, so the button always explains itself.
-  const [composer, setComposer] = useState<null | "link" | "peer" | "policy" | "curation">(
+  const [composer, setComposer] = useState<null | "link" | "peer" | "policy" | "info" | "curation">(
     deepLink?.composer ?? null
   );
   const [peerAction, setPeerAction] = useState<PeerAction>(deepLink?.action ?? "register");
@@ -777,6 +778,18 @@ function FederationPageInner() {
         />
       )}
 
+      {composer === "info" && peers.find((p) => p.id === peerActionTarget) && (
+        <PeerInfoForm
+          key={composerNonce}
+          peer={peers.find((p) => p.id === peerActionTarget)!}
+          onSubmitted={() => {
+            setComposer(null);
+            reload();
+          }}
+          onCancel={() => setComposer(null)}
+        />
+      )}
+
       {composer === "curation" && peers.find((p) => p.id === peerActionTarget) && (
         <PeerCurationPanel
           key={composerNonce}
@@ -850,6 +863,11 @@ function FederationPageInner() {
               setPeerActionTarget(peer.id);
               setComposerNonce((n) => n + 1);
               setComposer("policy");
+            }}
+            onEditInfo={(peer) => {
+              setPeerActionTarget(peer.id);
+              setComposerNonce((n) => n + 1);
+              setComposer("info");
             }}
             onCurate={(peer) => {
               setPeerActionTarget(peer.id);
@@ -1036,7 +1054,7 @@ function PageHead({
   view: View;
   onLinkIdentity: () => void;
   onProposePeer: () => void;
-  composer: null | "link" | "peer" | "policy" | "curation";
+  composer: null | "link" | "peer" | "policy" | "info" | "curation";
 }) {
   return (
     <div className="sd-fed-page-head">
@@ -1375,6 +1393,7 @@ function PeersGrid({
   loading,
   onProposeFor,
   onEditPolicy,
+  onEditInfo,
   onCurate,
 }: {
   peers: Peer[];
@@ -1382,6 +1401,7 @@ function PeersGrid({
   loading: boolean;
   onProposeFor: (peer: Peer) => void;
   onEditPolicy: (peer: Peer) => void;
+  onEditInfo: (peer: Peer) => void;
   onCurate: (peer: Peer) => void;
 }) {
   if (peers.length === 0) {
@@ -1408,6 +1428,7 @@ function PeersGrid({
           policy={policies[p.id]}
           onPropose={() => onProposeFor(p)}
           onEditPolicy={() => onEditPolicy(p)}
+          onEditInfo={() => onEditInfo(p)}
           onCurate={() => onCurate(p)}
         />
       ))}
@@ -1429,12 +1450,14 @@ function PeerCard({
   policy,
   onPropose,
   onEditPolicy,
+  onEditInfo,
   onCurate,
 }: {
   peer: Peer;
   policy?: PeerPolicy;
   onPropose: () => void;
   onEditPolicy: () => void;
+  onEditInfo: () => void;
   onCurate: () => void;
 }) {
   const t = APPROX_PEER_TYPE[peer.type] || "ibc";
@@ -1528,6 +1551,9 @@ function PeerCard({
         </button>
         <button type="button" className="sd-fed-peer-action" onClick={onEditPolicy}>
           Edit policy
+        </button>
+        <button type="button" className="sd-fed-peer-action" onClick={onEditInfo}>
+          Edit info
         </button>
         {t !== "ibc" && (
           <button type="button" className="sd-fed-peer-action" onClick={onCurate}>
