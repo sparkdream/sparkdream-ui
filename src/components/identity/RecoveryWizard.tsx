@@ -4,7 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { useTxAction } from "@/hooks/useTxAction";
 import { formatBlockEta, useBlockClock } from "@/hooks/useBlockClock";
-import { getRepRecoveryCommit, getRepRecoveryCommitments, listRepRecoveryCommitsBySubmitter } from "@/lib/api";
+import {
+  getRepRecoveryCommit,
+  getRepRecoveryCommitments,
+  getTxMsgResponses,
+  listRepRecoveryCommitsBySubmitter,
+} from "@/lib/api";
 import { RepIdentityMsgTypeUrls } from "@/lib/tx";
 import { freshnessProblems, type MigrationParams } from "@/lib/migration";
 import {
@@ -67,7 +72,9 @@ export default function RecoveryWizard({
   // resumes from any device. Bumped to refetch after a commit or reveal.
   const [reload, setReload] = useState(0);
   const [mySeals, setMySeals] = useState<RecoveryCommit[]>([]);
-  const [revealed, setRevealed] = useState<{ member: string; to: string } | null>(null);
+  // failure: the reveal checked out and used the code up, but the chain could
+  // not open the migration (MsgRevealRecoveryResponse.failure_reason).
+  const [revealed, setRevealed] = useState<{ member: string; to: string; failure?: string } | null>(null);
 
   useEffect(() => {
     if (!signerAddress) return;
@@ -136,14 +143,25 @@ export default function RecoveryWizard({
     if (!prep || !signerAddress) return;
     if (!confirm("Reveal the recovery code? From this moment it is public and used up, even if the move then fails.")) return;
     void tx.run("reveal", async () => {
-      await signAndBroadcast([
+      const hash = await signAndBroadcast([
         {
           typeUrl: RepIdentityMsgTypeUrls.RevealRecovery,
           value: { revealer: signerAddress, member: from, newAddress: to, preimage: prep.preimage },
         },
       ]);
+      let failure: string | undefined;
+      try {
+        const { MsgRevealRecoveryResponse } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
+        for (const r of await getTxMsgResponses(hash)) {
+          if (r.typeUrl !== "/sparkdream.rep.v1.MsgRevealRecoveryResponse") continue;
+          const res = MsgRevealRecoveryResponse.decode(r.value);
+          if (res.migrationId === BigInt(0)) failure = res.failureReason || "the chain did not say why";
+        }
+      } catch {
+        // Unreadable response: the migration list below still shows the outcome.
+      }
       setReload((n) => n + 1);
-      setRevealed({ member: from, to });
+      setRevealed({ member: from, to, failure });
       setCodeInput("");
       onChanged();
     });
@@ -160,7 +178,13 @@ export default function RecoveryWizard({
         </>
       }
     >
-      {revealed && (
+      {revealed?.failure && (
+        <p className="mb-3 rounded-lg border border-red-800 bg-red-900/20 px-3 py-2 text-sm text-red-400">
+          The code was valid and is now used up, but the recovery for {truncateAddress(revealed.member)} could not be
+          opened: {revealed.failure}. Use another recovery code, or ask governance for a forced migration.
+        </p>
+      )}
+      {revealed && !revealed.failure && (
         <p className="mb-3 rounded-lg border border-emerald-800 bg-emerald-900/20 px-3 py-2 text-sm text-emerald-400">
           Recovery opened for {truncateAddress(revealed.member)}.{" "}
           {revealed.to === signerAddress

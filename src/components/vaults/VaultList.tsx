@@ -8,7 +8,7 @@ import { truncateAddress } from "@/lib/utils";
 import ErrorState from "@/components/ErrorState";
 import { INPUT_CLASS } from "@/components/permissions/fields";
 import type { Vault } from "@/types/vault";
-import { CARD, formatTtl, myWeight, totalWeight } from "./shared";
+import { CARD, acceptedWeight, formatTtl, myWeight, totalWeight } from "./shared";
 
 const PAGE = 50;
 
@@ -22,6 +22,7 @@ export default function VaultList({
   const { signerAddress } = useWallet();
   const { isMine } = useMyAliases();
   const [vaults, setVaults] = useState<Vault[]>([]);
+  const [invites, setInvites] = useState<Vault[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -29,8 +30,14 @@ export default function VaultList({
   const load = useCallback(async () => {
     if (!signerAddress) return;
     try {
-      const res = await listVaultsBySigner(signerAddress, 0, PAGE);
+      // Invitations are bounded by MaxSigners per vault but not per member;
+      // one page shows them, and an older node without `invited` returns none.
+      const [res, inv] = await Promise.all([
+        listVaultsBySigner(signerAddress, 0, PAGE),
+        listVaultsBySigner(signerAddress, 0, PAGE, true).catch(() => ({ vaults: [] as Vault[] })),
+      ]);
       setVaults(res.vaults || []);
+      setInvites(inv.vaults || []);
       setTotal(Number(res.pagination?.total || res.vaults?.length || 0));
       setError(null);
     } catch (err) {
@@ -60,9 +67,22 @@ export default function VaultList({
 
       {error ? <ErrorState error={error} onRetry={load} /> : null}
 
+      {invites.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-amber-200">Waiting for your acceptance</h2>
+          <p className="text-xs text-zinc-500">
+            You were listed as a signer on {invites.length === 1 ? "this vault" : "these vaults"}. Open one to accept or
+            decline. Until you accept, your entry has no weight.
+          </p>
+          {invites.map((v) => (
+            <VaultRow key={v.vault_id} vault={v} mine={0} invited onOpen={onOpen} />
+          ))}
+        </section>
+      )}
+
       {loading ? (
         <div className="h-32 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
-      ) : vaults.length === 0 && !error ? (
+      ) : vaults.length === 0 && invites.length > 0 ? null : vaults.length === 0 && !error ? (
         <div className={`${CARD} p-12 text-center`}>
           <p className="text-zinc-400">You aren&apos;t a signer on any vault yet</p>
           <button type="button" onClick={onCreate} className="sd-btn sd-btn-secondary mt-4">
@@ -71,33 +91,9 @@ export default function VaultList({
         </div>
       ) : (
         <div className="space-y-3">
-          {vaults.map((v) => {
-            const mine = myWeight(v, isMine);
-            return (
-              <button
-                key={v.vault_id}
-                type="button"
-                onClick={() => onOpen(v.vault_id)}
-                className={`${CARD} block w-full text-left transition-colors hover:border-indigo-600`}
-              >
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="text-base font-semibold text-white">{v.label || `Vault #${v.vault_id}`}</span>
-                  <span className="font-mono text-xs text-zinc-500">#{v.vault_id}</span>
-                </div>
-                <div className="mt-1 font-mono text-xs text-zinc-400">{truncateAddress(v.address, 14, 6)}</div>
-                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-400">
-                  <span>
-                    {v.signers.length} signer{v.signers.length === 1 ? "" : "s"}
-                  </span>
-                  <span>
-                    Needs {v.threshold} of {totalWeight(v.signers)}
-                  </span>
-                  {mine > 0 && <span>Your weight: {mine}</span>}
-                  <span>Proposals open {formatTtl(Number(v.proposal_ttl))}</span>
-                </div>
-              </button>
-            );
-          })}
+          {vaults.map((v) => (
+            <VaultRow key={v.vault_id} vault={v} mine={myWeight(v, isMine)} onOpen={onOpen} />
+          ))}
           {vaults.length < total && (
             <button type="button" onClick={loadMore} className="sd-btn sd-btn-secondary">
               Show more
@@ -106,6 +102,47 @@ export default function VaultList({
         </div>
       )}
     </div>
+  );
+}
+
+function VaultRow({
+  vault: v,
+  mine,
+  invited = false,
+  onOpen,
+}: {
+  vault: Vault;
+  mine: number;
+  invited?: boolean;
+  onOpen: (vaultId: string) => void;
+}) {
+  const accepted = acceptedWeight(v.signers);
+  const listed = totalWeight(v.signers);
+  const waiting = v.signers.filter((s) => !s.accepted).length;
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(v.vault_id)}
+      className={`${CARD} block w-full text-left transition-colors ${invited ? "border-amber-800/60 hover:border-amber-600" : "hover:border-indigo-600"}`}
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-base font-semibold text-white">{v.label || `Vault #${v.vault_id}`}</span>
+        <span className="font-mono text-xs text-zinc-500">#{v.vault_id}</span>
+      </div>
+      <div className="mt-1 font-mono text-xs text-zinc-400">{truncateAddress(v.address, 14, 6)}</div>
+      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-400">
+        <span>
+          {v.signers.length} signer{v.signers.length === 1 ? "" : "s"}
+          {waiting > 0 && <span className="text-amber-300/80"> ({waiting} pending acceptance)</span>}
+        </span>
+        <span>
+          Needs {v.threshold} of {accepted}
+          {accepted < listed && <span className="text-zinc-500"> ({listed} listed)</span>}
+        </span>
+        {mine > 0 && <span>Your weight: {mine}</span>}
+        <span>Proposals open {formatTtl(Number(v.proposal_ttl))}</span>
+      </div>
+    </button>
   );
 }
 

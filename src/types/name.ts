@@ -28,6 +28,9 @@ export interface Dispute {
   contest_challenge_id: string;
   contested_at: string;
   contest_succeeded: boolean;
+  /** Uncontested against an active owner: left for a Commons Council or
+   *  Operations Committee decision (MsgResolveDispute), no auto-resolution. */
+  awaiting_review?: boolean;
 }
 
 // As of chain v1.0.11 fee fields are bare math.Int strings in bond-denom

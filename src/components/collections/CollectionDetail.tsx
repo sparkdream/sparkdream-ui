@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Image from "next/image";
+import BlockEta from "@/components/BlockEta";
 import {
   getCollection,
   listCollectionItems,
@@ -874,6 +875,14 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
               {COLLECTION_STATUS_LABELS[collection.status] || collection.status}
               {collection.pinned && <span className="ml-1.5 text-amber-400">· Pinned</span>}
               {isEphemeral && <span className="ml-1.5 text-yellow-500">· Ephemeral</span>}
+              {collection.status === CollectionStatus.PENDING &&
+                !collection.endorsed_by &&
+                collection.endorsement_pending_until &&
+                collection.endorsement_pending_until !== "0" && (
+                  <span className="mt-0.5 block text-xs text-amber-400">
+                    Removed <BlockEta height={collection.endorsement_pending_until} /> unless endorsed
+                  </span>
+                )}
             </dd>
           </div>
           <div>

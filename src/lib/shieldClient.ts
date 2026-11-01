@@ -2,7 +2,8 @@
 //
 // Flow: the member derives a secret from a Keplr signature (identity), registers
 // its public key in x/rep once, and from then on any registered op can be sent
-// anonymously: fetch the whole trust tree, prove membership in a Web Worker
+// anonymously: fetch the whole trust tree (or, for a secret ballot, the
+// ballot's voter snapshot), prove membership in a Web Worker
 // (shield.wasm, the chain's own Go prover), and broadcast a MsgShieldedExec
 // signed by the shared public submitter key. The proof, not the signature,
 // authorizes the exec, and the public key makes every anonymous tx look alike.
@@ -29,6 +30,7 @@ import {
   getTrustTree,
 } from "@/lib/api";
 import type { ShieldedOpRegistration } from "@/types/shield";
+import type { VoterTree } from "@/types/commons";
 import { resolveScope } from "@/lib/shieldScope";
 
 export const MSG_SHIELDED_EXEC = "/sparkdream.shield.v1.MsgShieldedExec";
@@ -37,8 +39,11 @@ export const MSG_SHIELDED_EXEC = "/sparkdream.shield.v1.MsgShieldedExec";
 // sha256(publicSubmitterSeed) and is public on purpose.
 const PUBLIC_SUBMITTER_SEED = "sparkdream/shield/public-submitter/v1";
 
-// Proof domain TRUST_TREE and immediate execution (shield/v1 enums).
+// Proof domains and immediate execution (shield/v1 enums). GROUP_TREE proves
+// against a voter snapshot the target module names (x/commons secret ballots);
+// same circuit, leaves MiMC(zk_public_key, 0).
 const PROOF_DOMAIN_TRUST_TREE = 1;
+const PROOF_DOMAIN_GROUP_TREE = 2;
 const SHIELD_EXEC_IMMEDIATE = 0;
 
 // Covers the ante handler's proof check plus the inner message's
@@ -272,6 +277,7 @@ function friendlyChainError(log: string): string {
   if (/nullifier already used/i.test(log)) return "Your anonymous identity has already done this here.";
   if (/rate limit/i.test(log)) return "You've reached the limit for anonymous actions this epoch. Try again later.";
   if (/merkle root/i.test(log)) return "The member list changed while you were sending. Please try again.";
+  if (/ballot mode/i.test(log)) return "This vote doesn't take that kind of ballot. Reload and try again.";
   if (/no verification key/i.test(log)) return "Anonymous actions aren't available on this chain yet. Its proof verification key hasn't been set up.";
   if (/ZK proof verification failed/i.test(log)) {
     // A proof this client made and the chain rejected: almost always a prover
@@ -293,11 +299,17 @@ export async function submitAnonymously(
   /** Prove at least this trust level, when the target asks for more than the
    *  op's registered minimum (e.g. a post's reply trust level). */
   minTrustLevel?: number,
+  /** The voter snapshot to prove against, for an op registered with
+   *  PROOF_DOMAIN_GROUP_TREE (a secret-ballot proposal or poll). */
+  groupTree?: () => Promise<VoterTree>,
 ): Promise<string> {
   onPhase?.("preparing");
   const reg = await anonymousOp(inner.typeUrl);
   if (!reg) throw new Error("This action can't be done anonymously right now.");
-  const provenTrust = Math.max(reg.min_trust_level, minTrustLevel ?? 0);
+  const groupDomain = reg.proof_domain === "PROOF_DOMAIN_GROUP_TREE";
+  if (groupDomain && !groupTree) throw new Error("This anonymous action needs its voter list.");
+  // A voter snapshot's leaves carry no trust level, so only 0 can be proven.
+  const provenTrust = groupDomain ? 0 : Math.max(reg.min_trust_level, minTrustLevel ?? 0);
 
   const registry = await shieldRegistry();
   const innerValue = registry.encode(inner);
@@ -310,8 +322,11 @@ export async function submitAnonymously(
   // prove again rather than send something the chain will refuse.
   let proof: ShieldProof | null = null;
   for (let attempt = 0; attempt < 2 && !proof; attempt++) {
-    const [epoch, tree] = await Promise.all([settledEpoch(), getTrustTree()]);
-    if (!tree.root) throw new Error("The member trust tree isn't built yet.");
+    const [epoch, tree] = await Promise.all([
+      settledEpoch(),
+      groupDomain && groupTree ? groupTree() : getTrustTree(),
+    ]);
+    if (!tree.root) throw new Error(groupDomain ? "This ballot's voter list isn't available." : "The member trust tree isn't built yet.");
     onPhase?.("proving");
     const out: ShieldProof = await shieldCall<ShieldProof>(config, "prove", JSON.stringify({
       secret_key: identity.secretKey,
@@ -326,7 +341,14 @@ export async function submitAnonymously(
       rate_limit_epoch: epoch,
       inner_type_url: inner.typeUrl,
       inner_value: toBase64(innerValue),
-    }));
+    })).catch((err: unknown) => {
+      // The prover words a missing leaf for the trust tree; on a voter
+      // snapshot it means the key wasn't registered when the ballot opened.
+      if (groupDomain && err instanceof Error && /not in the trust tree/i.test(err.message)) {
+        throw new Error("Your anonymous identity isn't in this ballot's voter list. Only members whose key was active when voting opened can vote.");
+      }
+      throw err;
+    });
     const after = await getShieldEpoch();
     if (after.epoch_state.current_epoch === epoch) proof = out;
   }
@@ -343,7 +365,7 @@ export async function submitAnonymously(
       nullifier: fromBase64(p.nullifier),
       rateLimitNullifier: fromBase64(p.rate_limit_nullifier),
       merkleRoot: fromBase64(p.merkle_root),
-      proofDomain: PROOF_DOMAIN_TRUST_TREE,
+      proofDomain: groupDomain ? PROOF_DOMAIN_GROUP_TREE : PROOF_DOMAIN_TRUST_TREE,
       minTrustLevel: provenTrust,
       execMode: SHIELD_EXEC_IMMEDIATE,
       encryptedPayload: new Uint8Array(),

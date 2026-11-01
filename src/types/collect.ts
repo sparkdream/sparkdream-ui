@@ -27,6 +27,10 @@ export interface Collection {
   downvote_count: number;
   endorsed_by: string;
   seeking_endorsement: boolean;
+  /** Block height at which an unendorsed PENDING collection is pruned (0 = never in the endorsement stage). */
+  endorsement_pending_until?: string;
+  /** Endorsement creation fee escrowed at creation (uspark); zero once settled. */
+  endorsement_fee_escrowed?: string;
   immutable: boolean;
   conviction_sustained: boolean;
   initiative_id: string;
@@ -135,6 +139,8 @@ export interface CurationReview {
   challenged: boolean;
   overturned: boolean;
   challenger: string;
+  /** DREAM locked from the challenger; zero once the challenge is settled. */
+  challenge_deposit?: string;
 }
 
 export interface CurationSummary {

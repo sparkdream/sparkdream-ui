@@ -28,6 +28,10 @@ import type {
   ListProposalsResponse,
   ListCategoryResponse,
   CommonsParamsResponse,
+  GetPollResponse,
+  ListPollsResponse,
+  GetPollVotesResponse,
+  VoterTreeResponse,
 } from "@/types/commons";
 import type {
   ListGovProposalsResponse,
@@ -672,6 +676,55 @@ export async function listProposals(
     "/sparkdream/commons/v1/proposals",
     params
   );
+}
+
+// Polls of a group, newest first; `status` is a PollStatus proto number (0 = any).
+export async function listPolls(
+  councilName?: string,
+  status?: number,
+  pagination?: PaginationRequest
+): Promise<ListPollsResponse> {
+  const params = paginationParams(pagination);
+  if (councilName) params.set("council_name", councilName);
+  if (status) params.set("status", status.toString());
+  return get<ListPollsResponse>("/sparkdream/commons/v1/polls", params);
+}
+
+export async function getPoll(pollId: string): Promise<GetPollResponse> {
+  return get<GetPollResponse>(`/sparkdream/commons/v1/poll/${pollId}`);
+}
+
+// The open votes on a poll (a secret poll has none, only tallies).
+export async function getPollVotes(
+  pollId: string,
+  pagination?: PaginationRequest
+): Promise<GetPollVotesResponse> {
+  return get<GetPollVotesResponse>(
+    `/sparkdream/commons/v1/poll/${pollId}/votes`,
+    paginationParams(pagination)
+  );
+}
+
+// A secret ballot's voter snapshot, served whole while voting is open (NotFound
+// afterwards). Fetched whole on purpose: asking for one member's Merkle path
+// would tell the node who is about to vote.
+export async function getProposalVoterTree(proposalId: string): Promise<VoterTreeResponse> {
+  return voterTree(`/sparkdream/commons/v1/proposal/${proposalId}/voter_tree`);
+}
+
+export async function getPollVoterTree(pollId: string): Promise<VoterTreeResponse> {
+  return voterTree(`/sparkdream/commons/v1/poll/${pollId}/voter_tree`);
+}
+
+// The chain drops a snapshot the moment voting closes (deadline, or a
+// proposal accepted early), so a 404 here means the vote just ended.
+async function voterTree(path: string): Promise<VoterTreeResponse> {
+  try {
+    return await get<VoterTreeResponse>(path);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) throw new Error("Voting on this ballot has closed.");
+    throw err;
+  }
 }
 
 // ── Session module ──────────────────────────────────────────────────
@@ -1396,6 +1449,18 @@ export async function roleActivity(
  * summons they can still act on — jury duty pays but is infrequent, and there
  * is no other way to ask "am I seated" short of paging every review.
  */
+// Every jury review, paged. An invited expert has no by-expert index (and
+// interims_by_assignee returns a single stub record), so the expert's pending
+// testimonies are found by scanning recent reviews.
+export async function listJuryReviews(
+  pagination?: PaginationRequest
+): Promise<JuryReviewsByJurorResponse> {
+  return get<JuryReviewsByJurorResponse>(
+    "/sparkdream/rep/v1/jury_review",
+    paginationParams(pagination)
+  );
+}
+
 export async function juryReviewsByJuror(
   juror: string,
   pendingOnly?: boolean,

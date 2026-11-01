@@ -191,6 +191,7 @@ export interface GuildMembership {
 }
 
 export interface GuildInvite {
+  guild_id?: string;
   guild_invitee: string;
   inviter: string;
   created_epoch: string;

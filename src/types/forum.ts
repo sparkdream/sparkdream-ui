@@ -521,9 +521,6 @@ export interface ForumParams {
   reaction_spam_tax_amount: string;
   flag_spam_tax_amount: string;
   downvote_deposit_amount: string;
-  appeal_fee_amount: string;
-  lock_appeal_fee_amount: string;
-  move_appeal_fee_amount: string;
   edit_fee_amount: string;
   bounty_cancellation_fee_percent: string;
   max_content_size: string;

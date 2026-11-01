@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   getCurrentSeason,
@@ -31,6 +31,12 @@ import { useChainConfig } from "@/contexts/ChainConfigContext";
 const FALLBACK_POLL_MS = 6000;
 const SEASON_POLL_MS = 30000;
 const PROPOSAL_POLL_MS = 60000;
+
+// Marquee speed. The scroll runs on requestAnimationFrame rather than a CSS
+// animation: pausing a CSS transform animation on hover makes Chrome
+// re-rasterize the text at a different subpixel offset (the visible jump), and
+// a percentage keyframe can't know how many copies fill a wide screen.
+const SCROLL_PX_PER_SEC = 24;
 
 // How many open proposals of each kind the marquee carries before it starts
 // dropping the older ones. Enough to show a busy governance cycle without
@@ -465,16 +471,76 @@ export default function Ticker() {
 
   const items = buildItems(height, season, govProposals, communityProposals, futMarkets, posts, disputes, revealContribs, peers, config.dreamDisplayDenom, config.displayDenom);
 
+  const tickerRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const groupRef = useRef<HTMLDivElement>(null);
+  const pausedRef = useRef(false);
+  // Copies of the item group laid end to end. One copy is often narrower than
+  // the screen, which left a blank stretch before the loop restarted; enough
+  // copies to cover the ticker plus one more keeps it seamless.
+  const [copies, setCopies] = useState(2);
+
+  useEffect(() => {
+    const ticker = tickerRef.current;
+    const group = groupRef.current;
+    if (!ticker || !group) return;
+    const measure = () => {
+      const gw = group.offsetWidth;
+      if (gw <= 0) return;
+      setCopies(Math.ceil(ticker.clientWidth / gw) + 1);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(ticker);
+    ro.observe(group);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const track = trackRef.current;
+    const group = groupRef.current;
+    if (!track || !group) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let offset = 0;
+    let last: number | null = null;
+    let raf = 0;
+    const step = (now: number) => {
+      // Clamp the frame gap so a backgrounded tab doesn't lurch on return.
+      const dt = last === null ? 0 : Math.min(now - last, 100);
+      last = now;
+      if (!pausedRef.current) {
+        const gw = group.offsetWidth;
+        if (gw > 0) {
+          offset = (offset + (SCROLL_PX_PER_SEC * dt) / 1000) % gw;
+          track.style.transform = `translate3d(${-offset}px, 0, 0)`;
+        }
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   return (
-    <div className="sd-ticker" aria-label="Onchain ticker">
-      <div className="sd-ticker-track">
-        {items.map((item, i) => (
-          <span key={`a${i}`}>{item}</span>
-        ))}
-        {items.map((item, i) => (
-          <span key={`b${i}`} aria-hidden="true">
-            {item}
-          </span>
+    <div
+      className="sd-ticker"
+      aria-label="Onchain ticker"
+      ref={tickerRef}
+      onMouseEnter={() => { pausedRef.current = true; }}
+      onMouseLeave={() => { pausedRef.current = false; }}
+    >
+      <div className="sd-ticker-track" ref={trackRef}>
+        {Array.from({ length: copies }, (_, c) => (
+          <div
+            key={c}
+            className="sd-ticker-group"
+            ref={c === 0 ? groupRef : undefined}
+            aria-hidden={c === 0 ? undefined : true}
+          >
+            {items.map((item, i) => (
+              <span key={i}>{item}</span>
+            ))}
+          </div>
         ))}
       </div>
     </div>

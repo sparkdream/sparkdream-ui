@@ -56,6 +56,12 @@ export const CommonsMsgTypeUrls = {
   UpdateGroupConfig: "/sparkdream.commons.v1.MsgUpdateGroupConfig",
   CreateCategory: "/sparkdream.commons.v1.MsgCreateCategory",
   DeleteCategory: "/sparkdream.commons.v1.MsgDeleteCategory",
+  // Non-binding polls. AnonymousVotePoll only travels inside MsgShieldedExec,
+  // proven against the poll's voter snapshot (secret polls).
+  OpenPoll: "/sparkdream.commons.v1.MsgOpenPoll",
+  VotePoll: "/sparkdream.commons.v1.MsgVotePoll",
+  AnonymousVotePoll: "/sparkdream.commons.v1.MsgAnonymousVotePoll",
+  CancelPoll: "/sparkdream.commons.v1.MsgCancelPoll",
 } as const;
 
 // Session transaction message type URLs
@@ -105,6 +111,9 @@ export const RepMsgTypeUrls = {
   ProposeProject: "/sparkdream.rep.v1.MsgProposeProject",
   ApproveProjectBudget: "/sparkdream.rep.v1.MsgApproveProjectBudget",
   CancelProject: "/sparkdream.rep.v1.MsgCancelProject",
+  // Signed by the project's council or Operations Committee policy (an
+  // executed proposal) or x/gov, so it travels as a proposal's inner message.
+  CompleteProject: "/sparkdream.rep.v1.MsgCompleteProject",
   CreateInitiative: "/sparkdream.rep.v1.MsgCreateInitiative",
   AssignInitiative: "/sparkdream.rep.v1.MsgAssignInitiative",
   SubmitInitiativeWork: "/sparkdream.rep.v1.MsgSubmitInitiativeWork",
@@ -158,6 +167,9 @@ export const RepMsgTypeUrls = {
   // the initiative is OPEN and after params.initiative_bounty_reclaim_delay.
   FundInitiativeBounty: "/sparkdream.rep.v1.MsgFundInitiativeBounty",
   ReclaimInitiativeBounty: "/sparkdream.rep.v1.MsgReclaimInitiativeBounty",
+  // A juror seated on a pending initiative review calls a paid expert witness.
+  InviteExpertWitness: "/sparkdream.rep.v1.MsgInviteExpertWitness",
+  SubmitExpertTestimony: "/sparkdream.rep.v1.MsgSubmitExpertTestimony",
   // Content challenges against author-bonded posts/replies (distinct from the
   // member challenge flow above).
   ChallengeContent: "/sparkdream.rep.v1.MsgChallengeContent",
@@ -210,6 +222,10 @@ export const VaultMsgTypeUrls = {
   Execute: "/sparkdream.vault.v1.MsgExecute",
   CancelProposal: "/sparkdream.vault.v1.MsgCancelProposal",
   UpdateVault: "/sparkdream.vault.v1.MsgUpdateVault",
+  // A signer listed by someone else accepts (or declines with LeaveVault)
+  // their own entry; only accepted entries carry weight.
+  AcceptVaultSigner: "/sparkdream.vault.v1.MsgAcceptVaultSigner",
+  LeaveVault: "/sparkdream.vault.v1.MsgLeaveVault",
 } as const;
 
 /**
@@ -253,6 +269,7 @@ export const CollectMsgTypeUrls = {
   UpdateCollaboratorRole: "/sparkdream.collect.v1.MsgUpdateCollaboratorRole",
   RateCollection: "/sparkdream.collect.v1.MsgRateCollection",
   ChallengeReview: "/sparkdream.collect.v1.MsgChallengeReview",
+  ResolveCurationChallenge: "/sparkdream.collect.v1.MsgResolveCurationChallenge",
   RequestSponsorship: "/sparkdream.collect.v1.MsgRequestSponsorship",
   CancelSponsorshipRequest: "/sparkdream.collect.v1.MsgCancelSponsorshipRequest",
   SponsorCollection: "/sparkdream.collect.v1.MsgSponsorCollection",

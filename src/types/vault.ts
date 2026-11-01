@@ -51,6 +51,9 @@ export interface VaultSigner {
   address: string;
   /** uint64 as a string. */
   weight: string;
+  /** Chain-set; omitted when false. An entry listed by someone else stays
+   *  unaccepted (no weight, can't act) until its address accepts it. */
+  accepted?: boolean;
 }
 
 export interface Vault {

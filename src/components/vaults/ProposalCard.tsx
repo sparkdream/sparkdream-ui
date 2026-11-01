@@ -17,7 +17,7 @@ import {
   type VaultProposal,
   type VaultTallyResponse,
 } from "@/types/vault";
-import { CARD, base64ToBytes, describeInner, myWeight, useNow } from "./shared";
+import { CARD, base64ToBytes, describeInner, mySeat, myWeight, useNow } from "./shared";
 
 const STATUS_TONE: Record<string, string> = {
   [VaultProposalStatus.PENDING]: "border-indigo-700 bg-indigo-900/30 text-indigo-300",
@@ -78,7 +78,9 @@ export default function ProposalCard({
         : sessionActive
           ? "Switch off session mode to sign vault actions with your main wallet."
           : weight === 0
-            ? "You aren't a signer on this vault."
+            ? mySeat(vault, isMine).pending
+              ? "Accept your seat on this vault before acting on its proposals."
+              : "You aren't a signer on this vault."
             : null;
 
   const send = async (key: string, typeUrl: string, value: Record<string, unknown>, done: string) => {

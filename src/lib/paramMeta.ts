@@ -283,9 +283,6 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "reactionSpamTax", apiKey: "reaction_spam_tax_amount", label: "Reaction Spam Tax", kind: "amount" },
       { key: "flagSpamTax", apiKey: "flag_spam_tax_amount", label: "Flag Spam Tax", kind: "amount" },
       { key: "downvoteDeposit", apiKey: "downvote_deposit_amount", label: "Downvote Deposit", kind: "amount" },
-      { key: "appealFee", apiKey: "appeal_fee_amount", label: "Appeal Fee", kind: "amount" },
-      { key: "lockAppealFee", apiKey: "lock_appeal_fee_amount", label: "Lock Appeal Fee", kind: "amount" },
-      { key: "moveAppealFee", apiKey: "move_appeal_fee_amount", label: "Move Appeal Fee", kind: "amount" },
       { key: "editFee", apiKey: "edit_fee_amount", label: "Edit Fee", kind: "amount" },
       { key: "costPerByte", apiKey: "cost_per_byte_amount", label: "Cost Per Byte", kind: "amount" },
       { key: "costPerByteExempt", apiKey: "cost_per_byte_exempt", label: "Cost Per Byte Exempt", kind: "boolean" },
@@ -744,6 +741,23 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "maxValidatorSetDrift", apiKey: "max_validator_set_drift", label: "Max Validator Set Drift", kind: "number" },
       // Chain commit df97a76: ceiling on the fee the module pays per shielded exec.
       { key: "maxFeePerExec", apiKey: "max_fee_per_exec", label: "Max Fee Per Exec", kind: "amount", hint: "Largest bond-denom fee the shield module pays for one MsgShieldedExec" },
+      // Chain v1.0.56: cap on all fees the module pays in one shield epoch.
+      { key: "maxFeesPerEpoch", apiKey: "max_fees_per_epoch", label: "Max Fees Per Epoch", kind: "amount", hint: "Total bond-denom fees the shield module pays per shield epoch; at least Max Fee Per Exec" },
+    ],
+  },
+  vault: {
+    label: "Vault",
+    paramPath: "/sparkdream/vault/v1/params",
+    responseKey: "params",
+    typeUrl: "/sparkdream.vault.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/vault/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/vault/v1/params");
+      return { MsgUpdateParams, Params };
+    },
+    fields: [
+      { key: "creationEnabled", apiKey: "creation_enabled", label: "Creation Enabled", kind: "boolean", hint: "Gates new vaults only; existing vaults keep working" },
+      { key: "creationFeeAmount", apiKey: "creation_fee_amount", label: "Creation Fee", kind: "amount" },
     ],
   },
   rep: {
@@ -900,6 +914,25 @@ export const MODULES: Record<string, ModuleDef> = {
       // Tag anti-gaming
       { group: "Tags", key: "maxTagsPerInitiative", apiKey: "max_tags_per_initiative", label: "Max Tags / Initiative", kind: "number" },
       { group: "Tags", key: "tagCreationFee", apiKey: "tag_creation_fee", label: "Tag Creation Fee", kind: "dream" },
+      { group: "Tags", key: "tagBudgetAwarderEpochCapBps", apiKey: "tag_budget_awarder_epoch_cap_bps", label: "Tag Budget Awarder Epoch Cap (bps)", kind: "bigint", hint: "Most one group member may award from one tag budget per epoch, in bps of the pool (0 = default 2500, max 10000)" },
+
+      // Member key migration and recovery (chain v1.0.56). Params-only: no
+      // committee can shorten these delays.
+      { group: "Member Key Migration", key: "migrationEnabled", apiKey: "migration_enabled", label: "Migration Enabled", kind: "boolean" },
+      { group: "Member Key Migration", key: "keyPathEnabled", apiKey: "key_path_enabled", label: "Key Path Enabled", kind: "boolean", hint: "Off if the account signature scheme is considered broken; recovery and council migrations keep working" },
+      { group: "Member Key Migration", key: "keyMigrationDelay", apiKey: "key_migration_delay", label: "Key Migration Delay (seconds)", kind: "bigint" },
+      { group: "Member Key Migration", key: "councilMigrationDelay", apiKey: "council_migration_delay", label: "Council Migration Delay (seconds)", kind: "bigint", hint: "Window in which the old address may object" },
+      { group: "Member Key Migration", key: "recoveryMigrationDelay", apiKey: "recovery_migration_delay", label: "Recovery Migration Delay (seconds)", kind: "bigint" },
+      { group: "Member Key Migration", key: "migrationAcceptWindow", apiKey: "migration_accept_window", label: "Migration Accept Window (seconds)", kind: "bigint" },
+      { group: "Member Key Migration", key: "migrationCooldown", apiKey: "migration_cooldown", label: "Migration Cooldown (seconds)", kind: "bigint" },
+      { group: "Member Key Migration", key: "keyMigrationWindow", apiKey: "key_migration_window", label: "Key Migration Window (seconds)", kind: "bigint", hint: "At least twice the migration cooldown" },
+      { group: "Member Key Migration", key: "maxKeyMigrationsPerWindow", apiKey: "max_key_migrations_per_window", label: "Max Key Migrations / Window", kind: "number" },
+      { group: "Member Key Migration", key: "migrationObjectionBond", apiKey: "migration_objection_bond", label: "Migration Objection Bond", kind: "amount" },
+      { group: "Member Key Migration", key: "recoveryChangeDelay", apiKey: "recovery_change_delay", label: "Recovery Change Delay (seconds)", kind: "bigint" },
+      { group: "Member Key Migration", key: "recoveryCommitDeposit", apiKey: "recovery_commit_deposit", label: "Recovery Commit Deposit", kind: "amount" },
+      { group: "Member Key Migration", key: "recoveryCommitTtl", apiKey: "recovery_commit_ttl", label: "Recovery Commit TTL (seconds)", kind: "bigint" },
+      { group: "Member Key Migration", key: "recoveryRevealMinBlocks", apiKey: "recovery_reveal_min_blocks", label: "Recovery Reveal Min Age (blocks)", kind: "bigint" },
+      { group: "Member Key Migration", key: "zkKeyActivationDelay", apiKey: "zk_key_activation_delay", label: "ZK Key Activation Delay (epochs)", kind: "bigint", hint: "Must exceed every anonymous action window, council voting periods included" },
 
       // Reputation decay
       { group: "Reputation Decay", key: "reputationDecayRate", apiKey: "reputation_decay_rate", label: "Reputation Decay Rate (per epoch)", kind: "dec" },

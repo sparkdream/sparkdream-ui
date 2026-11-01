@@ -782,6 +782,7 @@ function FeaturedHero({
   const isConf = isConfidenceMarket(market);
   const ends = formatBlocksTo(market.end_block, currentBlock);
   const liq = formatDream(remainingLiquidity(market));
+  const twap = isActive ? runningTwap(market, currentBlock, yesProb) : null;
 
   // Confidence-vote markets get an effect strip showing what each outcome
   // does to council tenure. The numbers come from x/commons hooks.go:
@@ -802,7 +803,7 @@ function FeaturedHero({
           <p className="subtitle">
             {isConf
               ? "Triggered by x/commons. Resolution drives elastic tenure: YES extends the council's term by +20%, NO shortens by −50%, invalid leaves tenure unchanged."
-              : "LMSR automated market maker — buying YES or NO shares moves the implied probability. Resolves deterministically at end_block by comparing YES vs NO pool sizes."}
+              : "LMSR automated market maker. Buying YES or NO shares moves the implied probability. Resolves at end_block on the YES price averaged over the market's whole life, so a late trade can't swing it."}
           </p>
 
           <div className="meta-row">
@@ -813,6 +814,11 @@ function FeaturedHero({
               Ends <b className={ends.urgent ? "urgent" : ""}>{ends.label}</b>
             </span>
             <span className="m">Status <b>{MARKET_STATUS_LABELS[market.status] || market.status}</b></span>
+            {twap !== null && (
+              <span className="m" title="The YES price averaged over every block so far. Above 50% at end_block resolves YES, below resolves NO.">
+                Time-weighted YES <b>{(twap * 100).toFixed(1)}%</b>
+              </span>
+            )}
           </div>
 
           {isConf && (
@@ -1424,8 +1430,9 @@ function LMSRCard({ params }: { params: FutarchyParams | null }) {
         <p className="footnote">
           <b style={{ color: "var(--ink)" }}>Resolution is deterministic.</b>{" "}
           No oracle. At <span className="sd-mono">end_block</span>, the EndBlocker
-          compares pools: more YES bought ⇒ resolves YES; more NO ⇒ resolves NO;
-          tied or empty ⇒ invalid. Outstanding shares from cancelled or invalid
+          averages the YES price over every block of the market: above 50% ⇒
+          resolves YES; below ⇒ resolves NO; exactly 50% ⇒ invalid. A trade in
+          the last blocks barely moves the average. Outstanding shares from cancelled or invalid
           markets redeem at a snapshotted LMSR-implied price so no funds are
           trapped.
         </p>
@@ -1811,3 +1818,15 @@ function parseShareDenom(denom: string): { marketId: string; outcome: "yes" | "n
   return { marketId, outcome };
 }
 
+// The time-weighted YES price so far: the chain's accumulator, extended to
+// the current block at the current price (each block adds p_yes · elapsed,
+// x/futarchy resolution.go). Null for markets without TWAP fields.
+function runningTwap(m: Market, currentBlock: bigint | null, yesProb: number): number | null {
+  if (!m.twap_accumulator || !m.start_height || currentBlock === null) return null;
+  const start = Number(m.start_height);
+  const last = Number(m.twap_last_height || m.start_height);
+  const now = Math.min(Number(currentBlock), Number(m.end_block));
+  const acc = parseFloat(m.twap_accumulator);
+  if (!Number.isFinite(acc) || !(now > start)) return null;
+  return (acc + yesProb * Math.max(0, now - last)) / (now - start);
+}

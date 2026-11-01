@@ -36,7 +36,6 @@ export interface Contribution {
   transitioned_to_project: boolean;
   project_id: string;
   status: string;
-  council_id: string;
   approved_by: string;
   approved_at: string;
   created_at: string;

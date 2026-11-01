@@ -153,7 +153,7 @@ export default function CreateVaultForm({
         <Preview>
           {signers.length} signer{signers.length === 1 ? "" : "s"} with a total weight of {sum}. A proposal runs once
           signers with a combined weight of at least <strong>{thresholdNum}</strong> approve it, and lapses after{" "}
-          {formatTtl(ttl)}.
+          {formatTtl(ttl)}. Every signer other than you has to accept their seat before their weight counts.
         </Preview>
       )}
 

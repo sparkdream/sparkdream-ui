@@ -61,14 +61,16 @@ export async function getVaultByAddress(address: string): Promise<Vault | null> 
 }
 
 /**
- * Vaults the address (or any earlier address of the same member) signs for.
- * Pagination is offset-based: pass `offset`, read `pagination.total`.
+ * Vaults the address (or any earlier address of the same member) is an
+ * accepted signer of, or with `invited`, the vaults listing it that it hasn't
+ * accepted yet. Pagination is offset-based: pass `offset`, read `pagination.total`.
  */
-export function listVaultsBySigner(address: string, offset = 0, limit = 50): Promise<VaultsResponse> {
+export function listVaultsBySigner(address: string, offset = 0, limit = 50, invited = false): Promise<VaultsResponse> {
   return cachedFetch(
-    `${PREFIX}by_signer|${address}|${offset}|${limit}`,
+    `${PREFIX}by_signer|${address}|${offset}|${limit}|${invited ? 1 : 0}`,
     () => {
       const params = new URLSearchParams({ "pagination.offset": String(offset), "pagination.limit": String(limit) });
+      if (invited) params.set("invited", "true");
       return lcdGet<VaultsResponse>(`/sparkdream/vault/v1/vaults_by_signer/${address}`, params);
     },
     TTL

@@ -25,6 +25,31 @@ export interface Group {
   last_parent_update: string;
   futarchy_enabled: boolean;
   veto_policy_address: string;
+  /** Unix seconds of the parent's last MsgUpdateGroupConfig (0 = never). */
+  last_config_update?: string;
+  /** Enum name; absent or UNSPECIFIED reads as OPEN. */
+  ballot_mode?: string;
+}
+
+export const BallotMode = {
+  UNSPECIFIED: "BALLOT_MODE_UNSPECIFIED",
+  OPEN: "BALLOT_MODE_OPEN",
+  SECRET: "BALLOT_MODE_SECRET",
+  PROPOSER_CHOICE: "BALLOT_MODE_PROPOSER_CHOICE",
+} as const;
+
+/** Proto numbers, for MsgRegisterGroup / MsgUpdateGroupConfig. */
+export const BallotModeNumber: Record<string, number> = {
+  [BallotMode.UNSPECIFIED]: 0,
+  [BallotMode.OPEN]: 1,
+  [BallotMode.SECRET]: 2,
+  [BallotMode.PROPOSER_CHOICE]: 3,
+};
+
+/** A group's effective ballot mode (UNSPECIFIED and absent read as OPEN). */
+export function groupBallotMode(group: Pick<Group, "ballot_mode">): string {
+  const m = group.ballot_mode;
+  return !m || m === BallotMode.UNSPECIFIED ? BallotMode.OPEN : m;
 }
 
 export interface Proposal {
@@ -40,6 +65,12 @@ export interface Proposal {
   metadata: string;
   execution_time: string;
   failed_reason: string;
+  /** Voted only with MsgAnonymousVoteProposal against the voter snapshot. */
+  secret_ballot?: boolean;
+  /** base64 root of the voter snapshot (secret ballots). */
+  voter_root?: string;
+  ballot_member_count?: string;
+  ballot_member_weight?: string;
 }
 
 export interface Vote {
@@ -137,7 +168,7 @@ export interface GetPolicyPermissionsResponse {
   policy_permissions: PolicyPermissions;
 }
 
-/** Anonymous votes cast through x/shield: weight 1 each, tallied apart from council votes. */
+/** Secret-ballot votes cast through x/shield, one per member of the voter snapshot. */
 export interface AnonVoteTally {
   yes_count?: string;
   no_count?: string;
@@ -185,4 +216,83 @@ export interface CommonsParams {
 
 export interface CommonsParamsResponse {
   params: CommonsParams;
+}
+
+// ── Polls ───────────────────────────────────────────────────────────
+
+export const PollStatus = {
+  UNSPECIFIED: "POLL_STATUS_UNSPECIFIED",
+  OPEN: "POLL_STATUS_OPEN",
+  CLOSED: "POLL_STATUS_CLOSED",
+  CANCELLED: "POLL_STATUS_CANCELLED",
+} as const;
+
+/** Proto numbers, for the ListPolls status filter. */
+export const PollStatusNumber: Record<string, number> = {
+  [PollStatus.UNSPECIFIED]: 0,
+  [PollStatus.OPEN]: 1,
+  [PollStatus.CLOSED]: 2,
+  [PollStatus.CANCELLED]: 3,
+};
+
+/** A non-binding, single-choice question put to a group's members. */
+export interface Poll {
+  id: string;
+  council_name: string;
+  creator: string;
+  question: string;
+  options: string[];
+  secret_ballot?: boolean;
+  /** Unix seconds. */
+  opened_at: string;
+  /** Unix seconds voting closes. */
+  deadline: string;
+  status: string;
+  /** tallies[i] counts the votes for options[i]; may be omitted while empty. */
+  tallies?: string[];
+  voter_root?: string;
+  /** Group size (open poll) or snapshot leaf count (secret poll). */
+  eligible_voters?: string;
+  closed_at?: string;
+}
+
+export interface PollVote {
+  poll_id: string;
+  voter: string;
+  option: string;
+  voted_at: string;
+}
+
+export interface GetPollResponse {
+  poll: Poll;
+}
+
+export interface ListPollsResponse {
+  polls: Poll[];
+  pagination: {
+    next_key: string | null;
+    total: string;
+  };
+}
+
+export interface GetPollVotesResponse {
+  votes: PollVote[];
+  pagination: {
+    next_key: string | null;
+    total: string;
+  };
+}
+
+/** A secret ballot's voter snapshot; the shape of x/rep's trust_tree query. */
+export interface VoterTree {
+  /** base64 */
+  root: string;
+  depth: number;
+  leaves: { index: string; hash: string }[];
+  member_count?: string;
+  member_weight?: string;
+}
+
+export interface VoterTreeResponse {
+  tree: VoterTree;
 }

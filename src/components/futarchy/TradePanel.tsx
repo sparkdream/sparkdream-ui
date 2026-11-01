@@ -32,6 +32,8 @@ export default function TradePanel({
 
   const [outcome, setOutcome] = useState<"yes" | "no">(initialOutcome);
   const [amount, setAmount] = useState("");
+  // Slippage tolerance in basis points; 0 sends no bound.
+  const [slippageBps, setSlippageBps] = useState(200);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,6 +101,14 @@ export default function TradePanel({
     return { shares: Math.round(shares), avgPrice: gross / shares };
   }, [amountMicro, feeMicro, market.b_value, market.pool_yes, market.pool_no, outcome]);
 
+  // The chain refuses the trade if it would mint fewer shares than this, so a
+  // trade landing after someone else's moves the price fails instead of
+  // filling at a worse price than quoted.
+  const minSharesOut =
+    localQuote && slippageBps > 0
+      ? String(Math.floor((localQuote.shares * (10_000 - slippageBps)) / 10_000))
+      : null;
+
   const yesProb = lmsrYesProbFromPools(market);
   const probLabel = outcome === "yes" ? yesProb : 1 - yesProb;
 
@@ -123,6 +133,7 @@ export default function TradePanel({
             marketId: BigInt(market.index),
             isYes: outcome === "yes",
             amountIn: amountMicro,
+            ...(minSharesOut && minSharesOut !== "0" ? { minSharesOut } : {}),
           },
         },
       ]);
@@ -230,6 +241,25 @@ export default function TradePanel({
           <span className="lab">Avg price / share</span>
           <span className="val muted">
             {localQuote ? localQuote.avgPrice.toFixed(4) : "—"}
+          </span>
+        </div>
+        <div className="row">
+          <span className="lab">
+            Max slippage{" "}
+            <select
+              value={slippageBps}
+              onChange={(e) => setSlippageBps(Number(e.target.value))}
+              className="sd-select ml-1 py-0 text-xs"
+              aria-label="Max slippage"
+            >
+              <option value={50}>0.5%</option>
+              <option value={200}>2%</option>
+              <option value={500}>5%</option>
+              <option value={0}>None</option>
+            </select>
+          </span>
+          <span className="val muted">
+            {minSharesOut ? `min ${formatIntCompact(minSharesOut)} shares` : "—"}
           </span>
         </div>
         <div className="row">

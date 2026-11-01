@@ -1295,13 +1295,25 @@ export interface JurorVote {
   submitted_at: string;
 }
 
+export interface ExpertTestimony {
+  expert: string;
+  opinion: string;
+  reasoning: string;
+  submitted_at: string;
+}
+
+/** Compiled chain constant (x/rep MaxExpertWitnessesPerReview), not a param. */
+export const MAX_EXPERT_WITNESSES_PER_REVIEW = 2;
+
 export interface JuryReview {
   id: string;
   challenge_id: string;
   initiative_id: string;
   jurors: string[];
   required_votes: number;
+  /** Experts a seated juror called with MsgInviteExpertWitness. */
   expert_witnesses?: string[];
+  testimonies?: ExpertTestimony[];
   review_deliverable: string;
   challenger_claim: string;
   assignee_response: string;

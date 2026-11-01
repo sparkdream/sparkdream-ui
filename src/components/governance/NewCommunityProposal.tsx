@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from "react";
 import type { Category, Group, Member } from "@/types/commons";
-import { CommonsMsgTypeUrls, ForumMsgTypeUrls, RepIdentityMsgTypeUrls } from "@/lib/tx";
-import { getCouncilMembers, getGrantsByGranter, getPolicyPermissions, getSessionParams, listCategories, listGroups, listRepMemberMigrations } from "@/lib/api";
-import type { MemberMigration } from "@/types/rep";
-import { MIGRATION_PATH_LABELS, MigrationPath, MigrationStatus } from "@/types/rep";
+import { BallotMode, BallotModeNumber, groupBallotMode } from "@/types/commons";
+import { CollectMsgTypeUrls, CommonsMsgTypeUrls, ForumMsgTypeUrls, RepIdentityMsgTypeUrls, RepMsgTypeUrls } from "@/lib/tx";
+import { getCouncilMembers, getGrantsByGranter, getPolicyPermissions, getSessionParams, listCategories, listCurationReviews, listGroups, listRepMemberMigrations, listRepProjects } from "@/lib/api";
+import type { MemberMigration, RepProject } from "@/types/rep";
+import { MIGRATION_PATH_LABELS, MigrationPath, MigrationStatus, ProjectStatus } from "@/types/rep";
+import type { CurationReview } from "@/types/collect";
 import { formatPeriod, int, isLive } from "@/lib/grants";
 import type { Grant } from "@/types/session";
 import { useWallet } from "@/contexts/WalletContext";
@@ -29,7 +31,9 @@ export type ProposalType =
   | "delete-category"
   | "unhide-post"
   | "force-migration"
-  | "cancel-migration";
+  | "cancel-migration"
+  | "complete-project"
+  | "resolve-curation";
 
 const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string }[] = [
   { value: "general", label: "General vote", description: "Signaling vote with no executable action" },
@@ -44,6 +48,8 @@ const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string 
   { value: "unhide-post", label: "Unhide Swarm post", description: "Council override of a sentinel hide past the self-correct window" },
   { value: "force-migration", label: "Move a membership", description: "Move a member who lost their key, with no recovery code, to a new address" },
   { value: "cancel-migration", label: "Cancel a membership move", description: "Stop a pending key change or committee move" },
+  { value: "complete-project", label: "Complete project", description: "Record an active project as completed and settle its stakes" },
+  { value: "resolve-curation", label: "Resolve curation challenge", description: "Decide a challenge against a curator's collection review" },
 ];
 
 // Inner message types each proposal kind would broadcast — used to filter the
@@ -66,6 +72,9 @@ const REQUIRED_MESSAGES: Record<ProposalType, string[]> = {
   // chain's "hr" committee) and governance hold these permissions.
   "force-migration": [RepIdentityMsgTypeUrls.ForceMigration],
   "cancel-migration": [RepIdentityMsgTypeUrls.CancelMigration],
+  // Operations Committees (and gov) hold these.
+  "complete-project": [RepMsgTypeUrls.CompleteProject],
+  "resolve-curation": [CollectMsgTypeUrls.ResolveCurationChallenge],
 };
 
 interface NewCommunityProposalProps {
@@ -93,6 +102,10 @@ export default function NewCommunityProposal({
   const { address, signAndBroadcast } = useWallet();
   const [anonymousChoice, setAnonymous] = useState(false);
   const anonymous = anonymousOnly || anonymousChoice;
+  // How the proposal will be voted (x/commons §11.2): a SECRET group always
+  // votes secretly, a PROPOSER_CHOICE group lets the proposer ask for it.
+  const ballotMode = groupBallotMode(group);
+  const [secretBallot, setSecretBallot] = useState(false);
   const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
   const { config } = useChainConfig();
   const canSpend = canSpendTreasury(group);
@@ -225,6 +238,7 @@ export default function NewCommunityProposal({
   const [configMaxMembers, setConfigMaxMembers] = useState("");
   const [configTermDuration, setConfigTermDuration] = useState("");
   const [configPolicyType, setConfigPolicyType] = useState("");
+  const [configBallotMode, setConfigBallotMode] = useState("");
 
   // Create category fields
   const [categoryTitle, setCategoryTitle] = useState("");
@@ -266,6 +280,51 @@ export default function NewCommunityProposal({
     });
     return () => { cancelled = true; };
   }, [type]);
+
+  // Active projects, for the complete-project picker. The chain refuses
+  // completion while any initiative is open or a challenge is active.
+  const [activeProjects, setActiveProjects] = useState<RepProject[]>([]);
+  const [completeProjectId, setCompleteProjectId] = useState("");
+  useEffect(() => {
+    if (type !== "complete-project") return;
+    let cancelled = false;
+    listRepProjects({ limit: "200" })
+      .then((res) => {
+        if (cancelled) return;
+        const list = (res.project ?? []).filter((p) => p.status === ProjectStatus.ACTIVE);
+        setActiveProjects(list);
+        if (list.length > 0) setCompleteProjectId((prev) => prev || list[0].id);
+      })
+      .catch(() => { /* leave the list empty */ });
+    return () => { cancelled = true; };
+  }, [type]);
+
+  // Curation challenge verdict. No chain-wide index of open challenges
+  // exists, so the reviews are loaded per collection.
+  const [curationCollectionId, setCurationCollectionId] = useState("");
+  const [challengedReviews, setChallengedReviews] = useState<CurationReview[] | null>(null);
+  const [curationReviewId, setCurationReviewId] = useState("");
+  const [curationUpheld, setCurationUpheld] = useState(false);
+  const [curationReason, setCurationReason] = useState("");
+  useEffect(() => {
+    const id = curationCollectionId.trim();
+    if (type !== "resolve-curation" || !/^\d+$/.test(id)) {
+      setChallengedReviews(null);
+      return;
+    }
+    let cancelled = false;
+    listCurationReviews(id, { limit: "200" })
+      .then((res) => {
+        if (cancelled) return;
+        // Pending exactly as x/collect isChallengePending: challenged, not
+        // overturned, and still carrying its challenger.
+        const open = (res.reviews ?? []).filter((r) => r.challenged && !r.overturned && !!r.challenger);
+        setChallengedReviews(open);
+        setCurationReviewId(open[0]?.id ?? "");
+      })
+      .catch(() => { if (!cancelled) setChallengedReviews([]); });
+    return () => { cancelled = true; };
+  }, [type, curationCollectionId]);
 
   // Lazily load existing categories when the delete-category form is shown.
   useEffect(() => {
@@ -471,6 +530,7 @@ export default function NewCommunityProposal({
               ...(configMaxMembers ? { maxMembers: BigInt(configMaxMembers) } : {}),
               ...(configTermDuration ? { termDuration: BigInt(parseInt(configTermDuration) * 86400) } : {}),
               ...(configPolicyType ? { policyType: configPolicyType } : {}),
+              ...(configBallotMode ? { ballotMode: BallotModeNumber[configBallotMode] } : {}),
             })
           ).finish(),
         });
@@ -531,6 +591,29 @@ export default function NewCommunityProposal({
             MsgCancelMigration.fromPartial({ signer: group.policy_address, migrationId: BigInt(cancelMigrationId) })
           ).finish(),
         });
+      } else if (type === "complete-project") {
+        if (!completeProjectId) throw new Error("Pick a project to complete");
+        const { MsgCompleteProject } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
+        innerMessages.push({
+          typeUrl: RepMsgTypeUrls.CompleteProject,
+          value: MsgCompleteProject.encode(
+            MsgCompleteProject.fromPartial({ creator: group.policy_address, projectId: BigInt(completeProjectId) })
+          ).finish(),
+        });
+      } else if (type === "resolve-curation") {
+        if (!curationReviewId) throw new Error("Pick a challenged review");
+        const { MsgResolveCurationChallenge } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/collect/v1/tx");
+        innerMessages.push({
+          typeUrl: CollectMsgTypeUrls.ResolveCurationChallenge,
+          value: MsgResolveCurationChallenge.encode(
+            MsgResolveCurationChallenge.fromPartial({
+              creator: group.policy_address,
+              reviewId: BigInt(curationReviewId),
+              upheld: curationUpheld,
+              reason: curationReason.trim(),
+            })
+          ).finish(),
+        });
       } else if (type === "unhide-post") {
         const trimmed = unhidePostId.trim();
         if (!trimmed) throw new Error("Post ID is required");
@@ -571,6 +654,10 @@ export default function NewCommunityProposal({
           forceMember: forceMember.trim(),
           forceNewAddress: forceNewAddress.trim(),
           cancelMigrationId,
+          completeProjectName: activeProjects.find((p) => p.id === completeProjectId)?.name ?? "",
+          completeProjectId,
+          curationReviewId,
+          curationUpheld,
         });
 
       if (anonymous) {
@@ -579,6 +666,7 @@ export default function NewCommunityProposal({
           policyAddress: group.policy_address,
           messages: innerMessages,
           metadata: proposalMetadata,
+          secretBallot: ballotMode === BallotMode.PROPOSER_CHOICE && secretBallot,
         }));
       } else {
         await signAndBroadcast([
@@ -589,6 +677,7 @@ export default function NewCommunityProposal({
               policyAddress: group.policy_address,
               messages: innerMessages,
               metadata: proposalMetadata,
+              secretBallot: ballotMode === BallotMode.PROPOSER_CHOICE && secretBallot,
             },
           },
         ]);
@@ -894,6 +983,26 @@ export default function NewCommunityProposal({
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-400">
+                Ballot mode
+              </label>
+              <select
+                value={configBallotMode}
+                onChange={(e) => setConfigBallotMode(e.target.value)}
+                className="sd-select w-full"
+              >
+                <option value="">No change</option>
+                <option value={BallotMode.OPEN}>Open votes</option>
+                <option value={BallotMode.SECRET}>Secret ballot for every proposal</option>
+                <option value={BallotMode.PROPOSER_CHOICE}>Proposer chooses</option>
+              </select>
+              {configBallotMode && configBallotMode !== BallotMode.OPEN && (
+                <p className="mt-1 text-xs text-zinc-500">
+                  Secret ballots need equal member weights and at least 5 members with an anonymous identity, or proposals can&apos;t open.
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-400">
                 Voting period (hours)
               </label>
               <NumberInput
@@ -1118,6 +1227,102 @@ export default function NewCommunityProposal({
         </div>
       )}
 
+      {type === "complete-project" && (
+        <div className="space-y-2">
+          <label className="mb-1.5 block text-sm font-medium text-zinc-300">Project</label>
+          {activeProjects.length === 0 ? (
+            <p className="text-sm text-zinc-500">No active projects.</p>
+          ) : (
+            <select
+              value={completeProjectId}
+              onChange={(e) => setCompleteProjectId(e.target.value)}
+              className="sd-select w-full"
+            >
+              {activeProjects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  #{p.id} {p.name} ({p.council})
+                </option>
+              ))}
+            </select>
+          )}
+          <p className="text-xs text-zinc-500">
+            Completion pays stakers their completion bonus and releases every project stake. The chain refuses it
+            while any of the project&apos;s initiatives is still open or a challenge on it is active, and only the
+            project&apos;s council or its Operations Committee may complete it.
+          </p>
+        </div>
+      )}
+
+      {type === "resolve-curation" && (
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-300">Collection ID</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={curationCollectionId}
+              onChange={(e) => setCurationCollectionId(e.target.value)}
+              placeholder="The collection whose review was challenged"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
+            />
+          </div>
+          {challengedReviews !== null &&
+            (challengedReviews.length === 0 ? (
+              <p className="text-sm text-zinc-500">No open challenges on this collection&apos;s reviews.</p>
+            ) : (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-zinc-300">Challenged review</label>
+                <select
+                  value={curationReviewId}
+                  onChange={(e) => setCurationReviewId(e.target.value)}
+                  className="sd-select w-full"
+                >
+                  {challengedReviews.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      #{r.id} by {truncateAddress(r.curator)}, challenged by {truncateAddress(r.challenger)}
+                    </option>
+                  ))}
+                </select>
+                {challengedReviews.find((r) => r.id === curationReviewId)?.comment && (
+                  <p className="mt-1 text-xs text-zinc-400">
+                    {challengedReviews.find((r) => r.id === curationReviewId)?.comment}
+                  </p>
+                )}
+              </div>
+            ))}
+          <div className="flex flex-wrap gap-2">
+            {[
+              [true, "Uphold (overturn the review)"],
+              [false, "Reject (the review stands)"],
+            ].map(([val, label]) => (
+              <button
+                key={String(val)}
+                type="button"
+                onClick={() => setCurationUpheld(val as boolean)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                  curationUpheld === val
+                    ? "bg-indigo-600/20 text-indigo-300"
+                    : "border border-zinc-700 text-zinc-400 hover:bg-zinc-800/50"
+                }`}
+              >
+                {label as string}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-zinc-500">
+            Upholding slashes the curator&apos;s committed bond. Rejecting lets the review stand and burns the
+            challenge deposit.
+          </p>
+          <input
+            type="text"
+            value={curationReason}
+            onChange={(e) => setCurationReason(e.target.value)}
+            placeholder="Reason"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
+          />
+        </div>
+      )}
+
       {/* Metadata / description — hide when update-config has no children */}
       {!(type === "update-config" && childGroups.length === 0) && <div>
         <label className="mb-1.5 block text-sm font-medium text-zinc-300">
@@ -1140,6 +1345,23 @@ export default function NewCommunityProposal({
           </p>
         )}
       </div>}
+
+      {ballotMode === BallotMode.SECRET && (
+        <p className="rounded-lg border border-violet-900/50 bg-violet-950/20 px-4 py-3 text-xs text-violet-200">
+          {"This group votes every proposal by secret ballot. Members vote with their anonymous identity, and the tally shows counts, never who voted what."}
+        </p>
+      )}
+      {ballotMode === BallotMode.PROPOSER_CHOICE && (
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/30 px-4 py-3">
+          <input type="checkbox" className="mt-1" checked={secretBallot} onChange={(e) => setSecretBallot(e.target.checked)} />
+          <span>
+            <span className="block text-sm font-medium text-zinc-200">Secret ballot</span>
+            <span className="block text-xs text-zinc-500">
+              {"Members vote with their anonymous identity against a snapshot of the group taken now. Needs equal member weights and at least 5 members with an anonymous identity."}
+            </span>
+          </span>
+        </label>
+      )}
 
       {anonymousOnly ? (
         <p className="text-xs text-zinc-500">
@@ -1172,7 +1394,9 @@ export default function NewCommunityProposal({
             (type === "delete-category" && existingCategories.length === 0) ||
             (type === "unhide-post" && !unhidePostId.trim()) ||
             (type === "force-migration" && (!forceMember.trim() || !forceNewAddress.trim())) ||
-            (type === "cancel-migration" && !cancelMigrationId)
+            (type === "cancel-migration" && !cancelMigrationId) ||
+            (type === "complete-project" && !completeProjectId) ||
+            (type === "resolve-curation" && !curationReviewId)
           }
           className="sd-btn sd-btn-primary"
         >
@@ -1209,6 +1433,10 @@ function defaultMetadata(
     forceMember?: string;
     forceNewAddress?: string;
     cancelMigrationId?: string;
+    completeProjectName?: string;
+    completeProjectId?: string;
+    curationReviewId?: string;
+    curationUpheld?: boolean;
   }
 ): string {
   switch (type) {
@@ -1236,6 +1464,10 @@ function defaultMetadata(
       return `Move membership ${truncateAddress(ctx.forceMember || "")} to ${truncateAddress(ctx.forceNewAddress || "")}`;
     case "cancel-migration":
       return `Cancel membership move #${ctx.cancelMigrationId || "?"}`;
+    case "complete-project":
+      return `Complete project #${ctx.completeProjectId || "?"} ${ctx.completeProjectName || ""}`.trim();
+    case "resolve-curation":
+      return `${ctx.curationUpheld ? "Uphold" : "Reject"} the challenge on curation review #${ctx.curationReviewId || "?"}`;
     default:
       return "";
   }

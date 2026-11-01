@@ -206,7 +206,16 @@ export interface IdentityLink {
   status: string;
   linked_at: string;
   verified_at: string;
+  /** base64 */
   challenge: string;
+  /** Phase 1 challenge deliveries sent (IBC peers). */
+  verification_attempts?: number;
+  /** Unix time an unverified link is pruned. */
+  unverified_expires_at?: string;
+  /** Bridge operator whose MsgAttestIdentityLink verified the link (empty for IBC). */
+  attested_by?: string;
+  /** Where the operator saw the published proof string. */
+  attestation_evidence?: string;
 }
 
 export interface OutboundAttestation {

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Group, Proposal, Member, Vote, TallyResult, AnonVoteTally } from "@/types/commons";
 import { ProposalStatus, VoteOption, VOTE_OPTION_LABELS, parseVoteOption } from "@/types/commons";
-import { getProposal } from "@/lib/api";
+import { getProposal, getProposalVoterTree } from "@/lib/api";
 import { CommonsMsgTypeUrls } from "@/lib/tx";
 import { useWallet } from "@/contexts/WalletContext";
 import {
@@ -17,7 +17,7 @@ import { canSpendTreasury } from "@/lib/commons";
 import NewCommunityProposal, { type ProposalType } from "./NewCommunityProposal";
 import { CouncilTreasuryBanner } from "./CouncilTreasury";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
-import AnonymousToggle from "@/components/AnonymousToggle";
+import Link from "next/link";
 import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 
 interface CommunityProposalsProps {
@@ -49,11 +49,12 @@ export default function CommunityProposals({
   const [showNewProposal, setShowNewProposal] = useState(!!initialAction);
 
   const isMember = members.some((m) => m.address === address);
-  // Any member with an anonymous identity may propose and vote anonymously
-  // (weight 1, tallied apart from council votes), council seat or not.
-  const [anonVotes, setAnonVotes] = useState(false);
+  // Any rep member with an anonymous identity may propose anonymously. Votes
+  // are one kind per proposal: an open proposal takes members' open votes, a
+  // secret ballot only anonymous votes proven against its voter snapshot.
   const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
   const canActAnonymously = shield.status === "ready" || shield.status === "locked";
+  const hasSecretVoting = proposals.some((p) => p.secret_ballot && p.status === ProposalStatus.SUBMITTED);
   // Shared clock for every card's voting / execution countdowns. Tick
   // adapts: 30s normally, 5s when *any* visible card is in its sub-minute
   // window, so the "<1m left" badge transitions to "expired" / the Execute
@@ -75,17 +76,22 @@ export default function CommunityProposals({
   }, [proposals]);
   const now = useNow(soonestDeadline);
 
-  const handleVote = async (proposalId: string, option: number) => {
+  const handleVote = async (proposalId: string, option: number, secret: boolean) => {
     setActionLoading(`vote-${proposalId}`);
     setActionError(null);
     try {
-      if (anonVotes) {
-        await submitAnonymously(CommonsMsgTypeUrls.AnonymousVoteProposal, (shieldAddress) => ({
-          voter: shieldAddress,
-          proposalId: BigInt(proposalId),
-          option,
-          metadata: "",
-        }));
+      if (secret) {
+        await submitAnonymously(
+          CommonsMsgTypeUrls.AnonymousVoteProposal,
+          (shieldAddress) => ({
+            voter: shieldAddress,
+            proposalId: BigInt(proposalId),
+            option,
+            metadata: "",
+          }),
+          undefined,
+          () => getProposalVoterTree(proposalId).then((r) => r.tree),
+        );
       } else {
         await signAndBroadcast([
           {
@@ -203,14 +209,14 @@ export default function CommunityProposals({
               </button>
             </div>
           )}
-          <AnonymousToggle
-            typeUrl={CommonsMsgTypeUrls.AnonymousVoteProposal}
-            checked={anonVotes}
-            onChange={setAnonVotes}
-            shield={shield}
-            label="Vote anonymously"
-            note="Anonymous votes count 1 each and are tallied apart from council votes. One anonymous vote per proposal."
-          />
+          {hasSecretVoting && isMember && !canActAnonymously && shield.status !== "loading" && (
+            <p className="rounded-lg border border-zinc-800 bg-zinc-900/30 px-4 py-3 text-xs text-zinc-400">
+              {"Secret ballots are voted with your anonymous identity. "}
+              {shield.status === "pending"
+                ? `Yours activates at epoch ${shield.activatesAtEpoch ?? "?"}, and only keys active when a ballot opens can vote on it.`
+                : <>Set one up on the <Link href="/permissions" className="text-indigo-400 hover:text-indigo-300">Permissions page</Link>. It counts for ballots opened after it activates.</>}
+            </p>
+          )}
           {anonPhase && <p className="text-xs text-zinc-400">{SHIELD_PHASE_LABELS[anonPhase]}</p>}
           {proposals.map((proposal) => (
             // Remount on refreshKey bump so cached `detail` (votes + tally)
@@ -219,7 +225,7 @@ export default function CommunityProposals({
               key={`${proposal.id}-${refreshKey}`}
               proposal={proposal}
               isMember={isMember}
-              canVote={isMember || anonVotes}
+              canVote={isMember && (!proposal.secret_ballot || canActAnonymously)}
               actionLoading={actionLoading}
               now={now}
               onVote={handleVote}
@@ -392,12 +398,12 @@ function CommonsProposalCard({
 }: {
   proposal: Proposal;
   isMember: boolean;
-  /** Council member, or voting anonymously */
+  /** Council member (with an anonymous identity, on a secret ballot) */
   canVote: boolean;
   actionLoading: string | null;
   /** Shared ticking clock from the parent — see useNow(). */
   now: number;
-  onVote: (id: string, option: number) => void;
+  onVote: (id: string, option: number, secret: boolean) => void;
   onExecute: (id: string) => void;
 }) {
   const dreamDenom = useDreamDenom();
@@ -459,6 +465,14 @@ function CommonsProposalCard({
           <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400">
             {typeLabel}
           </span>
+          {proposal.secret_ballot && (
+            <span
+              className="rounded bg-violet-900/30 px-1.5 py-0.5 text-[10px] font-medium text-violet-300"
+              title="Voted anonymously by the members whose keys were in the voter snapshot taken when it opened. The tally shows counts, never who voted."
+            >
+              Secret ballot
+            </span>
+          )}
           {remaining && (
             <span className={`text-xs font-medium ${remaining === "expired" ? "text-red-400" : "text-blue-400"}`}>
               {remaining}
@@ -503,7 +517,16 @@ function CommonsProposalCard({
             veto={parseFloat(detail.tally.no_with_veto_weight || "0")}
           />
 
-          {detail.anon && anonVoteTotal(detail.anon) > 0 && (
+          {proposal.secret_ballot ? (
+            <p className="mt-2 text-xs text-zinc-400">
+              {detail.anon && anonVoteTotal(detail.anon) > 0
+                ? `Secret votes: ${detail.anon.yes_count || "0"} yes, ${detail.anon.no_count || "0"} no, ${detail.anon.abstain_count || "0"} abstain, ${detail.anon.no_with_veto_count || "0"} veto`
+                : "No secret votes yet"}
+              {proposal.ballot_member_count && proposal.ballot_member_count !== "0"
+                ? ` (${proposal.ballot_member_count} members when it opened).`
+                : "."}
+            </p>
+          ) : detail.anon && anonVoteTotal(detail.anon) > 0 && (
             <p className="mt-2 text-xs text-zinc-400">
               Anonymous votes: {detail.anon.yes_count || "0"} yes, {detail.anon.no_count || "0"} no,{" "}
               {detail.anon.abstain_count || "0"} abstain, {detail.anon.no_with_veto_count || "0"} veto
@@ -522,7 +545,7 @@ function CommonsProposalCard({
       )}
 
       {/* Actions */}
-      {((isMember && (isVoting || isAccepted)) || (canVote && isVoting)) && (
+      {((isMember && isAccepted) || (canVote && isVoting)) && (
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-3">
           {isVoting && (
             <>
@@ -534,7 +557,7 @@ function CommonsProposalCard({
               ].map((opt) => (
                 <button
                   key={opt}
-                  onClick={() => onVote(proposal.id, opt)}
+                  onClick={() => onVote(proposal.id, opt, !!proposal.secret_ballot)}
                   disabled={actionLoading === `vote-${proposal.id}`}
                   className={`rounded-lg border px-3 py-1 text-xs transition-colors disabled:opacity-50 ${voteButtonStyle(opt)}`}
                 >

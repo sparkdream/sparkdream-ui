@@ -218,6 +218,10 @@ export default function DisputeList() {
                           <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-400 border border-amber-500/30">
                             Contested
                           </span>
+                        ) : d.awaiting_review ? (
+                          <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-xs text-violet-300 border border-violet-500/30">
+                            Awaiting council review
+                          </span>
                         ) : (
                           <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs text-red-400 border border-red-500/30">
                             Disputed
@@ -233,6 +237,9 @@ export default function DisputeList() {
                       <p>Claimant: <CopyableAddress address={d.claimant} /></p>
                       <p>Stake: {d.stake_amount} {dream}</p>
                       <p>Filed at block: {d.filed_at}</p>
+                      {isActive && !isContested && d.awaiting_review && (
+                        <p>The contest window passed while the owner is active, so the council decides this one.</p>
+                      )}
                       {isContested && d.contested_at !== "0" && (
                         <p>Contested at block: {d.contested_at}</p>
                       )}

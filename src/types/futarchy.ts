@@ -32,6 +32,13 @@ export interface Market {
   // Snapshot price for CANCELLED / RESOLVED_INVALID redemptions. Empty for
   // ACTIVE or RESOLVED_YES/NO markets.
   settlement_price_yes: string;
+
+  // Time-weighted YES price (chain v1.0.56). The market resolves on
+  // twap_accumulator / (end_block - start_height), not the final pools, so a
+  // trade in the last blocks can't decide it. Absent on older markets.
+  twap_accumulator?: string;
+  twap_last_height?: string;
+  start_height?: string;
 }
 
 export interface FutarchyParams {

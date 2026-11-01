@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { Group } from "@/types/commons";
+import { BallotMode, BallotModeNumber } from "@/types/commons";
 import { GovMsgTypeUrls, UpgradeMsgTypeUrls, CommonsMsgTypeUrls } from "@/lib/tx";
 import { listGroups, getCurrentUpgradePlan, getGovDepositParams, type UpgradePlan } from "@/lib/api";
 import { getGovModuleAddress } from "@/lib/gov";
@@ -99,6 +100,7 @@ export default function NewChainProposal({
   >([{ address: "", weight: "1" }]);
   const [councilVoteThreshold, setCouncilVoteThreshold] = useState("0.51");
   const [councilPolicyType, setCouncilPolicyType] = useState("percentage");
+  const [councilBallotMode, setCouncilBallotMode] = useState<string>(BallotMode.OPEN);
   const [councilVotingPeriod, setCouncilVotingPeriod] = useState("48");
   const [councilMinExecPeriod, setCouncilMinExecPeriod] = useState("0");
   const [councilMinMembers, setCouncilMinMembers] = useState("1");
@@ -380,6 +382,7 @@ export default function NewChainProposal({
               policyType: councilPolicyType || "percentage",
               allowedMessages: [],
               electoralPolicyAddress: "",
+              ballotMode: BallotModeNumber[councilBallotMode],
             })
           ).finish(),
         });
@@ -729,6 +732,21 @@ export default function NewChainProposal({
               >
                 <option value="percentage">Percentage</option>
                 <option value="threshold">Threshold</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-400">
+                Ballot mode
+              </label>
+              <select
+                value={councilBallotMode}
+                onChange={(e) => setCouncilBallotMode(e.target.value)}
+                className="sd-select w-full"
+                title="Secret ballots need equal member weights and at least 5 members with an anonymous identity."
+              >
+                <option value={BallotMode.OPEN}>Open votes</option>
+                <option value={BallotMode.SECRET}>Secret ballot</option>
+                <option value={BallotMode.PROPOSER_CHOICE}>Proposer chooses</option>
               </select>
             </div>
             <div>

@@ -17,6 +17,8 @@ import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { useWallet } from "@/contexts/WalletContext";
 import { timeAgo } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
+import { fromBase64, toHex } from "@cosmjs/encoding";
+import { useCopy } from "@/hooks/useCopy";
 import {
   listFederationPeers,
   listFederationBridgeOperators,
@@ -1626,10 +1628,65 @@ function IdentityLinkTable({
           >
             {pending === l.peer_id ? "…" : "Unlink"}
           </button>
+          {l.status === IdentityLinkStatus.UNVERIFIED && (transports[l.peer_id] ?? "ibc") !== "ibc" && l.local_address === address && (
+            <LinkProof link={l} />
+          )}
+          {l.status === IdentityLinkStatus.VERIFIED && l.attested_by && (
+            <div className="proof">
+              Attested by <CopyableAddress address={l.attested_by} />
+              {l.attestation_evidence && (
+                <>
+                  {" from "}
+                  {/^https?:\/\//.test(l.attestation_evidence) ? (
+                    <a href={l.attestation_evidence} target="_blank" rel="noopener noreferrer nofollow">
+                      this evidence
+                    </a>
+                  ) : (
+                    <span className="sd-mono">{l.attestation_evidence}</span>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
       ))}
       </div>
     </>
+  );
+}
+
+// The text a member publishes from a bridge identity (post, profile field,
+// record) so a bonded bridge operator can attest the link with
+// MsgAttestIdentityLink. Mirrors x/federation IdentityLinkProofString.
+function linkProofString(chainId: string, link: IdentityLink): string | null {
+  try {
+    const challenge = toHex(fromBase64(link.challenge || ""));
+    return challenge ? `sparkdream-identity-link:${chainId}:${link.local_address}:${challenge}` : null;
+  } catch {
+    return null;
+  }
+}
+
+function LinkProof({ link }: { link: IdentityLink }) {
+  const { config } = useChainConfig();
+  const { copied, copy } = useCopy(1500);
+  const proof = linkProofString(config.chainId, link);
+  if (!proof) return null;
+  const expires = Number(link.unverified_expires_at || 0);
+  return (
+    <div className="proof">
+      <span>
+        To verify, publish this from {link.remote_identity} (a post or profile field). A bridge operator checks it and
+        attests the link.
+        {expires > 0 && ` Unverified links are removed ${new Date(expires * 1000).toLocaleDateString()}.`}
+      </span>
+      <span className="proof-row">
+        <code className="sd-mono">{proof}</code>
+        <button type="button" className="more" onClick={() => copy(proof)}>
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </span>
+    </div>
   );
 }
 

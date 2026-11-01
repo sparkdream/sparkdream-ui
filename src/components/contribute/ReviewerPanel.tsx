@@ -19,7 +19,7 @@ import { formatSpark } from "@/lib/utils";
 import NumberInput from "@/components/NumberInput";
 import BlockEta from "@/components/BlockEta";
 import ErrorState from "@/components/ErrorState";
-import JuryDutyPanel from "@/components/contribute/JuryDutyPanel";
+import JuryDutyPanel, { ExpertTestimonyPanel } from "@/components/contribute/JuryDutyPanel";
 import { isMissingEndpoint } from "@/lib/errors";
 import {
   BONDED_ROLE_STATUS_LABELS,
@@ -320,6 +320,7 @@ export default function ReviewerPanel() {
           reputation if it lapses, so it is the thing to answer before anything
           else on this page. Renders nothing when you have none. */}
       <JuryDutyPanel />
+      <ExpertTestimonyPanel />
 
       {!isReviewer && (
         <div className="sd-hull-tile rounded-xl p-6">

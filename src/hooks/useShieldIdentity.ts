@@ -15,6 +15,7 @@ import {
   type ShieldPhase,
 } from "@/lib/shieldClient";
 import { TrustLevel } from "@/types/rep";
+import type { VoterTree } from "@/types/commons";
 
 export const MSG_REGISTER_ZK_PUBLIC_KEY = "/sparkdream.rep.v1.MsgRegisterZkPublicKey";
 export const MSG_CLEAR_ZK_PUBLIC_KEY = "/sparkdream.rep.v1.MsgClearZkPublicKey";
@@ -187,6 +188,8 @@ export function useAnonymousSubmit() {
       typeUrl: string,
       buildValue: (shieldAddress: string) => Record<string, unknown>,
       minTrustLevel?: number,
+      /** Voter snapshot for a secret-ballot vote (GROUP_TREE ops). */
+      groupTree?: () => Promise<VoterTree>,
     ) => {
       if (shield.status === "unregistered" || shield.status === "mismatch") {
         throw new Error("Set up your anonymous identity first (Permissions page).");
@@ -202,6 +205,7 @@ export function useAnonymousSubmit() {
           { typeUrl, value: buildValue(shieldModuleAddress(config.bech32Prefix)) },
           setPhase,
           minTrustLevel,
+          groupTree,
         );
       } finally {
         setPhase(null);

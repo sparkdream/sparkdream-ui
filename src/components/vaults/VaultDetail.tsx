@@ -18,7 +18,8 @@ import {
 } from "@/types/vault";
 import ProposalCard from "./ProposalCard";
 import ProposeForm from "./ProposeForm";
-import { CARD, formatCoin, formatTtl, myWeight, totalWeight } from "./shared";
+import SeatPanel from "./SeatPanel";
+import { CARD, acceptedWeight, formatCoin, formatTtl, mySeat, myWeight, totalWeight } from "./shared";
 
 type Tab = "pending" | "resolved";
 const TAB_BTN = "rounded-md px-3 py-1.5 text-xs font-medium transition-colors";
@@ -120,6 +121,8 @@ export default function VaultDetail({ vaultId, onBack }: { vaultId: string; onBa
   const { vault, balances, pending, resolved } = data;
   const weight = myWeight(vault, isMine);
   const sum = totalWeight(vault.signers);
+  const accepted = acceptedWeight(vault.signers);
+  const seat = mySeat(vault, isMine);
   const sortedBalances = [...balances].sort((a, b) => (a.denom === DENOM ? -1 : b.denom === DENOM ? 1 : a.denom.localeCompare(b.denom)));
 
   return (
@@ -139,7 +142,8 @@ export default function VaultDetail({ vaultId, onBack }: { vaultId: string; onBa
             <div>
               <dt className="text-xs text-zinc-500">Threshold</dt>
               <dd className="text-zinc-200">
-                {vault.threshold} of {sum}
+                {vault.threshold} of {accepted}
+                {accepted < sum && <span className="ml-1 text-xs text-zinc-500">({sum} listed)</span>}
               </dd>
             </div>
             <div>
@@ -170,10 +174,25 @@ export default function VaultDetail({ vaultId, onBack }: { vaultId: string; onBa
                       <CopyableAddress address={s.address} resolveName className="text-zinc-200" />
                       {isMine(s.address) && <span className="ml-1.5 text-xs text-indigo-300">you</span>}
                     </span>
-                    <span className="shrink-0 font-mono text-xs text-zinc-400">weight {s.weight}</span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      {!s.accepted && (
+                        <span
+                          className="rounded-full border border-amber-800 bg-amber-900/20 px-2 py-0.5 text-[11px] text-amber-300"
+                          title="Listed but not accepted yet. No weight until they accept."
+                        >
+                          Pending acceptance
+                        </span>
+                      )}
+                      <span className={`font-mono text-xs ${s.accepted ? "text-zinc-400" : "text-zinc-600"}`}>weight {s.weight}</span>
+                    </span>
                   </li>
                 ))}
               </ul>
+              {accepted < Number(vault.threshold) && (
+                <p className="mt-2 text-xs text-amber-300/80">
+                  Accepted weight is below the threshold, so no proposal can run until more signers accept.
+                </p>
+              )}
             </div>
             <div>
               <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">Balance</h3>
@@ -194,6 +213,10 @@ export default function VaultDetail({ vaultId, onBack }: { vaultId: string; onBa
       </div>
 
       <ActionBanner message={notice} tone="success" onDismiss={() => setNotice(null)} />
+
+      {seat.listed && connected && (
+        <SeatPanel vault={vault} pending={seat.pending} pendingProposals={pending.length} onChanged={refresh} />
+      )}
 
       {proposing ? (
         <ProposeForm

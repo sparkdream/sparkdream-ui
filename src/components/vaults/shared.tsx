@@ -5,7 +5,7 @@ import NumberInput from "@/components/NumberInput";
 import { AddressInput, INPUT_CLASS, useResolvedAddress } from "@/components/permissions/fields";
 import { formatDurationApprox, formatSpark, messageTypeLabel } from "@/lib/utils";
 import { VaultMsgTypeUrls } from "@/lib/tx";
-import { VAULT_LIMITS, type Vault, type VaultInnerMessage } from "@/types/vault";
+import { VAULT_LIMITS, type Vault, type VaultInnerMessage, type VaultSigner } from "@/types/vault";
 
 export const CARD = "rounded-xl border border-zinc-800 bg-zinc-900/50 p-5";
 
@@ -266,8 +266,20 @@ export function ttlToPicker(seconds: number): { amount: string; unit: "hours" | 
   return { amount: String(Number((seconds / 3600).toFixed(4))), unit: "hours" };
 }
 
-/** The connected member's weight in the vault (alias aware), 0 when not a signer. */
+/** Weight of the accepted entries: only they count in the tally. */
+export function acceptedWeight(signers: VaultSigner[]): number {
+  return totalWeight(signers.filter((s) => s.accepted));
+}
+
+/** The connected member's acting weight in the vault (alias aware): 0 when not
+ *  a signer or while their entry still waits for acceptance. */
 export function myWeight(vault: Vault, isMine: (a: string) => boolean): number {
-  const s = vault.signers.find((x) => isMine(x.address));
-  return s ? Number(s.weight) : 0;
+  return totalWeight(vault.signers.filter((x) => x.accepted && isMine(x.address)));
+}
+
+/** The connected member's entries in the vault: whether they're listed at all,
+ *  and whether any listing still waits for them to accept it. */
+export function mySeat(vault: Vault, isMine: (a: string) => boolean): { listed: boolean; pending: boolean } {
+  const mine = vault.signers.filter((x) => isMine(x.address));
+  return { listed: mine.length > 0, pending: mine.some((x) => !x.accepted) };
 }
