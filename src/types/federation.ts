@@ -78,6 +78,10 @@ export interface Peer {
   // registration, so wallets can render PSPK.ibc instead of ibc/<hash>. Null
   // for pre-extension peers and for every non-Spark-Dream peer type.
   peer_identity: ChainIdentity | null;
+  // Chain v1.0.57: the chain a Spark Dream peer's federation channel must
+  // lead to; activation checks the channel's light client against it. Empty
+  // for other peer types and for peers registered before the pin existed.
+  expected_chain_id?: string;
 }
 
 // Subset of sparkdream.identity.v1.ChainIdentity carried on a peer record.

@@ -74,6 +74,7 @@ import PendingIdentityChallenges from "@/components/federation/PendingIdentityCh
 import PeerProposalForm, { type PeerAction, type RegisterPrefill } from "@/components/federation/PeerProposalForm";
 import PeerPolicyForm from "@/components/federation/PeerPolicyForm";
 import PeerInfoForm from "@/components/federation/PeerInfoForm";
+import RevokeIdentityLinkForm from "@/components/federation/RevokeIdentityLinkForm";
 import PeerCurationPanel from "@/components/federation/PeerCurationPanel";
 import LicenseBadge from "@/components/license/LicenseBadge";
 import { useMyAliases } from "@/hooks/useMyAliases";
@@ -268,7 +269,7 @@ function FederationPageInner() {
   const [view, setView] = useState<View>(deepLink ? "peers" : "overview");
   // Which compose form is open, if any. Both are council/wallet gated inside
   // the form rather than here, so the button always explains itself.
-  const [composer, setComposer] = useState<null | "link" | "peer" | "policy" | "info" | "curation">(
+  const [composer, setComposer] = useState<null | "link" | "peer" | "policy" | "info" | "revokeLink" | "curation">(
     deepLink?.composer ?? null
   );
   const [peerAction, setPeerAction] = useState<PeerAction>(deepLink?.action ?? "register");
@@ -790,6 +791,19 @@ function FederationPageInner() {
         />
       )}
 
+      {composer === "revokeLink" && peers.find((p) => p.id === peerActionTarget) && (
+        <RevokeIdentityLinkForm
+          key={composerNonce}
+          peer={peers.find((p) => p.id === peerActionTarget)!}
+          links={identityLinks.filter((l) => l.peer_id === peerActionTarget)}
+          onSubmitted={() => {
+            setComposer(null);
+            reload();
+          }}
+          onCancel={() => setComposer(null)}
+        />
+      )}
+
       {composer === "curation" && peers.find((p) => p.id === peerActionTarget) && (
         <PeerCurationPanel
           key={composerNonce}
@@ -868,6 +882,11 @@ function FederationPageInner() {
               setPeerActionTarget(peer.id);
               setComposerNonce((n) => n + 1);
               setComposer("info");
+            }}
+            onRevokeLink={(peer) => {
+              setPeerActionTarget(peer.id);
+              setComposerNonce((n) => n + 1);
+              setComposer("revokeLink");
             }}
             onCurate={(peer) => {
               setPeerActionTarget(peer.id);
@@ -1054,7 +1073,7 @@ function PageHead({
   view: View;
   onLinkIdentity: () => void;
   onProposePeer: () => void;
-  composer: null | "link" | "peer" | "policy" | "info" | "curation";
+  composer: null | "link" | "peer" | "policy" | "info" | "revokeLink" | "curation";
 }) {
   return (
     <div className="sd-fed-page-head">
@@ -1394,6 +1413,7 @@ function PeersGrid({
   onProposeFor,
   onEditPolicy,
   onEditInfo,
+  onRevokeLink,
   onCurate,
 }: {
   peers: Peer[];
@@ -1402,6 +1422,7 @@ function PeersGrid({
   onProposeFor: (peer: Peer) => void;
   onEditPolicy: (peer: Peer) => void;
   onEditInfo: (peer: Peer) => void;
+  onRevokeLink: (peer: Peer) => void;
   onCurate: (peer: Peer) => void;
 }) {
   if (peers.length === 0) {
@@ -1429,6 +1450,7 @@ function PeersGrid({
           onPropose={() => onProposeFor(p)}
           onEditPolicy={() => onEditPolicy(p)}
           onEditInfo={() => onEditInfo(p)}
+          onRevokeLink={() => onRevokeLink(p)}
           onCurate={() => onCurate(p)}
         />
       ))}
@@ -1451,6 +1473,7 @@ function PeerCard({
   onPropose,
   onEditPolicy,
   onEditInfo,
+  onRevokeLink,
   onCurate,
 }: {
   peer: Peer;
@@ -1458,6 +1481,7 @@ function PeerCard({
   onPropose: () => void;
   onEditPolicy: () => void;
   onEditInfo: () => void;
+  onRevokeLink: () => void;
   onCurate: () => void;
 }) {
   const t = APPROX_PEER_TYPE[peer.type] || "ibc";
@@ -1508,6 +1532,7 @@ function PeerCard({
           <span className="sub">
             <span className="id">{peer.ibc_channel_id || peer.id}</span>
             {peer.ibc_channel_id && <span> · IBC</span>}
+            {peer.expected_chain_id && <span> · {peer.expected_chain_id}</span>}
           </span>
         </div>
         <span className={`status-pill ${statusClass}`}>
@@ -1555,6 +1580,11 @@ function PeerCard({
         <button type="button" className="sd-fed-peer-action" onClick={onEditInfo}>
           Edit info
         </button>
+        {peer.status !== PeerStatus.REMOVED && (
+          <button type="button" className="sd-fed-peer-action" onClick={onRevokeLink}>
+            Revoke a link
+          </button>
+        )}
         {t !== "ibc" && (
           <button type="button" className="sd-fed-peer-action" onClick={onCurate}>
             Curate authors

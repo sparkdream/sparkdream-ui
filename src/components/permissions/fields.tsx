@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { resolveName } from "@/lib/api";
+import { getAllowedGranters, getSessionParams, resolveName } from "@/lib/api";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
-import { truncateAddress } from "@/lib/utils";
+import { formatSpark, truncateAddress } from "@/lib/utils";
 
 export const INPUT_CLASS =
   "w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
@@ -203,4 +203,56 @@ export function fmtDate(sec: number): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+/**
+ * Session keys and sign-ins to an address that hasn't allowed this granter
+ * yet wait for the grantee to accept them (chain v1.0.57), with a refundable
+ * SPARK deposit held meanwhile. Renders nothing once the grantee has allowed
+ * the granter, or while the check is loading.
+ */
+export function ConsentNotice({
+  granter,
+  grantee,
+  kind,
+}: {
+  granter: string;
+  grantee: string | null;
+  kind: "session" | "signin";
+}) {
+  const { config: { displayDenom } } = useChainConfig();
+  const [state, setState] = useState<{ grantee: string; allowed: boolean; deposit: string } | null>(null);
+
+  useEffect(() => {
+    if (!grantee) return;
+    let cancelled = false;
+    Promise.all([getAllowedGranters(grantee), getSessionParams()])
+      .then(([a, p]) => {
+        if (cancelled) return;
+        setState({
+          grantee,
+          allowed: (a.granters || []).includes(granter),
+          deposit: p.params?.pending_grant_deposit || "0",
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [granter, grantee]);
+
+  if (!grantee || !state || state.grantee !== grantee || state.allowed) return null;
+  const how =
+    kind === "session"
+      ? "The key's first use accepts it, or it can accept from its own Permissions page."
+      : "They accept it from the Received tab of Permissions while signed in with that address.";
+  const deposit =
+    BigInt(state.deposit) > BigInt(0)
+      ? ` ${formatSpark(state.deposit)} ${displayDenom} is held as a deposit until it's accepted, declined or cancelled. If it expires unaccepted, the deposit goes to the community pool.`
+      : "";
+  return (
+    <p className="rounded-lg border border-amber-800/60 bg-amber-900/10 px-3 py-2 text-xs text-amber-300">
+      {`This address hasn't accepted a ${kind === "session" ? "session key" : "sign-in grant"} from you before, so it waits up to a day for them to accept. ${how}${deposit}`}
+    </p>
+  );
 }

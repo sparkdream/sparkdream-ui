@@ -17,6 +17,9 @@ export interface OwnerInfo {
   primary_name: string;
   last_active_time: string;
   display_name: string;
+  // Set by x/rep zeroing (chain v1.0.57): every name this address owns is
+  // released and anyone can scavenge it right away. Never cleared.
+  scavengeable?: boolean;
 }
 
 export interface Dispute {

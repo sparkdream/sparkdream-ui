@@ -22,11 +22,53 @@ export const GRANT_STATUS_LABEL: Record<GrantStatus, string> = {
   GRANT_STATUS_REVOKED: "Revoked",
   GRANT_STATUS_COMPLETED: "Completed",
   GRANT_STATUS_FIRED: "Sent",
+  GRANT_STATUS_PENDING: "Awaiting acceptance",
 };
 
 /** Active or paused: the grant can still move funds and can be revoked or declined. */
 export function isLive(g: Grant): boolean {
   return g.status === "GRANT_STATUS_ACTIVE" || g.status === "GRANT_STATUS_PAUSED_INSUFFICIENT_FUNDS";
+}
+
+/** A session key or sign-in waiting for the grantee to accept it (chain v1.0.57). */
+export function isPending(g: Grant): boolean {
+  return g.status === "GRANT_STATUS_PENDING";
+}
+
+/** Grant types the grantee must accept unless they already allowed the granter. */
+export function needsConsent(type: GrantType): boolean {
+  return type === "GRANT_TYPE_SESSION_KEY" || type === "GRANT_TYPE_SIGN_IN";
+}
+
+/**
+ * Chain x/session NarrowSessionMsgTypes (v1.0.57, SES-103): a key naming 1 or
+ * 2 of these, without self-revoke, may live up to
+ * narrow_session_max_expiration. They are the unattended-daemon messages that
+ * move no SPARK. Any other type keeps max_expiration however few are named.
+ */
+export const NARROW_SESSION_MSG_TYPES: ReadonlySet<string> = new Set([
+  "/sparkdream.service.v1.MsgSubmitCheckpoint",
+  "/sparkdream.federation.v1.MsgSubmitFederatedContent",
+  "/sparkdream.federation.v1.MsgAttestOutbound",
+  "/sparkdream.federation.v1.MsgVerifyContent",
+]);
+export const NARROW_SESSION_MAX_MSG_TYPES = 2;
+
+/** Mirrors x/session IsNarrowSession. */
+export function isNarrowSession(msgTypes: string[], allowSelfRevoke: boolean): boolean {
+  if (allowSelfRevoke || msgTypes.length === 0 || msgTypes.length > NARROW_SESSION_MAX_MSG_TYPES) return false;
+  return msgTypes.every((t) => NARROW_SESSION_MSG_TYPES.has(t));
+}
+
+/** Compiled PendingGrantTTL on the networks: a pending grant waits at most a day. */
+export const PENDING_GRANT_TTL_SECONDS = 86_400;
+
+/** Unix seconds by which a pending grant must be accepted: min(created + TTL, expires). */
+export function pendingDeadline(g: Grant): number {
+  const created = tsSec(g.created_at);
+  const expires = tsSec(g.expires_at);
+  const byTtl = created + PENDING_GRANT_TTL_SECONDS;
+  return expires > 0 ? Math.min(byTtl, expires) : byTtl;
 }
 
 export function int(s: string | undefined): number {

@@ -75,6 +75,11 @@ export default function HarbergerPanel({
 
   const newPrice = parsePositiveAmount(price);
   const newTax = newPrice ? harbergerTaxPerPeriod(BigInt(newPrice), bps, period) : BigInt(0);
+  // Time already paid for at paid_price: a raise inside it costs the
+  // difference up front, to the community pool (ART-101).
+  const paidThrough = Number(state?.next_due || "0");
+  const paidAt = BigInt(state?.paid_price || state?.price || "0");
+  const raiseCharged = !!newPrice && paidThrough * 1000 > Date.now() && BigInt(newPrice) > paidAt;
 
   // The longest grant session allows, from now.
   const grantWindow = () => {
@@ -239,6 +244,11 @@ export default function HarbergerPanel({
                 <p className="text-xs text-zinc-400">
                   Tax: {formatSpark(newTax)} {config.displayDenom} every {formatSeconds(String(period))}.
                 </p>
+              )}
+              {raiseCharged && (
+                <Note tone="warn">
+                  {`Tax is paid through ${formatTime(String(paidThrough))} at ${formatSpark(paidAt)} ${config.displayDenom}. Raising the price charges the extra tax for that time up front, paid to the community pool.`}
+                </Note>
               )}
               {step === "grant" && (
                 <>

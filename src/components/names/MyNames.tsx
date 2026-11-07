@@ -57,6 +57,7 @@ export default function MyNames() {
 
   // Display name form
   const [editingDisplayName, setEditingDisplayName] = useState(false);
+  const [released, setReleased] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState("");
   const [savingDisplayName, setSavingDisplayName] = useState(false);
 
@@ -75,6 +76,7 @@ export default function MyNames() {
       setNames(namesRes.names || []);
       setPrimaryName(reverseRes.name || "");
       setDisplayName(ownerRes?.owner_info?.display_name || "");
+      setReleased(!!ownerRes?.owner_info?.scavengeable);
       setParams(paramsRes.params);
       setIncomingTargets(targetsRes.names || []);
     } catch (err) {
@@ -283,6 +285,12 @@ export default function MyNames() {
       {error ? (
         <ErrorState error={error} onRetry={fetchNames} className="mb-4" />
       ) : null}
+
+      {released && (
+        <div className="mb-4 rounded-lg border border-amber-800 bg-amber-900/20 px-4 py-3 text-sm text-amber-300">
+          This address was zeroed, so every name it owns has been released. Anyone can claim them now.
+        </div>
+      )}
 
       {submitError && (
         <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">

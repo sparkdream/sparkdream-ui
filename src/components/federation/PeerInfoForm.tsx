@@ -6,7 +6,7 @@ import { usePeerAuthRoute, COMMITTEE_NAME } from "@/hooks/usePeerAuthRoute";
 import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
 import { peerInfoUpdateMsgs } from "@/lib/peerPolicy";
-import type { Peer } from "@/types/federation";
+import { PeerStatus, PeerType, type Peer } from "@/types/federation";
 
 const MAX_DISPLAY_NAME = 128;
 
@@ -34,10 +34,16 @@ export default function PeerInfoForm({
   const [displayName, setDisplayName] = useState(peer.display_name || "");
   const [peerMetadata, setPeerMetadata] = useState(peer.metadata || "");
   const [note, setNote] = useState("");
+  // The chain pin is correctable only on a Spark Dream peer that isn't
+  // active: moving it on an active peer would re-trust the channel unvoted.
+  const pinEditable = peer.type === PeerType.SPARK_DREAM && peer.status !== PeerStatus.ACTIVE;
+  const [chainId, setChainId] = useState(peer.expected_chain_id || "");
 
   const nameTrim = displayName.trim();
+  const chainTrim = chainId.trim();
+  const pinChanged = pinEditable && chainTrim !== (peer.expected_chain_id || "");
   const unchanged =
-    nameTrim === (peer.display_name || "") && peerMetadata === (peer.metadata || "");
+    nameTrim === (peer.display_name || "") && peerMetadata === (peer.metadata || "") && !pinChanged;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,6 +56,9 @@ export default function PeerInfoForm({
         if (nameTrim.length > MAX_DISPLAY_NAME) {
           throw new Error(`Keep the display name to ${MAX_DISPLAY_NAME} characters.`);
         }
+        if (pinChanged && (!chainTrim || new TextEncoder().encode(chainTrim).length > 50 || /\s/.test(chainTrim))) {
+          throw new Error("Chain id must be 1 to 50 characters with no spaces.");
+        }
         const msgs = await peerInfoUpdateMsgs({
           address,
           route:
@@ -59,7 +68,10 @@ export default function PeerInfoForm({
           peerId: peer.id,
           displayName: nameTrim,
           peerMetadata,
-          metadata: note.trim() || `Rename federation peer ${peer.id} to "${nameTrim}"`,
+          expectedChainId: pinChanged ? chainTrim : "",
+          metadata: note.trim() || (pinChanged
+            ? `Update federation peer ${peer.id} (chain id ${chainTrim})`
+            : `Rename federation peer ${peer.id} to "${nameTrim}"`),
         });
         await signAndBroadcast(msgs);
         onSubmitted();
@@ -129,6 +141,28 @@ export default function PeerInfoForm({
           Replaced as shown. Leave it as loaded to keep it.
         </p>
       </div>
+
+      {peer.type === PeerType.SPARK_DREAM && (
+        <div>
+          <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-info-chain">
+            Peer chain id
+          </label>
+          <input
+            id="fed-info-chain"
+            value={chainId}
+            onChange={(e) => setChainId(e.target.value)}
+            disabled={!pinEditable}
+            maxLength={50}
+            spellCheck={false}
+            className={`${inputClass} font-mono disabled:opacity-50`}
+          />
+          <p className="mt-1 text-xs text-zinc-500">
+            {pinEditable
+              ? "Activation checks that the federation channel leads to this chain."
+              : "Suspend the peer to change it. Activating it again re-checks the channel."}
+          </p>
+        </div>
+      )}
 
       <div>
         <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-info-note">

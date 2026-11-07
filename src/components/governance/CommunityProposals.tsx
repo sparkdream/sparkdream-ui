@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Group, Proposal, Member, Vote, TallyResult, AnonVoteTally } from "@/types/commons";
 import { ProposalStatus, VoteOption, VOTE_OPTION_LABELS, parseVoteOption } from "@/types/commons";
-import { getProposal, getProposalVoterTree } from "@/lib/api";
+import { getProposal, getProposalVoterTree, getTxMsgResponses } from "@/lib/api";
 import { CommonsMsgTypeUrls } from "@/lib/tx";
 import { useWallet } from "@/contexts/WalletContext";
 import {
@@ -120,7 +120,7 @@ export default function CommunityProposals({
     setActionLoading(`exec-${proposalId}`);
     setActionError(null);
     try {
-      await signAndBroadcast([
+      const hash = await signAndBroadcast([
         {
           typeUrl: CommonsMsgTypeUrls.ExecuteProposal,
           value: {
@@ -129,6 +129,10 @@ export default function CommunityProposals({
           },
         },
       ]);
+      // Chain v1.0.57: a proposal that can never run is closed as FAILED or
+      // VETOED inside a successful tx; only the response says so.
+      const closed = await executeOutcome(hash);
+      if (closed) setActionError(`Proposal #${proposalId} ${closed}`);
       setRefreshKey((k) => k + 1);
       onRefresh();
     } catch (err) {
@@ -615,4 +619,23 @@ function voteButtonStyle(option: number): string {
     default:
       return "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-white";
   }
+}
+
+/** Why an executed tx left the proposal unexecuted, or null when it ran (or the response can't be read). */
+async function executeOutcome(hash: string): Promise<string | null> {
+  try {
+    const [{ MsgExecuteProposalResponse }, { ProposalStatus: Status }] = await Promise.all([
+      import("@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/tx"),
+      import("@sparkdreamnft/sparkdreamjs/sparkdream/commons/v1/group"),
+    ]);
+    for (const r of await getTxMsgResponses(hash)) {
+      if (r.typeUrl !== "/sparkdream.commons.v1.MsgExecuteProposalResponse") continue;
+      const status = MsgExecuteProposalResponse.decode(r.value).status;
+      if (status === Status.PROPOSAL_STATUS_FAILED) return "could not run and was closed as failed.";
+      if (status === Status.PROPOSAL_STATUS_VETOED) return "was vetoed and closed without running.";
+    }
+  } catch {
+    // the tx landed; the outcome note is a nicety
+  }
+  return null;
 }

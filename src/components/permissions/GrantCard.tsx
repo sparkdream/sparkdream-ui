@@ -10,7 +10,7 @@ import { getTxMsgResponses } from "@/lib/api";
 import { formatSpark, parseSparkToUspark } from "@/lib/utils";
 import {
   GRANT_STATUS_LABEL, GRANT_TYPE_LABEL, allowanceRemaining, formatCoin, formatPeriod,
-  grantToSession, int, isLive, msgTypeLabel, nowSec, recurringBatchSize, recurringClaimable,
+  grantToSession, int, isLive, isPending, msgTypeLabel, pendingDeadline, nowSec, recurringBatchSize, recurringClaimable,
   recurringNextClaimAt, recurringTotalPeriods, tsSec,
 } from "@/lib/grants";
 import ActionBanner from "@/components/ActionBanner";
@@ -22,6 +22,7 @@ import { AddressInput, INPUT_CLASS, fmtDate, useResolvedAddress } from "./fields
 const STATUS_TONE: Record<string, string> = {
   GRANT_STATUS_ACTIVE: "bg-indigo-900/30 text-indigo-300",
   GRANT_STATUS_PAUSED_INSUFFICIENT_FUNDS: "bg-amber-900/30 text-amber-300",
+  GRANT_STATUS_PENDING: "bg-amber-900/30 text-amber-300",
 };
 
 const ACTION_BTN = "rounded px-3 py-1 text-xs transition-colors disabled:opacity-50";
@@ -41,6 +42,7 @@ export default function GrantCard({
   const { config: { denom: DENOM, displayDenom: DISPLAY } } = useChainConfig();
   const tx = useTxAction();
   const live = isLive(g);
+  const pending = isPending(g);
   const given = side === "given";
   const counterparty = given ? g.grantee : g.granter;
   const coin = (c: Parameters<typeof formatCoin>[0]) => formatCoin(c, DENOM, DISPLAY);
@@ -65,13 +67,15 @@ export default function GrantCard({
     if (!confirm(`Decline this ${GRANT_TYPE_LABEL[g.type].toLowerCase()}? It will be removed, and only the sender can create a new one.`)) return;
     send("decline", [{ typeUrl: SessionMsgTypeUrls.DeclineGrant, value: { grantee: signerAddress, grantId: id } }], "Decline failed");
   };
+  const accept = () =>
+    send("accept", [{ typeUrl: SessionMsgTypeUrls.AcceptGrant, value: { grantee: signerAddress, grantId: id } }], "Accept failed");
   const retry = () =>
     send("retry", [{ typeUrl: SessionMsgTypeUrls.RetryScheduledOneshot, value: { caller: signerAddress, grantId: id } }], "Retry failed");
 
   const paused = g.status === "GRANT_STATUS_PAUSED_INSUFFICIENT_FUNDS";
 
   return (
-    <article className={`rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 ${live ? "" : "opacity-60"}`}>
+    <article className={`rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 ${live || pending ? "" : "opacity-60"}`}>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -105,18 +109,25 @@ export default function GrantCard({
               {tx.pending === "retry" ? "Retrying..." : "Retry now"}
             </button>
           )}
-          {given && live && (
+          {!given && pending && (
+            <button onClick={accept} disabled={tx.busy} className={`${ACTION_BTN} text-indigo-400 hover:bg-indigo-900/20`}>
+              {tx.pending === "accept" ? "Accepting..." : "Accept"}
+            </button>
+          )}
+          {given && (live || pending) && (
             <button onClick={revoke} disabled={tx.busy} className={`${ACTION_BTN} text-red-500 hover:bg-red-900/20 hover:text-red-400`}>
               {tx.pending === "revoke" ? "Cancelling..." : "Cancel"}
             </button>
           )}
-          {!given && live && (
+          {!given && (live || pending) && (
             <button onClick={decline} disabled={tx.busy} className={`${ACTION_BTN} text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200`}>
               {tx.pending === "decline" ? "Declining..." : "Decline"}
             </button>
           )}
         </div>
       </div>
+
+      {pending && <PendingNote g={g} given={given} params={params} coin={coin} />}
 
       {g.type === "GRANT_TYPE_RECURRING_PULL" && (
         <RecurringBody g={g} given={given} coin={coin} busy={tx.busy} pending={tx.pending} send={send} />
@@ -130,7 +141,7 @@ export default function GrantCard({
 
       <div className="mt-3 flex flex-wrap gap-4 text-xs text-zinc-500">
         <span>Created {fmtDate(tsSec(g.created_at))}</span>
-        {live && <span>Ends {fmtDate(tsSec(g.expires_at))}</span>}
+        {(live || pending) && <span>Ends {fmtDate(tsSec(g.expires_at))}</span>}
       </div>
 
       {notice && <p className="mt-3 text-xs text-amber-300">{notice}</p>}
@@ -166,6 +177,25 @@ async function nothingMovedNotice(hash: string, given: boolean): Promise<string 
   } catch {
     return null; // the tx landed; the notice is a nicety
   }
+}
+
+function PendingNote({
+  g, given, params, coin,
+}: { g: Grant; given: boolean; params: SessionParams | null; coin: CoinFmt }) {
+  const { config: { denom: DENOM } } = useChainConfig();
+  const deadline = fmtDate(pendingDeadline(g));
+  const deposit = BigInt(params?.pending_grant_deposit || "0");
+  const kind = g.type === "GRANT_TYPE_SIGN_IN" ? "sign-in grant" : "session key";
+  let text: string;
+  if (given) {
+    text = `Waiting for the recipient to accept by ${deadline}. If they don't, it's removed.`;
+    if (deposit > BigInt(0)) {
+      text += ` Your ${coin({ denom: DENOM, amount: deposit.toString() })} deposit comes back when they accept or decline, or when you cancel. If it expires unaccepted, the deposit goes to the community pool.`;
+    }
+  } else {
+    text = `This address hasn't sent you a ${kind} before. Accept by ${deadline} to use it. Accepting also lets later ones from this address work right away.`;
+  }
+  return <p className="mb-3 text-xs text-amber-300">{text}</p>;
 }
 
 type Send = (key: string, msgs: { typeUrl: string; value: unknown }[], fail: string) => Promise<boolean>;

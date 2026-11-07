@@ -7,11 +7,19 @@ import { useWallet } from "@/contexts/WalletContext";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import BlockTime from "@/components/BlockTime";
 import { isMissingEndpoint } from "@/lib/errors";
-import { MAX_EXPERT_WITNESSES_PER_REVIEW, VERDICT_LABELS, Verdict } from "@/types/rep";
+import {
+  MAX_EXPERT_OPINION_LENGTH, MAX_EXPERT_REASONING_LENGTH, MAX_EXPERT_WITNESSES_PER_REVIEW,
+  MIN_EXPERT_OPINION_LENGTH, VERDICT_LABELS, Verdict,
+} from "@/types/rep";
 import type { Initiative, JuryReview } from "@/types/rep";
 import MigrationObjectionSummary, { parseMigrationObjection } from "@/components/identity/MigrationObjection";
 import { useMyAliases } from "@/hooks/useMyAliases";
 import NameOrAddress from "@/components/NameOrAddress";
+
+/** Endorsing juror of expert i, "" while pending. Older records lack the list. */
+function endorserOf(r: JuryReview, i: number): string {
+  return (r.expert_endorsers ?? [])[i] ?? "";
+}
 
 // Numeric values for MsgSubmitJurorVote.verdict. PENDING (0) is not a vote.
 const VerdictValue = {
@@ -151,6 +159,9 @@ export default function JuryDutyPanel() {
             r.initiative_id !== "0" &&
             (!r.content_challenge_id || r.content_challenge_id === "0");
           const experts = r.expert_witnesses ?? [];
+          const reviewOpen = !r.verdict || r.verdict === Verdict.PENDING;
+          // Endorsing needs an answered seat: accepted or already voted.
+          const answered = accepted || voted;
           const canInvite =
             isInitiativeReview &&
             (!r.verdict || r.verdict === Verdict.PENDING) &&
@@ -202,15 +213,49 @@ export default function JuryDutyPanel() {
                 )}
                 Vote by block {r.deadline} (<BlockTime height={r.deadline} />)
               </p>
+              {!!r.pending_seats && r.pending_seats > 0 && (
+                <p className="mt-1 text-xs text-zinc-500">
+                  {r.pending_seats === 1 ? "1 seat is" : `${r.pending_seats} seats are`} waiting to be drawn in the next block.
+                </p>
+              )}
 
               {experts.length > 0 && (
                 <div className="mt-2 space-y-1 text-xs">
-                  {experts.map((e) => {
+                  {experts.map((e, i) => {
                     const t = (r.testimonies ?? []).find((x) => x.expert === e);
+                    const inviter = (r.expert_inviters ?? [])[i] ?? "";
+                    const endorser = endorserOf(r, i);
+                    const canEndorse = reviewOpen && answered && !endorser && !!inviter && !isMine(inviter);
                     return (
                       <div key={e} className="text-zinc-400">
                         <span className="text-zinc-500">Expert witness </span>
                         <NameOrAddress address={e} className="text-zinc-300" />
+                        {endorser ? (
+                          <span className="text-zinc-600">
+                            {" "}· endorsed by <NameOrAddress address={endorser} />
+                          </span>
+                        ) : (
+                          <span className="text-amber-400/80">
+                            {" "}· {inviter && isMine(inviter) ? "waiting for another juror to endorse your call" : "needs a second juror to endorse"}
+                          </span>
+                        )}
+                        {canEndorse && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              send(
+                                `endorse-${r.id}-${i}`,
+                                RepMsgTypeUrls.EndorseExpertWitness,
+                                { juror: address, juryReviewId: BigInt(r.id), expert: e },
+                                "Failed to endorse the expert",
+                              )
+                            }
+                            disabled={!!busy}
+                            className="ml-2 rounded px-2 py-0.5 text-xs text-indigo-400 transition-colors hover:bg-indigo-900/20 disabled:opacity-50"
+                          >
+                            {busy === `endorse-${r.id}-${i}` ? "Endorsing..." : "Endorse"}
+                          </button>
+                        )}
                         {t ? (
                           <p className="mt-0.5 text-zinc-400">
                             <span className="text-zinc-300">{t.opinion}</span>
@@ -293,9 +338,11 @@ export default function JuryDutyPanel() {
                     Call a member with the domain knowledge this work needs. The jury still
                     decides. The expert must be an active Established or higher member with
                     reputation in one of the initiative&apos;s tags, and cannot be the
-                    challenger, anyone on the initiative or a juror. Each review takes at most{" "}
-                    {MAX_EXPERT_WITNESSES_PER_REVIEW} experts, paid only if they testify before
-                    the deadline.
+                    challenger, anyone on the initiative, a juror, or someone who invited or was
+                    invited by any of them. A second juror who has answered the summons must
+                    endorse the call before the expert can testify. Each review takes at most{" "}
+                    {MAX_EXPERT_WITNESSES_PER_REVIEW} experts, pending calls included. An expert is
+                    paid at the verdict only if the call was endorsed and they testified.
                   </p>
                   <input
                     type="text"
@@ -508,12 +555,26 @@ export function ExpertTestimonyPanel() {
       <h3 className="text-sm font-semibold text-zinc-200">Expert testimony requested</h3>
       <p className="mt-1 text-xs leading-relaxed text-zinc-500">
         A juror called you as an expert witness. Your testimony informs the jury, which still
-        decides. You are paid when you testify, once, before the review&apos;s deadline.
+        decides. Once a second juror endorses the call, you can testify once before the
+        review&apos;s deadline, and you are paid when the jury reaches its verdict.
       </p>
       {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
       <ul className="mt-3 space-y-2">
         {reviews.map((r) => {
           const initiative = initiatives[r.initiative_id];
+          const mine = (r.expert_witnesses ?? []).findIndex((e) => isMine(e));
+          // A chain without the endorsers list predates the endorsement step.
+          const endorsed = !r.expert_endorsers || !!endorserOf(r, mine);
+          const opinionLen = new TextEncoder().encode(opinion.trim()).length;
+          const reasoningLen = new TextEncoder().encode(reasoning.trim()).length;
+          const lengthProblem =
+            opinionLen < MIN_EXPERT_OPINION_LENGTH
+              ? `Opinion needs at least ${MIN_EXPERT_OPINION_LENGTH} characters (${opinionLen} so far)`
+              : opinionLen > MAX_EXPERT_OPINION_LENGTH
+                ? `Opinion is limited to ${MAX_EXPERT_OPINION_LENGTH} characters`
+                : reasoningLen > MAX_EXPERT_REASONING_LENGTH
+                  ? `Reasoning is limited to ${MAX_EXPERT_REASONING_LENGTH} characters`
+                  : null;
           return (
             <li key={r.id} className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
               <div className="text-sm text-zinc-300">
@@ -534,7 +595,11 @@ export function ExpertTestimonyPanel() {
               <p className="mt-1 text-xs text-zinc-500">
                 Testify by block {r.deadline} (<BlockTime height={r.deadline} />)
               </p>
-              {openFor !== r.id ? (
+              {!endorsed ? (
+                <p className="mt-2 text-xs text-amber-400/80">
+                  Waiting for a second juror to endorse the call. You can testify once they do.
+                </p>
+              ) : openFor !== r.id ? (
                 <button
                   type="button"
                   onClick={() => {
@@ -547,11 +612,11 @@ export function ExpertTestimonyPanel() {
                 </button>
               ) : (
                 <div className="mt-2.5 border-t border-zinc-800 pt-2.5">
-                  <input
-                    type="text"
-                    placeholder="Your opinion, in a line"
+                  <textarea
+                    placeholder={`Your opinion (at least ${MIN_EXPERT_OPINION_LENGTH} characters)`}
                     value={opinion}
                     onChange={(e) => setOpinion(e.target.value)}
+                    rows={2}
                     className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
                   />
                   <textarea
@@ -561,11 +626,14 @@ export function ExpertTestimonyPanel() {
                     rows={3}
                     className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
                   />
+                  {lengthProblem && opinion.trim() && (
+                    <p className="mt-1 text-xs text-zinc-500">{lengthProblem}</p>
+                  )}
                   <div className="mt-2 flex gap-2">
                     <button
                       type="button"
                       onClick={() => testify(r.id)}
-                      disabled={!!busy || !opinion.trim()}
+                      disabled={!!busy || !!lengthProblem}
                       className="sd-btn sd-btn-primary"
                     >
                       {busy === r.id ? "Submitting..." : "Submit testimony"}

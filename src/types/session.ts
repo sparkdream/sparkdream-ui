@@ -24,7 +24,8 @@ export interface SessionParams {
   max_sessions_per_granter: string;
   max_msg_types_per_session: string;
   max_expiration: string;
-  // Cap for narrow keys: at most 2 action types and no self-revoke
+  // Cap for narrow keys: 1-2 service action types (lib/grants
+  // NARROW_SESSION_MSG_TYPES, chain v1.0.57) and no self-revoke
   // (chain v1.0.56+; older chains omit it and every key gets max_expiration).
   narrow_session_max_expiration?: string;
   max_spend_limit_amount: string;
@@ -55,6 +56,10 @@ export interface SessionParams {
   allowed_denoms?: string[];
   max_grant_lifetime_seconds?: string;
   authorized_grant_creators?: string[];
+  // Grantee consent (chain v1.0.57): SPARK (bond-denom base units) a granter
+  // escrows on a session key or sign-in grant to a grantee that hasn't
+  // allowed them yet. Refunded on accept/decline/revoke, forfeited on expiry.
+  pending_grant_deposit?: string;
 }
 
 // API response types
@@ -107,7 +112,10 @@ export type GrantStatus =
   | "GRANT_STATUS_DECLINED"
   | "GRANT_STATUS_REVOKED"
   | "GRANT_STATUS_COMPLETED"
-  | "GRANT_STATUS_FIRED";
+  | "GRANT_STATUS_FIRED"
+  // Session key or sign-in from a granter the grantee hasn't allowed yet;
+  // waits (24h on the networks) for the grantee's MsgAcceptGrant.
+  | "GRANT_STATUS_PENDING";
 
 export interface Coin {
   denom: string;
@@ -192,4 +200,8 @@ export interface GetGrantResponse {
 
 export interface GrantsResponse {
   grants: Grant[];
+}
+
+export interface AllowedGrantersResponse {
+  granters: string[];
 }

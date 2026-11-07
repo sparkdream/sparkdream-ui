@@ -5,7 +5,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useTxAction } from "@/hooks/useTxAction";
 import { VaultMsgTypeUrls } from "@/lib/tx";
 import ActionBanner from "@/components/ActionBanner";
-import type { Vault } from "@/types/vault";
+import { formatInviteExpiry, inviteExpiry, type Vault } from "@/types/vault";
 import { CARD } from "./shared";
 
 /**
@@ -30,6 +30,8 @@ export default function SeatPanel({
   const tx = useTxAction();
   const [confirmLeave, setConfirmLeave] = useState(false);
   const name = vault.label || `vault #${vault.vault_id}`;
+  const mine = vault.signers.find((s) => s.address === signerAddress && !s.accepted);
+  const expiresAt = mine ? inviteExpiry(mine) : null;
 
   const send = async (key: string, typeUrl: string, done: string) => {
     const ok = await tx.run(key, async () => {
@@ -54,6 +56,11 @@ export default function SeatPanel({
             Someone named you on this vault. Your entry has no weight and can&apos;t propose or approve until you accept
             it. Decline if you don&apos;t want to sign for it.
           </p>
+          {expiresAt && (
+            <p className="mt-1 text-xs text-amber-300/80">
+              {`Accept by ${formatInviteExpiry(expiresAt)}. After that the listing is removed.`}
+            </p>
+          )}
           <p className="mt-1 text-xs text-zinc-500">
             Declining is refused when the remaining signers could no longer reach the threshold.
           </p>

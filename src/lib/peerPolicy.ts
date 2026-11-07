@@ -113,8 +113,10 @@ export async function peerInfoUpdateMsgs(opts: {
   displayName: string;
   peerMetadata: string;
   metadata: string;
+  /** Replaces the peer's chain pin when non-empty (Spark Dream peers that aren't active). */
+  expectedChainId?: string;
 }): Promise<EncodeObject[]> {
-  const { address, route, peerId, displayName, peerMetadata, metadata } = opts;
+  const { address, route, peerId, displayName, peerMetadata, metadata, expectedChainId = "" } = opts;
   const { MsgUpdatePeerInfo } = await import(
     "@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx"
   );
@@ -124,6 +126,7 @@ export async function peerInfoUpdateMsgs(opts: {
     peerId,
     displayName,
     metadata: peerMetadata,
+    expectedChainId,
   });
   if (route.kind === "direct") {
     return [{ typeUrl: FederationMsgTypeUrls.UpdatePeerInfo, value: msg }];
@@ -149,4 +152,41 @@ export function curationId(policy: PeerPolicy | null | undefined): string | null
   // A zero uint64 may be dropped by the encoder; the object's presence is
   // what says curation is set, and collection 0 is a real collection.
   return policy.curation.collection_id ?? "0";
+}
+
+/**
+ * MsgRevokeIdentityLink, always as a committee (or Council) proposal: the
+ * keeper accepts only a policy signer for it.
+ */
+export async function revokeIdentityLinkMsgs(opts: {
+  address: string;
+  policyAddress: string;
+  localAddress: string;
+  peerId: string;
+  reason: string;
+  metadata: string;
+}): Promise<EncodeObject[]> {
+  const { address, policyAddress, localAddress, peerId, reason, metadata } = opts;
+  const { MsgRevokeIdentityLink } = await import(
+    "@sparkdreamnft/sparkdreamjs/sparkdream/federation/v1/tx"
+  );
+  const msg = MsgRevokeIdentityLink.fromPartial({
+    authority: policyAddress,
+    localAddress,
+    peerId,
+    reason,
+  });
+  return [
+    committeeProposal(
+      address,
+      policyAddress,
+      [
+        {
+          typeUrl: FederationMsgTypeUrls.RevokeIdentityLink,
+          value: MsgRevokeIdentityLink.encode(msg).finish(),
+        },
+      ],
+      metadata
+    ),
+  ];
 }

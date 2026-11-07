@@ -50,6 +50,7 @@ import type {
   GetGrantResponse,
   GrantsResponse,
   GrantType,
+  AllowedGrantersResponse,
 } from "@/types/session";
 import type {
   GetCollectionResponse,
@@ -793,6 +794,18 @@ export async function getGrantsByGrantee(grantee: string, type?: GrantType): Pro
     `/sparkdream/session/v1/grants/by_grantee/${grantee}`,
     type ? new URLSearchParams({ type }) : undefined
   );
+}
+
+// PENDING session keys and sign-ins awaiting this grantee's acceptance
+// (chain v1.0.57). grants/by_grantee never lists them.
+export async function getPendingGrantsForGrantee(grantee: string): Promise<GrantsResponse> {
+  return get<GrantsResponse>(`/sparkdream/session/v1/pending_grants_for_grantee/${grantee}`);
+}
+
+// Granters whose session keys and sign-ins to this grantee are active at
+// creation, without waiting for acceptance.
+export async function getAllowedGranters(grantee: string): Promise<AllowedGrantersResponse> {
+  return get<AllowedGrantersResponse>(`/sparkdream/session/v1/allowed_granters/${grantee}`);
 }
 
 // ── Module params (for param change proposals) ─────────────────────

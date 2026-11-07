@@ -750,7 +750,14 @@ export default function ProjectList() {
                   <div className="mt-0.5 flex items-center gap-3 text-xs text-zinc-500">
                     <span>{PROJECT_CATEGORY_LABELS[p.category] || p.category}</span>
                     {p.council && <span>Council: {p.council}</span>}
-                    <span>Budget: {formatDream(p.approved_budget)} {dream}</span>
+                    {p.status === ProjectStatus.PROPOSED && p.requested_budget && p.requested_budget !== "0" ? (
+                      <span>
+                        Requested: {formatDream(p.requested_budget)} {dream}
+                        {p.requested_spark && p.requested_spark !== "0" && ` + ${formatDream(p.requested_spark)} SPARK`}
+                      </span>
+                    ) : (
+                      <span>Budget: {formatDream(p.approved_budget)} {dream}</span>
+                    )}
                     {/* Show expiry only while still PROPOSED — once the project
                         transitions out (Active/Cancelled/Expired) the chain
                         clears expiry_block_height to 0. The amber/red colors

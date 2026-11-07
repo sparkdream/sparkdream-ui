@@ -12,6 +12,8 @@ import CopyableAddress from "@/components/CopyableAddress";
 import ErrorState from "@/components/ErrorState";
 import {
   VAULT_PROPOSAL_STATUS_LABELS,
+  formatInviteExpiry,
+  inviteExpiry,
   VaultProposalStatus,
   type Vault,
   type VaultProposal,
@@ -178,7 +180,9 @@ export default function VaultDetail({ vaultId, onBack }: { vaultId: string; onBa
                       {!s.accepted && (
                         <span
                           className="rounded-full border border-amber-800 bg-amber-900/20 px-2 py-0.5 text-[11px] text-amber-300"
-                          title="Listed but not accepted yet. No weight until they accept."
+                          title={`Listed but not accepted yet. No weight until they accept.${
+                            inviteExpiry(s) ? ` Removed if not accepted by ${formatInviteExpiry(inviteExpiry(s)!)}.` : ""
+                          }`}
                         >
                           Pending acceptance
                         </span>

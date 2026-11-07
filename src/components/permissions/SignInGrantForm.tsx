@@ -6,7 +6,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { SessionMsgTypeUrls } from "@/lib/tx";
 import { int, nowSec, signInService, validSignInService } from "@/lib/grants";
 import {
-  AddressInput, Field, FormActions, FormShell, INPUT_CLASS, Preview, fmtDate, useResolvedAddress,
+  AddressInput, ConsentNotice, Field, FormActions, FormShell, INPUT_CLASS, Preview, fmtDate, useResolvedAddress,
 } from "./fields";
 
 const DAY = 86_400;
@@ -144,6 +144,8 @@ export default function SignInGrantForm({
           settings under Authorized apps.
         </Preview>
       )}
+
+      {ready && <ConsentNotice granter={signerAddress ?? ""} grantee={resolved.address} kind="signin" />}
 
       <FormActions
         submitting={submitting}

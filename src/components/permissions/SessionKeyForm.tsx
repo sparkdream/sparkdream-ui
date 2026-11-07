@@ -6,15 +6,11 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { SessionMsgTypeUrls } from "@/lib/tx";
 import { parseSparkToUspark } from "@/lib/utils";
-import { durationSeconds, int, msgTypeLabel } from "@/lib/grants";
+import { NARROW_SESSION_MAX_MSG_TYPES, durationSeconds, int, isNarrowSession, msgTypeLabel } from "@/lib/grants";
 import NumberInput from "@/components/NumberInput";
-import { AddressInput, Field, FormActions, FormShell, INPUT_CLASS, useResolvedAddress } from "./fields";
+import { AddressInput, ConsentNotice, Field, FormActions, FormShell, INPUT_CLASS, useResolvedAddress } from "./fields";
 
 const DAY = 86_400;
-// A key naming at most this many actions, without self-revoke, may live up
-// to narrow_session_max_expiration instead of max_expiration (chain constant
-// NarrowSessionMaxMsgTypes).
-const NARROW_MAX_TYPES = 2;
 
 export default function SessionKeyForm({
   params,
@@ -56,7 +52,7 @@ export default function SessionKeyForm({
   const d = parseInt(days, 10) || 0;
   const n = parseInt(execs, 10) || 0;
   const typeCount = types.length + (selfRevoke ? 1 : 0);
-  const narrow = types.length <= NARROW_MAX_TYPES && !selfRevoke;
+  const narrow = isNarrowSession(types, selfRevoke);
   const maxDays = narrow ? narrowMaxDays : broadMaxDays;
 
   function validate(): string | null {
@@ -175,8 +171,8 @@ export default function SessionKeyForm({
           help={
             narrowMaxDays > broadMaxDays
               ? narrow
-                ? `Max ${maxDays} days for a key with ${NARROW_MAX_TYPES} or fewer actions`
-                : `Max ${maxDays} day${maxDays === 1 ? "" : "s"}; ${narrowMaxDays} with ${NARROW_MAX_TYPES} or fewer actions and no self-revoke`
+                ? `Max ${maxDays} days for a service key with ${NARROW_SESSION_MAX_MSG_TYPES} or fewer checkpoint or federation actions`
+                : `Max ${maxDays} day${maxDays === 1 ? "" : "s"}; ${narrowMaxDays} for a service key with ${NARROW_SESSION_MAX_MSG_TYPES} or fewer checkpoint or federation actions and no self-revoke`
               : `Max ${maxDays} day${maxDays === 1 ? "" : "s"}`
           }
         >
@@ -222,6 +218,10 @@ export default function SessionKeyForm({
           className={INPUT_CLASS}
         />
       </Field>
+
+      {resolved.address && resolved.address !== signerAddress && (
+        <ConsentNotice granter={signerAddress ?? ""} grantee={resolved.address} kind="session" />
+      )}
 
       <FormActions
         submitting={submitting}

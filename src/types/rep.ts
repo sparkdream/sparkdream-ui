@@ -262,6 +262,14 @@ export interface RepProject {
    * for budget-backed projects; "0" for permissionless ones (no expiry) and
    * cleared once the project transitions out of PROPOSED. */
   expiry_block_height?: string;
+  /** PROJECT_APPROVAL or BUDGET_REVIEW interim the Operations Committee was
+   * given when this budget-backed project was proposed; "0" when none (chain
+   * v1.0.57). Paid on approval, expired unpaid on cancel or expiry. */
+  approval_interim_id?: string;
+  /** What the proposal asked for (micro-DREAM / uspark). Approval may not
+   * exceed these. Empty or "0" on permissionless projects. */
+  requested_budget?: string;
+  requested_spark?: string;
 }
 
 export interface Initiative {
@@ -1305,6 +1313,11 @@ export interface ExpertTestimony {
 /** Compiled chain constant (x/rep MaxExpertWitnessesPerReview), not a param. */
 export const MAX_EXPERT_WITNESSES_PER_REVIEW = 2;
 
+/** Compiled x/rep bounds on expert testimony (bytes, whitespace-trimmed), chain v1.0.57. */
+export const MIN_EXPERT_OPINION_LENGTH = 64;
+export const MAX_EXPERT_OPINION_LENGTH = 4096;
+export const MAX_EXPERT_REASONING_LENGTH = 4096;
+
 export interface JuryReview {
   id: string;
   challenge_id: string;
@@ -1314,6 +1327,19 @@ export interface JuryReview {
   /** Experts a seated juror called with MsgInviteExpertWitness. */
   expert_witnesses?: string[];
   testimonies?: ExpertTestimony[];
+  /**
+   * Parallel to expert_witnesses (chain v1.0.57): the juror seat that issued
+   * each invitation, and the second juror that endorsed it ("" while
+   * pending). Only an endorsed expert may testify or be paid.
+   */
+  expert_inviters?: string[];
+  expert_endorsers?: string[];
+  /** The EXPERT_TESTIMONY interim each invitation opened, parallel to expert_witnesses. */
+  expert_interim_ids?: string[];
+  /** Parties and released jurors no draw may seat. */
+  excluded_jurors?: string[];
+  /** Seats waiting for the next block's beacon-seeded draw. */
+  pending_seats?: number;
   review_deliverable: string;
   challenger_claim: string;
   assignee_response: string;

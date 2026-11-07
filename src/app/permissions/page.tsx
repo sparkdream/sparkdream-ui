@@ -3,10 +3,12 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { Grant, GrantType, SessionParams } from "@/types/session";
-import { getAllowedMsgTypes, getGrantsByGrantee, getGrantsByGranter, getSessionParams } from "@/lib/api";
+import {
+  getAllowedGranters, getAllowedMsgTypes, getGrantsByGrantee, getGrantsByGranter, getPendingGrantsForGrantee, getSessionParams,
+} from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
-import { GRANT_TYPE_LABEL, isLive, recurringClaimable } from "@/lib/grants";
+import { GRANT_TYPE_LABEL, isLive, isPending, recurringClaimable } from "@/lib/grants";
 import ErrorState from "@/components/ErrorState";
 import GrantCard from "@/components/permissions/GrantCard";
 import RecurringPaymentForm from "@/components/permissions/RecurringPaymentForm";
@@ -17,6 +19,7 @@ import SignInGrantForm from "@/components/permissions/SignInGrantForm";
 import AnonymousIdentityPanel from "@/components/permissions/AnonymousIdentityPanel";
 import SessionRequestCard, { parseSessionRequest } from "@/components/permissions/SessionRequestCard";
 import IdentitySection from "@/components/identity/IdentitySection";
+import AllowedGrantersPanel from "@/components/permissions/AllowedGrantersPanel";
 
 type Side = "given" | "received";
 type Kind = "recurring" | "allowance" | "scheduled" | "session" | "signin";
@@ -64,11 +67,13 @@ export default function PermissionsPage() {
   );
 }
 
-// Received grants that want attention sort first: claimable payments, then
-// anything still live, then finished ones; newest first within each.
+// Grants that want attention sort first: requests awaiting acceptance,
+// claimable payments, then anything still live, then finished ones; newest
+// first within each.
 function rank(g: Grant): number {
-  if (recurringClaimable(g) > 0) return 0;
-  return isLive(g) ? 1 : 2;
+  if (isPending(g)) return 0;
+  if (recurringClaimable(g) > 0) return 1;
+  return isLive(g) ? 2 : 3;
 }
 
 function PermissionsPageInner() {
@@ -90,20 +95,26 @@ function PermissionsPageInner() {
   const [received, setReceived] = useState<Grant[]>([]);
   const [params, setParams] = useState<SessionParams | null>(null);
   const [allowedTypes, setAllowedTypes] = useState<string[]>([]);
+  const [allowedGranters, setAllowedGranters] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
 
   const fetchAll = useCallback(async () => {
     if (!signerAddress) return;
     try {
-      const [g, r, p, t] = await Promise.all([
+      // Pending and allowed-granter queries arrived in chain v1.0.57; an
+      // older node 404s on them, which must not hide the other grants.
+      const [g, r, p, t, pend, allowed] = await Promise.all([
         getGrantsByGranter(signerAddress),
         getGrantsByGrantee(signerAddress),
         getSessionParams(),
         getAllowedMsgTypes(),
+        getPendingGrantsForGrantee(signerAddress).catch(() => ({ grants: [] as Grant[] })),
+        getAllowedGranters(signerAddress).catch(() => ({ granters: [] as string[] })),
       ]);
       setGiven(g.grants || []);
-      setReceived(r.grants || []);
+      setReceived([...(pend.grants || []), ...(r.grants || [])]);
+      setAllowedGranters(allowed.granters || []);
       setParams(p.params || null);
       setAllowedTypes(t.allowed_msg_types || []);
       setError(null);
@@ -134,6 +145,7 @@ function PermissionsPageInner() {
   );
   const typesPresent = useMemo(() => new Set(list.map((g) => g.type)), [list]);
   const claimableCount = received.filter((g) => recurringClaimable(g) > 0).length;
+  const toAcceptCount = received.filter(isPending).length;
 
   const done = () => {
     setCreating(null);
@@ -235,6 +247,11 @@ function PermissionsPageInner() {
             className={`${TAB_BTN} ${side === "received" ? "bg-zinc-700 text-white" : "text-zinc-400 hover:text-zinc-300"}`}
           >
             Received ({received.length})
+            {toAcceptCount > 0 && (
+              <span className="ml-1.5 rounded-full bg-amber-600 px-1.5 py-0.5 text-[10px] text-white">
+                {toAcceptCount} to accept
+              </span>
+            )}
             {claimableCount > 0 && (
               <span className="ml-1.5 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] text-white">
                 {claimableCount} to claim
@@ -280,6 +297,10 @@ function PermissionsPageInner() {
             <GrantCard key={g.id} grant={g} side={side} params={params} onChanged={fetchAll} />
           ))}
         </div>
+      )}
+
+      {side === "received" && !loading && (
+        <AllowedGrantersPanel granters={allowedGranters} onChanged={fetchAll} />
       )}
 
       <AnonymousIdentityPanel />

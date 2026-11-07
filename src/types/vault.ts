@@ -54,6 +54,21 @@ export interface VaultSigner {
   /** Chain-set; omitted when false. An entry listed by someone else stays
    *  unaccepted (no weight, can't act) until its address accepts it. */
   accepted?: boolean;
+  /** Chain-set unix seconds after which an unaccepted entry is removed
+   *  (chain v1.0.57). "0" or omitted on accepted entries and on a vault's
+   *  only entry, which never expires. */
+  invite_expires_at?: string;
+}
+
+/** Unix seconds an unaccepted listing lapses, or null when it doesn't. */
+export function inviteExpiry(s: VaultSigner): number | null {
+  if (s.accepted) return null;
+  const t = parseInt(s.invite_expires_at || "0", 10);
+  return Number.isFinite(t) && t > 0 ? t : null;
+}
+
+export function formatInviteExpiry(sec: number): string {
+  return new Date(sec * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
 export interface Vault {

@@ -274,6 +274,9 @@ export interface Token {
   listing_seq?: string;
   /** uspark. */
   deposit?: string;
+  /** Set when a session key paid the deposit: the granter that paid it gets
+   *  the refund instead of the holder or burner (chain v1.0.57). */
+  deposit_payer?: string;
   status?: string;
   media_flags?: number;
   media_rules_version?: number;
@@ -324,6 +327,10 @@ export interface HarbergerState {
   grace_until?: string;
   foreclosed_at?: string;
   tax_paid?: string;
+  /** math.Int price the paid-through window (now to next_due) was assessed
+   *  at (chain v1.0.57). Raising the price above it within the window
+   *  charges the extra tax for that time up front. */
+  paid_price?: string;
 }
 
 export interface Rental {
@@ -388,6 +395,9 @@ export interface Balance {
   amount?: string;
   locked?: string;
   deposit?: string;
+  /** Set when a session key paid the deposit: the granter that paid it gets
+   *  the refund instead of the holder or burner (chain v1.0.57). */
+  deposit_payer?: string;
   reward_debt?: string;
   unclaimed?: string;
 }

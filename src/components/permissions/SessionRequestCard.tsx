@@ -8,7 +8,7 @@ import { getSession } from "@/lib/api";
 import { SessionMsgTypeUrls } from "@/lib/tx";
 import { formatSpark, truncateAddress } from "@/lib/utils";
 import { msgTypeLabel } from "@/lib/grants";
-import { fmtDate } from "./fields";
+import { ConsentNotice, fmtDate } from "./fields";
 
 /**
  * A session key someone else minted and asks this account to grant: the
@@ -238,7 +238,9 @@ export default function SessionRequestCard({
           Only {truncateAddress(req.granter)} can grant this key. Switch to that account in your wallet
           {signerAddress ? `; ${truncateAddress(signerAddress)} is connected` : ""}.
         </div>
-      ) : null}
+      ) : (
+        <ConsentNotice granter={req.granter} grantee={req.grantee} kind="session" />
+      )}
 
       {error && (
         <div className="rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">{error}</div>

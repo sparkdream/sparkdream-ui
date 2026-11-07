@@ -231,7 +231,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "Sessions", key: "maxSessionsPerGranter", apiKey: "max_sessions_per_granter", label: "Max Sessions Per Granter", kind: "bigint" },
       { group: "Sessions", key: "maxMsgTypesPerSession", apiKey: "max_msg_types_per_session", label: "Max Msg Types Per Session", kind: "bigint" },
       { group: "Sessions", key: "maxExpiration", apiKey: "max_expiration", label: "Max Expiration", kind: "duration", unit: "days", unitDivisor: 86400 },
-      { group: "Sessions", key: "narrowSessionMaxExpiration", apiKey: "narrow_session_max_expiration", label: "Narrow Session Max Expiration", kind: "duration", unit: "days", unitDivisor: 86400, hint: "Cap for keys with at most 2 actions and no self-revoke; must be at least Max Expiration" },
+      { group: "Sessions", key: "narrowSessionMaxExpiration", apiKey: "narrow_session_max_expiration", label: "Narrow Session Max Expiration", kind: "duration", unit: "days", unitDivisor: 86400, hint: "Cap for keys naming 1 or 2 service actions (checkpoint, federated content submit, outbound attest, content verify) and no self-revoke; must be at least Max Expiration" },
       { group: "Sessions", key: "maxSpendLimit", apiKey: "max_spend_limit_amount", label: "Max Spend Limit", kind: "amount" },
       { group: "Sessions", key: "maxExecCount", apiKey: "max_exec_count", label: "Max Exec Count", kind: "bigint" },
       { group: "Sessions", key: "maxGrantLifetimeSeconds", apiKey: "max_grant_lifetime_seconds", label: "Max Grant Lifetime (seconds)", kind: "bigint" },
@@ -260,6 +260,9 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "Scheduled / One-shots", key: "oneshotCreationFee", apiKey: "oneshot_creation_fee", label: "One-shot Creation Fee", kind: "bigint" },
       { group: "Scheduled / One-shots", key: "minOneshotDeposit", apiKey: "min_oneshot_deposit", label: "Min One-shot Deposit", kind: "bigint" },
       { group: "Scheduled / One-shots", key: "maxEndblockerDispatchesPerPass", apiKey: "max_endblocker_dispatches_per_pass", label: "Max EndBlocker Dispatches Per Pass", kind: "number" },
+
+      // Grantee consent (chain v1.0.57)
+      { group: "Grantee Consent", key: "pendingGrantDeposit", apiKey: "pending_grant_deposit", label: "Pending Grant Deposit", kind: "amount", hint: "SPARK a granter escrows on a session key or sign-in grant to a grantee that has not allowed them yet. Refunded on accept, decline or revoke; forfeited if it expires unaccepted. 0 disables the deposit, not the consent step" },
     ],
   },
   forum: {
@@ -727,6 +730,9 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "maxGasPerExec", apiKey: "max_gas_per_exec", label: "Max Gas Per Exec", kind: "bigint" },
       { key: "maxExecsPerIdentityPerEpoch", apiKey: "max_execs_per_identity_per_epoch", label: "Max Execs / Identity / Epoch", kind: "bigint" },
       { key: "encryptedBatchEnabled", apiKey: "encrypted_batch_enabled", label: "Encrypted Batch Enabled", kind: "boolean" },
+      { key: "enableBatchAfterDkg", apiKey: "enable_batch_after_dkg", label: "Enable Batch After DKG", kind: "boolean", hint: "Whether a completed DKG turns encrypted batch mode on by itself. A re-key always turns it off" },
+      // Chain v1.0.57: per-epoch randomness beacon, consumed by x/rep jury draws.
+      { key: "beaconEnabled", apiKey: "beacon_enabled", label: "Beacon Enabled", kind: "boolean", hint: "Once a DKG has completed, reconstruct every closed epoch's decryption key as a public random value. x/rep seats juries from it" },
       { key: "shieldEpochInterval", apiKey: "shield_epoch_interval", label: "Shield Epoch Interval (blocks)", kind: "bigint" },
       { key: "minBatchSize", apiKey: "min_batch_size", label: "Min Batch Size", kind: "number" },
       { key: "maxPendingEpochs", apiKey: "max_pending_epochs", label: "Max Pending Epochs", kind: "number" },
@@ -801,7 +807,6 @@ export const MODULES: Record<string, ModuleDef> = {
       // Initiative rewards
       { group: "Initiative Rewards", key: "completerShare", apiKey: "completer_share", label: "Completer Share", kind: "dec" },
       { group: "Initiative Rewards", key: "treasuryShare", apiKey: "treasury_share", label: "Treasury Share", kind: "dec" },
-      { group: "Initiative Rewards", key: "minReputationMultiplier", apiKey: "min_reputation_multiplier", label: "Min Reputation Multiplier", kind: "dec" },
 
       // Initiative tiers — TierConfig nested messages reached via dot-path.
       { group: "Apprentice Tier", key: "apprenticeTier.maxBudget", apiKey: "apprentice_tier.max_budget", label: "Max Budget", kind: "dream" },
@@ -839,6 +844,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "Invitations", key: "referralRewardRate", apiKey: "referral_reward_rate", label: "Referral Reward Rate", kind: "dec" },
       { group: "Invitations", key: "invitationCostMultiplier", apiKey: "invitation_cost_multiplier", label: "Invitation Cost Multiplier", kind: "dec" },
       { group: "Invitations", key: "invitationStakeBurnRate", apiKey: "invitation_stake_burn_rate", label: "Invitation Stake Burn Rate", kind: "dec", hint: "Fraction burned on acceptance (e.g. 0.10)" },
+      { group: "Invitations", key: "invitationAcceptanceEpochs", apiKey: "invitation_acceptance_epochs", label: "Invitation Acceptance (epochs)", kind: "bigint", hint: "How long a pending invitation stays open before it expires and the inviter's stake unlocks. 0 = never expires" },
 
       // Trust levels — TrustLevelConfig nested messages reached via dot-path.
       { group: "Trust Levels", key: "trustLevelConfig.provisionalMinRep", apiKey: "trust_level_config.provisional_min_rep", label: "PROVISIONAL Min Rep", kind: "dec" },
@@ -873,19 +879,13 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "Interim Compensation", key: "maxInterimRewardsPerSeason", apiKey: "max_interim_rewards_per_season", label: "Max Interim Rewards / Season", kind: "dream", hint: "Season cap on DREAM minted for interim work. Interims are self-assigned and self-completed, so the per-member active cap alone does not bound the total" },
 
       // Rate limits
-      { group: "Rate Limits", key: "maxActiveChallengesPerCommittee", apiKey: "max_active_challenges_per_committee", label: "Max Active Challenges / Committee", kind: "number" },
-      { group: "Rate Limits", key: "maxNewChallengesPerEpoch", apiKey: "max_new_challenges_per_epoch", label: "Max New Challenges / Epoch", kind: "number" },
-      { group: "Rate Limits", key: "challengeQueueMaxSize", apiKey: "challenge_queue_max_size", label: "Challenge Queue Max Size", kind: "number" },
       { group: "Rate Limits", key: "maxActiveInitiativesPerMember", apiKey: "max_active_initiatives_per_member", label: "Max Active Initiatives / Member", kind: "number", hint: "0 = unbounded" },
       { group: "Rate Limits", key: "maxActiveInterimsPerMember", apiKey: "max_active_interims_per_member", label: "Max Active Interims / Member", kind: "number", hint: "0 = unbounded" },
       { group: "Rate Limits", key: "maxDreamMintPerEpoch", apiKey: "max_dream_mint_per_epoch", label: "Max DREAM Mint / Epoch", kind: "dream", hint: "0 = unbounded" },
       { group: "Rate Limits", key: "maxReputationGainPerEpoch", apiKey: "max_reputation_gain_per_epoch", label: "Max Reputation Gain / Epoch", kind: "dec" },
 
       // Slashing
-      { group: "Slashing", key: "minorSlashPenalty", apiKey: "minor_slash_penalty", label: "Minor Slash Penalty", kind: "dec" },
-      { group: "Slashing", key: "moderateSlashPenalty", apiKey: "moderate_slash_penalty", label: "Moderate Slash Penalty", kind: "dec" },
       { group: "Slashing", key: "severeSlashPenalty", apiKey: "severe_slash_penalty", label: "Severe Slash Penalty", kind: "dec" },
-      { group: "Slashing", key: "zeroingSlashPenalty", apiKey: "zeroing_slash_penalty", label: "Zeroing Slash Penalty", kind: "dec" },
 
       // Extended staking
       { group: "Extended Staking", key: "projectCompletionBonusRate", apiKey: "project_completion_bonus_rate", label: "Project Completion Bonus Rate", kind: "dec" },
@@ -954,6 +954,9 @@ export const MODULES: Record<string, ModuleDef> = {
       // Project caps
       { group: "Project Caps", key: "maxInitiativeRewardsPerSeason", apiKey: "max_initiative_rewards_per_season", label: "Max Initiative Rewards / Season", kind: "dream" },
       { group: "Project Caps", key: "largeProjectBudgetThreshold", apiKey: "large_project_budget_threshold", label: "Large Project Budget Threshold", kind: "dream", hint: "Above this, council proposal approval is required" },
+      // Chain v1.0.57. Governance only.
+      { group: "Project Caps", key: "budgetReviewThreshold", apiKey: "budget_review_threshold", label: "Budget Review Threshold", kind: "dream", hint: "At or above this requested budget a project proposal opens a budget review (complex) interim instead of a project approval one" },
+      { group: "Project Caps", key: "maxProposedProjectsPerCreator", apiKey: "max_proposed_projects_per_creator", label: "Max Proposed Projects / Creator", kind: "number", hint: "Budget-backed proposals one member (across aliases) may hold in PROPOSED at once" },
       { group: "Project Caps", key: "maxProjectRequestedBudget", apiKey: "max_project_requested_budget", label: "Max Project Requested Budget", kind: "dream" },
       { group: "Project Caps", key: "maxProjectRequestedSpark", apiKey: "max_project_requested_spark", label: "Max Project Requested", kind: "amount" },
       { group: "Project Caps", key: "proposedProjectExpiryBlocks", apiKey: "proposed_project_expiry_blocks", label: "Proposed Project Expiry (blocks)", kind: "bigint" },

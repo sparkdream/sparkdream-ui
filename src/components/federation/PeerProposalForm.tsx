@@ -121,6 +121,10 @@ export default function PeerProposalForm({
     prefill?.peerIdentity ?? null
   );
   const [identityNote, setIdentityNote] = useState<string | null>(null);
+  // The chain the federation channel must lead to (chain v1.0.57, FED-106).
+  // Activation checks the channel's light client against it, so a channel
+  // someone else opens next can't be bound in this peer's place.
+  const [expectedChainId, setExpectedChainId] = useState("");
   const [identityBusy, setIdentityBusy] = useState(false);
 
   // This chain's open channels on the federation port, each with the chain
@@ -155,6 +159,7 @@ export default function PeerProposalForm({
     // the chain at the other end is the peer, by its chain id; where its API
     // answers is proposed too, and its identity read straight away
     if (picked?.chainId) {
+      setExpectedChainId(picked.chainId);
       if (!peerId.trim()) setPeerId(picked.chainId);
       if (!displayName.trim()) setDisplayName(picked.chainId);
       const api = knownApi(picked.chainId);
@@ -224,6 +229,7 @@ export default function PeerProposalForm({
       const body = (await res.json()) as { identity?: Record<string, unknown> };
       if (!body.identity?.bond_denom) throw new Error("no chain identity in the answer");
       setPeerIdentity(body.identity);
+      if (network && !expectedChainId.trim()) setExpectedChainId(network);
       if (network) {
         try {
           localStorage.setItem(`sd-peer-api:${network}`, base);
@@ -334,6 +340,17 @@ export default function PeerProposalForm({
           if (transfer && !/^channel-\d+$/.test(transfer)) {
             throw new Error(`Transfer channel ${transfer} is not a channel id (channel-N).`);
           }
+          const chainPin = sparkDream ? expectedChainId.trim() : "";
+          if (sparkDream) {
+            if (!chainPin) throw new Error("Enter the peer chain's chain id.");
+            if (new TextEncoder().encode(chainPin).length > 50 || /[\s\p{Cc}]/u.test(chainPin)) {
+              throw new Error("Chain id must be at most 50 characters with no spaces.");
+            }
+            const lead = channelChain();
+            if (lead && lead !== chainPin) {
+              throw new Error(`Channel ${channel} leads to ${lead}, not ${chainPin}. Activation would be refused.`);
+            }
+          }
           const registerFields = MsgRegisterPeer.fromPartial({
             authority,
             peerId: id,
@@ -349,6 +366,7 @@ export default function PeerProposalForm({
             // Committee at bridge-registration time.
             controllerGroup: "",
             ...(transfer ? { ibcTransferChannelId: transfer } : {}),
+            expectedChainId: chainPin,
             ...(sparkDream && peerIdentity
               ? { peerIdentity: ChainIdentity.fromAmino(peerIdentity as never) }
               : {}),
@@ -620,6 +638,27 @@ export default function PeerProposalForm({
               </p>
             </div>
           </div>
+
+          {peerType === PeerType.SPARK_DREAM && (
+            <div>
+              <label className="mb-1 block text-sm text-zinc-400" htmlFor="fed-peer-chain-id">
+                Peer chain id
+              </label>
+              <input
+                id="fed-peer-chain-id"
+                value={expectedChainId}
+                onChange={(e) => setExpectedChainId(e.target.value)}
+                placeholder="sparkdream-2"
+                maxLength={50}
+                spellCheck={false}
+                className={inputClass}
+              />
+              <p className="mt-1 text-xs text-zinc-500">
+                Activation checks that the federation channel leads to this chain and refuses it otherwise.
+                It can be corrected while the peer is not active.
+              </p>
+            </div>
+          )}
 
           {peerType === PeerType.SPARK_DREAM && (
             <div className="grid gap-4 sm:grid-cols-2">

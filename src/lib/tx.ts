@@ -75,6 +75,10 @@ export const SessionMsgTypeUrls = {
   ClaimRecurringPull: "/sparkdream.session.v1.MsgClaimRecurringPull",
   PullAllowance: "/sparkdream.session.v1.MsgPullAllowance",
   RetryScheduledOneshot: "/sparkdream.session.v1.MsgRetryScheduledOneshot",
+  // Grantee consent (chain v1.0.57). Both must be signed by the grantee key
+  // itself; the chain refuses them inside MsgExecSession.
+  AcceptGrant: "/sparkdream.session.v1.MsgAcceptGrant",
+  DisallowGranter: "/sparkdream.session.v1.MsgDisallowGranter",
 } as const;
 
 // Blog transaction message type URLs
@@ -169,6 +173,9 @@ export const RepMsgTypeUrls = {
   ReclaimInitiativeBounty: "/sparkdream.rep.v1.MsgReclaimInitiativeBounty",
   // A juror seated on a pending initiative review calls a paid expert witness.
   InviteExpertWitness: "/sparkdream.rep.v1.MsgInviteExpertWitness",
+  // A second answered juror endorses the call; until then the expert can't
+  // testify or be paid (chain v1.0.57).
+  EndorseExpertWitness: "/sparkdream.rep.v1.MsgEndorseExpertWitness",
   SubmitExpertTestimony: "/sparkdream.rep.v1.MsgSubmitExpertTestimony",
   // Content challenges against author-bonded posts/replies (distinct from the
   // member challenge flow above).
@@ -451,6 +458,10 @@ export const FederationMsgTypeUrls = {
   // Display name and metadata only. Same authorities as UpdatePeerPolicy, and
   // carried by both the committee and the Council policy.
   UpdatePeerInfo: "/sparkdream.federation.v1.MsgUpdatePeerInfo",
+  // Removes one member's identity link (chain v1.0.57, FED-105): the remedy
+  // for a false bridge attestation. Policy-signed only (gov, Council or
+  // committee proposal), never an individual member.
+  RevokeIdentityLink: "/sparkdream.federation.v1.MsgRevokeIdentityLink",
   // Creator-signed: the author publishes their own content to a peer. Not a
   // governance action, and never automatic -- creating content federates
   // nothing on its own.

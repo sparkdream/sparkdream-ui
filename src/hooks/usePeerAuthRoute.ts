@@ -22,6 +22,8 @@ export const COMMITTEE_NAME = "Commons Operations Committee";
  *    that policy's allowed_messages. RegisterPeer / RemovePeer / SuspendPeer
  *    sit only on the council; UpdatePeerPolicy and ResumePeer sit on the
  *    committee. UpdatePeerInfo sits on both; votes go to the committee.
+ *    RevokeIdentityLink sits on both too and, like ResumePeer, takes a
+ *    passed vote.
  *
  * So "open a vote" has a different destination per message, and sending one to
  * the wrong body produces a proposal that sits SUBMITTED until its voting
@@ -33,7 +35,8 @@ export type PeerMsgKind =
   | "suspend"
   | "remove"
   | "policy"
-  | "info";
+  | "info"
+  | "revokeLink";
 
 /** The policy whose allowed_messages carries each message. */
 export const VOTE_TARGET: Record<PeerMsgKind, "council" | "committee"> = {
@@ -42,6 +45,8 @@ export const VOTE_TARGET: Record<PeerMsgKind, "council" | "committee"> = {
   suspend: "council",
   policy: "committee",
   info: "committee",
+  // On both bodies' allowed_messages; the committee is the one that runs bridges.
+  revokeLink: "committee",
   resume: "committee",
 };
 
@@ -53,6 +58,8 @@ export const FORCES_VOTE: Record<PeerMsgKind, boolean> = {
   policy: false,
   info: false,
   resume: true,
+  // IsCouncilOrCommitteePolicy: never one member's signature.
+  revokeLink: true,
 };
 
 export type PeerRoute =

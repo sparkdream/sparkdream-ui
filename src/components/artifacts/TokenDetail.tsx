@@ -253,14 +253,14 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass, onO
 
   const burn = () => {
     if (!address) return;
-    if (!confirm("Burn this token? It's gone for good, and its deposit comes back to you.")) return;
+    if (!confirm(`Burn this token? It's gone for good, and its deposit goes back to ${payer && !isMine(payer) ? "the account that paid it" : "you"}.`)) return;
     const value: MsgBurn = { owner: address, refs };
     return send("burn", ArtifactMsgTypeUrls.Burn, value, "Burn failed");
   };
 
   const revoke = () => {
     if (!address) return;
-    if (!confirm("Revoke this token? It's burned and its deposit goes back to the holder.")) return;
+    if (!confirm(`Revoke this token? It's burned and its deposit goes back to ${payer ? "the account that paid it" : "the holder"}.`)) return;
     const value: MsgRevoke = { owner: address, classId: classIdN, tokenIds: [tokenIdN], reason: revokeReason.trim() };
     return send("revoke", ArtifactMsgTypeUrls.Revoke, value, "Revoke failed");
   };
@@ -311,6 +311,9 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass, onO
       (cls.reveal?.kind === RevealKind.GENERATIVE_SEED && (!cls.reveal.revealed_at || cls.reveal.revealed_at === "0")));
   const md = shown.metadata;
   const deposit = t.deposit && t.deposit !== "0" ? `${formatSpark(t.deposit)} ${config.displayDenom}` : null;
+  // A deposit paid through a session key refunds its granter, not the
+  // holder or burner.
+  const payer = t.deposit_payer || null;
   const saleFeeBps = params?.sale_fee_bps ?? 0;
   const royaltyBps = Math.min(cls.royalty_bps ?? 0, params?.max_royalty_bps ?? cls.royalty_bps ?? 0);
 
@@ -381,7 +384,7 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass, onO
               {deposit && (
                 <div>
                   <dt className="text-xs text-zinc-500">Deposit</dt>
-                  <dd className="text-zinc-200" title="Refunded to whoever burns the token">{deposit}</dd>
+                  <dd className="text-zinc-200" title={payer ? `Paid through a session key; refunded to ${payer}` : "Refunded to whoever burns the token"}>{deposit}</dd>
                 </div>
               )}
               {expiring && (
@@ -609,7 +612,7 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass, onO
             <ActionSection title="Burn" open={open === "burn"} onToggle={() => toggle("burn")} tone="danger">
               <p className="text-xs text-zinc-500">
                 Destroys the token for good{lock === TokenLock.LISTED ? " and cancels its listing" : ""}.
-                {deposit ? ` Its ${deposit} deposit comes back to you.` : ""}
+                {deposit ? ` Its ${deposit} deposit goes back to ${payer && !isMine(payer) ? "the account that paid it" : "you"}.` : ""}
                 {revealOverdue ? " The reveal deadline has passed, so the mint price you paid comes back too." : ""}
               </p>
               <button onClick={burn} disabled={busy} className="rounded-lg border border-red-800/50 px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/20 disabled:opacity-50">
@@ -623,7 +626,7 @@ export default function TokenDetail({ classId, tokenId, onBack, onOpenClass, onO
 
           {isClassOwner && issuerCanRevoke(cls) && (
             <ActionSection title="Revoke" open={open === "revoke"} onToggle={() => toggle("revoke")} tone="danger">
-              <p className="text-xs text-zinc-500">Burns this token. Its deposit goes back to the holder.</p>
+              <p className="text-xs text-zinc-500">Burns this token. Its deposit goes back to {payer ? "the account that paid it" : "the holder"}.</p>
               <input value={revokeReason} onChange={(e) => setRevokeReason(e.target.value)} placeholder="Reason (shown to the holder)" maxLength={256} className={fieldCls} />
               <button onClick={revoke} disabled={busy} className="rounded-lg border border-red-800/50 px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/20 disabled:opacity-50">
                 {pending === "revoke" ? "Revoking…" : "Revoke token"}
