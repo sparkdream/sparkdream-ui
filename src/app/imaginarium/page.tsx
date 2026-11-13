@@ -332,13 +332,21 @@ function ImaginariumPageInner() {
     return result;
   }, [posts, filter, sort, memberAddresses, address, isMine, trustFilter, trustAddresses, tagFilter, searchQuery, bondedOnly, bondedPosts, bondMap, bondSort]);
 
-  const featured = useMemo(
-    () => filteredAndSorted.find((p) => !!p.pinned_by) || null,
+  // Pinned dreams lead the feed, most recently pinned first: the first is the
+  // featured card and the rest head the list. Only pins among the loaded pages
+  // are known (the blog module has no pinned-posts query), so an old pin
+  // surfaces once its page loads.
+  const pinnedPosts = useMemo(
+    () =>
+      filteredAndSorted
+        .filter((p) => !!p.pinned_by)
+        .sort((a, b) => parseInt(b.pinned_at || "0", 10) - parseInt(a.pinned_at || "0", 10)),
     [filteredAndSorted]
   );
+  const featured = pinnedPosts[0] || null;
   const listPostsData = useMemo(
-    () => (featured ? filteredAndSorted.filter((p) => p.id !== featured.id) : filteredAndSorted),
-    [filteredAndSorted, featured]
+    () => [...pinnedPosts.slice(1), ...filteredAndSorted.filter((p) => !p.pinned_by)],
+    [filteredAndSorted, pinnedPosts]
   );
 
   const myPostCount = address

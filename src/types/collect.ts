@@ -213,6 +213,8 @@ export const ItemStatus = {
 } as const;
 
 export const ReferenceType = {
+  // An item with no reference: the chain accepts it, the add form doesn't offer it.
+  UNSPECIFIED: "REFERENCE_TYPE_UNSPECIFIED",
   NFT: "REFERENCE_TYPE_NFT",
   LINK: "REFERENCE_TYPE_LINK",
   ON_CHAIN: "REFERENCE_TYPE_ON_CHAIN",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import {
   listForumPostsByCategory,
   listForumPosts,
@@ -8,6 +8,8 @@ import {
   getForumPost,
   authorBondsByType,
   listPostFlags,
+  getPinnedForumPosts,
+  listCategories,
 } from "@/lib/api";
 import { timeAgo, formatSpark } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
@@ -36,6 +38,34 @@ function statusBadge(status: string) {
 
 const PAGE_SIZE = "20";
 
+// The pinned root threads of the given categories, in display order: lowest
+// pin_priority first (the chain's order within a category), newest pin first
+// between equal priorities. Hidden and deleted threads are left out, as in
+// the feeds. A category whose pins fail to load contributes none.
+async function fetchPinned(categoryIds: string[]): Promise<ForumPost[]> {
+  const pages = await Promise.all(
+    categoryIds.map((id) =>
+      getPinnedForumPosts(id)
+        .then((res) => res.posts || [])
+        .catch(() => [] as ForumPost[])
+    )
+  );
+  return pages
+    .flat()
+    .filter(
+      (p) =>
+        p.pinned &&
+        (p.parent_id === "0" || !p.parent_id) &&
+        p.status !== PostStatus.DELETED &&
+        p.status !== PostStatus.HIDDEN
+    )
+    .sort(
+      (a, b) =>
+        parseInt(a.pin_priority || "0", 10) - parseInt(b.pin_priority || "0", 10) ||
+        parseInt(b.pinned_at || "0", 10) - parseInt(a.pinned_at || "0", 10)
+    );
+}
+
 // StakeTargetType numeric value for x/forum author bonds.
 const FORUM_AUTHOR_BOND = 8;
 
@@ -58,6 +88,11 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [nextKey, setNextKey] = useState<string | null>(null);
+  // Pinned threads for the "all" and category feeds, shown above the rest.
+  const [pinned, setPinned] = useState<ForumPost[]>([]);
+  // Bumped on every fetch so a slow pins response for a feed the user has
+  // already left is dropped.
+  const pinRequest = useRef(0);
   // Bonded mode: post_id → bonded amount (micro-DREAM), and the chosen order.
   const [bondAmounts, setBondAmounts] = useState<Map<string, string>>(new Map());
   const [bondSort, setBondSort] = useState<"date" | "high" | "low">("date");
@@ -71,6 +106,23 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
       setError(null);
       let posts: ForumPost[] = [];
       let nk: string | null = null;
+
+      // Pins come from their own index, so a pinned thread shows at the top
+      // even when it is too old to be on the first page of the feed. Best
+      // effort: a failure here leaves the feed without its pins, not broken.
+      const request = ++pinRequest.current;
+      const applyPinned = (p: ForumPost[]) => {
+        if (pinRequest.current === request) setPinned(p);
+      };
+      setPinned([]);
+      if (mode === "category" && category) {
+        fetchPinned([category.category_id]).then(applyPinned);
+      } else if (mode === "all") {
+        listCategories({ limit: "200" })
+          .then((res) => fetchPinned((res.category || []).map((c) => c.category_id)))
+          .then(applyPinned)
+          .catch(() => applyPinned([]));
+      }
 
       if (mode === "category" && category) {
         const res = await listForumPostsByCategory(
@@ -230,9 +282,16 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
     );
   }
 
+  // Pinned threads lead the "all" and category feeds; the same thread is
+  // dropped from its place further down.
+  let feed = threads;
+  if ((mode === "all" || mode === "category") && pinned.length > 0) {
+    const pinnedIds = new Set(pinned.map((p) => p.post_id));
+    feed = [...pinned, ...threads.filter((p) => !pinnedIds.has(p.post_id))];
+  }
   let visible = tagFilter
-    ? threads.filter((p) => (p.tags || []).includes(tagFilter))
-    : threads;
+    ? feed.filter((p) => (p.tags || []).includes(tagFilter))
+    : feed;
   if (trustAddresses) {
     visible = visible.filter((p) => trustAddresses.has(p.author));
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Image from "next/image";
 import BlockEta from "@/components/BlockEta";
 import {
@@ -10,6 +10,7 @@ import {
   getCurationSummary,
   listCurationReviews,
   listCollectionHideRecordsByTarget,
+  getCollectParams,
 } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
@@ -72,6 +73,13 @@ function formatDeposit(amount: string): string {
   const n = BigInt(amount);
   return (n / BigInt(1000000)).toLocaleString();
 }
+
+// x/collect's attribute limits (max_attributes_per_item, max_attribute_key_length,
+// max_attribute_value_length). These are the chain defaults, used until the
+// live params load and if they don't.
+const DEFAULT_ATTR_LIMITS = { count: 20, key: 64, value: 256 };
+
+const byteLength = (s: string) => new TextEncoder().encode(s).length;
 
 function linkHostname(uri: string): string | null {
   try {
@@ -166,6 +174,31 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   // Custom reference
   const [newItemCustomLabel, setNewItemCustomLabel] = useState("");
   const [newItemCustomValue, setNewItemCustomValue] = useState("");
+  // Free-form key/value attributes; rows left entirely empty are not sent.
+  const [newItemAttrs, setNewItemAttrs] = useState<{ key: string; value: string }[]>([]);
+  const [attrLimits, setAttrLimits] = useState(DEFAULT_ATTR_LIMITS);
+  // The item being edited; null while the form adds a new one. The same form
+  // serves both, because MsgUpdateItem replaces every field of the item.
+  const [editingItem, setEditingItem] = useState<CollectionItem | null>(null);
+  const itemFormRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!showAddItem) return;
+    let cancelled = false;
+    getCollectParams()
+      .then(({ params }) => {
+        if (cancelled) return;
+        const num = (v: unknown, fallback: number) => (Number(v) > 0 ? Number(v) : fallback);
+        setAttrLimits({
+          count: num(params.max_attributes_per_item, DEFAULT_ATTR_LIMITS.count),
+          key: num(params.max_attribute_key_length, DEFAULT_ATTR_LIMITS.key),
+          value: num(params.max_attribute_value_length, DEFAULT_ATTR_LIMITS.value),
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [showAddItem]);
 
   // Add collaborator form
   const [showAddCollab, setShowAddCollab] = useState(false);
@@ -186,6 +219,26 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
   const nftTokenUriError = newItemRefType === ReferenceType.NFT ? dataUriErr(newItemNftTokenUri) : null;
   const customValueError = newItemRefType === ReferenceType.CUSTOM ? dataUriErr(newItemCustomValue) : null;
   const itemHasDataUri = !!(imageUriError || linkUriError || nftTokenUriError || customValueError);
+
+  // Attribute rows, checked against the chain's limits (bytes, not characters)
+  // so a bad row is caught here and not by a failed transaction.
+  const attrErrors = newItemAttrs.map((a) => {
+    const k = a.key.trim();
+    const v = a.value.trim();
+    if (!k && !v) return null;
+    if (!k) return "Add a name for this attribute.";
+    if (!v) return "Add a value for this attribute.";
+    if (byteLength(k) > attrLimits.key) return `The name is longer than ${attrLimits.key} bytes.`;
+    if (byteLength(v) > attrLimits.value) return `The value is longer than ${attrLimits.value} bytes.`;
+    return dataUriErr(v) || dataUriErr(k);
+  });
+  // A custom reference's extra pairs, kept through an edit, count toward the
+  // chain's per-item attribute limit.
+  const customExtraCount =
+    editingItem && newItemRefType === ReferenceType.CUSTOM ? editingItem.custom?.extra?.length || 0 : 0;
+  const itemAttrsInvalid =
+    attrErrors.some(Boolean) ||
+    newItemAttrs.filter((a) => a.key.trim() && a.value.trim()).length > attrLimits.count - customExtraCount;
 
   const isOwner = isMine(collection?.owner);
   const isEphemeral = Boolean(collection?.expires_at && collection.expires_at !== "0");
@@ -268,6 +321,9 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         );
       case ReferenceType.CUSTOM:
         return newItemCustomLabel.trim() !== "" && newItemCustomValue.trim() !== "";
+      case ReferenceType.UNSPECIFIED:
+        // Only offered when editing an item that was created without one.
+        return editingItem !== null;
       default:
         return false;
     }
@@ -289,18 +345,45 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
     setNewItemOnChainEntityId("");
     setNewItemCustomLabel("");
     setNewItemCustomValue("");
+    setNewItemAttrs([]);
+    setEditingItem(null);
+  };
+
+  // Open the item form filled with an existing item's fields.
+  const startEditItem = (item: CollectionItem) => {
+    setNewItemTitle(item.title || "");
+    setNewItemDesc(item.description || "");
+    setNewItemImageUri(item.image_uri || "");
+    setNewItemRefType(item.reference_type || ReferenceType.UNSPECIFIED);
+    setNewItemLinkUri(item.link?.uri || "");
+    setNewItemNftChainId(item.nft?.chain_id || "");
+    setNewItemNftContract(item.nft?.contract_address || "");
+    setNewItemNftTokenId(item.nft?.token_id || "");
+    setNewItemNftStandard(item.nft?.token_standard || "");
+    setNewItemNftTokenUri(item.nft?.token_uri || "");
+    setNewItemOnChainModule(item.on_chain?.module || "");
+    setNewItemOnChainEntityType(item.on_chain?.entity_type || "");
+    setNewItemOnChainEntityId(item.on_chain?.entity_id || "");
+    setNewItemCustomLabel(item.custom?.type_label || "");
+    setNewItemCustomValue(item.custom?.value || "");
+    setNewItemAttrs((item.attributes || []).map((a) => ({ key: a.key, value: a.value })));
+    setEditingItem(item);
+    setShowAddItem(true);
+    // The form sits above the list; bring it into view once it has rendered.
+    setTimeout(() => itemFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
   const handleAddItem = async () => {
-    if (!address || !newItemTitle.trim() || !isRefReady() || itemHasDataUri) return;
+    if (!address || !newItemTitle.trim() || !isRefReady() || itemHasDataUri || itemAttrsInvalid) return;
     await run("add-item", async () => {
       const value: Record<string, unknown> = {
         creator: address,
-        // collection_id is uint64; pass BigInt so sparkdreamjs's amino
+        // collection_id / id are uint64; pass BigInt so sparkdreamjs's amino
         // override `!== BigInt(0)` survives strict equality. String values
         // happen to fail-open the check (any non-zero string is unequal to
         // BigInt(0)), but for robustness we normalize at the call site.
-        collectionId: BigInt(collectionId),
+        // MsgAddItem names the collection; MsgUpdateItem names the item.
+        ...(editingItem ? { id: BigInt(editingItem.id) } : { collectionId: BigInt(collectionId) }),
         title: newItemTitle.trim(),
         description: newItemDesc.trim(),
         imageUri: newItemImageUri.trim(),
@@ -311,13 +394,21 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
         // int mismatch (same pattern as ProjectList.tsx).
         referenceType: referenceTypeFromJSON(newItemRefType),
       };
+      const sameLink = !!editingItem && editingItem.link?.uri === newItemLinkUri.trim();
       // Attach the reference payload matching the selected type. The proto
       // message fields are camelCase in the generated registry (nft, link,
       // onChain, custom); empty optional strings are dropped by amino
       // omitempty on both signer and verifier, so they stay sigverify-safe.
       switch (newItemRefType) {
         case ReferenceType.LINK:
-          value.link = { uri: newItemLinkUri.trim(), contentHash: "", contentType: "" };
+          value.link = {
+            uri: newItemLinkUri.trim(),
+            // An update replaces the whole item, so keep the stored hash and
+            // type the form doesn't show, but only while they still describe
+            // the same URI.
+            contentHash: sameLink ? editingItem?.link?.content_hash || "" : "",
+            contentType: sameLink ? editingItem?.link?.content_type || "" : "",
+          };
           break;
         case ReferenceType.NFT:
           value.nft = {
@@ -339,15 +430,23 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
           value.custom = {
             typeLabel: newItemCustomLabel.trim(),
             value: newItemCustomValue.trim(),
-            extra: [],
+            // Kept on an update: the form has no fields for them.
+            extra: (editingItem?.custom?.extra || []).map((e) => ({ key: e.key, value: e.value })),
           };
           break;
       }
-      await signAndBroadcast([{ typeUrl: CollectMsgTypeUrls.AddItem, value }]);
+      const attributes = newItemAttrs
+        .map((a) => ({ key: a.key.trim(), value: a.value.trim() }))
+        .filter((a) => a.key && a.value);
+      if (attributes.length > 0) value.attributes = attributes;
+      await signAndBroadcast([{
+        typeUrl: editingItem ? CollectMsgTypeUrls.UpdateItem : CollectMsgTypeUrls.AddItem,
+        value,
+      }]);
       resetItemForm();
       setShowAddItem(false);
       await fetchData();
-    }, (raw) => describeTxError(raw) || "Failed to add item");
+    }, (raw) => describeTxError(raw) || (editingItem ? "Failed to save the item" : "Failed to add item"));
   };
 
   const handleRemoveItem = async (itemId: string) => {
@@ -1012,9 +1111,9 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                     Add item
                   </button>
                 ) : (
-                  <div className="sd-hull-tile rounded-xl p-4">
+                  <div ref={itemFormRef} className="sd-hull-tile scroll-mt-24 rounded-xl p-4">
                     <div className="mb-3 flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-white">Add item</h3>
+                      <h3 className="text-sm font-semibold text-white">{editingItem ? "Edit item" : "Add item"}</h3>
                       <button
                         type="button"
                         onClick={() => {
@@ -1056,6 +1155,9 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                           onChange={(e) => setNewItemRefType(e.target.value)}
                           className="sd-select"
                         >
+                          {editingItem && (editingItem.reference_type || ReferenceType.UNSPECIFIED) === ReferenceType.UNSPECIFIED && (
+                            <option value={ReferenceType.UNSPECIFIED}>No reference</option>
+                          )}
                           <option value={ReferenceType.LINK}>Link</option>
                           <option value={ReferenceType.NFT}>NFT</option>
                           <option value={ReferenceType.ON_CHAIN}>Onchain</option>
@@ -1154,13 +1256,64 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                           </>
                         )}
                       </div>
+                      <div className="space-y-2">
+                        <p className="text-xs text-zinc-500">
+                          Attributes (optional): extra facts about the item, such as a checksum or a source.
+                        </p>
+                        {newItemAttrs.map((attr, i) => (
+                          <div key={i}>
+                            <div className="flex items-start gap-2">
+                              <input
+                                value={attr.key}
+                                onChange={(e) =>
+                                  setNewItemAttrs((prev) => prev.map((a, j) => (j === i ? { ...a, key: e.target.value } : a)))
+                                }
+                                placeholder="Name"
+                                aria-label={`Attribute ${i + 1} name`}
+                                aria-invalid={!!attrErrors[i]}
+                                className={`${attrErrors[i] ? refFieldErrCls : refFieldCls} sm:w-2/5`}
+                              />
+                              <input
+                                value={attr.value}
+                                onChange={(e) =>
+                                  setNewItemAttrs((prev) => prev.map((a, j) => (j === i ? { ...a, value: e.target.value } : a)))
+                                }
+                                placeholder="Value"
+                                aria-label={`Attribute ${i + 1} value`}
+                                aria-invalid={!!attrErrors[i]}
+                                className={attrErrors[i] ? refFieldErrCls : refFieldCls}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setNewItemAttrs((prev) => prev.filter((_, j) => j !== i))}
+                                aria-label={`Remove attribute ${i + 1}`}
+                                className="shrink-0 rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            {attrErrors[i] && <p className="mt-1 text-xs text-red-400">{attrErrors[i]}</p>}
+                          </div>
+                        ))}
+                        {newItemAttrs.length < attrLimits.count - customExtraCount && (
+                          <button
+                            type="button"
+                            onClick={() => setNewItemAttrs((prev) => [...prev, { key: "", value: "" }])}
+                            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:border-zinc-600 hover:text-zinc-100"
+                          >
+                            Add attribute
+                          </button>
+                        )}
+                      </div>
                       <ContentLicenseNotice what="What you write about this item (not the work it points to)" />
                       <button
                         onClick={handleAddItem}
-                        disabled={!newItemTitle.trim() || !isRefReady() || itemHasDataUri || actionLoading === "add-item"}
+                        disabled={!newItemTitle.trim() || !isRefReady() || itemHasDataUri || itemAttrsInvalid || actionLoading === "add-item"}
                         className="sd-btn-crystal w-full px-4 py-2.5"
                       >
-                        {actionLoading === "add-item" ? "Adding..." : "Add"}
+                        {editingItem
+                          ? actionLoading === "add-item" ? "Saving..." : "Save changes"
+                          : actionLoading === "add-item" ? "Adding..." : "Add"}
                       </button>
                     </div>
                   </div>
@@ -1291,6 +1444,15 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                           </div>
                         )}
                         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-3">
+                          {canWrite && !collection.encrypted && item.status !== ItemStatus.HIDDEN && (
+                            <button
+                              onClick={() => startEditItem(item)}
+                              disabled={actionLoading === "add-item"}
+                              className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:border-zinc-600 hover:text-zinc-100 disabled:opacity-50"
+                            >
+                              Edit item
+                            </button>
+                          )}
                           {canWrite && (
                             <button
                               onClick={() => handleRemoveItem(item.id)}
