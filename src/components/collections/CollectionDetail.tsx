@@ -57,6 +57,7 @@ import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdenti
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 import { ImageLoadBar, ScannedLink } from "@/components/content/ScannedMedia";
+import OnChainReferencePanel from "@/components/collections/OnChainReferencePanel";
 import { containsDataURI, DATA_URI_FIELD_ERROR } from "@/lib/mediaLabels";
 import { describeTxError } from "@/lib/errors";
 import { useMyAliases } from "@/hooks/useMyAliases";
@@ -1277,6 +1278,9 @@ export default function CollectionDetail({ collectionId, onBack }: CollectionDet
                             </div>
                           )}
                         </dl>
+                        {item.reference_type === ReferenceType.ON_CHAIN && item.on_chain && (
+                          <OnChainReferencePanel reference={item.on_chain} />
+                        )}
                         {item.attributes?.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1.5">
                             {item.attributes.map((attr, i) => (
