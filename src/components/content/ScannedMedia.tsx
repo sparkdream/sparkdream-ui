@@ -43,10 +43,19 @@ function uncheckedLine(v: Verdict): string {
 const LOAD_ERRORS: Record<Exclude<ImageLoad, { ok: true }>["reason"], string> = {
   unsupported: "Its address can't be loaded in a browser.",
   blocked: "Its host doesn't let the browser check the file, so it can't load here.",
+  timeout: "Its host took too long to send it.",
   mismatch: "The host now serves a different file than the one that was checked, so it won't load.",
   "no-crypto": "This browser can't check the file, so it won't load.",
   error: "It didn't load. Try again later.",
 };
+
+// Failures that may pass by themselves: a slow host, a dropped connection, a
+// gateway error. ("blocked" covers a network failure as well as a host that
+// refuses cross-origin reads; the browser doesn't say which.) A different
+// file, an unloadable address or a browser without WebCrypto won't change.
+const RETRYABLE = new Set<Exclude<ImageLoad, { ok: true }>["reason"]>(["timeout", "error", "blocked"]);
+// Waits before the automatic retries; after the last one the bar gives up.
+const RETRY_DELAYS_MS = [3_000, 10_000, 30_000];
 
 /**
  * The "image not loaded" bar for an external image. Nothing is fetched until
@@ -78,13 +87,25 @@ export function ImageLoadBar({ uri, onLoaded }: { uri: string; onLoaded: (blobUr
   useEffect(() => {
     if (!autoLoading) return;
     let cancelled = false;
-    void loadVerifiedImage(uri, sha256).then((res) => {
-      if (cancelled) return;
-      if (res.ok) onLoadedRef.current(res.url);
-      else setFailed({ key: `${uri}|${sha256}`, message: LOAD_ERRORS[res.reason] });
-    });
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    // A slow or briefly unreachable host is tried again quietly, with the
+    // bar still saying "loading". Only when the retries run out, or the
+    // failure is one that waiting can't fix, does the reader see it.
+    const attempt = (n: number) => {
+      loadVerifiedImage(uri, sha256)
+        .catch((): ImageLoad => ({ ok: false, reason: "error" }))
+        .then((res) => {
+          if (cancelled) return;
+          if (res.ok) onLoadedRef.current(res.url);
+          else if (RETRYABLE.has(res.reason) && n < RETRY_DELAYS_MS.length) {
+            timer = setTimeout(() => attempt(n + 1), RETRY_DELAYS_MS[n]);
+          } else setFailed({ key: `${uri}|${sha256}`, message: LOAD_ERRORS[res.reason] });
+        });
+    };
+    attempt(0);
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
   }, [autoLoading, uri, sha256]);
 
@@ -105,7 +126,7 @@ export function ImageLoadBar({ uri, onLoaded }: { uri: string; onLoaded: (blobUr
     if (!canLoad) return;
     setBusy(true);
     setFailed(null);
-    const res = await loadVerifiedImage(uri, sha256);
+    const res = await loadVerifiedImage(uri, sha256).catch((): ImageLoad => ({ ok: false, reason: "error" }));
     setBusy(false);
     if (res.ok) onLoaded(res.url);
     else setFailed({ key, message: LOAD_ERRORS[res.reason] });

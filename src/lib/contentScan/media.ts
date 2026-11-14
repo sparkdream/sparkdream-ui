@@ -9,9 +9,16 @@ import { sha256Hex } from "./protocol";
 
 export type ImageLoad =
   | { ok: true; url: string }
-  | { ok: false; reason: "unsupported" | "blocked" | "mismatch" | "no-crypto" | "error" };
+  | { ok: false; reason: "unsupported" | "blocked" | "timeout" | "mismatch" | "no-crypto" | "error" };
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+// For the whole download, headers and body. Gateways for content-addressed
+// storage can take a while to start sending a file they haven't served lately.
+const LOAD_TIMEOUT_MS = 60_000;
+
+function timedOut(err: unknown): boolean {
+  return err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError");
+}
 const loaded = new Map<string, string>();
 
 export function isFetchableUri(uri: string): boolean {
@@ -30,16 +37,24 @@ export async function loadVerifiedImage(uri: string, sha256: string): Promise<Im
       credentials: "omit",
       referrerPolicy: "no-referrer",
       cache: "no-store",
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(LOAD_TIMEOUT_MS),
     });
-  } catch {
+  } catch (err) {
     // CORS refusal and network failure look the same from here.
-    return { ok: false, reason: "blocked" };
+    return { ok: false, reason: timedOut(err) ? "timeout" : "blocked" };
   }
   if (!res.ok) return { ok: false, reason: "error" };
   const declared = Number(res.headers.get("content-length") || 0);
   if (declared > MAX_IMAGE_BYTES) return { ok: false, reason: "error" };
-  const bytes = new Uint8Array(await res.arrayBuffer());
+  // The body arrives after fetch() resolves, so the timeout or a dropped
+  // connection surfaces here. It must become a result: a rejection would
+  // leave the caller showing "loading" for ever.
+  let bytes: Uint8Array<ArrayBuffer>;
+  try {
+    bytes = new Uint8Array(await res.arrayBuffer());
+  } catch (err) {
+    return { ok: false, reason: timedOut(err) ? "timeout" : "error" };
+  }
   if (bytes.length > MAX_IMAGE_BYTES) return { ok: false, reason: "error" };
   const sum = await sha256Hex(bytes);
   if (sum === null) return { ok: false, reason: "no-crypto" };
