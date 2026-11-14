@@ -67,6 +67,7 @@ test("sniffImageType recognises raster images by their bytes only", () => {
   assert.equal(sniffImageType(bytes("\x89PNG\r\n\x1a\n....")), "image/png");
   assert.equal(sniffImageType(bytes("\xff\xd8\xff\xe0..")), "image/jpeg");
   assert.equal(sniffImageType(bytes("GIF89a....")), "image/gif");
+  assert.equal(sniffImageType(bytes("BM\x36\x00\x00\x00")), "image/bmp");
   assert.equal(sniffImageType(bytes("RIFF\x00\x00\x00\x00WEBPVP8 ")), "image/webp");
   assert.equal(sniffImageType(bytes("\x00\x00\x00\x1cftypavif")), "image/avif");
   assert.equal(sniffImageType(bytes("<svg xmlns='http://www.w3.org/2000/svg'>")), null);
@@ -81,6 +82,7 @@ test("imageBlobType refuses SVG and falls back to the bytes", () => {
   assert.equal(imageBlobType("image/png", png), "image/png");
   assert.equal(imageBlobType("application/octet-stream", png), "image/png");
   assert.equal(imageBlobType("", png), "image/png");
+  assert.equal(imageBlobType("application/octet-stream", bytes("BM\x36\x00\x00\x00")), "image/bmp");
   assert.equal(imageBlobType("image/svg+xml", svg), null);
   assert.equal(imageBlobType("Image/SVG+XML; charset=utf-8", svg), null);
   assert.equal(imageBlobType("text/xml", svg), null);

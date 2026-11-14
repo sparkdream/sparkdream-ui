@@ -102,6 +102,12 @@ export default function ImageInsert({
           className={INPUT_CLASS}
         />
       </div>
+      {/* What both the scanners' image model and the loader accept
+          (docs/content-scanning.md §5.2, lib/contentScan/media.ts). */}
+      <p className="text-xs text-zinc-400">
+        Supported formats: PNG, JPEG, GIF, WebP and BMP, up to 16 MB. SVG, AVIF, HEIC, animated WebP and
+        animated PNG images won&apos;t load.
+      </p>
       <p className="text-xs text-zinc-500">
         The image stays where it is hosted, and the dream stores only its address. Readers see it
         once content scanners have cleared it. The host has to allow

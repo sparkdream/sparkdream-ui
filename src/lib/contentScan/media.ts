@@ -80,6 +80,7 @@ export function sniffImageType(b: Uint8Array): string | null {
   if (at(0, "\x89PNG\r\n\x1a\n")) return "image/png";
   if (at(0, "\xff\xd8\xff")) return "image/jpeg";
   if (at(0, "GIF87a") || at(0, "GIF89a")) return "image/gif";
+  if (at(0, "BM")) return "image/bmp";
   if (at(0, "RIFF") && at(8, "WEBPVP")) return "image/webp";
   if (at(4, "ftypavif") || at(4, "ftypavis")) return "image/avif";
   return null;
