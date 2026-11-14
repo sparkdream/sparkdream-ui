@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import { MsgTypeUrls } from "@/lib/tx";
@@ -15,6 +15,7 @@ import AnonymousToggle from "@/components/AnonymousToggle";
 import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 import MediaWriteNotice from "@/components/MediaWriteNotice";
+import ImageInsert from "@/components/content/ImageInsert";
 import { useMediaGate } from "@/hooks/useMediaGate";
 import { labelBody } from "@/lib/mediaLabels";
 import { describeTxError } from "@/lib/errors";
@@ -42,6 +43,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
   const { address, connected, signAndBroadcast } = useWallet();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [contentType, setContentType] = useState<number>(ContentType.TEXT);
   const [minReplyTrustLevel, setMinReplyTrustLevel] = useState(0);
   const [authorBond, setAuthorBond] = useState("");
@@ -187,6 +189,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
         </label>
         <textarea
           id="body"
+          ref={bodyRef}
           value={body}
           onChange={(e) => setBody(e.target.value)}
           placeholder="Write your dream..."
@@ -196,6 +199,9 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
         <p className="mt-1 text-xs text-zinc-600">
           {body.length} characters
         </p>
+        <div className="mt-2">
+          <ImageInsert body={body} onChange={setBody} textareaRef={bodyRef} />
+        </div>
       </div>
 
       <div>

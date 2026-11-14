@@ -52,6 +52,9 @@ export interface Verdict {
   sha256?: string;
   /** The off-chain id a clean quorum agreed on. */
   cid?: string;
+  /** The site operator has turned content images off (CONTENT_IMAGES_DISABLED).
+   *  Only image loading looks at this; the verdict itself is unchanged. */
+  imagesDisabled?: boolean;
 }
 
 export interface VerdictQuery {
@@ -116,6 +119,7 @@ interface RelayMeta {
   heights: Record<string, number>;
   latestHeight: number;
   maxLagBlocks: number;
+  imagesDisabled: boolean;
 }
 
 interface SubjectEntry {
@@ -145,6 +149,7 @@ async function flushChunk(keys: string[], waiters: typeof queue): Promise<void> 
       heights?: Record<string, number>;
       latest_height?: number;
       max_lag_blocks?: number;
+      images_disabled?: boolean;
       attestations?: unknown[];
     };
     const meta: RelayMeta = {
@@ -152,6 +157,7 @@ async function flushChunk(keys: string[], waiters: typeof queue): Promise<void> 
       heights: body.heights || {},
       latestHeight: Number(body.latest_height) || 0,
       maxLagBlocks: Number(body.max_lag_blocks ?? 0) || 0,
+      imagesDisabled: body.images_disabled === true,
     };
     const atts = (body.attestations || []).map(normalizeAttestation).filter((a): a is Attestation => !!a);
     for (const k of keys) {
@@ -256,6 +262,7 @@ export async function resolveVerdict(q: VerdictQuery): Promise<Verdict> {
   } catch {
     return { state: "unchecked", reason: "unreachable" };
   }
+  const off = data.meta.imagesDisabled ? { imagesDisabled: true } : {};
   const good = await verified(data.atts, setup.keys);
   const base = {
     sha256: q.sha256 || undefined,
@@ -268,13 +275,13 @@ export async function resolveVerdict(q: VerdictQuery): Promise<Verdict> {
   }
 
   if (res.verdict === "removed" || res.verdict === "held") {
-    return { state: res.verdict, category: res.category };
+    return { state: res.verdict, category: res.category, ...off };
   }
   if (res.verdict === "clean") {
-    if (stale(data.meta, [...setup.keys.keys()], setup.quorum)) return { state: "unchecked", reason: "stale" };
-    return { state: "clean", sha256: res.sha256, cid: res.cid };
+    if (stale(data.meta, [...setup.keys.keys()], setup.quorum)) return { state: "unchecked", reason: "stale", ...off };
+    return { state: "clean", sha256: res.sha256, cid: res.cid, ...off };
   }
-  return { state: "unchecked", reason: "pending" };
+  return { state: "unchecked", reason: "pending", ...off };
 }
 
 /** Drop cached verdicts so the next read refetches (e.g. after an edit). */

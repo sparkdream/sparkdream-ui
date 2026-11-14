@@ -44,10 +44,43 @@ export async function loadVerifiedImage(uri: string, sha256: string): Promise<Im
   const sum = await sha256Hex(bytes);
   if (sum === null) return { ok: false, reason: "no-crypto" };
   if (sum !== sha256) return { ok: false, reason: "mismatch" };
-  const type = res.headers.get("content-type") || "";
-  // Only image types become a blob URL (an <img> never runs script, SVG included).
-  if (!/^image\//i.test(type)) return { ok: false, reason: "error" };
+  const type = imageBlobType(res.headers.get("content-type") || "", bytes);
+  if (!type) return { ok: false, reason: "error" };
   const url = URL.createObjectURL(new Blob([bytes], { type }));
   loaded.set(key, url);
   return { ok: true, url };
+}
+
+/**
+ * The type to give a fetched image's blob URL, or null if it must not load.
+ * Only image types become a blob URL. Storage buckets often serve every file
+ * as application/octet-stream, so a response without an image type is
+ * identified by its (already verified) bytes, the way scanners classify what
+ * they fetch.
+ *
+ * SVG never loads. Scanners refuse to judge it (docs/content-scanning.md
+ * §5.2): it is drawing instructions, and a scanner can't be sure of drawing
+ * what this browser would. A host can only make bytes render as SVG by
+ * declaring the type, so refusing the declared type is enough.
+ */
+export function imageBlobType(declaredType: string, bytes: Uint8Array): string | null {
+  const declared = declaredType.split(";")[0].trim().toLowerCase();
+  if (declared === "image/svg+xml") return null;
+  return declared.startsWith("image/") ? declared : sniffImageType(bytes);
+}
+
+/**
+ * The raster image type a file's leading bytes identify (the MIME sniffing
+ * standard's image patterns, plus AVIF), or null. Never SVG: that is text,
+ * and imageBlobType refuses it.
+ */
+export function sniffImageType(b: Uint8Array): string | null {
+  const at = (offset: number, sig: string) =>
+    b.length >= offset + sig.length && [...sig].every((ch, i) => b[offset + i] === ch.charCodeAt(0));
+  if (at(0, "\x89PNG\r\n\x1a\n")) return "image/png";
+  if (at(0, "\xff\xd8\xff")) return "image/jpeg";
+  if (at(0, "GIF87a") || at(0, "GIF89a")) return "image/gif";
+  if (at(0, "RIFF") && at(8, "WEBPVP")) return "image/webp";
+  if (at(4, "ftypavif") || at(4, "ftypavis")) return "image/avif";
+  return null;
 }

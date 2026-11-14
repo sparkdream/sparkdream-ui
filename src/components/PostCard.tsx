@@ -9,6 +9,7 @@ import { getReactionCounts } from "@/lib/api";
 import NameOrAddress from "@/components/NameOrAddress";
 import ContentNotice from "@/components/content/ContentNotice";
 import { useScannedBody } from "@/hooks/useScannedBody";
+import { bodyPreviewText } from "@/lib/contentScan/bodyImages";
 
 interface PostCardProps {
   post: Post;
@@ -73,7 +74,7 @@ export default function PostCard({ post }: PostCardProps) {
 
         <p className="mb-3 line-clamp-2 text-sm leading-relaxed text-zinc-400">
           {scanned.status === "show" ? (
-            scanned.text
+            bodyPreviewText(scanned.text)
           ) : (
             <ContentNotice status={scanned.status} reason={scanned.reason} noun="dream" compact />
           )}

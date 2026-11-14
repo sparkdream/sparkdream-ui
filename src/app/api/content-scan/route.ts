@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getVerdictIndex, lookup } from "@/lib/contentScan/feedIndex";
+import { getVerdictIndex, imagesDisabled, lookup } from "@/lib/contentScan/feedIndex";
 
 // Relays the trusted content scanners' signed verdicts for the subjects a page
 // shows: ?record=blog/post/12&record=...&uri=https://... The browser verifies
@@ -29,6 +29,9 @@ export async function GET(request: NextRequest) {
         latest_height: snap.latestHeight,
         max_lag_blocks: snap.maxLagBlocks,
         errors: snap.errors,
+        // The operator's switch (CONTENT_IMAGES_DISABLED): browsers then load
+        // no content image, clean verdict or not.
+        images_disabled: imagesDisabled(),
         attestations: lookup(snap, records, uris),
       },
       // Short: a removal should reach readers within a minute or so.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import { MsgTypeUrls } from "@/lib/tx";
@@ -11,6 +11,7 @@ import { CONTENT_TYPE_INFO } from "@/types/blog";
 import TagPicker from "@/components/contribute/TagPicker";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 import MediaWriteNotice from "@/components/MediaWriteNotice";
+import ImageInsert from "@/components/content/ImageInsert";
 import { useMediaGate } from "@/hooks/useMediaGate";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import { labelBody } from "@/lib/mediaLabels";
@@ -27,6 +28,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
   const { isMine } = useMyAliases();
   const [title, setTitle] = useState(post.title);
   const [body, setBody] = useState(post.body);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [contentType, setContentType] = useState<number>(parseInt(post.content_type) || 0);
   const [repliesEnabled, setRepliesEnabled] = useState(!!post.replies_enabled);
   const [minReplyTrustLevel, setMinReplyTrustLevel] = useState(post.min_reply_trust_level);
@@ -146,6 +148,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
         </label>
         <textarea
           id="body"
+          ref={bodyRef}
           value={body}
           onChange={(e) => setBody(e.target.value)}
           placeholder="Write your dream..."
@@ -155,6 +158,9 @@ export default function EditPostForm({ post }: EditPostFormProps) {
         <p className="mt-1 text-xs text-zinc-600">
           {body.length} characters
         </p>
+        <div className="mt-2">
+          <ImageInsert body={body} onChange={setBody} textareaRef={bodyRef} />
+        </div>
       </div>
 
       <div>

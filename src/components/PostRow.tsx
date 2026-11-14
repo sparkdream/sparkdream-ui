@@ -12,6 +12,7 @@ import { useDreamDenom } from "@/hooks/useDreamDenom";
 import { isAnonymousAddress } from "@/lib/shield";
 import ContentNotice from "@/components/content/ContentNotice";
 import { useScannedBody } from "@/hooks/useScannedBody";
+import { bodyPreviewText } from "@/lib/contentScan/bodyImages";
 
 const AVATAR_GRADIENTS = [
   "linear-gradient(135deg, #6366f1, #f472b6)",
@@ -133,7 +134,7 @@ export default function PostRow({
         <h3>{post.title}</h3>
         <p className="excerpt">
           {scanned.status === "show" ? (
-            scanned.text
+            bodyPreviewText(scanned.text)
           ) : (
             <ContentNotice status={scanned.status} reason={scanned.reason} noun="dream" compact />
           )}

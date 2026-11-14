@@ -27,6 +27,7 @@ import { MsgTypeUrls } from "@/lib/tx";
 import ErrorState from "@/components/ErrorState";
 import ContentNotice from "@/components/content/ContentNotice";
 import { useScannedBody } from "@/hooks/useScannedBody";
+import BodyWithImages from "@/components/content/BodyWithImages";
 import { bodyForUpdate } from "@/lib/contentScan/body";
 import { useMyAliases } from "@/hooks/useMyAliases";
 
@@ -401,7 +402,7 @@ export default function DreamDetail({
           ) : concealPost ? (
             <p className="italic text-zinc-500">This dream was hidden by moderation.</p>
           ) : scanned.status === "show" ? (
-            scanned.text
+            <BodyWithImages text={scanned.text} />
           ) : (
             <ContentNotice status={scanned.status} reason={scanned.reason} noun="dream" />
           )}

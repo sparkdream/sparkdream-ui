@@ -212,6 +212,19 @@ const SYSTEM_GROUP: NavGroup = {
       ),
     },
     {
+      href: "/settings",
+      label: "Settings",
+      desc: "Privacy & image loading",
+      icon: (
+        <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h10M18 18h2" />
+          <circle cx="16" cy="6" r="2" />
+          <circle cx="8" cy="12" r="2" />
+          <circle cx="16" cy="18" r="2" />
+        </svg>
+      ),
+    },
+    {
       href: "/rss",
       label: "RSS feed",
       desc: "Subscribe to onchain updates",

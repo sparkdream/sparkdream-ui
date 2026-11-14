@@ -39,6 +39,16 @@ export function maxLagBlocks(): number {
   return Number.isFinite(n) && n >= 0 ? n : DEFAULT_MAX_LAG_BLOCKS;
 }
 
+/**
+ * CONTENT_IMAGES_DISABLED: the operator's switch to stop showing content
+ * images altogether, whatever the scanners say (a bad model, a wave of abuse,
+ * a legal request). Read on every relay response, so it takes effect without
+ * a rebuild. Text, links and the removed/held notices are unaffected.
+ */
+export function imagesDisabled(): boolean {
+  return /^(1|true|yes|on)$/i.test((process.env.CONTENT_IMAGES_DISABLED || "").trim());
+}
+
 /** CONTENT_SCAN_FEED_URL: one or more merged files (comma or space separated). */
 function mergedFeedUrls(): string[] {
   return (process.env.CONTENT_SCAN_FEED_URL || "")

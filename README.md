@@ -79,6 +79,7 @@ All configuration is read at runtime. Set these as environment variables in the 
 | `ZK_VERSION` | _(unset)_ | Prover release to load. Unset, the node's `application_version` picks it, so a chain upgrade needs only the new directory published. |
 | `ZK_DIGESTS` | _(unset)_ | Pinned sha256 of each prover file, as JSON: the `files` of that release's `manifest.json`. Unset, the release's `manifest.json` is trusted, which catches a stale or corrupt file but not a tampered directory; set it in production. |
 | `CONTENT_SCAN_FEED_URL` | _(unset)_ | Optional. One or more merged scanner feed files (comma or space separated, `https://`). When set, the server reads verdicts from these instead of fetching each worker's own feed. See [Content scanning](#content-scanning). |
+| `CONTENT_IMAGES_DISABLED` | _(unset)_ | Set to `true` to stop showing content images altogether: no image in a dream, reply or collection loads, whatever the scanners say. A runtime setting (no rebuild); open pages pick it up within a couple of minutes. Images a reader already loaded stay until they leave the page. Text and links are unaffected. |
 | `CONTENT_SCAN_MAX_LAG_BLOCKS` | `1800` | Freshness limit. When the scanners' effective scanned height trails the chain by more than this many blocks, flagged content stays "Being checked" (text keeps working). `0` turns the check off. Workers checkpoint every 600 blocks by default, so keep this well above that. |
 
 ## Anonymous prover
