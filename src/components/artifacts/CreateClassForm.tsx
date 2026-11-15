@@ -256,8 +256,11 @@ export function mintPolicyToMsg(v: MintPolicyState, soulbound: boolean, denom: s
   const limit = Number(v.limit || "0");
   if (!Number.isInteger(limit) || limit < 0) return { error: "The per-address limit must be a whole number.", policy: null };
   const pricing = free ? MintPricing.FIXED : v.pricing || MintPricing.FIXED;
-  let priceStep = "";
-  let floorPrice = "";
+  // "0", never "": the chain's amino sign bytes always carry these amounts
+  // (an empty one is rendered "0"), so an empty string here makes a Ledger
+  // signature fail. The chain reads both the same.
+  let priceStep = "0";
+  let floorPrice = "0";
   if (pricing === MintPricing.LINEAR_SUPPLY) {
     const step = parseSparkToUspark(v.step.trim() || "0");
     if (step === null || BigInt(step) <= BigInt(0)) return { error: "Enter how much the price rises per mint.", policy: null };
@@ -268,7 +271,7 @@ export function mintPolicyToMsg(v: MintPolicyState, soulbound: boolean, denom: s
     }
     const floor = parseSparkToUspark(v.floor.trim() || "0");
     if (floor === null || BigInt(floor) > BigInt(price)) return { error: "The floor can't be above the starting price.", policy: null };
-    floorPrice = floor === "0" ? "" : floor;
+    floorPrice = floor;
   }
   return {
     error: null,

@@ -90,6 +90,12 @@ export default function SessionKeyForm({
             sessionKey: {
               allowedMsgTypes: selfRevoke ? [...types, SessionMsgTypeUrls.RevokeGrant] : types,
               spendLimit: { denom: DENOM, amount: spendBase },
+              // The chain's usage counters, sent at their zero values. They
+              // are non-nullable on the chain, which always includes them in
+              // the amino sign bytes: left out, a Ledger signature never
+              // verifies. The chain overwrites both on creation.
+              spent: { denom: "", amount: "0" },
+              lastUsedAt: new Date(-62135596800000), // 0001-01-01T00:00:00Z
               maxExecCount: BigInt(n),
               allowSelfRevoke: selfRevoke,
             },

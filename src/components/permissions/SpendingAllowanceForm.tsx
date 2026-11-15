@@ -96,6 +96,11 @@ export default function SpendingAllowanceForm({
               periodSeconds: BigInt(int(period)),
               allowedRecipients: recipients,
               denom: DENOM,
+              // The chain's usage counter, sent at zero. It is non-nullable
+              // on the chain, which always includes it in the amino sign
+              // bytes: left out, a Ledger signature never verifies. The chain
+              // sets it on creation.
+              spentInCurrentPeriod: { denom: "", amount: "0" },
             },
           },
         },

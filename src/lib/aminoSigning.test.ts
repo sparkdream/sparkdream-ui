@@ -89,7 +89,12 @@ test("amino-signed transactions carry the messages the app built", async () => {
     {
       label: "artifact class with default policies, mint and buy",
       msgs: [
-        { typeUrl: "/sparkdream.artifact.v1.MsgCreateClass", value: { creator: me, name: "n", symbol: "S", flags: { transferable: true }, acceptedContentLicense: "CC0-1.0", expectedClassId: BigInt(5) } },
+        { typeUrl: "/sparkdream.artifact.v1.MsgCreateClass", value: {
+          creator: me, name: "n", symbol: "S", flags: { transferable: true }, acceptedContentLicense: "CC0-1.0", expectedClassId: BigInt(5),
+          // As CreateClassForm sends it: the amounts are "0", never "" (the
+          // chain's sign bytes always carry them).
+          mintPolicy: { publicMintEnabled: false, price: coin("0"), startTime: BigInt(0), endTime: BigInt(0), perAddressLimit: 0, pricing: 0, priceStep: "0", floorPrice: "0" },
+        } },
         { typeUrl: "/sparkdream.artifact.v1.MsgMint", value: { minter: me, classId: BigInt(1), entries: [{ recipient: me, metadata: { name: "x" } }] } },
         { typeUrl: "/sparkdream.artifact.v1.MsgBuy", value: { buyer: me, classId: BigInt(1), tokenId: BigInt(1), expectedPrice: coin("10"), expectedNonce: BigInt(0) } },
       ],
@@ -108,6 +113,39 @@ test("amino-signed transactions carry the messages the app built", async () => {
         value: {
           granter: me, grantee: me, expiresAt: new Date("2027-01-01T00:00:00Z"), note: "",
           recurringPull: { amountPerPeriod: coin("100"), periodSeconds: BigInt(86400), startTime: BigInt(0), maxPerEpoch: "" },
+        },
+      }],
+    },
+    // The chain's amino sign bytes always carry a session key's `spent` and
+    // `last_used_at` and an allowance's `spent_in_current_period` (they are
+    // non-nullable there), so the forms send them at their zero values.
+    {
+      label: "session key grant as SessionKeyForm builds it",
+      msgs: [{
+        typeUrl: "/sparkdream.session.v1.MsgCreateGrant",
+        value: {
+          granter: me, grantee: me, expiresAt: new Date("2027-01-01T00:00:00.047Z"), note: "",
+          sessionKey: {
+            allowedMsgTypes: ["/sparkdream.blog.v1.MsgCreatePost", "/sparkdream.blog.v1.MsgReact"],
+            spendLimit: coin("100000000"),
+            spent: { denom: "", amount: "0" },
+            lastUsedAt: new Date(-62135596800000),
+            maxExecCount: BigInt(10000),
+            allowSelfRevoke: false,
+          },
+        },
+      }],
+    },
+    {
+      label: "spending allowance grant as SpendingAllowanceForm builds it",
+      msgs: [{
+        typeUrl: "/sparkdream.session.v1.MsgCreateGrant",
+        value: {
+          granter: me, grantee: me, expiresAt: new Date("2027-01-01T00:00:00Z"), note: "",
+          spendingAllowance: {
+            maxPerPeriod: coin("1000000"), periodSeconds: BigInt(86400), allowedRecipients: [], denom: "uspark",
+            spentInCurrentPeriod: { denom: "", amount: "0" },
+          },
         },
       }],
     },
