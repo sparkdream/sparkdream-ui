@@ -9,8 +9,10 @@ import { buildSigningTypes } from "./signingTypes";
 // the chain repo's cmd/aminogolden: for every sparkdream Msg (plus the cosmos
 // messages proposals wrap them in) it holds sample messages as protobuf bytes
 // and the amino JSON the chain's aminojson sign mode renders for them, in
-// five variants (zero value, every field set, lists empty, nested messages
-// present but empty, negative integers). Regenerate it after any proto
+// seven variants (zero value, every field set, lists empty, nested messages
+// present but empty, negative integers, non-nullable messages left out,
+// nothing set), rendered from the bytes as the chain's tx decoding re-encodes
+// them. Regenerate it after any proto
 // change (the converters themselves come from sparkdreamjs):
 //
 //   cd ../sparkdream && go run ./cmd/aminogolden golden > ../sparkdream-ui/src/lib/__fixtures__/amino-golden.jsonl
@@ -22,7 +24,7 @@ import { buildSigningTypes } from "./signingTypes";
 
 interface GoldenRecord {
   type_url: string;
-  variant: "zero" | "full" | "empty_lists" | "present_empty" | "negatives";
+  variant: "zero" | "full" | "empty_lists" | "present_empty" | "negatives" | "absent_non_nullable" | "bare";
   bytes: string;
   amino: unknown;
 }
@@ -37,6 +39,11 @@ const SIGNED_MODULES = [
 // Messages that are knowingly not covered, each with the reason. Keep this
 // list short and specific: everything else must match the chain.
 const KNOWN_GAPS: Record<string, string> = {};
+
+// Variants whose bytes omit fields the chain always writes: it signs from
+// each message re-encoded through its Go type, where a non-nullable field is
+// always present (a session key's `spent`, an empty amount as "0").
+const SPARSE_VARIANTS = new Set(["absent_non_nullable", "bare"]);
 
 function sortKeys(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(sortKeys);
@@ -84,16 +91,16 @@ test("amino converters match the chain's aminojson", async () => {
     }
     checked++;
     const bytes = Buffer.from(r.bytes, "hex");
-    let value: unknown;
-    try {
-      value = codec.decode(bytes);
-    } catch (e) {
-      failures.push(`${label}: decode threw: ${e instanceof Error ? e.message : e}`);
-      continue;
-    }
     let amino: { type: string; value: unknown };
     try {
-      amino = aminoTypes.toAmino({ typeUrl: r.type_url, value });
+      if (SPARSE_VARIANTS.has(r.variant)) {
+        // These bytes leave non-nullable fields out, as a form's partial
+        // value does. The codec's decode would fill them with its own
+        // defaults (the current time for a Timestamp), so render the bytes.
+        amino = renderAminoJson(r.type_url, bytes) as { type: string; value: unknown };
+      } else {
+        amino = aminoTypes.toAmino({ typeUrl: r.type_url, value: codec.decode(bytes) });
+      }
     } catch (e) {
       failures.push(`${label}: toAmino threw: ${e instanceof Error ? e.message : e}`);
       continue;

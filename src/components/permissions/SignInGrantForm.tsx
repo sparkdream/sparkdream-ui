@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { SessionParams } from "@/types/session";
 import { useWallet } from "@/contexts/WalletContext";
-import { SessionMsgTypeUrls } from "@/lib/tx";
+import { signInGrantMsg } from "@/lib/grantMsgs";
 import { int, nowSec, signInService, validSignInService } from "@/lib/grants";
 import {
   AddressInput, ConsentNotice, Field, FormActions, FormShell, INPUT_CLASS, Preview, fmtDate, useResolvedAddress,
@@ -61,16 +61,10 @@ export default function SignInGrantForm({
     setError(null);
     try {
       await signAndBroadcast([
-        {
-          typeUrl: SessionMsgTypeUrls.CreateGrant,
-          value: {
-            granter: signerAddress,
-            grantee: resolved.address,
-            expiresAt: new Date(expiresAt * 1000),
-            note: note.trim(),
-            signIn: { service },
-          },
-        },
+        signInGrantMsg(
+          { granter: signerAddress ?? "", grantee: resolved.address ?? "", expiresAt: new Date(expiresAt * 1000), note },
+          service,
+        ),
       ]);
       onDone();
     } catch (err) {

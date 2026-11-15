@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { SessionParams } from "@/types/session";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
-import { SessionMsgTypeUrls } from "@/lib/tx";
+import { spendingAllowanceGrantMsg } from "@/lib/grantMsgs";
 import { formatSpark, parseSparkToUspark } from "@/lib/utils";
 import { formatPeriod, int } from "@/lib/grants";
 import NumberInput from "@/components/NumberInput";
@@ -84,26 +84,10 @@ export default function SpendingAllowanceForm({
     setError(null);
     try {
       await signAndBroadcast([
-        {
-          typeUrl: SessionMsgTypeUrls.CreateGrant,
-          value: {
-            granter: signerAddress,
-            grantee: resolved.address,
-            expiresAt: new Date(Date.now() + d * DAY * 1000),
-            note: note.trim(),
-            spendingAllowance: {
-              maxPerPeriod: { denom: DENOM, amount: budgetBase },
-              periodSeconds: BigInt(int(period)),
-              allowedRecipients: recipients,
-              denom: DENOM,
-              // The chain's usage counter, sent at zero. It is non-nullable
-              // on the chain, which always includes it in the amino sign
-              // bytes: left out, a Ledger signature never verifies. The chain
-              // sets it on creation.
-              spentInCurrentPeriod: { denom: "", amount: "0" },
-            },
-          },
-        },
+        spendingAllowanceGrantMsg(
+          { granter: signerAddress ?? "", grantee: resolved.address ?? "", expiresAt: new Date(Date.now() + d * DAY * 1000), note },
+          { denom: DENOM, maxPerPeriod: budgetBase ?? "0", periodSeconds: int(period), allowedRecipients: recipients },
+        ),
       ]);
       onDone();
     } catch (err) {

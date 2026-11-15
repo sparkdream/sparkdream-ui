@@ -338,13 +338,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const signAndBroadcast = useCallback(
     async (
-      msgs: readonly { typeUrl: string; value: unknown }[],
-      memo = "",
+      rawMsgs: readonly { typeUrl: string; value: unknown }[],
+      rawMemo = "",
       onPhase?: (phase: TxPhase, hash?: string) => void,
     ) => {
       if (isArchiveModeActive()) {
         throw new Error("Archive mode is read-only");
       }
+      // Replace the two characters amino signing cannot carry (see signText.ts)
+      // before anything is encoded or signed.
+      const { normalizeSignText, normalizeSignValue } = await import("@/lib/signText");
+      const msgs = rawMsgs.map((m) => ({ typeUrl: m.typeUrl, value: normalizeSignValue(m.value) }));
+      const memo = normalizeSignText(rawMemo);
       if (!rawAddress || !window.keplr) {
         throw new Error("Wallet not connected");
       }
@@ -555,6 +560,36 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             const capture = lastAminoSign as { requested: unknown; signed: unknown; signature: unknown } | null;
             const signed = capture?.signed as { account_number?: string; sequence?: string } | undefined;
             const sig = capture?.signature as { pub_key?: { value?: string } } | undefined;
+            // What the chain renders for each sparkdream message of the body,
+            // next to what was signed: when they differ, the differing field
+            // is the cause.
+            let chainRendering: unknown[] | null = null;
+            let differsFromSigned: boolean | null = null;
+            try {
+              const { TxBody } = await import("cosmjs-types/cosmos/tx/v1beta1/tx");
+              const { renderAminoJson } = await import("@sparkdreamnft/sparkdreamjs/chain-amino");
+              const canon = (v: unknown): unknown =>
+                Array.isArray(v)
+                  ? v.map(canon)
+                  : v && typeof v === "object"
+                    ? Object.fromEntries(
+                        Object.keys(v as Record<string, unknown>)
+                          .sort()
+                          .map((k) => [k, canon((v as Record<string, unknown>)[k])]),
+                      )
+                    : v;
+              chainRendering = TxBody.decode(txRaw.bodyBytes).messages.map((m) =>
+                m.typeUrl.startsWith("/sparkdream.") ? renderAminoJson(m.typeUrl, m.value) : null,
+              );
+              const signedMsgs = (capture?.signed as { msgs?: unknown[] } | undefined)?.msgs;
+              if (signedMsgs) {
+                differsFromSigned = chainRendering.some(
+                  (r, i) => r !== null && JSON.stringify(canon(r)) !== JSON.stringify(canon(signedMsgs[i])),
+                );
+              }
+            } catch {
+              // the report goes out without the comparison
+            }
             const report = {
               verify: {
                 label: `ui ${finalMsgs.map((m) => m.typeUrl.split(".").pop()).join("+")}`,
@@ -568,6 +603,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
               requested_sign_doc: capture?.requested ?? null,
               signed_sign_doc: capture?.signed ?? null,
               signature: capture?.signature ?? null,
+              chain_rendering: chainRendering,
+              differs_from_signed: differsFromSigned,
               error: err.message,
             };
             const line = JSON.stringify(report);

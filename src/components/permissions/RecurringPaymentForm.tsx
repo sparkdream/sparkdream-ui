@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { SessionParams } from "@/types/session";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
-import { SessionMsgTypeUrls } from "@/lib/tx";
+import { recurringPaymentGrantMsg } from "@/lib/grantMsgs";
 import { formatSpark, parseSparkToUspark } from "@/lib/utils";
 import { formatPeriod, int, nowSec } from "@/lib/grants";
 import NumberInput from "@/components/NumberInput";
@@ -99,22 +99,15 @@ export default function RecurringPaymentForm({
     setError(null);
     try {
       await signAndBroadcast([
-        {
-          typeUrl: SessionMsgTypeUrls.CreateGrant,
-          value: {
-            granter: signerAddress,
-            grantee: resolved.address,
+        recurringPaymentGrantMsg(
+          {
+            granter: signerAddress ?? "",
+            grantee: resolved.address ?? "",
             expiresAt: new Date((at.startSec + n * period + EXPIRY_SLACK) * 1000),
-            note: note.trim(),
-            recurringPull: {
-              amountPerPeriod: { denom: DENOM, amount: amountBase },
-              periodSeconds: BigInt(period),
-              startTime: BigInt(at.startSec),
-              // Empty lets the chain apply its default of 10 payments per day.
-              maxPerEpoch: perDayBase ?? "",
-            },
+            note,
           },
-        },
+          { denom: DENOM, amountPerPeriod: amountBase ?? "0", periodSeconds: period, startTime: at.startSec, maxPerEpoch: perDayBase ?? null },
+        ),
       ]);
       onDone();
     } catch (err) {

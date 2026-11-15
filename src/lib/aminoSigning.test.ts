@@ -3,6 +3,15 @@ import fs from "node:fs";
 import { test } from "node:test";
 import { fillNonNullable, renderAminoJson } from "@sparkdreamnft/sparkdreamjs/chain-amino";
 import { buildSigningTypes } from "./signingTypes";
+import {
+  recurringPaymentGrantMsg,
+  scheduledTransferGrantMsg,
+  sessionKeyGrantMsg,
+  signInGrantMsg,
+  spendingAllowanceGrantMsg,
+} from "./grantMsgs";
+import { normalizeSignValue } from "./signText";
+import { emptyMintPolicyState, mintPolicyToMsg } from "../components/artifacts/CreateClassForm";
 
 // End-to-end amino signing through the same registry and AminoTypes the app
 // signs with, with an amino-only key (as Keplr+Ledger is). Each message is
@@ -31,12 +40,29 @@ test("amino-signed transactions carry the messages the app built", async () => {
   const wallet = await Secp256k1HdWallet.fromMnemonic(MNEMONIC, { prefix: "sprkdrm" });
   const [account] = await wallet.getAccounts();
   const me = account.address;
-  const client = await SigningStargateClient.offline(wallet, { registry, aminoTypes });
+  // Records the sign doc the wallet signed, as WalletContext does for a Ledger.
+  let signedDoc: { msgs: readonly unknown[] } | null = null;
+  const recordingWallet = {
+    getAccounts: () => wallet.getAccounts(),
+    signAmino: async (address: string, doc: Parameters<typeof wallet.signAmino>[1]) => {
+      const res = await wallet.signAmino(address, doc);
+      signedDoc = res.signed;
+      return res;
+    },
+  };
+  const client = await SigningStargateClient.offline(recordingWallet, { registry, aminoTypes });
+  const canon = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(canon)
+      : v && typeof v === "object"
+        ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])]))
+        : v;
 
   const pack = (typeUrl: string, value: unknown) => ({ typeUrl, value: registry.encode({ typeUrl, value }) });
   const coin = (amount: string) => ({ denom: "uspark", amount });
   const send = { fromAddress: me, toAddress: me, amount: [coin("5")] };
   const policy = "sprkdrm1policy0000000000000000000000000000000000000000000";
+  const grantBase = { granter: me, grantee: me, expiresAt: new Date("2027-01-01T00:00:00Z"), note: " a note " };
 
   const cases: Array<{ label: string; msgs: { typeUrl: string; value: unknown }[] }> = [
     {
@@ -91,9 +117,8 @@ test("amino-signed transactions carry the messages the app built", async () => {
       msgs: [
         { typeUrl: "/sparkdream.artifact.v1.MsgCreateClass", value: {
           creator: me, name: "n", symbol: "S", flags: { transferable: true }, acceptedContentLicense: "CC0-1.0", expectedClassId: BigInt(5),
-          // As CreateClassForm sends it: the amounts are "0", never "" (the
-          // chain's sign bytes always carry them).
-          mintPolicy: { publicMintEnabled: false, price: coin("0"), startTime: BigInt(0), endTime: BigInt(0), perAddressLimit: 0, pricing: 0, priceStep: "0", floorPrice: "0" },
+          // The form's own builder, on the form's initial state.
+          mintPolicy: mintPolicyToMsg(emptyMintPolicyState(), false, "uspark").policy,
         } },
         { typeUrl: "/sparkdream.artifact.v1.MsgMint", value: { minter: me, classId: BigInt(1), entries: [{ recipient: me, metadata: { name: "x" } }] } },
         { typeUrl: "/sparkdream.artifact.v1.MsgBuy", value: { buyer: me, classId: BigInt(1), tokenId: BigInt(1), expectedPrice: coin("10"), expectedNonce: BigInt(0) } },
@@ -116,36 +141,71 @@ test("amino-signed transactions carry the messages the app built", async () => {
         },
       }],
     },
-    // The chain's amino sign bytes always carry a session key's `spent` and
-    // `last_used_at` and an allowance's `spent_in_current_period` (they are
-    // non-nullable there), so the forms send them at their zero values.
+    // The Permissions forms, through the builders the forms call
+    // (grantMsgs.ts): what is signed here is what the forms send.
     {
-      label: "session key grant as SessionKeyForm builds it",
+      label: "session key grant (SessionKeyForm)",
+      msgs: [sessionKeyGrantMsg(
+        { ...grantBase, expiresAt: new Date("2027-01-01T00:00:00.047Z") },
+        { allowedMsgTypes: ["/sparkdream.blog.v1.MsgCreatePost", "/sparkdream.blog.v1.MsgReact"], denom: "uspark", spendLimit: "100000000", maxExecCount: 10000, allowSelfRevoke: false },
+      )],
+    },
+    {
+      label: "session key grant with self-revoke (SessionKeyForm)",
+      msgs: [sessionKeyGrantMsg(grantBase, { allowedMsgTypes: ["/sparkdream.forum.v1.MsgCreatePost"], denom: "uspark", spendLimit: "1", maxExecCount: 1, allowSelfRevoke: true })],
+    },
+    {
+      label: "spending allowance grant (SpendingAllowanceForm)",
+      msgs: [spendingAllowanceGrantMsg(grantBase, { denom: "uspark", maxPerPeriod: "1000000", periodSeconds: 86400, allowedRecipients: [] })],
+    },
+    {
+      label: "spending allowance grant with recipients (SpendingAllowanceForm)",
+      msgs: [spendingAllowanceGrantMsg(grantBase, { denom: "uspark", maxPerPeriod: "1000000", periodSeconds: 3600, allowedRecipients: [me] })],
+    },
+    {
+      label: "recurring payment grant (RecurringPaymentForm)",
+      msgs: [recurringPaymentGrantMsg(grantBase, { denom: "uspark", amountPerPeriod: "100", periodSeconds: 86400, startTime: 1800000000, maxPerEpoch: null })],
+    },
+    {
+      label: "scheduled transfer grant (ScheduledTransferForm)",
+      msgs: [scheduledTransferGrantMsg(grantBase, { denom: "uspark", amount: "250", fireAt: 1800000000 })],
+    },
+    {
+      label: "sign-in grant (SignInGrantForm)",
+      msgs: [signInGrantMsg(grantBase, "mstdn.sparkdream.io")],
+    },
+    // A pasted line separator: signAndBroadcast normalizes every message
+    // (signText.ts), since the chain escapes that character and the wallet
+    // does not.
+    {
+      label: "blog post with pasted line and paragraph separators",
+      msgs: [{
+        typeUrl: "/sparkdream.blog.v1.MsgCreatePost",
+        value: normalizeSignValue({ creator: me, title: `t${String.fromCharCode(0x2028)}u`, body: `b${String.fromCharCode(0x2029)}c`, contentType: 1, tags: [] }),
+      }],
+    },
+    // The same grants with the chain-written fields left out: sparkdreamjs
+    // (0.0.52+) renders them into the sign doc itself.
+    {
+      label: "session key grant with the usage counters left out",
       msgs: [{
         typeUrl: "/sparkdream.session.v1.MsgCreateGrant",
         value: {
           granter: me, grantee: me, expiresAt: new Date("2027-01-01T00:00:00.047Z"), note: "",
           sessionKey: {
-            allowedMsgTypes: ["/sparkdream.blog.v1.MsgCreatePost", "/sparkdream.blog.v1.MsgReact"],
-            spendLimit: coin("100000000"),
-            spent: { denom: "", amount: "0" },
-            lastUsedAt: new Date(-62135596800000),
-            maxExecCount: BigInt(10000),
-            allowSelfRevoke: false,
+            allowedMsgTypes: ["/sparkdream.blog.v1.MsgCreatePost"], spendLimit: coin("100000000"),
+            maxExecCount: BigInt(10000), allowSelfRevoke: false,
           },
         },
       }],
     },
     {
-      label: "spending allowance grant as SpendingAllowanceForm builds it",
+      label: "artifact class with empty price amounts",
       msgs: [{
-        typeUrl: "/sparkdream.session.v1.MsgCreateGrant",
+        typeUrl: "/sparkdream.artifact.v1.MsgCreateClass",
         value: {
-          granter: me, grantee: me, expiresAt: new Date("2027-01-01T00:00:00Z"), note: "",
-          spendingAllowance: {
-            maxPerPeriod: coin("1000000"), periodSeconds: BigInt(86400), allowedRecipients: [], denom: "uspark",
-            spentInCurrentPeriod: { denom: "", amount: "0" },
-          },
+          creator: me, name: "n", symbol: "S", flags: { transferable: true }, acceptedContentLicense: "CC0-1.0", expectedClassId: BigInt(5),
+          mintPolicy: { publicMintEnabled: false, price: coin("0"), startTime: BigInt(0), endTime: BigInt(0), perAddressLimit: 0, pricing: 0, priceStep: "", floorPrice: "" },
         },
       }],
     },
@@ -172,8 +232,17 @@ test("amino-signed transactions carry the messages the app built", async () => {
     const raw = await client.sign(me, c.msgs, fee, "memo", signerData);
     const body = TxBody.decode(raw.bodyBytes);
     assert.equal(body.messages.length, c.msgs.length, c.label);
+    assert.ok(signedDoc, c.label);
+    const signedMsgs = (signedDoc as { msgs: readonly unknown[] }).msgs;
     body.messages.forEach((m, j) => {
       assert.equal(m.typeUrl, c.msgs[j].typeUrl, c.label);
+      // The check that decides whether the chain accepts the signature: what
+      // was signed must be what the chain renders from the tx body.
+      // renderAminoJson is the chain's rendering (re-encoding included),
+      // pinned to it by the golden records.
+      if (m.typeUrl.startsWith("/sparkdream.") || m.typeUrl.startsWith("/cosmos.gov.v1.")) {
+        assert.deepEqual(canon(signedMsgs[j]), canon(renderAminoJson(m.typeUrl, m.value)), `${c.label}: signed doc differs from the chain's rendering of ${m.typeUrl}`);
+      }
       // The body must carry the message the app built (with dont_omitempty
       // messages filled in), as the chain reads it: compare renderings.
       // Messages the package's schema doesn't cover (bank) compare as bytes.

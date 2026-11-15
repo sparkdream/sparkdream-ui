@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { SessionParams } from "@/types/session";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
-import { SessionMsgTypeUrls } from "@/lib/tx";
+import { scheduledTransferGrantMsg } from "@/lib/grantMsgs";
 import { formatSpark, parseSparkToUspark } from "@/lib/utils";
 import { int, nowSec, oneshotTransferDeposit } from "@/lib/grants";
 import NumberInput from "@/components/NumberInput";
@@ -74,20 +74,10 @@ export default function ScheduledTransferForm({
     setError(null);
     try {
       await signAndBroadcast([
-        {
-          typeUrl: SessionMsgTypeUrls.CreateGrant,
-          value: {
-            granter: signerAddress,
-            // The recipient is the grantee, so they can decline before it sends.
-            grantee: resolved.address,
-            expiresAt: new Date(expiresAt * 1000),
-            note: note.trim(),
-            scheduledOneshot: {
-              transfer: { recipient: resolved.address, amount: { denom: DENOM, amount: amountBase } },
-              fireAt: BigInt(fireAt),
-            },
-          },
-        },
+        scheduledTransferGrantMsg(
+          { granter: signerAddress ?? "", grantee: resolved.address ?? "", expiresAt: new Date(expiresAt * 1000), note },
+          { denom: DENOM, amount: amountBase ?? "0", fireAt },
+        ),
       ]);
       onDone();
     } catch (err) {
