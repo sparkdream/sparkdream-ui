@@ -386,9 +386,28 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
 
       const key = await window.keplr.getKey(config.chainId);
-      const offlineSigner = key.isNanoLedger
-        ? window.keplr.getOfflineSignerOnlyAmino(config.chainId)
-        : window.keplr.getOfflineSigner(config.chainId);
+      // Diagnostic for amino (Ledger) signature failures: remember the sign
+      // doc sent to Keplr and the one it returned, so a tx the chain rejects
+      // with "signature verification failed" can be compared field by field.
+      // The wrapper only records; the call and its result pass through
+      // untouched.
+      let lastAminoSign: { requested: unknown; signed: unknown; signature: unknown } | null = null;
+      let offlineSigner:
+        | import("@cosmjs/amino").OfflineAminoSigner
+        | import("@cosmjs/proto-signing").OfflineSigner;
+      if (key.isNanoLedger) {
+        const aminoSigner = window.keplr.getOfflineSignerOnlyAmino(config.chainId);
+        offlineSigner = {
+          getAccounts: () => aminoSigner.getAccounts(),
+          signAmino: async (signerAddress, signDoc) => {
+            const res = await aminoSigner.signAmino(signerAddress, signDoc);
+            lastAminoSign = { requested: signDoc, signed: res.signed, signature: res.signature };
+            return res;
+          },
+        };
+      } else {
+        offlineSigner = window.keplr.getOfflineSigner(config.chainId);
+      }
 
       const client = await SigningStargateClient.connectWithSigner(
         config.rpcEndpoint,
@@ -527,6 +546,39 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         try {
           hash = await client.broadcastTxSync(txBytes);
         } catch (err) {
+          if (err instanceof Error && err.message.includes("signature verification failed")) {
+            // One JSON line: `verify` is the input of the chain repo's
+            // `go run ./cmd/aminogolden verify`; the sign docs show what was
+            // sent to the wallet and what it says it signed. Nothing here is
+            // secret, but it is only logged, never sent anywhere.
+            const { toHex } = await import("@cosmjs/encoding");
+            const capture = lastAminoSign as { requested: unknown; signed: unknown; signature: unknown } | null;
+            const signed = capture?.signed as { account_number?: string; sequence?: string } | undefined;
+            const sig = capture?.signature as { pub_key?: { value?: string } } | undefined;
+            const report = {
+              verify: {
+                label: `ui ${finalMsgs.map((m) => m.typeUrl.split(".").pop()).join("+")}`,
+                tx: toHex(txBytes),
+                chain_id: config.chainId,
+                account_number: Number(signed?.account_number ?? accountNumber ?? 0),
+                sequence: Number(signed?.sequence ?? explicitSequence ?? 0),
+                pubkey: sig?.pub_key?.value ?? "",
+              },
+              sign_mode: key.isNanoLedger ? "amino" : "direct-or-amino",
+              requested_sign_doc: capture?.requested ?? null,
+              signed_sign_doc: capture?.signed ?? null,
+              signature: capture?.signature ?? null,
+              error: err.message,
+            };
+            const line = JSON.stringify(report);
+            (window as unknown as { __sigFailure?: string }).__sigFailure = line;
+            console.error(
+              "[signature-diagnostic] The chain rejected this signature. Copy the next line into a bug report " +
+                "(or run copy(window.__sigFailure) in this console):",
+            );
+            console.error(line);
+            throw new Error(`${err.message} (Details for a bug report were written to the browser console.)`);
+          }
           const expected = parseExpectedSequence(err);
           if (expected !== null) {
             // Sweep every remembered unconfirmed hash for this address: the
