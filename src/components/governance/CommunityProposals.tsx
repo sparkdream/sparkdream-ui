@@ -12,6 +12,7 @@ import {
   describeProposalMessages,
 } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
+import ProposalForceMoves from "./ProposalForceMoves";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { canSpendTreasury } from "@/lib/commons";
 import NewCommunityProposal, { type ProposalType } from "./NewCommunityProposal";
@@ -500,6 +501,8 @@ function CommonsProposalCard({
       {proposal.metadata && (
         <p className="mb-2 text-sm text-zinc-300">{proposal.metadata}</p>
       )}
+
+      <ProposalForceMoves messages={proposal.messages} />
 
       {/* Info row */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">

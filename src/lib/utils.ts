@@ -430,7 +430,11 @@ export function describeProposalMessages(
   dreamDenom = "DREAM"
 ): string {
   if (!msgs?.length) return "General Vote";
-  return msgs
-    .map((m) => messageTypeLabel(m.type_url || m["@type"] || "", dreamDenom))
-    .join(", ");
+  // A batch repeats one message type (20 membership moves): count it once.
+  const counts = new Map<string, number>();
+  for (const m of msgs) {
+    const label = messageTypeLabel(m.type_url || m["@type"] || "", dreamDenom);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return [...counts].map(([label, n]) => (n > 1 ? `${label} x${n}` : label)).join(", ");
 }

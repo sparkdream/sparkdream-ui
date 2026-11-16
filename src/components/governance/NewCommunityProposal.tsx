@@ -18,6 +18,8 @@ import NumberInput from "@/components/NumberInput";
 import AnonymousToggle from "@/components/AnonymousToggle";
 import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
+import ForceMigrationBatch, { useForceBatchChecks } from "./ForceMigrationBatch";
+import { MAX_PROPOSAL_MESSAGES, emptyForceRow, filledForceRows, forceBatchSummary, type ForceRow } from "@/lib/forceMigrationBatch";
 
 export type ProposalType =
   | "general"
@@ -46,7 +48,7 @@ const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string 
   { value: "create-category", label: "Create Swarm category", description: "Propose creating a new Swarm category" },
   { value: "delete-category", label: "Delete Swarm category", description: "Propose removing an empty Swarm category" },
   { value: "unhide-post", label: "Unhide Swarm post", description: "Council override of a sentinel hide past the self-correct window" },
-  { value: "force-migration", label: "Move a membership", description: "Move a member who lost their key, with no recovery code, to a new address" },
+  { value: "force-migration", label: "Move memberships", description: "Move one or more members who lost their key, with no recovery code, to new addresses" },
   { value: "cancel-migration", label: "Cancel a membership move", description: "Stop a pending key change or committee move" },
   { value: "complete-project", label: "Complete project", description: "Record an active project as completed and settle its stakes" },
   { value: "resolve-curation", label: "Resolve curation challenge", description: "Decide a challenge against a curator's collection review" },
@@ -255,12 +257,12 @@ export default function NewCommunityProposal({
   // (`/governance?...&action=unhide-post&post_id=N`).
   const [unhidePostId, setUnhidePostId] = useState(initialPostId ?? "");
 
-  // Member migration fields (Commons Governance Committee). The new address
-  // still has to accept, and the member may object to a jury during the
-  // council delay, so a mistaken or hostile move is not final on execution.
-  const [forceMember, setForceMember] = useState("");
-  const [forceNewAddress, setForceNewAddress] = useState("");
-  const [forceEvidence, setForceEvidence] = useState("");
+  // Member migration rows (Commons Governance Committee), one
+  // MsgForceMigration each. Every new address still has to accept, and the
+  // member may object to a jury during the council delay, so a mistaken or
+  // hostile move is not final on execution.
+  const [forceRows, setForceRows] = useState<ForceRow[]>(() => [emptyForceRow()]);
+  const forceChecks = useForceBatchChecks(forceRows, config.bech32Prefix, type === "force-migration");
   // Pending KEY and COUNCIL migrations, for the cancel picker. A RECOVERY
   // migration is cancellable by governance only.
   const [cancellableMigrations, setCancellableMigrations] = useState<MemberMigration[]>([]);
@@ -566,22 +568,27 @@ export default function NewCommunityProposal({
           ).finish(),
         });
       } else if (type === "force-migration") {
-        const member = forceMember.trim();
-        const newAddress = forceNewAddress.trim();
-        if (!member || !newAddress) throw new Error("Member and new address are required");
-        if (member === newAddress) throw new Error("The new address must differ from the member's address");
+        const moves = filledForceRows(forceRows);
+        if (moves.length === 0) throw new Error("Add at least one member to move");
+        if (moves.length > MAX_PROPOSAL_MESSAGES) {
+          throw new Error(`A proposal carries at most ${MAX_PROPOSAL_MESSAGES} moves`);
+        }
+        if (forceChecks.blocked) throw new Error("Fix the rows marked in red first");
         const { MsgForceMigration } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
-        innerMessages.push({
-          typeUrl: RepIdentityMsgTypeUrls.ForceMigration,
-          value: MsgForceMigration.encode(
-            MsgForceMigration.fromPartial({
-              authority: group.policy_address,
-              member,
-              newAddress,
-              evidenceUri: forceEvidence.trim(),
-            })
-          ).finish(),
-        });
+        // One message per member. The proposal executes them all or nothing.
+        for (const move of moves) {
+          innerMessages.push({
+            typeUrl: RepIdentityMsgTypeUrls.ForceMigration,
+            value: MsgForceMigration.encode(
+              MsgForceMigration.fromPartial({
+                authority: group.policy_address,
+                member: move.member,
+                newAddress: move.newAddress,
+                evidenceUri: move.evidence,
+              })
+            ).finish(),
+          });
+        }
       } else if (type === "cancel-migration") {
         if (!cancelMigrationId) throw new Error("Pick a migration to cancel");
         const { MsgCancelMigration } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
@@ -651,8 +658,7 @@ export default function NewCommunityProposal({
           deletedCategoryTitle,
           deletedCategoryId: deleteCategoryId,
           unhidePostId: unhidePostId.trim(),
-          forceMember: forceMember.trim(),
-          forceNewAddress: forceNewAddress.trim(),
+          forceRows: filledForceRows(forceRows),
           cancelMigrationId,
           completeProjectName: activeProjects.find((p) => p.id === completeProjectId)?.name ?? "",
           completeProjectId,
@@ -1165,45 +1171,12 @@ export default function NewCommunityProposal({
       )}
 
       {type === "force-migration" && (
-        <div className="space-y-3">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-zinc-300">Member address</label>
-            <input
-              type="text"
-              value={forceMember}
-              onChange={(e) => setForceMember(e.target.value)}
-              placeholder={`${config.bech32Prefix}1...`}
-              spellCheck={false}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 font-mono text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-zinc-300">New address</label>
-            <input
-              type="text"
-              value={forceNewAddress}
-              onChange={(e) => setForceNewAddress(e.target.value)}
-              placeholder={`${config.bech32Prefix}1...`}
-              spellCheck={false}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 font-mono text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-zinc-300">Evidence link</label>
-            <input
-              type="text"
-              value={forceEvidence}
-              onChange={(e) => setForceEvidence(e.target.value)}
-              placeholder="https://..."
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-          </div>
-          <p className="text-xs text-zinc-500">
-            For a member who lost their key and has no recovery code. Once executed, the new address must accept, and
-            the move happens after the committee delay. The member can object during that delay and a jury decides.
-            The new address must be fresh: not a member, no names, no pending invitation.
-          </p>
-        </div>
+        <ForceMigrationBatch
+          rows={forceRows}
+          onChange={setForceRows}
+          checks={forceChecks}
+          prefix={config.bech32Prefix}
+        />
       )}
 
       {type === "cancel-migration" && (
@@ -1393,7 +1366,7 @@ export default function NewCommunityProposal({
             (type === "update-config" && childGroups.length === 0) ||
             (type === "delete-category" && existingCategories.length === 0) ||
             (type === "unhide-post" && !unhidePostId.trim()) ||
-            (type === "force-migration" && (!forceMember.trim() || !forceNewAddress.trim())) ||
+            (type === "force-migration" && forceChecks.blocked) ||
             (type === "cancel-migration" && !cancelMigrationId) ||
             (type === "complete-project" && !completeProjectId) ||
             (type === "resolve-curation" && !curationReviewId)
@@ -1430,8 +1403,7 @@ function defaultMetadata(
     deletedCategoryTitle?: string;
     deletedCategoryId?: string;
     unhidePostId?: string;
-    forceMember?: string;
-    forceNewAddress?: string;
+    forceRows?: ForceRow[];
     cancelMigrationId?: string;
     completeProjectName?: string;
     completeProjectId?: string;
@@ -1461,7 +1433,7 @@ function defaultMetadata(
     case "unhide-post":
       return `Council override: unhide Swarm post #${ctx.unhidePostId || "?"}`;
     case "force-migration":
-      return `Move membership ${truncateAddress(ctx.forceMember || "")} to ${truncateAddress(ctx.forceNewAddress || "")}`;
+      return forceBatchSummary(ctx.forceRows ?? [], truncateAddress);
     case "cancel-migration":
       return `Cancel membership move #${ctx.cancelMigrationId || "?"}`;
     case "complete-project":

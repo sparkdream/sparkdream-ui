@@ -2,7 +2,8 @@
 // The chain is the authority; these mirror the checks the UI can make up front
 // so a request that will be refused says why before the wallet pops up.
 
-import { getRepCanonical, getRepMember, getRepPendingMigrationByTarget } from "@/lib/api";
+import { getRepCanonical, getRepMember, getRepPendingMigration, getRepPendingMigrationByTarget } from "@/lib/api";
+import { ApiError } from "@/lib/errors";
 import type { MemberMigration, RepMember, RepMigrationParams } from "@/types/rep";
 import { MigrationPath } from "@/types/rep";
 
@@ -128,5 +129,32 @@ export async function freshnessProblems(from: string, to: string): Promise<strin
   if (canon?.tombstoned) out.push("That address is an old address of another membership.");
   else if (member?.member) out.push("That address is already a member.");
   if (pending) out.push("That address is already the target of another migration.");
+  return out;
+}
+
+/**
+ * Why the chain would refuse a committee move (MsgForceMigration) away from
+ * `member`, as far as the public queries can tell (keeper checkMigrationSource
+ * and the precedence rule of openMigration). A pending key change is not a
+ * problem: the committee move supersedes it. A read that fails is skipped
+ * rather than reported, so a flaky node never blames the member.
+ */
+export async function forceSourceProblems(member: string): Promise<string[]> {
+  const [canon, found, pending] = await Promise.all([
+    getRepCanonical(member).catch(() => null),
+    getRepMember(member).then(
+      (r) => r.member ?? null,
+      (err) => (err instanceof ApiError && err.status === 404 ? null : undefined),
+    ),
+    getRepPendingMigration(member).catch(() => null),
+  ]);
+  const out: string[] = [];
+  if (canon?.tombstoned) out.push("That membership has already moved to another address.");
+  else if (found === null) out.push("That address is not a member.");
+  else if (found?.status === "MEMBER_STATUS_ZEROED") out.push("A zeroed membership can't be moved.");
+  if (pending && (pending.path === MigrationPath.COUNCIL || pending.path === MigrationPath.RECOVERY)) {
+    const what = pending.path === MigrationPath.COUNCIL ? "committee move" : "recovery";
+    out.push(`That member already has a pending ${what} (#${pending.id}).`);
+  }
   return out;
 }
