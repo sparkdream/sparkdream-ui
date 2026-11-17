@@ -33,7 +33,7 @@ interface GoldenRecord {
 // built here.
 const SIGNED_MODULES = [
   "blog", "session", "commons", "rep", "collect", "name", "forum", "season",
-  "reveal", "futarchy", "federation", "artifact", "service", "vault",
+  "reveal", "futarchy", "federation", "artifact", "service", "vault", "storage",
 ];
 
 // Messages that are knowingly not covered, each with the reason. Keep this

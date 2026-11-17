@@ -35,6 +35,7 @@ export async function buildSigningTypes(): Promise<{
     Promise.all([import("@sparkdreamnft/sparkdreamjs/sparkdream/artifact/v1/tx.registry"), import("@sparkdreamnft/sparkdreamjs/sparkdream/artifact/v1/tx.amino")]),
     Promise.all([import("@sparkdreamnft/sparkdreamjs/sparkdream/service/v1/tx.registry"), import("@sparkdreamnft/sparkdreamjs/sparkdream/service/v1/tx.amino")]),
     Promise.all([import("@sparkdreamnft/sparkdreamjs/sparkdream/vault/v1/tx.registry"), import("@sparkdreamnft/sparkdreamjs/sparkdream/vault/v1/tx.amino")]),
+    Promise.all([import("@sparkdreamnft/sparkdreamjs/sparkdream/storage/v1/tx.registry"), import("@sparkdreamnft/sparkdreamjs/sparkdream/storage/v1/tx.amino")]),
   ]);
   // Gov v1 + upgrade types (not in defaultRegistryTypes which only has v1beta1)
   const govV1 = await import("cosmjs-types/cosmos/gov/v1/tx");

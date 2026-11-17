@@ -88,3 +88,12 @@ test("imageBlobType refuses SVG and falls back to the bytes", () => {
   assert.equal(imageBlobType("text/xml", svg), null);
   assert.equal(imageBlobType("application/octet-stream", svg), null);
 });
+
+test("ar:// addresses are fetchable and name one Arweave id", async () => {
+  const { arweaveId, isFetchableUri } = await import("./contentScan/media");
+  const id = "JNC6vBhjHY1EPwV3pEeNmrsgFMxH5d38_LHsZ7jful8";
+  assert.equal(arweaveId(`ar://${id}`), id);
+  assert.equal(arweaveId(`ar://${id}/extra`), null);
+  assert.equal(arweaveId(`https://arweave.net/${id}`), null);
+  assert.ok(isFetchableUri(`ar://${id}`) && isFetchableUri("https://example.com/a.png") && !isFetchableUri("ipfs://bafy"));
+});

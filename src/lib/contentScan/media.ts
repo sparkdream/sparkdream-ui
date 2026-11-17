@@ -5,6 +5,8 @@
 // verdict. A host that blocks cross-origin reads can't be checked this way,
 // so its image does not load: the safe failure.
 
+import { loadUploadPolicy } from "@/lib/imageUpload/client";
+import { DEFAULT_ARWEAVE_GATEWAY } from "@/lib/storageRules";
 import { sha256Hex } from "./protocol";
 
 export type ImageLoad =
@@ -22,17 +24,33 @@ function timedOut(err: unknown): boolean {
 const loaded = new Map<string, string>();
 
 export function isFetchableUri(uri: string): boolean {
-  return /^https:\/\//i.test(uri) || /^http:\/\//i.test(uri);
+  return /^https:\/\//i.test(uri) || /^http:\/\//i.test(uri) || arweaveId(uri) !== null;
 }
 
-export async function loadVerifiedImage(uri: string, sha256: string): Promise<ImageLoad> {
-  const key = `${uri}|${sha256}`;
-  const hit = loaded.get(key);
-  if (hit) return { ok: true, url: hit };
-  if (!isFetchableUri(uri)) return { ok: false, reason: "unsupported" };
+/** The Arweave id of an ar:// address, or null. */
+export function arweaveId(uri: string): string | null {
+  return /^ar:\/\/([A-Za-z0-9_-]{43})$/i.exec(uri)?.[1] ?? null;
+}
+
+/** The gateway Arweave data is read through (the site's ARWEAVE_GATEWAY, from its upload policy). */
+export async function arweaveGateway(): Promise<string> {
+  const g = (await loadUploadPolicy()).arweave_gateway;
+  return g && g.includes("{id}") ? g : DEFAULT_ARWEAVE_GATEWAY;
+}
+
+/** Where to fetch a URI from: itself, or a gateway for ar://. */
+export async function fetchTarget(uri: string): Promise<string> {
+  const id = arweaveId(uri);
+  return id ? (await arweaveGateway()).replace("{id}", id) : uri;
+}
+
+type Fetched = { ok: true; url: string } | { ok: false; reason: Exclude<ImageLoad, { ok: true }>["reason"] };
+
+/** Fetch `target` and make a blob URL of it, only if its bytes hash to `sha256`. */
+async function fetchVerified(target: string, sha256: string): Promise<Fetched> {
   let res: Response;
   try {
-    res = await fetch(uri, {
+    res = await fetch(target, {
       mode: "cors",
       credentials: "omit",
       referrerPolicy: "no-referrer",
@@ -61,9 +79,77 @@ export async function loadVerifiedImage(uri: string, sha256: string): Promise<Im
   if (sum !== sha256) return { ok: false, reason: "mismatch" };
   const type = imageBlobType(res.headers.get("content-type") || "", bytes);
   if (!type) return { ok: false, reason: "error" };
-  const url = URL.createObjectURL(new Blob([bytes], { type }));
-  loaded.set(key, url);
-  return { ok: true, url };
+  return { ok: true, url: URL.createObjectURL(new Blob([bytes], { type })) };
+}
+
+/**
+ * Where the permanent copy of the file with this hash is, if the chain
+ * records one (x/storage): a request that is completed or settled names the
+ * copy. The copy is looked up by the hash, so it can only ever be the same
+ * picture, whoever asked for it and whichever site first stored the image.
+ */
+function permanentCopyTarget(sha256: string): Promise<string | null> {
+  const now = Date.now();
+  const hit = copyTargets.get(sha256);
+  if (hit && now - hit.at < COPY_LOOKUP_TTL_MS) return hit.target;
+  // The answer is kept for a while whatever it is, "no copy" included: a
+  // page of images that don't load must not ask the chain again for each
+  // retry or remount, and concurrent loads of one file share one lookup.
+  const target = lookUpCopyTarget(sha256);
+  copyTargets.set(sha256, { at: now, target });
+  if (copyTargets.size > 2000) copyTargets.delete(copyTargets.keys().next().value as string);
+  return target;
+}
+
+const COPY_LOOKUP_TTL_MS = 5 * 60 * 1000;
+const copyTargets = new Map<string, { at: number; target: Promise<string | null> }>();
+// The backend list, failures included (a chain without x/storage answers
+// 501 every time), so it is read once per span and not once per image.
+let copyBackends: { at: number; list: Promise<{ name: string; locator_format?: string }[]> } | null = null;
+
+async function lookUpCopyTarget(sha256: string): Promise<string | null> {
+  try {
+    const [{ listStorageBackends, getStorageRequestByHash }, { locatorTarget }] = await Promise.all([
+      import("@/lib/storageApi"),
+      import("@/lib/storageRules"),
+    ]);
+    const now = Date.now();
+    if (!copyBackends || now - copyBackends.at >= COPY_LOOKUP_TTL_MS) {
+      copyBackends = { at: now, list: listStorageBackends().catch(() => []) };
+    }
+    for (const backend of await copyBackends.list) {
+      const r = (await getStorageRequestByHash(backend.name, sha256))?.request;
+      const target = r?.locator ? locatorTarget(backend.locator_format, r.locator, await arweaveGateway()) : null;
+      if (target) return target;
+    }
+  } catch {
+    // The chain didn't answer: no copy to try now, and nothing to remember.
+    copyTargets.delete(sha256);
+  }
+  return null;
+}
+
+/**
+ * `fallback: false` skips the permanent-copy lookup, for a caller that
+ * already tries the copy itself.
+ */
+export async function loadVerifiedImage(uri: string, sha256: string, opts: { fallback?: boolean } = {}): Promise<ImageLoad> {
+  const key = `${uri}|${sha256}`;
+  const hit = loaded.get(key);
+  if (hit) return { ok: true, url: hit };
+  if (!isFetchableUri(uri)) return { ok: false, reason: "unsupported" };
+  let got = await fetchVerified(await fetchTarget(uri), sha256);
+  if (!got.ok && got.reason !== "no-crypto" && opts.fallback !== false) {
+    // An image that no longer loads from where it is hosted (or was replaced
+    // there) is read from its permanent copy, if it has one.
+    const copy = await permanentCopyTarget(sha256);
+    if (copy) {
+      const fromCopy = await fetchVerified(copy, sha256);
+      if (fromCopy.ok) got = fromCopy;
+    }
+  }
+  if (got.ok) loaded.set(key, got.url);
+  return got;
 }
 
 /**

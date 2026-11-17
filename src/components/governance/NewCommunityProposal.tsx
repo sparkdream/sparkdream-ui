@@ -20,6 +20,14 @@ import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdenti
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 import ForceMigrationBatch, { useForceBatchChecks } from "./ForceMigrationBatch";
 import { MAX_PROPOSAL_MESSAGES, emptyForceRow, filledForceRows, forceBatchSummary, type ForceRow } from "@/lib/forceMigrationBatch";
+import StorageProposalFields, {
+  STORAGE_PROPOSAL_TYPES,
+  STORAGE_REQUIRED_MESSAGES,
+  isStorageProposalKind,
+  type StorageDraft,
+  type StorageProposalKind,
+} from "./StorageProposalFields";
+import { packStorageCouncilMsg } from "@/lib/storageCouncilMsgs";
 
 export type ProposalType =
   | "general"
@@ -35,7 +43,8 @@ export type ProposalType =
   | "force-migration"
   | "cancel-migration"
   | "complete-project"
-  | "resolve-curation";
+  | "resolve-curation"
+  | StorageProposalKind;
 
 const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string }[] = [
   { value: "general", label: "General vote", description: "Signaling vote with no executable action" },
@@ -52,6 +61,8 @@ const PROPOSAL_TYPES: { value: ProposalType; label: string; description: string 
   { value: "cancel-migration", label: "Cancel a membership move", description: "Stop a pending key change or committee move" },
   { value: "complete-project", label: "Complete project", description: "Record an active project as completed and settle its stakes" },
   { value: "resolve-curation", label: "Resolve curation challenge", description: "Decide a challenge against a curator's collection review" },
+  // x/storage: approvals, voids, flags and prices (StorageProposalFields).
+  ...STORAGE_PROPOSAL_TYPES,
 ];
 
 // Inner message types each proposal kind would broadcast — used to filter the
@@ -77,6 +88,10 @@ const REQUIRED_MESSAGES: Record<ProposalType, string[]> = {
   // Operations Committees (and gov) hold these.
   "complete-project": [RepMsgTypeUrls.CompleteProject],
   "resolve-curation": [CollectMsgTypeUrls.ResolveCurationChallenge],
+  // x/storage: the Commons Council and the Commons Operations Committee hold
+  // the approval, void and unflag messages; only the committee holds the
+  // price message (docs/x-storage-spec.md §7 in the chain repo).
+  ...STORAGE_REQUIRED_MESSAGES,
 };
 
 interface NewCommunityProposalProps {
@@ -327,6 +342,10 @@ export default function NewCommunityProposal({
       .catch(() => { if (!cancelled) setChallengedReviews([]); });
     return () => { cancelled = true; };
   }, [type, curationCollectionId]);
+
+  // x/storage proposals: StorageProposalFields owns the fields and reports
+  // the message it would send, or what is wrong with the fields.
+  const [storageDraft, setStorageDraft] = useState<StorageDraft | null>(null);
 
   // Lazily load existing categories when the delete-category form is shown.
   useEffect(() => {
@@ -621,6 +640,10 @@ export default function NewCommunityProposal({
             })
           ).finish(),
         });
+      } else if (isStorageProposalKind(type)) {
+        if (!storageDraft) throw new Error("The form is still loading. Try again in a moment.");
+        if (storageDraft.problem || !storageDraft.msg) throw new Error(storageDraft.problem ?? "Fill in the fields first.");
+        innerMessages.push(await packStorageCouncilMsg(storageDraft.msg));
       } else if (type === "unhide-post") {
         const trimmed = unhidePostId.trim();
         if (!trimmed) throw new Error("Post ID is required");
@@ -664,6 +687,7 @@ export default function NewCommunityProposal({
           completeProjectId,
           curationReviewId,
           curationUpheld,
+          storageSummary: storageDraft?.summary ?? "",
         });
 
       if (anonymous) {
@@ -1296,6 +1320,16 @@ export default function NewCommunityProposal({
         </div>
       )}
 
+      {isStorageProposalKind(type) && (
+        <StorageProposalFields
+          kind={type}
+          policyAddress={group.policy_address}
+          prefix={config.bech32Prefix}
+          displayDenom={config.displayDenom}
+          onDraft={setStorageDraft}
+        />
+      )}
+
       {/* Metadata / description — hide when update-config has no children */}
       {!(type === "update-config" && childGroups.length === 0) && <div>
         <label className="mb-1.5 block text-sm font-medium text-zinc-300">
@@ -1409,6 +1443,7 @@ function defaultMetadata(
     completeProjectId?: string;
     curationReviewId?: string;
     curationUpheld?: boolean;
+    storageSummary?: string;
   }
 ): string {
   switch (type) {
@@ -1441,6 +1476,7 @@ function defaultMetadata(
     case "resolve-curation":
       return `${ctx.curationUpheld ? "Uphold" : "Reject"} the challenge on curation review #${ctx.curationReviewId || "?"}`;
     default:
-      return "";
+      // The x/storage kinds: StorageProposalFields writes the summary.
+      return ctx.storageSummary || "";
   }
 }

@@ -55,6 +55,11 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
   const canCreateTags = useCanCreateTags(address);
   const [maxBond, setMaxBond] = useState<string | null>(null);
   const [anonymous, setAnonymous] = useState(false);
+  // Images this member requested a permanent copy of while writing. The
+  // request names them on chain next to the image's address, so such an
+  // image in an anonymous dream would say who wrote it.
+  const [copyUrls, setCopyUrls] = useState<string[]>([]);
+  const namedImage = anonymous && copyUrls.some((u) => body.includes(u));
   const { submit: submitAnonymously, phase: anonPhase, shield } = useAnonymousSubmit();
   // The chain labels the body as stored (trimmed, as sent below) and gates
   // media writes on trust level or an author bond (docs/content-scanning.md §9).
@@ -84,6 +89,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
       setError(mediaGate.blockReason);
       return;
     }
+    if (namedImage) return;
 
     setSubmitting(true);
     setError(null);
@@ -200,7 +206,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
           {body.length} characters
         </p>
         <div className="mt-2">
-          <ImageInsert body={body} onChange={setBody} textareaRef={bodyRef} />
+          <ImageInsert body={body} onChange={setBody} textareaRef={bodyRef} anonymous={anonymous} onPermanentCopy={(u) => setCopyUrls((prev) => (prev.includes(u) ? prev : [...prev, u]))} />
         </div>
       </div>
 
@@ -284,6 +290,13 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
         note="Anonymous dreams can't create new tags or carry an author bond, and they expire unless staked conviction keeps them alive."
       />
 
+      {namedImage && (
+        <div className="rounded-lg border border-amber-800/70 bg-amber-900/10 px-4 py-3 text-sm text-amber-300">
+          This dream has an image you requested a permanent copy of. That request is public and shows your address
+          next to the image, so the dream would not be anonymous. Remove the image or post under your name.
+        </div>
+      )}
+
       <MediaWriteNotice flags={mediaFlags} gate={mediaGate} noun="dream" />
 
       {error && (
@@ -296,7 +309,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          disabled={submitting || !title.trim() || !body.trim() || !!mediaGate.blockReason}
+          disabled={submitting || !title.trim() || !body.trim() || !!mediaGate.blockReason || namedImage}
           className="sd-btn-gold px-6 py-2.5"
         >
           {anonPhase ? SHIELD_PHASE_LABELS[anonPhase] : submitting ? "Publishing..." : anonymous ? "Publish anonymously" : "Publish dream"}

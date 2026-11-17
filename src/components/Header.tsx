@@ -202,6 +202,17 @@ const SYSTEM_GROUP: NavGroup = {
       ),
     },
     {
+      href: "/storage",
+      label: "Permanent copies",
+      desc: "Images kept for good on Arweave",
+      icon: (
+        <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M4 7c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3z" />
+          <path d="M4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />
+        </svg>
+      ),
+    },
+    {
       href: "/transfer",
       label: "Send to other chains",
       desc: "Move tokens over IBC",

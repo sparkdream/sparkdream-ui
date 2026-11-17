@@ -14,6 +14,8 @@ import { loadVerifiedImage, type ImageLoad } from "@/lib/contentScan/media";
 //   link        URL text shown but not clickable until clean; hidden if removed
 
 function hostOf(uri: string): string | null {
+  // An ar:// address names data, not a site; it is read through a gateway.
+  if (/^ar:\/\//i.test(uri)) return "Arweave";
   try {
     return new URL(uri).hostname.replace(/^www\./, "");
   } catch {

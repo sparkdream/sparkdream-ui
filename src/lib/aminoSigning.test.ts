@@ -12,6 +12,17 @@ import {
 } from "./grantMsgs";
 import { normalizeSignValue } from "./signText";
 import { emptyMintPolicyState, mintPolicyToMsg } from "../components/artifacts/CreateClassForm";
+import { addSourceMsg, cancelRequestMsg, disputeCompletionMsg, requestCopyMsg } from "./storageMsgs";
+import {
+  approveOperatorMsg,
+  approveScannerMsg,
+  packStorageCouncilMsg,
+  removeOperatorMsg,
+  removeScannerMsg,
+  unflagRemovedMsg,
+  updateStoragePricesMsg,
+  voidCompletionMsg,
+} from "./storageCouncilMsgs";
 
 // End-to-end amino signing through the same registry and AminoTypes the app
 // signs with, with an amino-only key (as Keplr+Ledger is). Each message is
@@ -111,6 +122,40 @@ test("amino-signed transactions carry the messages the app built", async () => {
           value: { signer: me, proposalId: BigInt(2), messagesHash: new Uint8Array([1, 2, 3]), execute: true },
         },
       ],
+    },
+    {
+      label: "storage request, added source, dispute by the requester and cancel",
+      // The forms' own builders (lib/storageMsgs.ts).
+      msgs: [
+        requestCopyMsg({
+          requester: me, backend: "arweave", sha256: "ab".repeat(32), sizeBytes: 22637, contentType: "image/png",
+          url: "https://files.phoenix.example/a.png", maxFee: "2000000",
+        }),
+        addSourceMsg(me, "7", "https://files.aurora.example/a.png", "1000000"),
+        disputeCompletionMsg(me, "7", "0"),
+        cancelRequestMsg(me, "0"),
+      ],
+    },
+    {
+      label: "council proposal with the storage council messages",
+      // The proposal form's own builders and packer (lib/storageCouncilMsgs.ts).
+      msgs: [{
+        typeUrl: "/sparkdream.commons.v1.MsgSubmitProposal",
+        value: {
+          proposer: me, policyAddress: policy, metadata: "",
+          messages: await Promise.all([
+            approveOperatorMsg(policy, "arweave", me),
+            removeOperatorMsg(policy, "arweave", me),
+            approveScannerMsg(policy, me),
+            removeScannerMsg(policy, me),
+            voidCompletionMsg(policy, "7", "the copy does not match the file"),
+            unflagRemovedMsg(policy, ["ab".repeat(32), "cd".repeat(32)]),
+            updateStoragePricesMsg(policy, "arweave", "10", "1000000"),
+            // Zero prices: the chain renders them, never omits them.
+            updateStoragePricesMsg(policy, "arweave", "0", "0"),
+          ].map(packStorageCouncilMsg)),
+        },
+      }],
     },
     {
       label: "artifact class with default policies, mint and buy",

@@ -80,6 +80,14 @@ All configuration is read at runtime. Set these as environment variables in the 
 | `ZK_DIGESTS` | _(unset)_ | Pinned sha256 of each prover file, as JSON: the `files` of that release's `manifest.json`. Unset, the release's `manifest.json` is trusted, which catches a stale or corrupt file but not a tampered directory; set it in production. |
 | `CONTENT_SCAN_FEED_URL` | _(unset)_ | Optional. One or more merged scanner feed files (comma or space separated, `https://`). When set, the server reads verdicts from these instead of fetching each worker's own feed. See [Content scanning](#content-scanning). |
 | `CONTENT_IMAGES_DISABLED` | _(unset)_ | Set to `true` to stop showing content images altogether: no image in a dream, reply or collection loads, whatever the scanners say. A runtime setting (no rebuild); open pages pick it up within a couple of minutes. Images a reader already loaded stay until they leave the page. Text and links are unaffected. |
+| `IMAGE_S3_BUCKET` | _(unset)_ | Bucket for member image uploads. Uploads are on only when this, `IMAGE_PUBLIC_BASE`, `IMAGE_PRECHECK_URL` and `IMAGE_PRECHECK_TOKEN` are all set. Use a bucket of its own (every object in it is public); the snapshot bucket (`S3_BUCKET`) is never used. See [Image uploads](#image-uploads). |
+| `IMAGE_S3_ENDPOINT` / `IMAGE_S3_REGION` / `IMAGE_S3_ACCESS_KEY` / `IMAGE_S3_SECRET_KEY` | the `S3_*` values | S3 endpoint, region (`us-west-2` by default) and keys for the image bucket. |
+| `IMAGE_PUBLIC_BASE` | _(unset)_ | Public `https://` address the image bucket's objects are served under. The host must allow cross-origin reads. |
+| `IMAGE_PRECHECK_URL` / `IMAGE_PRECHECK_TOKEN` | _(unset)_ | A content scanner's pre-check endpoint (`https://<scanner>/precheck`) and the shared token it was started with (`CS_PRECHECK_TOKEN`). An upload is stored only after this scanner calls its bytes clean. |
+| `IMAGE_UPLOAD_MAX_BYTES` | `300000` | Largest stored image. The browser shrinks pictures to fit. Keep it at or below the scanner's `CS_PRECHECK_MAX_BYTES`. |
+| `IMAGE_COPY_MAX_BYTES` | `4194304` | Largest full-size file kept for a permanent copy to be made from. Keep it at or below the scanner's `CS_PRECHECK_MAX_BYTES` (4 MiB by default) and whatever body size your reverse proxy allows. The chain's own limit per file (10 MiB at launch) applies as well. |
+| `ARWEAVE_UPLOADS_DISABLED` | _(unset)_ | Set to `true` to stop this site offering new permanent copies: the composer option and the request form are switched off. A runtime setting (no rebuild). Ordinary uploads, copies already requested and reading existing copies are unaffected. The chain has its own switch (`storage.params.enabled`, by governance). |
+| `ARWEAVE_GATEWAY` | `https://arweave.net/{id}` | Where `ar://` images and permanent copies are read from. Keep it the same as the scanners' `CS_ARWEAVE_GATEWAY`. |
 | `CONTENT_SCAN_MAX_LAG_BLOCKS` | `1800` | Freshness limit. When the scanners' effective scanned height trails the chain by more than this many blocks, flagged content stays "Being checked" (text keeps working). `0` turns the check off. Workers checkpoint every 600 blocks by default, so keep this well above that. |
 
 ## Anonymous prover
@@ -107,6 +115,25 @@ The code is in `src/lib/contentScan/` (protocol, worker list, feed index, browse
 The browser still reads RPC directly (`RPC_ENDPOINT`) for tx broadcast, account and sequence lookups, the new-block ticker and x/shield. Keplr is configured with the same endpoints.
 
 Separately, content that is moderation-hidden onchain (`*_STATUS_HIDDEN`) is concealed from everyone except its author and moderators.
+
+## Image uploads
+
+Members can attach a picture to a dream by uploading it instead of linking to one hosted elsewhere. Linking stays available to everyone.
+
+- **Who.** Active members, signing with their own wallet (not a session key). The wallet signs a plain-text permission once per browser session; it is not a transaction.
+- **How much.** New images per week by trust level: New 3, Provisional 5, Established 10, Trusted 20, Core 40 (`src/lib/imageUpload/policy.ts`).
+- **What is stored.** The browser shrinks the picture to at most 1600 px and re-encodes it as a still WebP under `IMAGE_UPLOAD_MAX_BYTES`, which also drops its metadata. The server accepts only still WebP, JPEG or PNG within the limits.
+- **Scanner first.** The server sends the bytes to `IMAGE_PRECHECK_URL` and stores them only on a `clean` answer. That is the site's own gate; readers still see the image only once the scanners' signed verdicts clear it, like any linked image.
+- **Where.** `img/<sha256>.<ext>` in the image bucket, so the same picture is stored once and its address doesn't name the uploader. Empty `quota/<week>/<keyed hash of the address>/<sha256>` markers count each member's uploads.
+- **Permanent copies.** On a chain with x/storage, a member can tick "Keep a permanent copy" while uploading, or use the Permanent copies page (`/storage`) and its "Upload it to this site" button. Either way:
+  - The copy is made from the picture at its full size, not from the small image a dream shows. The browser prepares it for the chain's storage profile: a PNG or JPEG with no metadata, no colour profile and no transparency (`src/lib/fileProfile.ts`, `src/lib/imagePrepare.ts`). It is made smaller only when it is over `IMAGE_COPY_MAX_BYTES` or the storage network's limit.
+  - That file goes to the image bucket as `src/<sha256>.<ext>`, after the same scanner pre-check, and stays only until the copy is made (see Cleanup). It is counted in a weekly allowance of its own, the same size as the one for images (`srcquota/` markers).
+  - In the composer the dream's own image is uploaded as usual (a small WebP), so the dream shows it straight away and loads quickly.
+  - The member then signs `MsgRequestPermanentCopy` with their own wallet, naming the full-size file's bucket address as the place to fetch it from. The fee is the chain's quote, which grows with the file's size; nothing is paid to this site.
+  - A bonded storage operator approved on chain fetches the file and makes the copy in the background. This site holds no storage-network key and makes no copy itself.
+  - It is not offered for anonymous dreams, since the request names its requester on chain.
+  - If an image ever stops loading, readers are shown its permanent copy instead, found on chain by the image's hash and checked against that same hash. Any frontend does this, whichever site first stored the image. This applies when the dream links the very file that was copied. A dream written in the composer shows the small image, whose hash is not the full-size copy's, so it has no such fallback.
+- **Cleanup.** `npm run images:gc` lists images that were uploaded but never published (older than 48 hours), images a scanner has removed, full-size files that no open permanent-copy request needs any more, and old quota markers; add `-- --delete` to remove them. It needs `IMAGE_GC_FEED_URL` (the scanners' feed roots), and `LCD_ENDPOINT` so that an image an open permanent-copy request still needs is kept. Images of dreams that later expire or are deleted are not cleaned up yet.
 
 ## Testnet snapshots
 

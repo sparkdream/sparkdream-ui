@@ -235,14 +235,26 @@ export const VaultMsgTypeUrls = {
   LeaveVault: "/sparkdream.vault.v1.MsgLeaveVault",
 } as const;
 
+// x/storage (permanent copies) messages a member signs. The chain lets a
+// session key send only the operator and scanner worker messages, which this
+// app never builds, so these need session mode switched off.
+export const StorageMsgTypeUrls = {
+  RequestPermanentCopy: "/sparkdream.storage.v1.MsgRequestPermanentCopy",
+  AddSource: "/sparkdream.storage.v1.MsgAddSource",
+  CancelRequest: "/sparkdream.storage.v1.MsgCancelRequest",
+  DisputeCompletion: "/sparkdream.storage.v1.MsgDisputeCompletion",
+} as const;
+
 /**
  * Messages the chain never accepts inside MsgExecSession (x/session
- * ForbiddenAllowlistMsgs: the rep identity list and every vault message), so
- * the wallet signs them directly even while session mode is active.
+ * ForbiddenAllowlistMsgs: the rep identity list, every vault message and the
+ * storage member messages). WalletContext refuses them while session mode is
+ * active.
  */
 export const SESSION_FORBIDDEN_TYPES: ReadonlySet<string> = new Set<string>([
   ...Object.values(RepIdentityMsgTypeUrls),
   ...Object.values(VaultMsgTypeUrls),
+  ...Object.values(StorageMsgTypeUrls),
 ]);
 
 // x/service operator lifecycle message type URLs. Each is signed by the
