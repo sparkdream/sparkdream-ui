@@ -568,3 +568,10 @@ export const ArtifactMsgTypeUrls = {
 export function buildBlogMsg(typeUrl: string, value: Record<string, unknown>) {
   return { typeUrl, value };
 }
+
+// Go's zero time (0001-01-01T00:00:00Z) as a protobuf Timestamp. A message
+// field the chain declares as a non-nullable time must carry this when it is
+// unset: cosmjs-types writes an empty Timestamp otherwise, which the chain
+// reads as 1970-01-01. x/upgrade refuses a Plan whose time is not Go's zero
+// time ("time-based upgrades have been deprecated in the SDK").
+export const GO_ZERO_TIME = { seconds: BigInt(-62135596800), nanos: 0 };

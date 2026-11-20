@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { test } from "node:test";
 import { fillNonNullable, renderAminoJson } from "@sparkdreamnft/sparkdreamjs/chain-amino";
 import { buildSigningTypes } from "./signingTypes";
+import { GO_ZERO_TIME } from "./tx";
 import {
   recurringPaymentGrantMsg,
   scheduledTransferGrantMsg,
@@ -259,7 +260,7 @@ test("amino-signed transactions carry the messages the app built", async () => {
       msgs: [{
         typeUrl: "/cosmos.gov.v1.MsgSubmitProposal",
         value: {
-          messages: [pack("/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade", { authority: policy, plan: { name: "v2", height: BigInt(100), info: "" } })],
+          messages: [pack("/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade", { authority: policy, plan: { name: "v2", time: GO_ZERO_TIME, height: BigInt(100), info: "" } })],
           initialDeposit: [], proposer: me, metadata: "", title: "t", summary: "s", expedited: false,
         },
       }],
@@ -269,7 +270,7 @@ test("amino-signed transactions carry the messages the app built", async () => {
       msgs: [{
         typeUrl: "/cosmos.gov.v1.MsgSubmitProposal",
         value: {
-          messages: [pack("/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade", { authority: policy, plan: { name: "v2", height: BigInt(100), info: "" } })],
+          messages: [pack("/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade", { authority: policy, plan: { name: "v2", time: GO_ZERO_TIME, height: BigInt(100), info: "" } })],
           initialDeposit: [coin("250000000")], proposer: me, metadata: "", title: "t", summary: "s", expedited: true,
         },
       }],

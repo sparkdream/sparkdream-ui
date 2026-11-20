@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import type { Group } from "@/types/commons";
 import { BallotMode, BallotModeNumber } from "@/types/commons";
-import { GovMsgTypeUrls, UpgradeMsgTypeUrls, CommonsMsgTypeUrls, RepIdentityMsgTypeUrls } from "@/lib/tx";
+import { GovMsgTypeUrls, UpgradeMsgTypeUrls, CommonsMsgTypeUrls, RepIdentityMsgTypeUrls, GO_ZERO_TIME } from "@/lib/tx";
 import { listGroups, getCurrentUpgradePlan, getGovDepositParams, type UpgradePlan } from "@/lib/api";
 import { getGovModuleAddress } from "@/lib/gov";
 import { useWallet } from "@/contexts/WalletContext";
@@ -389,6 +389,9 @@ export default function NewChainProposal({
               authority: govModuleAddress,
               plan: {
                 name: upgradeName.trim(),
+                // unset, the chain reads the plan as time-based and the
+                // proposal fails when it executes
+                time: GO_ZERO_TIME,
                 height: BigInt(upgradeHeight),
                 info: upgradeInfo.trim(),
               },
