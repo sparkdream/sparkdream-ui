@@ -33,6 +33,31 @@ const CHAIN_PROPOSAL_TYPES: {
   { value: "register-council", label: "Register council", description: "Create a new council/committee" },
 ];
 
+/** Deposit thresholds of one proposal mode, in display units and micro-units. */
+interface DepositFloor {
+  submit: string;
+  voting: string;
+  submitMicro: bigint;
+}
+
+/** "43200s" -> "12 hours"; anything unparseable is shown as it came. */
+function formatPeriod(period: string | undefined): string {
+  const m = period?.match(/^(\d+(?:\.\d+)?)s$/);
+  if (!m) return period ?? "the regular period";
+  const secs = parseFloat(m[1]);
+  const unit = (n: number, name: string) => `${Number(n.toFixed(1))} ${name}${n === 1 ? "" : "s"}`;
+  if (secs >= 86400) return unit(secs / 86400, "day");
+  if (secs >= 3600) return unit(secs / 3600, "hour");
+  if (secs >= 60) return unit(secs / 60, "minute");
+  return unit(secs, "second");
+}
+
+/** "0.667000000000000000" -> "66.7%". */
+function formatPercent(dec: string | undefined): string {
+  const n = parseFloat(dec ?? "");
+  return Number.isFinite(n) ? `${Number((n * 100).toFixed(2))}%` : "a higher share of";
+}
+
 interface NewChainProposalProps {
   onClose: () => void;
   onSuccess: () => void;
@@ -59,11 +84,26 @@ export default function NewChainProposal({
   //   after the signing prompt.
   // Both are `undefined` while loading, `null` if the LCD lookup failed —
   // we don't block the form on a params query.
-  const [depositFloor, setDepositFloor] = useState<
-    | { submit: string; voting: string; submitMicro: bigint }
+  // An expedited proposal has its own, higher `expedited_min_deposit`, and
+  // x/gov scales both thresholds from it, so the floors are kept per mode;
+  // `expedited` is null on a chain that does not report one.
+  const [depositFloors, setDepositFloors] = useState<
+    | {
+        regular: DepositFloor;
+        expedited: DepositFloor | null;
+        votingPeriod?: string;
+        expeditedVotingPeriod?: string;
+        expeditedThreshold?: string;
+      }
     | null
     | undefined
   >(undefined);
+  // Expedited: a shorter voting period, a higher deposit and a higher pass
+  // threshold. One that misses the threshold becomes a regular proposal and
+  // runs out the regular voting period.
+  const [expedited, setExpedited] = useState(false);
+  const depositFloor =
+    depositFloors && (expedited ? depositFloors.expedited : depositFloors.regular);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -129,14 +169,13 @@ export default function NewChainProposal({
     getGovDepositParams()
       .then((res) => {
         if (cancelled) return;
-        const minDeposit = res.params?.min_deposit ?? [];
-        const match =
-          minDeposit.find((c) => c.denom === config.denom) ?? minDeposit[0];
+        const pick = (coins: { denom: string; amount: string }[] | undefined) =>
+          (coins ?? []).find((c) => c.denom === config.denom) ?? (coins ?? [])[0];
+        const match = pick(res.params?.min_deposit);
         if (!match) {
-          setDepositFloor(null);
+          setDepositFloors(null);
           return;
         }
-        const votingMicro = BigInt(match.amount);
         // Compute `min_deposit_ratio × min_deposit` in micro-units using
         // BigInt math so we match the chain's behavior exactly. The chain
         // stores Dec as a fixed-point int with 18 fractional digits; the
@@ -156,15 +195,7 @@ export default function NewChainProposal({
         const ratioFixed18 =
           BigInt(wholePart || "0") * TEN_18 +
           BigInt((fracPart + "0".repeat(18)).slice(0, 18));
-        const product = votingMicro * ratioFixed18; // scaled by 10^18
-        const quot = product / TEN_18;
-        const rem = product % TEN_18;
         const half = TEN_18 / TWO;
-        // Half-to-even: when remainder is exactly half, round to the even
-        // integer; otherwise round half away from zero (positive only here).
-        let submitMicro = quot;
-        if (rem > half) submitMicro += ONE;
-        else if (rem === half && quot % TWO === ONE) submitMicro += ONE;
 
         const toDisplay = (microUnits: bigint): string => {
           const whole = microUnits / MICRO;
@@ -174,9 +205,29 @@ export default function NewChainProposal({
           return `${whole}.${frac.toString().padStart(6, "0").replace(/0+$/, "")}`;
         };
 
-        const submit = toDisplay(submitMicro);
-        const voting = toDisplay(votingMicro);
-        setDepositFloor({ submit, voting, submitMicro });
+        const floorFor = (amount: string): DepositFloor => {
+          const votingMicro = BigInt(amount);
+          const product = votingMicro * ratioFixed18; // scaled by 10^18
+          const quot = product / TEN_18;
+          const rem = product % TEN_18;
+          // Half-to-even: when remainder is exactly half, round to the even
+          // integer; otherwise round half away from zero (positive only here).
+          let submitMicro = quot;
+          if (rem > half) submitMicro += ONE;
+          else if (rem === half && quot % TWO === ONE) submitMicro += ONE;
+          return { submit: toDisplay(submitMicro), voting: toDisplay(votingMicro), submitMicro };
+        };
+
+        const regular = floorFor(match.amount);
+        const expeditedMatch = pick(res.params?.expedited_min_deposit);
+        const voting = regular.voting;
+        setDepositFloors({
+          regular,
+          expedited: expeditedMatch ? floorFor(expeditedMatch.amount) : null,
+          votingPeriod: res.params?.voting_period,
+          expeditedVotingPeriod: res.params?.expedited_voting_period,
+          expeditedThreshold: res.params?.expedited_threshold,
+        });
         // Only prefill if the field is still untouched. React's useState
         // updater form lets us read the current value without depending on it
         // in the effect's deps array (which would re-fire whenever the user
@@ -184,12 +235,23 @@ export default function NewChainProposal({
         setDeposit((cur) => (cur === "" ? voting : cur));
       })
       .catch(() => {
-        if (!cancelled) setDepositFloor(null);
+        if (!cancelled) setDepositFloors(null);
       });
     return () => {
       cancelled = true;
     };
   }, [config.denom]);
+
+  // Switching mode moves the deposit to the new mode's full minimum when the
+  // field still holds the old mode's (or is empty): an amount the user typed
+  // is left alone, and the floor check below flags it if it is now too low.
+  const toggleExpedited = (next: boolean) => {
+    setExpedited(next);
+    if (!depositFloors || !depositFloors.expedited) return;
+    const from = next ? depositFloors.regular : depositFloors.expedited;
+    const to = next ? depositFloors.expedited : depositFloors.regular;
+    setDeposit((cur) => (cur === "" || cur === from.voting || cur === from.submit ? to.voting : cur));
+  };
 
   // True when the user's typed amount is below the chain-enforced submission
   // floor (`min_deposit_ratio × min_deposit`). We compute in micro-units to
@@ -265,7 +327,7 @@ export default function NewChainProposal({
     // UX shortcut rather than the source of truth.
     if (depositBelowFloor && depositFloor) {
       setError(
-        `Initial deposit must be at least ${depositFloor.submit} ${config.displayDenom} (min_deposit_ratio × min_deposit) to submit.`
+        `Initial deposit must be at least ${depositFloor.submit} ${config.displayDenom} (min_deposit_ratio × ${expedited ? "expedited_min_deposit" : "min_deposit"}) to submit.`
       );
       return;
     }
@@ -419,7 +481,7 @@ export default function NewChainProposal({
             metadata,
             title: proposalTitle,
             summary: proposalSummary,
-            expedited: false,
+            expedited,
           },
         },
       ]);
@@ -496,6 +558,28 @@ export default function NewChainProposal({
             className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2.5 text-sm text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
         </div>
+        {depositFloors?.expedited && (
+          <div>
+            <label className="flex items-start gap-2.5 text-sm text-zinc-300">
+              <input
+                type="checkbox"
+                checked={expedited}
+                onChange={(e) => toggleExpedited(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500"
+              />
+              <span>
+                <span className="font-medium">Expedited</span>
+                <span className="mt-0.5 block text-xs text-zinc-500">
+                  Voting lasts {formatPeriod(depositFloors.expeditedVotingPeriod)} instead of{" "}
+                  {formatPeriod(depositFloors.votingPeriod)}. It needs a deposit of{" "}
+                  {depositFloors.expedited.voting} {config.displayDenom} and{" "}
+                  {formatPercent(depositFloors.expeditedThreshold)} yes to pass; one that
+                  falls short continues as a regular proposal.
+                </span>
+              </span>
+            </label>
+          </div>
+        )}
         <div>
           <label className="mb-1.5 block text-sm font-medium text-zinc-300">
             Initial deposit ({config.displayDenom})
@@ -519,17 +603,17 @@ export default function NewChainProposal({
                 type="button"
                 onClick={() => setDeposit(depositFloor.submit)}
                 className="font-mono text-zinc-400 underline-offset-2 hover:text-zinc-200 hover:underline"
-                title="Set to min_deposit_ratio × min_deposit (the floor x/gov enforces at MsgSubmitProposal)"
+                title="Set to the floor x/gov enforces at MsgSubmitProposal"
               >
                 {depositFloor.submit} {config.displayDenom}
               </button>{" "}
-              (min_deposit_ratio × min_deposit). The proposal stays in the
+              (min_deposit_ratio × {expedited ? "expedited_min_deposit" : "min_deposit"}). The proposal stays in the
               deposit period until total deposits reach{" "}
               <button
                 type="button"
                 onClick={() => setDeposit(depositFloor.voting)}
                 className="font-mono text-zinc-400 underline-offset-2 hover:text-zinc-200 hover:underline"
-                title="Set to the full gov min_deposit (skips deposit period)"
+                title="Set to the full minimum deposit (skips deposit period)"
               >
                 {depositFloor.voting} {config.displayDenom}
               </button>

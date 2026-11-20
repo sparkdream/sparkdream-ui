@@ -265,6 +265,16 @@ test("amino-signed transactions carry the messages the app built", async () => {
       }],
     },
     {
+      label: "gov v1 expedited software upgrade with a deposit",
+      msgs: [{
+        typeUrl: "/cosmos.gov.v1.MsgSubmitProposal",
+        value: {
+          messages: [pack("/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade", { authority: policy, plan: { name: "v2", height: BigInt(100), info: "" } })],
+          initialDeposit: [coin("250000000")], proposer: me, metadata: "", title: "t", summary: "s", expedited: true,
+        },
+      }],
+    },
+    {
       label: "plain bank send",
       msgs: [{ typeUrl: "/cosmos.bank.v1beta1.MsgSend", value: send }],
     },
