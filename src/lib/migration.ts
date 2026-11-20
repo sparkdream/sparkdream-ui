@@ -5,7 +5,7 @@
 import { getRepCanonical, getRepMember, getRepPendingMigration, getRepPendingMigrationByTarget } from "@/lib/api";
 import { ApiError } from "@/lib/errors";
 import type { MemberMigration, RepMember, RepMigrationParams } from "@/types/rep";
-import { MigrationPath } from "@/types/rep";
+import { MigrationPath, MigrationStatus } from "@/types/rep";
 
 /** Compiled constants of x/rep/types/migration.go. */
 export const MAX_RECENT_ALIASES = 8;
@@ -157,4 +157,41 @@ export async function forceSourceProblems(member: string): Promise<string[]> {
     out.push(`That member already has a pending ${what} (#${pending.id}).`);
   }
   return out;
+}
+
+/** An objection the jury left undecided, now waiting on x/gov (keeper isEscalatedObjection). */
+export function isEscalatedObjection(m: MemberMigration): boolean {
+  return m.status === MigrationStatus.OBJECTED && !!m.escalated_until && m.escalated_until !== "0";
+}
+
+export interface ForceMoveCheck {
+  problems: string[];
+  /**
+   * Id of the escalated migration this move would decide. Signed by x/gov for
+   * the same member and new address, MsgForceMigration rejects the objection
+   * (the move finalizes, the bond goes to the new address) instead of opening
+   * a new migration.
+   */
+  rulesOn?: string;
+}
+
+/**
+ * Chain-side check of one forced move. Only x/gov decides an escalated
+ * objection, so with `byGov` a row matching one is a ruling, not a new move,
+ * and the checks for opening a migration do not apply to it.
+ */
+export async function forceMoveCheck(member: string, newAddress: string, byGov: boolean): Promise<ForceMoveCheck> {
+  if (byGov) {
+    const pending = await getRepPendingMigration(member).catch(() => null);
+    if (pending && isEscalatedObjection(pending)) {
+      if (pending.to_address === newAddress) return { problems: [], rulesOn: pending.id };
+      return {
+        problems: [
+          `Migration #${pending.id} of this member to ${pending.to_address} is waiting on a governance decision. Enter that new address to reject the objection. Another target needs that migration cancelled first.`,
+        ],
+      };
+    }
+  }
+  const [source, target] = await Promise.all([forceSourceProblems(member), freshnessProblems(member, newAddress)]);
+  return { problems: [...source, ...target] };
 }

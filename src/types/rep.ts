@@ -138,6 +138,11 @@ export interface MemberMigration {
   objection_bond?: string;
   failure_reason?: string;
   finalized_at?: string;
+  /**
+   * Unix seconds. Set on an OBJECTED committee move whose jury reached no
+   * verdict: the objection is with x/gov until then. "0" when not escalated.
+   */
+  escalated_until?: string;
 }
 
 export interface RecoveryCommitment {

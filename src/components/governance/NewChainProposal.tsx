@@ -3,12 +3,14 @@
 import { useState, useEffect } from "react";
 import type { Group } from "@/types/commons";
 import { BallotMode, BallotModeNumber } from "@/types/commons";
-import { GovMsgTypeUrls, UpgradeMsgTypeUrls, CommonsMsgTypeUrls } from "@/lib/tx";
+import { GovMsgTypeUrls, UpgradeMsgTypeUrls, CommonsMsgTypeUrls, RepIdentityMsgTypeUrls } from "@/lib/tx";
 import { listGroups, getCurrentUpgradePlan, getGovDepositParams, type UpgradePlan } from "@/lib/api";
 import { getGovModuleAddress } from "@/lib/gov";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import ParamChangeForm from "./ParamChangeForm";
+import ForceMigrationBatch, { useForceBatchChecks } from "./ForceMigrationBatch";
+import { MAX_PROPOSAL_MESSAGES, emptyForceRow, filledForceRows, type ForceRow } from "@/lib/forceMigrationBatch";
 import NumberInput from "@/components/NumberInput";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 
@@ -18,7 +20,8 @@ type ChainProposalType =
   | "council-election"
   | "software-upgrade"
   | "cancel-upgrade"
-  | "register-council";
+  | "register-council"
+  | "force-migration";
 
 const CHAIN_PROPOSAL_TYPES: {
   value: ChainProposalType;
@@ -31,6 +34,7 @@ const CHAIN_PROPOSAL_TYPES: {
   { value: "software-upgrade", label: "Software upgrade", description: "Schedule a chain binary upgrade" },
   { value: "cancel-upgrade", label: "Cancel upgrade", description: "Abort a pending software upgrade" },
   { value: "register-council", label: "Register council", description: "Create a new council/committee" },
+  { value: "force-migration", label: "Move memberships", description: "Force members who lost their key onto new addresses" },
 ];
 
 /** Deposit thresholds of one proposal mode, in display units and micro-units. */
@@ -146,6 +150,11 @@ export default function NewChainProposal({
   const [councilMinMembers, setCouncilMinMembers] = useState("1");
   const [councilMaxMembers, setCouncilMaxMembers] = useState("20");
   const [councilTermDuration, setCouncilTermDuration] = useState("365");
+
+  // Forced membership moves, one MsgForceMigration each, signed by x/gov.
+  const [forceRows, setForceRows] = useState<ForceRow[]>(() => [emptyForceRow()]);
+  const forceChecks = useForceBatchChecks(forceRows, config.bech32Prefix, type === "force-migration", true);
+  const forceBlocked = type === "force-migration" && (forceChecks.blocked || forceChecks.checking);
 
   useEffect(() => {
     if (type === "council-election") {
@@ -448,6 +457,29 @@ export default function NewChainProposal({
             })
           ).finish(),
         });
+      } else if (type === "force-migration") {
+        const moves = filledForceRows(forceRows);
+        if (moves.length === 0) throw new Error("Add at least one member to move");
+        if (moves.length > MAX_PROPOSAL_MESSAGES) {
+          throw new Error(`A proposal carries at most ${MAX_PROPOSAL_MESSAGES} moves`);
+        }
+        if (forceChecks.blocked) throw new Error("Fix the rows marked in red first");
+        const { MsgForceMigration } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/tx");
+        const govModuleAddress = await getGovModuleAddress();
+        // One message per member. The proposal executes them all or nothing.
+        for (const move of moves) {
+          govMessages.push({
+            typeUrl: RepIdentityMsgTypeUrls.ForceMigration,
+            value: MsgForceMigration.encode(
+              MsgForceMigration.fromPartial({
+                authority: govModuleAddress,
+                member: move.member,
+                newAddress: move.newAddress,
+                evidenceUri: move.evidence,
+              })
+            ).finish(),
+          });
+        }
       }
       // "general" has no inner messages
 
@@ -759,6 +791,16 @@ export default function NewChainProposal({
         </div>
       )}
 
+      {type === "force-migration" && (
+        <ForceMigrationBatch
+          rows={forceRows}
+          onChange={setForceRows}
+          checks={forceChecks}
+          prefix={config.bech32Prefix}
+          byGov
+        />
+      )}
+
       {/* Register council fields */}
       {type === "register-council" && (
         <div className="space-y-3 rounded-lg border border-zinc-700/50 bg-zinc-800/20 p-4">
@@ -915,7 +957,7 @@ export default function NewChainProposal({
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          disabled={submitting || depositBelowFloor}
+          disabled={submitting || depositBelowFloor || forceBlocked}
           title={
             depositBelowFloor && depositFloor
               ? `Initial deposit must be at least ${depositFloor.submit} ${config.displayDenom}`

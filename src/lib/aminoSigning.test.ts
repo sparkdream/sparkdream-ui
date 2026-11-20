@@ -275,6 +275,19 @@ test("amino-signed transactions carry the messages the app built", async () => {
       }],
     },
     {
+      label: "gov v1 proposal forcing two membership moves",
+      msgs: [{
+        typeUrl: "/cosmos.gov.v1.MsgSubmitProposal",
+        value: {
+          messages: [
+            pack("/sparkdream.rep.v1.MsgForceMigration", { authority: policy, member: me, newAddress: policy, evidenceUri: "ipfs://x" }),
+            pack("/sparkdream.rep.v1.MsgForceMigration", { authority: policy, member: policy, newAddress: me, evidenceUri: "" }),
+          ],
+          initialDeposit: [coin("100000000")], proposer: me, metadata: "", title: "t", summary: "s", expedited: false,
+        },
+      }],
+    },
+    {
       label: "plain bank send",
       msgs: [{ typeUrl: "/cosmos.bank.v1beta1.MsgSend", value: send }],
     },

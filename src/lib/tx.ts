@@ -212,7 +212,7 @@ export const RepIdentityMsgTypeUrls = {
   RevealRecovery: "/sparkdream.rep.v1.MsgRevealRecovery",
   ObjectMigration: "/sparkdream.rep.v1.MsgObjectMigration",
   SweepTombstone: "/sparkdream.rep.v1.MsgSweepTombstone",
-  // A Commons Governance Committee proposal's inner message.
+  // An inner message of a Commons Governance Committee or chain (x/gov) proposal.
   ForceMigration: "/sparkdream.rep.v1.MsgForceMigration",
   RegisterZkPublicKey: "/sparkdream.rep.v1.MsgRegisterZkPublicKey",
   ClearZkPublicKey: "/sparkdream.rep.v1.MsgClearZkPublicKey",

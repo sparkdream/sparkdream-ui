@@ -1,5 +1,6 @@
 "use client";
 
+import ProposalForceMoves from "./ProposalForceMoves";
 import { useEffect, useState, useCallback } from "react";
 import type {
   GovParams,
@@ -857,6 +858,8 @@ function GovProposalCard({
           ))}
         </div>
       )}
+
+      <ProposalForceMoves messages={proposal.messages} />
 
       {/* Info row */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">

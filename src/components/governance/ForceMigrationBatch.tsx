@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { forceSourceProblems, freshnessProblems } from "@/lib/migration";
+import { forceMoveCheck, type ForceMoveCheck } from "@/lib/migration";
 import {
   MAX_PROPOSAL_MESSAGES,
   emptyForceRow,
@@ -20,6 +20,8 @@ export interface ForceBatchChecks {
   problems: string[][];
   /** Rows whose chain check came back clean, by index. */
   clean: boolean[];
+  /** By index: the escalated migration a row would decide rather than open (x/gov only). */
+  rulings: (string | undefined)[];
   /** A chain check is still running. */
   checking: boolean;
   /** Rows that would become messages. */
@@ -34,10 +36,17 @@ export interface ForceBatchChecks {
  * execution: rows are checked against each other and, once well formed,
  * against the chain (the member exists and can be moved, the new address is
  * fresh). The chain checks describe now, not the block the proposal executes.
+ * `byGov` is a chain (x/gov) proposal, which may also decide an escalated
+ * objection.
  */
-export function useForceBatchChecks(rows: ForceRow[], prefix: string, enabled: boolean): ForceBatchChecks {
+export function useForceBatchChecks(
+  rows: ForceRow[],
+  prefix: string,
+  enabled: boolean,
+  byGov = false,
+): ForceBatchChecks {
   const local = useMemo(() => forceRowProblems(rows, prefix), [rows, prefix]);
-  const [chain, setChain] = useState<Record<string, string[]>>({});
+  const [chain, setChain] = useState<Record<string, ForceMoveCheck>>({});
 
   // Well-formed rows not looked up yet.
   const pending = useMemo(() => {
@@ -57,13 +66,10 @@ export function useForceBatchChecks(rows: ForceRow[], prefix: string, enabled: b
     let live = true;
     const timer = setTimeout(() => {
       Promise.all(
-        pending.map(async (row) => {
-          const [source, target] = await Promise.all([
-            forceSourceProblems(row.member),
-            freshnessProblems(row.member, row.newAddress),
-          ]);
-          return [checkKey(row), [...source, ...target]] as [string, string[]];
-        }),
+        pending.map(
+          async (row) =>
+            [checkKey(row), await forceMoveCheck(row.member, row.newAddress, byGov)] as [string, ForceMoveCheck],
+        ),
       ).then((results) => {
         if (live) setChain((prev) => ({ ...prev, ...Object.fromEntries(results) }));
       });
@@ -77,12 +83,13 @@ export function useForceBatchChecks(rows: ForceRow[], prefix: string, enabled: b
   }, [pendingKeys]);
 
   const filled = rows.filter((r) => !isBlankForceRow(r));
-  const chainFor = (i: number): string[] | undefined =>
+  const chainFor = (i: number): ForceMoveCheck | undefined =>
     isBlankForceRow(rows[i]) || local[i].length > 0 ? undefined : chain[checkKey(normalizeForceRow(rows[i]))];
-  const problems = rows.map((_, i) => [...local[i], ...(chainFor(i) ?? [])]);
+  const problems = rows.map((_, i) => [...local[i], ...(chainFor(i)?.problems ?? [])]);
   return {
     problems,
-    clean: rows.map((_, i) => chainFor(i)?.length === 0),
+    clean: rows.map((_, i) => chainFor(i)?.problems.length === 0 && !chainFor(i)?.rulesOn),
+    rulings: rows.map((_, i) => chainFor(i)?.rulesOn),
     checking: pending.length > 0,
     count: filled.length,
     blocked:
@@ -95,11 +102,14 @@ export default function ForceMigrationBatch({
   onChange,
   checks,
   prefix,
+  byGov = false,
 }: {
   rows: ForceRow[];
   onChange: (rows: ForceRow[]) => void;
   checks: ForceBatchChecks;
   prefix: string;
+  /** A chain (x/gov) proposal rather than a committee one. */
+  byGov?: boolean;
 }) {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
@@ -194,6 +204,13 @@ export default function ForceMigrationBatch({
             </ul>
           )}
           {checks.clean[i] && <p className="text-xs text-emerald-400">Checked against the chain: nothing in the way.</p>}
+          {checks.rulings[i] && (
+            <p className="text-xs text-amber-400">
+              This decides the objection to migration #{checks.rulings[i]}, which a jury left undecided. If the
+              proposal passes, the objection is rejected: the move goes through and the objection bond is paid to the
+              new address.
+            </p>
+          )}
         </div>
       ))}
 
@@ -253,6 +270,8 @@ export default function ForceMigrationBatch({
         them start, so put a doubtful case in its own proposal. Once executed, each new address must accept, and each
         move happens after the committee delay. A member can object during that delay and a jury decides. A new
         address must be fresh: not a member, no names.
+        {byGov &&
+          " A chain proposal also settles an objection a jury could not decide: enter the same member and new address as the objected move, and passing it rejects the objection."}
       </p>
     </div>
   );
