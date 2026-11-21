@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAutoLoadImages } from "@/hooks/useAutoLoadImages";
+import { useMyUpload } from "@/hooks/useMyUpload";
 import { useVerdict } from "@/hooks/useVerdict";
 import type { Verdict } from "@/lib/contentScan/client";
 import { loadVerifiedImage, type ImageLoad } from "@/lib/contentScan/media";
@@ -23,6 +24,11 @@ function hostOf(uri: string): string | null {
   }
 }
 
+// A new image is checked once its address is onchain, which takes a minute
+// or two. The card looks again by itself (useVerdict), so say so: it is a
+// wait, not a failure.
+const PENDING_LINE = "Image being checked. This usually takes a minute or two, and it appears here on its own once it is cleared.";
+
 function uncheckedLine(v: Verdict): string {
   switch (v.reason) {
     case "loading":
@@ -38,7 +44,7 @@ function uncheckedLine(v: Verdict): string {
     case "archive":
       return "Images aren't loaded in archived snapshots.";
     default:
-      return "Content scanners haven't cleared it yet, so it doesn't load.";
+      return PENDING_LINE;
   }
 }
 
@@ -75,11 +81,19 @@ export function ImageLoadBar({ uri, onLoaded }: { uri: string; onLoaded: (blobUr
   const [failed, setFailed] = useState<{ key: string; message: string } | null>(null);
   const host = hostOf(uri);
 
-  const sha256 = verdict.state === "clean" && !verdict.imagesDisabled ? verdict.sha256 || "" : "";
+  // An image this browser uploaded shows to its uploader without waiting for
+  // the scanners' verdict (lib/imageUpload/myUploads.ts). It loads by itself
+  // whatever the reader's setting: it is their own picture, from this site's
+  // storage. A verdict of held or removed still wins, as do archived
+  // snapshots and the operator's switch.
+  const ownSha = useMyUpload(uri);
+  const own =
+    ownSha !== "" && !verdict.imagesDisabled && verdict.state === "unchecked" && verdict.reason !== "archive";
+  const sha256 = own ? ownSha : verdict.state === "clean" && !verdict.imagesDisabled ? verdict.sha256 || "" : "";
   const canLoad = sha256 !== "";
   const key = `${uri}|${sha256}`;
   const failure = failed && failed.key === key ? failed.message : null;
-  const autoLoading = canLoad && auto && !failure;
+  const autoLoading = canLoad && (auto || own) && !failure;
 
   const onLoadedRef = useRef(onLoaded);
   useEffect(() => {
@@ -115,7 +129,11 @@ export function ImageLoadBar({ uri, onLoaded }: { uri: string; onLoaded: (blobUr
   if (verdict.state === "removed") line = "Image not available on this site.";
   else if (verdict.imagesDisabled) line = "Image not loaded. Images are turned off on this site for now.";
   else if (verdict.state === "held") line = "Image held for review.";
-  else if (verdict.state === "unchecked") line = `Image not loaded. ${uncheckedLine(verdict)}`;
+  else if (own) line = failure ? "Image not loaded." : "Loading your image…";
+  else if (verdict.state === "unchecked") {
+    const detail = uncheckedLine(verdict);
+    line = detail === PENDING_LINE ? detail : `Image not loaded. ${detail}`;
+  }
   else if (autoLoading) line = host ? `Loading image from ${host}…` : "Loading image…";
   else if (auto) line = "Image not loaded.";
   else {

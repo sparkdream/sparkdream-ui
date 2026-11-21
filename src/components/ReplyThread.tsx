@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { Reply } from "@/types/blog";
 import ActionMenu, { ACTION_ICONS, type ActionMenuItem } from "./ActionMenu";
 import { useSessionPermits } from "@/hooks/useSessionPermits";
-import { ReplyStatus } from "@/types/blog";
+import { ReplyStatus, contentTypeNumber } from "@/types/blog";
 import { timeAgo } from "@/lib/utils";
 import ReactionBar from "./ReactionBar";
 import NameOrAddress from "@/components/NameOrAddress";
@@ -304,7 +304,7 @@ function ReplyItem({
                 postId={postId}
                 editReplyId={reply.id}
                 initialBody={ownBody.body}
-                initialContentType={parseInt(reply.content_type) || undefined}
+                initialContentType={contentTypeNumber(reply.content_type) || undefined}
                 variant="dream"
                 compact
                 onCancel={() => setShowEditForm(false)}

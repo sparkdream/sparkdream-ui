@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import type { Post, Reply } from "@/types/blog";
-import { PostStatus } from "@/types/blog";
+import { PostStatus, contentTypeNumber } from "@/types/blog";
 import {
   getPost,
   invalidatePost,
@@ -140,7 +140,7 @@ export default function PostDetailPage() {
             id: BigInt(id),
             title: post.title,
             body,
-            contentType: parseInt(post.content_type) || 0,
+            contentType: contentTypeNumber(post.content_type),
             repliesEnabled: newRepliesEnabled,
             minReplyTrustLevel: post.min_reply_trust_level,
           },

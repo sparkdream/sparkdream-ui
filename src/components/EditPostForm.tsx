@@ -7,10 +7,11 @@ import { MsgTypeUrls } from "@/lib/tx";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import { invalidatePost, invalidatePostsLists } from "@/lib/api";
 import type { Post } from "@/types/blog";
-import { CONTENT_TYPE_INFO } from "@/types/blog";
+import { CONTENT_TYPE_INFO, contentTypeNumber } from "@/types/blog";
 import TagPicker from "@/components/contribute/TagPicker";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 import MediaWriteNotice from "@/components/MediaWriteNotice";
+import { BodyImagePreviews } from "@/components/content/BodyWithImages";
 import ImageInsert from "@/components/content/ImageInsert";
 import { useMediaGate } from "@/hooks/useMediaGate";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
@@ -29,7 +30,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
   const [title, setTitle] = useState(post.title);
   const [body, setBody] = useState(post.body);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
-  const [contentType, setContentType] = useState<number>(parseInt(post.content_type) || 0);
+  const [contentType, setContentType] = useState<number>(contentTypeNumber(post.content_type));
   const [repliesEnabled, setRepliesEnabled] = useState(!!post.replies_enabled);
   const [minReplyTrustLevel, setMinReplyTrustLevel] = useState(post.min_reply_trust_level);
   const [tags, setTags] = useState<string[]>(post.tags || []);
@@ -163,6 +164,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
         <div className="mt-2">
           <ImageInsert body={body} onChange={setBody} textareaRef={bodyRef} onPendingChange={setImagePending} />
         </div>
+        <BodyImagePreviews text={body} />
       </div>
 
       <div>

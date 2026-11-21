@@ -3,6 +3,7 @@
 
 import type { StdSignature } from "@cosmjs/amino";
 import { DEFAULT_ARWEAVE_GATEWAY } from "@/lib/storageRules";
+import { rememberUpload } from "./myUploads";
 import { AUTH_MAX_AGE_MS, uploadAuthMessage } from "./policy";
 
 export interface UploadPolicy {
@@ -205,5 +206,9 @@ export async function uploadBlob(
 export async function uploadImage(file: Blob, opts: { chainId: string; address: string }): Promise<Uploaded> {
   const policy = await loadUploadPolicy();
   if (!policy.enabled) throw new Error("Image uploads aren't available on this site.");
-  return uploadBlob(await shrinkImage(file, policy), opts);
+  const done = await uploadBlob(await shrinkImage(file, policy), opts);
+  // So this browser shows its own image at once, without waiting for the
+  // scanners' public verdict (myUploads.ts).
+  rememberUpload(done.url, done.sha256);
+  return done;
 }

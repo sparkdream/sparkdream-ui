@@ -218,6 +218,20 @@ export const ContentType = {
 
 export type ContentTypeValue = typeof ContentType[keyof typeof ContentType];
 
+/**
+ * The number of a content type as the LCD returns it: the enum's name
+ * ("CONTENT_TYPE_TEXT"), or its number. 0 (unspecified) for anything else.
+ * Messages carry the number, so a stored post's type must go through this
+ * before it is sent back in an update.
+ */
+export function contentTypeNumber(value: string | number | undefined | null): number {
+  if (typeof value === "number") return Number.isInteger(value) ? value : 0;
+  const s = (value || "").trim();
+  if (/^\d+$/.test(s)) return parseInt(s, 10);
+  const name = s.replace(/^CONTENT_TYPE_/, "");
+  return (ContentType as Record<string, number>)[name] ?? 0;
+}
+
 export const CONTENT_TYPE_INFO: Record<number, { label: string; description: string }> = {
   [ContentType.TEXT]: { label: "Plain Text", description: "UTF-8 plain text" },
   [ContentType.HTML]: { label: "HTML", description: "HTML content" },

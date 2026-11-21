@@ -15,6 +15,7 @@ import AnonymousToggle from "@/components/AnonymousToggle";
 import { SHIELD_PHASE_LABELS, useAnonymousSubmit } from "@/hooks/useShieldIdentity";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 import MediaWriteNotice from "@/components/MediaWriteNotice";
+import { BodyImagePreviews } from "@/components/content/BodyWithImages";
 import ImageInsert from "@/components/content/ImageInsert";
 import { useMediaGate } from "@/hooks/useMediaGate";
 import { labelBody } from "@/lib/mediaLabels";
@@ -210,6 +211,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
         <div className="mt-2">
           <ImageInsert body={body} onChange={setBody} textareaRef={bodyRef} anonymous={anonymous} onPendingChange={setImagePending} onPermanentCopy={(u) => setCopyUrls((prev) => (prev.includes(u) ? prev : [...prev, u]))} />
         </div>
+        <BodyImagePreviews text={body} />
       </div>
 
       <div>

@@ -79,7 +79,7 @@ export default function StoredImage({
         ? "Checking whether the image has been cleared."
         : verdict.reason === "no-scanners"
           ? "No content scanners are running on this network yet, so the image stays unloaded."
-          : "Content scanners haven't cleared the image yet, so it isn't shown.";
+          : "The image is being checked. This usually takes a minute or two, and it appears here on its own once it is cleared.";
   } else if (targets.length === 0) line = "There is no address to load the image from.";
   else if (failed === key) line = "The image didn't load from the copy or from the addresses it was requested from.";
   else if (!url && auto) line = "Loading the image...";
