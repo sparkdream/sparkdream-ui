@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import MemberProfile from "@/components/contribute/MemberProfile";
 import MemberList from "@/components/contribute/MemberList";
@@ -36,7 +36,6 @@ export default function ReputationPage() {
 function ReputationPageInner() {
   const dream = useDreamDenom();
   const { connected, ready } = useWallet();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const urlView = VALID_VIEWS.includes(searchParams.get("view") as View)
     ? (searchParams.get("view") as View)
@@ -62,7 +61,7 @@ function ReputationPageInner() {
   const switchView = (v: View) => {
     setMobileSidebarOpen(false);
     setSelectedView(v);
-    router.push(`/contribute?view=${v}`, { scroll: false });
+    window.history.pushState(null, "", `/contribute?view=${v}`);
   };
 
   if (!ready) {

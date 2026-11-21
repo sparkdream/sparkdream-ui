@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import { listCategories as fetchForumCategories, listForumPosts, listTags, getAllMembers } from "@/lib/api";
 import { TrustLevel } from "@/types/rep";
@@ -73,7 +73,6 @@ export default function SwarmPage() {
 
 function SwarmPageInner() {
   const dream = useDreamDenom();
-  const router = useRouter();
   const searchParams = useSearchParams();
   // The URL `?thread=<id>` mirrors the open spark so a reload/share/deep-link
   // keeps the user on it. `?thread=<id>` is digit-restricted (root-post ids are
@@ -196,7 +195,7 @@ function SwarmPageInner() {
     // view actually renders.
     if (selectedThreadId) {
       setSelectedThreadId(null);
-      router.push("/swarm", { scroll: false });
+      window.history.pushState(null, "", "/swarm");
     }
   };
 
@@ -208,18 +207,18 @@ function SwarmPageInner() {
   const handleSelectThread = (post: ForumPost) => {
     const rootId = !post.root_id || post.root_id === "0" ? post.post_id : post.root_id;
     setSelectedThreadId(rootId);
-    router.push(`/swarm?thread=${rootId}`, { scroll: false });
+    window.history.pushState(null, "", `/swarm?thread=${rootId}`);
   };
 
   const handleSelectThreadById = (threadId: string) => {
     setSelectedThreadId(threadId);
-    router.push(`/swarm?thread=${threadId}`, { scroll: false });
+    window.history.pushState(null, "", `/swarm?thread=${threadId}`);
   };
 
   const handleBackFromThread = () => {
     setSelectedThreadId(null);
     setView(selectedCategory ? "category-threads" : "all-threads");
-    router.push("/swarm", { scroll: false });
+    window.history.pushState(null, "", "/swarm");
   };
 
   const handleCreated = () => {

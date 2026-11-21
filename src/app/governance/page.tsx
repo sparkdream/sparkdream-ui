@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState, useCallback } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import type { Group, Proposal, Member } from "@/types/commons";
 import { listGroups, getCouncilMembers, listProposals } from "@/lib/api";
 import { useWallet } from "@/contexts/WalletContext";
@@ -59,7 +59,6 @@ export default function GovernancePage() {
 
 function GovernancePageInner() {
   const { ready } = useWallet();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const queryGroup = searchParams.get("group");
   const queryAction = searchParams.get("action");
@@ -157,7 +156,7 @@ function GovernancePageInner() {
     const params = new URLSearchParams();
     if (queryGroup) params.set("group", queryGroup);
     params.set("view", v);
-    router.push(`/governance?${params.toString()}`, { scroll: false });
+    window.history.pushState(null, "", `/governance?${params.toString()}`);
   };
 
   // Skeleton while wallet resolves

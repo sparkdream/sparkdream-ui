@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import type { Post, ReactionCounts } from "@/types/blog";
 import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
 import { listPosts, getPost, getAllMembers, listTags, getLatestBlockHeight, getReactionCounts, authorBondsByType } from "@/lib/api";
@@ -69,7 +69,6 @@ export default function ImaginariumPage() {
 
 function ImaginariumPageInner() {
   const dream = useDreamDenom();
-  const router = useRouter();
   const searchParams = useSearchParams();
   // The URL `?post=<id>` mirrors the open dream so a reload/share/deep-link keeps
   // the user on it. `?post=<id>` is restricted to digit-only ids (post ids are
@@ -485,13 +484,18 @@ function ImaginariumPageInner() {
     title: connected ? "MsgCreatePost" : "Connect a wallet to create a dream",
   };
 
+  // The URL is written with history.pushState, not router.push. router.push
+  // only changes the address bar once its navigation transition commits, and
+  // on this page that could lag or never land, leaving ?post= behind after
+  // Back so a refresh reopened the dream. pushState is synchronous, and Next
+  // keeps useSearchParams in step with it.
   const handleSelectPost = (p: Post) => {
     setSelectedPostId(p.id);
-    router.push(`/imaginarium?post=${p.id}`, { scroll: false });
+    window.history.pushState(null, "", `/imaginarium?post=${p.id}`);
   };
   const handleBackFromDetail = () => {
     setSelectedPostId(null);
-    router.push("/imaginarium", { scroll: false });
+    window.history.pushState(null, "", "/imaginarium");
   };
 
   const toolbar = !showCreate && !selectedPostId && (
