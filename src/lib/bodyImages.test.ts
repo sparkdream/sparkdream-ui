@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { imageBlobType, sniffImageType } from "./contentScan/media";
 import { bodyPreviewText, buildImageMarkdown, splitBodyImages } from "./contentScan/bodyImages";
+import { dropTitleHeading } from "./markdownPreview";
 
 test("plain text is one text segment", () => {
   assert.deepEqual(splitBodyImages("hello\nworld"), [{ type: "text", text: "hello\nworld" }]);
@@ -101,4 +102,28 @@ test("ar:// addresses are fetchable and name one Arweave id", async () => {
   assert.equal(arweaveId(`ar://${id}/extra`), null);
   assert.equal(arweaveId(`https://arweave.net/${id}`), null);
   assert.ok(isFetchableUri(`ar://${id}`) && isFetchableUri("https://example.com/a.png") && !isFetchableUri("ipfs://bafy"));
+});
+
+test("markdown previews drop the markup and keep the words", () => {
+  const md = "## Release v1.1.1\n\nNew since v1.0.58:\n\n- **Storage (x/storage):** copy a PNG.\n1. `code` and *soft* and snake_case_name\n> [docs](https://example.com) \\*kept\\*\n---\n```\nraw **code**\n```";
+  assert.equal(
+    bodyPreviewText(md, { markdown: true }),
+    "Release v1.1.1\n\nNew since v1.0.58:\n\nStorage (x/storage): copy a PNG.\ncode and soft and snake_case_name\ndocs *kept*\nraw **code**"
+  );
+  // Plain text bodies are left as written.
+  assert.equal(bodyPreviewText("## not a heading"), "## not a heading");
+  assert.equal(
+    bodyPreviewText("# Hi\n![a cat](https://example.com/cat.png)\n- one", { markdown: true }),
+    "Hi [image: a cat] one"
+  );
+});
+
+test("an opening heading that repeats the title is dropped", () => {
+  assert.equal(dropTitleHeading("## Spark  Dream v1.1.1 ##\n\nBody\n## Spark Dream v1.1.1", "spark dream v1.1.1"), "Body\n## Spark Dream v1.1.1");
+  assert.equal(dropTitleHeading("\n# **Hello**", "Hello"), "");
+  assert.equal(dropTitleHeading("## Other\nBody", "Hello"), "## Other\nBody");
+  assert.equal(dropTitleHeading("Hello\n## Hello", "Hello"), "Hello\n## Hello");
+  assert.equal(dropTitleHeading("## \nBody", ""), "## \nBody");
+  assert.equal(bodyPreviewText("## Hello\n\n- one", { markdown: true, title: "Hello" }), "one");
+  assert.equal(bodyPreviewText("## Hello\n\n- one", { title: "Hello" }), "## Hello\n\n- one");
 });

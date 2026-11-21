@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useArchive } from "@/contexts/ArchiveContext";
 import { getForumThread, getForumThreadMetadata } from "@/lib/api";
 import type { ForumPost, ThreadMetadata } from "@/types/forum";
+import { isMarkdownContent } from "@/types/blog";
 import CopyableAddress from "@/components/CopyableAddress";
 import { formatTime } from "@/lib/utils";
 import { ArchiveSectionShell, LoadError } from "../../_components";
@@ -69,6 +70,7 @@ export default function ArchiveThreadDetail({
           <ScannedText
             input={{ kind: "forum-post", id: root.post_id, body: root.content, media_flags: root.media_flags, body_hash: root.body_hash }}
             noun="spark"
+            markdown={isMarkdownContent(root.content_type)}
             className="whitespace-pre-wrap text-sm leading-relaxed"
           />
         </article>
@@ -95,6 +97,7 @@ export default function ArchiveThreadDetail({
                   <ScannedText
                     input={{ kind: "forum-post", id: r.post_id, body: r.content, media_flags: r.media_flags, body_hash: r.body_hash }}
                     noun="spark"
+                    markdown={isMarkdownContent(r.content_type)}
                     className="whitespace-pre-wrap"
                   />
                 </li>

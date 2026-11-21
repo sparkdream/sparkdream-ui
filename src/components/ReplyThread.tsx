@@ -4,7 +4,8 @@ import { useState } from "react";
 import type { Reply } from "@/types/blog";
 import ActionMenu, { ACTION_ICONS, type ActionMenuItem } from "./ActionMenu";
 import { useSessionPermits } from "@/hooks/useSessionPermits";
-import { ReplyStatus, contentTypeNumber } from "@/types/blog";
+import { ReplyStatus, contentTypeNumber, isMarkdownContent } from "@/types/blog";
+import MarkdownText from "@/components/content/MarkdownText";
 import { timeAgo } from "@/lib/utils";
 import ReactionBar from "./ReactionBar";
 import NameOrAddress from "@/components/NameOrAddress";
@@ -319,9 +320,13 @@ function ReplyItem({
               This reply was hidden by moderation.
             </p>
           ) : scanned.status === "show" ? (
-            <p className="mb-2 text-sm leading-relaxed text-zinc-300 whitespace-pre-wrap">
-              {scanned.text}
-            </p>
+            isMarkdownContent(reply.content_type) ? (
+              <MarkdownText text={scanned.text} className="mb-2 text-sm leading-relaxed text-zinc-300" />
+            ) : (
+              <p className="mb-2 text-sm leading-relaxed text-zinc-300 whitespace-pre-wrap">
+                {scanned.text}
+              </p>
+            )
           ) : (
             <ContentNotice status={scanned.status} reason={scanned.reason} noun="reply" className="mb-2" />
           )}

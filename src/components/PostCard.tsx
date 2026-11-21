@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { Post, ReactionCounts } from "@/types/blog";
-import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
+import { PostStatus, REACTION_INFO, ReactionType, isMarkdownContent } from "@/types/blog";
 import { timeAgo, countToNum } from "@/lib/utils";
 import { getReactionCounts } from "@/lib/api";
 import NameOrAddress from "@/components/NameOrAddress";
@@ -74,7 +74,7 @@ export default function PostCard({ post }: PostCardProps) {
 
         <p className="mb-3 line-clamp-2 text-sm leading-relaxed text-zinc-400">
           {scanned.status === "show" ? (
-            bodyPreviewText(scanned.text)
+            bodyPreviewText(scanned.text, { markdown: isMarkdownContent(post.content_type), title: post.title })
           ) : (
             <ContentNotice status={scanned.status} reason={scanned.reason} noun="dream" compact />
           )}

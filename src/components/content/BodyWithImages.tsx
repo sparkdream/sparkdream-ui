@@ -4,13 +4,15 @@ import { useMemo, useState } from "react";
 import { useMyUpload } from "@/hooks/useMyUpload";
 import { useVerdict } from "@/hooks/useVerdict";
 import { ImageLoadBar } from "@/components/content/ScannedMedia";
+import MarkdownText from "@/components/content/MarkdownText";
 import { splitBodyImages } from "@/lib/contentScan/bodyImages";
 
 // A body that has already passed the scanner display policy (useScannedBody),
 // with its embedded image links rendered as images. The text stays plain
 // text. Each image is its own scanner subject: it is never fetched until its
 // URI has a clean verdict, and then only as the bytes the scanners checked
-// (docs/content-scanning.md §6).
+// (docs/content-scanning.md §6). With `markdown`, the text between images is
+// formatted as Markdown (MarkdownText), which fetches nothing either.
 
 function BodyImage({ uri, alt }: { uri: string; alt: string }) {
   const [src, setSrc] = useState<string | null>(null);
@@ -65,12 +67,16 @@ export function BodyImagePreviews({ text }: { text: string }) {
   );
 }
 
-export default function BodyWithImages({ text }: { text: string }) {
+export default function BodyWithImages({ text, markdown }: { text: string; markdown?: boolean }) {
   const segments = useMemo(() => splitBodyImages(text), [text]);
   return (
     <>
       {segments.map((s, i) =>
-        s.type === "text" ? <span key={i}>{s.text}</span> : <BodyImage key={`${i}|${s.uri}`} uri={s.uri} alt={s.alt} />
+        s.type === "text" ? (
+          markdown ? <MarkdownText key={i} text={s.text} /> : <span key={i}>{s.text}</span>
+        ) : (
+          <BodyImage key={`${i}|${s.uri}`} uri={s.uri} alt={s.alt} />
+        )
       )}
     </>
   );

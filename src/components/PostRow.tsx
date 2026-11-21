@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { Post, ReactionCounts } from "@/types/blog";
-import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
+import { PostStatus, REACTION_INFO, ReactionType, isMarkdownContent } from "@/types/blog";
 import { timeAgo, countToNum, formatSpark } from "@/lib/utils";
 import { getReactionCounts } from "@/lib/api";
 import { useDisplayName } from "@/hooks/useDisplayName";
@@ -134,7 +134,7 @@ export default function PostRow({
         <h3>{post.title}</h3>
         <p className="excerpt">
           {scanned.status === "show" ? (
-            bodyPreviewText(scanned.text)
+            bodyPreviewText(scanned.text, { markdown: isMarkdownContent(post.content_type), title: post.title })
           ) : (
             <ContentNotice status={scanned.status} reason={scanned.reason} noun="dream" compact />
           )}

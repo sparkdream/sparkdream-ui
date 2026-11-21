@@ -14,6 +14,8 @@ import {
 import { timeAgo, formatSpark } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
 import ScannedText from "@/components/content/ScannedText";
+import { isMarkdownContent } from "@/types/blog";
+import { markdownPreviewText } from "@/lib/markdownPreview";
 import { useWallet } from "@/contexts/WalletContext";
 import type { ForumPost, PostFlag } from "@/types/forum";
 import { PostStatus, PostStatusValue, POST_STATUS_LABELS } from "@/types/forum";
@@ -396,8 +398,10 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
         <div className="space-y-2">
           {visible.map((post) => {
             const votes = (parseInt(post.upvote_count || "0", 10)) - (parseInt(post.downvote_count || "0", 10));
-            const preview = (text: string) =>
-              (text.length > 120 ? text.slice(0, 120) + "..." : text) || `Thread #${post.post_id}`;
+            const preview = (raw: string) => {
+              const text = isMarkdownContent(post.content_type) ? markdownPreviewText(raw) : raw;
+              return (text.length > 120 ? text.slice(0, 120) + "..." : text) || `Thread #${post.post_id}`;
+            };
 
             return (
               <button

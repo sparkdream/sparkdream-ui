@@ -1,3 +1,5 @@
+import { dropTitleHeading, markdownPreviewText } from "@/lib/markdownPreview";
+
 // Images inside a text body (docs/content-scanning.md §5.1, §6 "external URL
 // inside a rendered body"). An author embeds an image as a Markdown image
 // link, `![description](https://host/file.png)`. The chain does not label
@@ -63,13 +65,18 @@ export function firstBodyImage(text: string): { uri: string; alt: string } | nul
 /**
  * A body for one-line previews: each image becomes "[image: description]".
  * `skipFirstImage` leaves the first one out, for a card that shows it as a
- * picture.
+ * picture. `markdown` drops the Markdown markup of a body that is rendered
+ * formatted in full, and with `title`, an opening heading that repeats it.
  */
-export function bodyPreviewText(text: string, opts: { skipFirstImage?: boolean } = {}): string {
+export function bodyPreviewText(
+  body: string,
+  opts: { skipFirstImage?: boolean; markdown?: boolean; title?: string } = {}
+): string {
+  const text = opts.markdown && opts.title ? dropTitleHeading(body, opts.title) : body;
   let skip = !!opts.skipFirstImage;
   const parts: string[] = [];
   for (const s of splitBodyImages(text)) {
-    if (s.type === "text") parts.push(s.text);
+    if (s.type === "text") parts.push(opts.markdown ? markdownPreviewText(s.text) : s.text);
     else if (skip) skip = false;
     else parts.push(s.alt ? `[image: ${s.alt}]` : "[image]");
   }

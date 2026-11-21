@@ -232,6 +232,11 @@ export function contentTypeNumber(value: string | number | undefined | null): nu
   return (ContentType as Record<string, number>)[name] ?? 0;
 }
 
+/** Whether a stored post or reply is Markdown, and so rendered formatted. */
+export function isMarkdownContent(value: string | number | undefined | null): boolean {
+  return contentTypeNumber(value) === ContentType.MARKDOWN;
+}
+
 export const CONTENT_TYPE_INFO: Record<number, { label: string; description: string }> = {
   [ContentType.TEXT]: { label: "Plain Text", description: "UTF-8 plain text" },
   [ContentType.HTML]: { label: "HTML", description: "HTML content" },

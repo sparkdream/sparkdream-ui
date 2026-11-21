@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState, useCallback, useMemo } from "rea
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Post, ReactionCounts } from "@/types/blog";
-import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
+import { PostStatus, REACTION_INFO, ReactionType, isMarkdownContent } from "@/types/blog";
 import { listPosts, getPost, getAllMembers, listTags, getLatestBlockHeight, getReactionCounts, authorBondsByType } from "@/lib/api";
 import { TrustLevel, type RepStake } from "@/types/rep";
 import PostRow from "@/components/PostRow";
@@ -642,7 +642,7 @@ function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => v
   // then, and whenever it may not, the panel keeps its gradient.
   const cover = scanned.status === "show" ? firstBodyImage(scanned.text) : null;
   const coverSrc = useCardImage(cover?.uri || "");
-  const preview = scanned.status === "show" ? bodyPreviewText(scanned.text, { skipFirstImage: !!coverSrc }) : "";
+  const preview = scanned.status === "show" ? bodyPreviewText(scanned.text, { skipFirstImage: !!coverSrc, markdown: isMarkdownContent(post.content_type), title: post.title }) : "";
   const [counts, setCounts] = useState<ReactionCounts | null>(null);
   useEffect(() => {
     getReactionCounts(post.id)

@@ -19,10 +19,12 @@ import MediaWriteNotice from "@/components/MediaWriteNotice";
 import { useMediaGate } from "@/hooks/useMediaGate";
 import { labelBody } from "@/lib/mediaLabels";
 import { describeTxError } from "@/lib/errors";
+import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
 
 // MsgCreatePost.content_type (sparkdream.common.v1.ContentType). The forum
-// composer always sends plain text.
-const FORUM_CONTENT_TYPE_TEXT = 1;
+// composer offers the types a spark is rendered as: plain text, or Markdown
+// (MarkdownText). HTML is left out, since it would only show as its source.
+const FORUM_CONTENT_TYPES = [ContentType.TEXT, ContentType.MARKDOWN];
 
 interface CreatePostFormProps {
   mode: "thread" | "reply";
@@ -47,6 +49,7 @@ export default function CreatePostForm({
   const showEphemeralHint = isMember === false && ephemeralTtl !== null;
 
   const [content, setContent] = useState("");
+  const [contentType, setContentType] = useState<number>(ContentType.TEXT);
   const [tags, setTags] = useState<string[]>([]);
   const [authorBond, setAuthorBond] = useState("");
   const { busy: submitting, error: submitError, clearError, setError, run } = useTxAction();
@@ -58,7 +61,7 @@ export default function CreatePostForm({
 
   // Media rules (docs/content-scanning.md §9): a data URI in the text makes
   // this a media write, gated on trust level or an author bond at creation.
-  const mediaFlags = labelBody(FORUM_CONTENT_TYPE_TEXT, content.trim());
+  const mediaFlags = labelBody(contentType, content.trim());
   const mediaGate = useMediaGate({
     module: "forum",
     flags: mediaFlags,
@@ -81,7 +84,7 @@ export default function CreatePostForm({
         content: content.trim(),
         parentId: mode === "reply" ? BigInt(parentId || "0") : BigInt(0),
         tags,
-        contentType: FORUM_CONTENT_TYPE_TEXT,
+        contentType,
       };
       // Bonds lock the member's DREAM, so gate on confirmed membership like
       // the blog ReplyForm does (a stale value typed while isMember was
@@ -132,6 +135,23 @@ export default function CreatePostForm({
           rows={mode === "thread" ? 5 : 3}
           className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
         />
+        <div>
+          <label htmlFor={`forumContentType-${mode}`} className="mb-1 block text-sm text-zinc-400">
+            Content type
+          </label>
+          <select
+            id={`forumContentType-${mode}`}
+            value={contentType}
+            onChange={(e) => setContentType(Number(e.target.value))}
+            className="sd-select w-full"
+          >
+            {FORUM_CONTENT_TYPES.map((val) => (
+              <option key={val} value={val}>
+                {CONTENT_TYPE_INFO[val].label}
+              </option>
+            ))}
+          </select>
+        </div>
         {mode === "thread" && (
           <div>
             <label className="mb-1 block text-sm text-zinc-400">Tags</label>
