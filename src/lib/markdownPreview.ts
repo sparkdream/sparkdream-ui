@@ -45,6 +45,30 @@ export function markdownPreviewText(text: string): string {
   return out.join("\n").trim();
 }
 
+// Container markers (quote, list item) a line may open before the body is
+// shown as plain text instead of rendered.
+const MAX_NESTING = 32;
+const CONTAINER = /^[ \t]*(?:>|(?:[-+*]|\d{1,9}[.)])(?=[ \t]))/;
+
+/**
+ * Whether a Markdown body nests containers so deeply that rendering it could
+ * exhaust the stack: every ">" or list marker on a line opens one more level,
+ * so a few kilobytes of ">>>>..." is thousands deep. A body is chain data,
+ * and a thrown render takes the whole page down with it.
+ */
+export function markdownTooDeep(text: string): boolean {
+  for (const raw of text.split(/\r?\n/)) {
+    let line = raw;
+    let depth = Math.floor((/^[ \t]*/.exec(line)?.[0].length ?? 0) / 2);
+    for (let m = CONTAINER.exec(line); m; m = CONTAINER.exec(line)) {
+      if (++depth > MAX_NESTING) return true;
+      line = line.slice(m[0].length);
+    }
+    if (depth > MAX_NESTING) return true;
+  }
+  return false;
+}
+
 const sameWords = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
 
 /**

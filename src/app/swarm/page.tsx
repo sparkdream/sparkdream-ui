@@ -29,8 +29,7 @@ import type { ForumPost } from "@/types/forum";
 import type { Category } from "@/types/commons";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import ScannedText from "@/components/content/ScannedText";
-import { isMarkdownContent } from "@/types/blog";
-import { markdownPreviewText } from "@/lib/markdownPreview";
+import { bodyFormat, previewText } from "@/lib/contentScan/bodyFormat";
 
 type View =
   | "all-threads"
@@ -683,7 +682,7 @@ function TrendingSparksCard({ sparks, onSelect }: { sparks: ForumPost[]; onSelec
       )}
       {sparks.map((p, i) => {
         const preview = (raw: string) => {
-          const text = isMarkdownContent(p.content_type) ? markdownPreviewText(raw) : raw;
+          const text = previewText(raw, { format: bodyFormat(p.content_type) });
           return text.length > 48 ? text.slice(0, 48) + "…" : text || `Spark #${p.post_id}`;
         };
         const score = parseInt(p.upvote_count || "0", 10) - parseInt(p.downvote_count || "0", 10);

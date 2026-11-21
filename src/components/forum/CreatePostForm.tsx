@@ -22,9 +22,9 @@ import { describeTxError } from "@/lib/errors";
 import { ContentType, CONTENT_TYPE_INFO } from "@/types/blog";
 
 // MsgCreatePost.content_type (sparkdream.common.v1.ContentType). The forum
-// composer offers the types a spark is rendered as: plain text, or Markdown
-// (MarkdownText). HTML is left out, since it would only show as its source.
-const FORUM_CONTENT_TYPES = [ContentType.TEXT, ContentType.MARKDOWN];
+// composer offers the types a spark is rendered as: plain text, Markdown or
+// HTML (RichBody).
+const FORUM_CONTENT_TYPES = [ContentType.TEXT, ContentType.MARKDOWN, ContentType.HTML];
 
 interface CreatePostFormProps {
   mode: "thread" | "reply";

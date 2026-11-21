@@ -32,7 +32,7 @@ import AuthorBondPanel from "@/components/AuthorBondPanel";
 import type { Category } from "@/types/commons";
 import type { ForumPost, ThreadMetadata, Bounty, PostConvictionStake } from "@/types/forum";
 import { PostStatus, BountyStatus } from "@/types/forum";
-import { isMarkdownContent } from "@/types/blog";
+import { bodyFormat } from "@/lib/contentScan/bodyFormat";
 import ErrorState from "@/components/ErrorState";
 import ActionBanner from "@/components/ActionBanner";
 import { useTxAction } from "@/hooks/useTxAction";
@@ -858,7 +858,7 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
               author: post.author,
             }}
             noun="spark"
-            markdown={isMarkdownContent(post.content_type)}
+            rich={bodyFormat(post.content_type)}
             className="mt-2 whitespace-pre-wrap text-sm text-zinc-200"
             noticeClassName="mt-2"
           />

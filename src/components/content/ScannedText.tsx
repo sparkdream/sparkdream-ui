@@ -1,14 +1,15 @@
 "use client";
 
 import ContentNotice from "@/components/content/ContentNotice";
-import MarkdownText from "@/components/content/MarkdownText";
+import RichBody from "@/components/content/RichBody";
+import type { BodyFormat } from "@/lib/contentScan/bodyFormat";
 import { useScannedBody, type ScannedBodyInput } from "@/hooks/useScannedBody";
 
 // A content body under the scanner display policy (docs/content-scanning.md
 // §6), for render sites that can't call the hook themselves (render helpers
-// inside a loop). The text is rendered as plain text, or with `markdown` as
-// formatted Markdown (MarkdownText), never as HTML, so URLs inside it are
-// neither fetched nor clickable.
+// inside a loop). The text is rendered as plain text, or with `rich` as
+// formatted Markdown or HTML (RichBody), never handed to the browser as HTML,
+// so URLs inside it are neither fetched nor clickable.
 
 interface ScannedTextProps {
   input: ScannedBodyInput;
@@ -24,17 +25,18 @@ interface ScannedTextProps {
   format?: (text: string) => string;
   /** Wrapper element; "span" inside phrasing content. */
   as?: "div" | "span";
-  /** Format the text as Markdown. For full bodies, not previews. */
-  markdown?: boolean;
+  /** Render the text formatted (bodyFormat). For full bodies, not previews. */
+  rich?: BodyFormat | null;
+  /** With `rich`: the title shown above, so a heading repeating it is left out. */
+  title?: string;
 }
 
-export default function ScannedText({ input, noun, className, noticeClassName, compact, format, as = "div", markdown }: ScannedTextProps) {
+export default function ScannedText({ input, noun, className, noticeClassName, compact, format, as = "div", rich, title }: ScannedTextProps) {
   const scanned = useScannedBody(input);
   const Wrap = as;
   if (scanned.status === "show") {
-    const text = format ? format(scanned.text) : scanned.text;
-    if (markdown) return <MarkdownText text={text} className={className} />;
-    return <Wrap className={className}>{text}</Wrap>;
+    if (rich) return <RichBody text={scanned.text} format={rich} title={title} className={className} />;
+    return <Wrap className={className}>{format ? format(scanned.text) : scanned.text}</Wrap>;
   }
   return compact ? (
     <Wrap className={noticeClassName ?? className}>

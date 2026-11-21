@@ -2,7 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { imageBlobType, sniffImageType } from "./contentScan/media";
 import { bodyPreviewText, buildImageMarkdown, splitBodyImages } from "./contentScan/bodyImages";
-import { dropTitleHeading } from "./markdownPreview";
+import { dropTitleHeading, markdownTooDeep } from "./markdownPreview";
+import { bodyFormat, firstImage, previewText } from "./contentScan/bodyFormat";
+import { htmlBodyImages, parseHtmlBody, scannerUris, type HtmlNode } from "./contentScan/htmlBody";
 
 test("plain text is one text segment", () => {
   assert.deepEqual(splitBodyImages("hello\nworld"), [{ type: "text", text: "hello\nworld" }]);
@@ -126,4 +128,72 @@ test("an opening heading that repeats the title is dropped", () => {
   assert.equal(dropTitleHeading("## \nBody", ""), "## \nBody");
   assert.equal(bodyPreviewText("## Hello\n\n- one", { markdown: true, title: "Hello" }), "one");
   assert.equal(bodyPreviewText("## Hello\n\n- one", { title: "Hello" }), "## Hello\n\n- one");
+});
+
+test("an HTML body keeps formatting and drops everything active", () => {
+  const tree = parseHtmlBody(
+    '<h2 onclick="x()">Hi</h2><p style="color:red">a <b>bold</b> <a href="javascript:alert(1)" target="_blank">link</a></p>' +
+      "<script>alert(1)</script><style>p{}</style><iframe src=\"https://e.com\"></iframe><custom-el>kept <i>words</i></custom-el>"
+  );
+  assert.deepEqual(tree, [
+    { type: "element", tag: "h2", children: [{ type: "text", text: "Hi" }] },
+    {
+      type: "element",
+      tag: "p",
+      children: [
+        { type: "text", text: "a " },
+        { type: "element", tag: "strong", children: [{ type: "text", text: "bold" }] },
+        { type: "text", text: " " },
+        { type: "element", tag: "a", children: [{ type: "text", text: "link" }], href: "javascript:alert(1)" },
+      ],
+    },
+    { type: "text", text: "kept " },
+    { type: "element", tag: "em", children: [{ type: "text", text: "words" }] },
+  ]);
+});
+
+test("an HTML image is drawn only when its address is one the scanner finds", () => {
+  const img = (html: string) => htmlBodyImages(html);
+  assert.deepEqual(img('<img src="https://example.com/a.png" alt=" a cat ">'), [{ uri: "https://example.com/a.png", alt: "a cat" }]);
+  assert.deepEqual(img("<IMG SRC=https://example.com/a.png>"), [{ uri: "https://example.com/a.png", alt: "" }]);
+  // The scanner sees the raw text: an address it reads differently, or not at
+  // all, has no verdict, so the image stays text.
+  assert.deepEqual(img('<img src="https://example.com/a.png?x=1&amp;y=2">'), []);
+  assert.deepEqual(img('<img src="https://example.com/a_(1).png">'), []);
+  assert.deepEqual(img('<img src="data:image/png;base64,AAAA">'), []);
+  assert.deepEqual(img('<img src="/relative.png">'), []);
+  assert.deepEqual(img('<img src="&#104;ttps://example.com/a.png">'), []);
+  // The composer's Markdown image link works inside HTML too, but not in code.
+  assert.deepEqual(img("<p>x ![a](https://example.com/b.png)</p><pre>![c](https://example.com/c.png)</pre>"), [
+    { uri: "https://example.com/b.png", alt: "a" },
+  ]);
+  assert.deepEqual(firstImage('<p><img src="https://example.com/a.png"></p>', "html"), { uri: "https://example.com/a.png", alt: "" });
+  assert.deepEqual([...scannerUris('<a href = "https://e.com/x">y</a> xsrc="https://no.example/z"')], ["https://e.com/x"]);
+});
+
+test("HTML previews are the words, without a heading that repeats the title", () => {
+  const html = "<h1>My  Title</h1>\n<p>First   line<br>second &amp; third</p><ul><li>one</li><li><b>two</b></li></ul><img src=\"https://example.com/a.png\" alt=\"pic\"><script>x</script>";
+  assert.equal(previewText(html, { format: "html", title: "my title" }), "First line\nsecond & third\none\ntwo\n[image: pic]");
+  assert.equal(previewText(html, { format: "html", skipFirstImage: true }), "My Title\nFirst line\nsecond & third\none\ntwo");
+  assert.equal(previewText("<b>x</b>"), "<b>x</b>");
+  assert.equal(previewText("## Hello\n\n- one", { format: "markdown", title: "Hello" }), "one");
+  assert.equal(bodyFormat("CONTENT_TYPE_HTML"), "html");
+  assert.equal(bodyFormat(3), "markdown");
+  assert.equal(bodyFormat("CONTENT_TYPE_TEXT"), null);
+});
+
+test("a body nested thousands deep is flattened, never thrown on", () => {
+  const depth = (nodes: HtmlNode[]): number =>
+    nodes.reduce((d, n) => Math.max(d, n.type === "element" ? 1 + depth(n.children) : 0), 0);
+  for (const open of ["<div>", "<b>", "<ul><li>", "<table><tr><td>", "<blockquote>"]) {
+    const tree = parseHtmlBody(open.repeat(2000) + "deep words");
+    assert.ok(depth(tree) <= 32, `${open} nests ${depth(tree)} deep`);
+    assert.doesNotThrow(() => previewText(open.repeat(2000) + "deep words", { format: "html" }));
+  }
+  assert.equal(previewText("<div>".repeat(100) + "deep words", { format: "html" }), "deep words");
+  assert.equal(markdownTooDeep(">".repeat(5000) + " x"), true);
+  assert.equal(markdownTooDeep("- + ".repeat(500) + "x"), true);
+  assert.equal(markdownTooDeep("> - 1. nested a little\n    - and indented\n> > quote"), false);
+  // A long body's preview is worked out from its start only.
+  assert.ok(previewText("**a ".repeat(50_000), { format: "markdown" }).length < 4100);
 });

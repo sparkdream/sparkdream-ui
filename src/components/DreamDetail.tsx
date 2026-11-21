@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import type { Post, Reply } from "@/types/blog";
-import { PostStatus, contentTypeNumber, isMarkdownContent } from "@/types/blog";
+import { PostStatus, contentTypeNumber } from "@/types/blog";
 import {
   getPost,
   invalidatePost,
@@ -28,7 +28,8 @@ import ErrorState from "@/components/ErrorState";
 import ContentNotice from "@/components/content/ContentNotice";
 import { useScannedBody } from "@/hooks/useScannedBody";
 import BodyWithImages from "@/components/content/BodyWithImages";
-import { dropTitleHeading } from "@/lib/markdownPreview";
+import RichBody from "@/components/content/RichBody";
+import { bodyFormat } from "@/lib/contentScan/bodyFormat";
 import { bodyForUpdate } from "@/lib/contentScan/body";
 import { useMyAliases } from "@/hooks/useMyAliases";
 
@@ -403,8 +404,8 @@ export default function DreamDetail({
           ) : concealPost ? (
             <p className="italic text-zinc-500">This dream was hidden by moderation.</p>
           ) : scanned.status === "show" ? (
-            isMarkdownContent(post.content_type) ? (
-              <BodyWithImages text={dropTitleHeading(scanned.text, post.title)} markdown />
+            bodyFormat(post.content_type) ? (
+              <RichBody text={scanned.text} format={bodyFormat(post.content_type)!} title={post.title} images />
             ) : (
               <BodyWithImages text={scanned.text} />
             )

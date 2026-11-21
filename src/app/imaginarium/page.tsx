@@ -4,13 +4,13 @@ import { Suspense, useEffect, useRef, useState, useCallback, useMemo } from "rea
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Post, ReactionCounts } from "@/types/blog";
-import { PostStatus, REACTION_INFO, ReactionType, isMarkdownContent } from "@/types/blog";
+import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
 import { listPosts, getPost, getAllMembers, listTags, getLatestBlockHeight, getReactionCounts, authorBondsByType } from "@/lib/api";
 import { TrustLevel, type RepStake } from "@/types/rep";
 import PostRow from "@/components/PostRow";
 import ContentNotice from "@/components/content/ContentNotice";
 import { useScannedBody } from "@/hooks/useScannedBody";
-import { bodyPreviewText, firstBodyImage } from "@/lib/contentScan/bodyImages";
+import { bodyFormat, firstImage, previewText } from "@/lib/contentScan/bodyFormat";
 import { useCardImage } from "@/hooks/useCardImage";
 import CreatePostForm from "@/components/CreatePostForm";
 import CreateTagForm from "@/components/CreateTagForm";
@@ -640,9 +640,9 @@ function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => v
   });
   // The dream's first image fills the art panel once it may load; until
   // then, and whenever it may not, the panel keeps its gradient.
-  const cover = scanned.status === "show" ? firstBodyImage(scanned.text) : null;
+  const cover = scanned.status === "show" ? firstImage(scanned.text, bodyFormat(post.content_type)) : null;
   const coverSrc = useCardImage(cover?.uri || "");
-  const preview = scanned.status === "show" ? bodyPreviewText(scanned.text, { skipFirstImage: !!coverSrc, markdown: isMarkdownContent(post.content_type), title: post.title }) : "";
+  const preview = scanned.status === "show" ? previewText(scanned.text, { skipFirstImage: !!coverSrc, format: bodyFormat(post.content_type), title: post.title }) : "";
   const [counts, setCounts] = useState<ReactionCounts | null>(null);
   useEffect(() => {
     getReactionCounts(post.id)

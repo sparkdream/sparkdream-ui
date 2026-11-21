@@ -4,8 +4,9 @@ import { useState } from "react";
 import type { Reply } from "@/types/blog";
 import ActionMenu, { ACTION_ICONS, type ActionMenuItem } from "./ActionMenu";
 import { useSessionPermits } from "@/hooks/useSessionPermits";
-import { ReplyStatus, contentTypeNumber, isMarkdownContent } from "@/types/blog";
-import MarkdownText from "@/components/content/MarkdownText";
+import { ReplyStatus, contentTypeNumber } from "@/types/blog";
+import RichBody from "@/components/content/RichBody";
+import { bodyFormat } from "@/lib/contentScan/bodyFormat";
 import { timeAgo } from "@/lib/utils";
 import ReactionBar from "./ReactionBar";
 import NameOrAddress from "@/components/NameOrAddress";
@@ -74,6 +75,7 @@ function ReplyItem({
   const [showEditForm, setShowEditForm] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   // Scanner display policy: plain text at once, media only once cleared.
+  const format = bodyFormat(reply.content_type);
   const scanned = useScannedBody({
     kind: "blog-reply",
     id: reply.id,
@@ -320,8 +322,8 @@ function ReplyItem({
               This reply was hidden by moderation.
             </p>
           ) : scanned.status === "show" ? (
-            isMarkdownContent(reply.content_type) ? (
-              <MarkdownText text={scanned.text} className="mb-2 text-sm leading-relaxed text-zinc-300" />
+            format ? (
+              <RichBody text={scanned.text} format={format} className="mb-2 text-sm leading-relaxed text-zinc-300" />
             ) : (
               <p className="mb-2 text-sm leading-relaxed text-zinc-300 whitespace-pre-wrap">
                 {scanned.text}

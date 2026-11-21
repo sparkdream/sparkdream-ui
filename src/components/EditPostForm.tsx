@@ -13,6 +13,7 @@ import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 import MediaWriteNotice from "@/components/MediaWriteNotice";
 import { BodyImagePreviews } from "@/components/content/BodyWithImages";
 import ImageInsert from "@/components/content/ImageInsert";
+import { bodyFormat } from "@/lib/contentScan/bodyFormat";
 import { useMediaGate } from "@/hooks/useMediaGate";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import { labelBody } from "@/lib/mediaLabels";
@@ -164,7 +165,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
         <div className="mt-2">
           <ImageInsert body={body} onChange={setBody} textareaRef={bodyRef} onPendingChange={setImagePending} />
         </div>
-        <BodyImagePreviews text={body} />
+        <BodyImagePreviews text={body} format={bodyFormat(contentType)} />
       </div>
 
       <div>

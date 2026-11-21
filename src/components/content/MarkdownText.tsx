@@ -1,6 +1,8 @@
 "use client";
 
 import ReactMarkdown, { type Components } from "react-markdown";
+import { PROSE } from "@/components/content/proseStyles";
+import { markdownTooDeep } from "@/lib/markdownPreview";
 
 // Markdown formatting for a body that has already passed the scanner display
 // policy (useScannedBody). Formatting only: headings, lists, emphasis, code,
@@ -11,33 +13,33 @@ import ReactMarkdown, { type Components } from "react-markdown";
 // by BodyWithImages.
 
 const components: Components = {
-  h1: ({ children }) => <h2 className="text-xl font-bold text-white">{children}</h2>,
-  h2: ({ children }) => <h3 className="text-lg font-semibold text-white">{children}</h3>,
-  h3: ({ children }) => <h4 className="text-base font-semibold text-white">{children}</h4>,
-  h4: ({ children }) => <h5 className="font-semibold text-zinc-100">{children}</h5>,
-  h5: ({ children }) => <h6 className="font-semibold text-zinc-200">{children}</h6>,
-  h6: ({ children }) => <h6 className="font-medium text-zinc-300">{children}</h6>,
+  h1: ({ children }) => <h2 className={PROSE.h1}>{children}</h2>,
+  h2: ({ children }) => <h3 className={PROSE.h2}>{children}</h3>,
+  h3: ({ children }) => <h4 className={PROSE.h3}>{children}</h4>,
+  h4: ({ children }) => <h5 className={PROSE.h4}>{children}</h5>,
+  h5: ({ children }) => <h6 className={PROSE.h5}>{children}</h6>,
+  h6: ({ children }) => <h6 className={PROSE.h6}>{children}</h6>,
   // A single line break in the source stays a line break, as it does in a
   // plain text body.
   p: ({ children }) => <p className="whitespace-pre-line">{children}</p>,
-  ul: ({ children }) => <ul className="list-disc space-y-1 pl-6">{children}</ul>,
+  ul: ({ children }) => <ul className={PROSE.ul}>{children}</ul>,
   ol: ({ children, start }) => (
-    <ol start={start} className="list-decimal space-y-1 pl-6">
+    <ol start={start} className={PROSE.ol}>
       {children}
     </ol>
   ),
-  li: ({ children }) => <li className="space-y-2">{children}</li>,
-  strong: ({ children }) => <strong className="font-semibold text-zinc-100">{children}</strong>,
+  li: ({ children }) => <li className={PROSE.li}>{children}</li>,
+  strong: ({ children }) => <strong className={PROSE.strong}>{children}</strong>,
   em: ({ children }) => <em>{children}</em>,
   blockquote: ({ children }) => (
-    <blockquote className="space-y-3 border-l-2 border-zinc-700 pl-4 text-zinc-400">{children}</blockquote>
+    <blockquote className={PROSE.blockquote}>{children}</blockquote>
   ),
-  hr: () => <hr className="border-zinc-800" />,
+  hr: () => <hr className={PROSE.hr} />,
   code: ({ children }) => (
-    <code className="rounded bg-zinc-800/80 px-1 py-0.5 font-mono text-[0.9em] text-zinc-200">{children}</code>
+    <code className={PROSE.code}>{children}</code>
   ),
   pre: ({ children }) => (
-    <pre className="overflow-x-auto whitespace-pre rounded-lg bg-zinc-900/80 p-3 text-sm [&>code]:bg-transparent [&>code]:p-0">
+    <pre className={PROSE.pre}>
       {children}
     </pre>
   ),
@@ -45,7 +47,7 @@ const components: Components = {
   a: ({ children, href }) => {
     const label = typeof children === "string" ? children : null;
     return (
-      <span className="[overflow-wrap:anywhere]">
+      <span className={PROSE.wrap}>
         {children}
         {href && href !== label ? ` (${href})` : null}
       </span>
@@ -53,7 +55,7 @@ const components: Components = {
   },
   // Never an <img>: an image link that is not a scanner subject stays text.
   img: ({ alt, src }) => (
-    <span className="[overflow-wrap:anywhere]">{`![${alt ?? ""}](${typeof src === "string" ? src : ""})`}</span>
+    <span className={PROSE.wrap}>{`![${alt ?? ""}](${typeof src === "string" ? src : ""})`}</span>
   ),
 };
 
@@ -61,10 +63,12 @@ const components: Components = {
 const asWritten = (url: string) => url;
 
 export default function MarkdownText({ text, className }: { text: string; className?: string }) {
+  // Nested too deeply to render safely: shown as the text it is.
+  if (markdownTooDeep(text)) return <div className={`whitespace-pre-wrap ${className ?? ""}`}>{text}</div>;
   return (
     // The inner element resets white-space, whatever `className` sets.
     <div className={className}>
-      <div className="space-y-3 whitespace-normal">
+      <div className={PROSE.root}>
         <ReactMarkdown components={components} urlTransform={asWritten}>
           {text}
         </ReactMarkdown>

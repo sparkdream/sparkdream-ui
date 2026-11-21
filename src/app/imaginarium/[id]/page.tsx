@@ -4,9 +4,9 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import type { Post, Reply } from "@/types/blog";
-import { PostStatus, contentTypeNumber, isMarkdownContent } from "@/types/blog";
-import MarkdownText from "@/components/content/MarkdownText";
-import { dropTitleHeading } from "@/lib/markdownPreview";
+import { PostStatus, contentTypeNumber } from "@/types/blog";
+import RichBody from "@/components/content/RichBody";
+import { bodyFormat } from "@/lib/contentScan/bodyFormat";
 import {
   getPost,
   invalidatePost,
@@ -366,7 +366,11 @@ export default function PostDetailPage() {
           ) : concealPost ? (
             <p className="italic text-zinc-500">This dream was hidden by moderation.</p>
           ) : scanned.status === "show" ? (
-            isMarkdownContent(post.content_type) ? <MarkdownText text={dropTitleHeading(scanned.text, post.title)} /> : scanned.text
+            bodyFormat(post.content_type) ? (
+              <RichBody text={scanned.text} format={bodyFormat(post.content_type)!} title={post.title} />
+            ) : (
+              scanned.text
+            )
           ) : (
             <ContentNotice status={scanned.status} reason={scanned.reason} noun="dream" />
           )}

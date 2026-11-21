@@ -5,8 +5,7 @@ import Link from "next/link";
 import { useArchive } from "@/contexts/ArchiveContext";
 import { getPost, listReplies, getReactionCounts } from "@/lib/api";
 import type { Post, Reply, ReactionCounts } from "@/types/blog";
-import { isMarkdownContent } from "@/types/blog";
-import { dropTitleHeading } from "@/lib/markdownPreview";
+import { bodyFormat } from "@/lib/contentScan/bodyFormat";
 import CopyableAddress from "@/components/CopyableAddress";
 import { formatTime } from "@/lib/utils";
 import ScannedText from "@/components/content/ScannedText";
@@ -79,8 +78,8 @@ export default function ArchivePostPage({
           <ScannedText
             input={{ kind: "blog-post", id: post.id, body: post.body, media_flags: post.media_flags, body_hash: post.body_hash }}
             noun="dream"
-            markdown={isMarkdownContent(post.content_type)}
-            format={isMarkdownContent(post.content_type) ? (text) => dropTitleHeading(text, post.title) : undefined}
+            rich={bodyFormat(post.content_type)}
+            title={post.title}
             className="whitespace-pre-wrap text-sm leading-relaxed"
           />
           {counts && (
@@ -107,7 +106,7 @@ export default function ArchivePostPage({
                 <ScannedText
                   input={{ kind: "blog-reply", id: r.id, body: r.body, media_flags: r.media_flags, body_hash: r.body_hash }}
                   noun="reply"
-                  markdown={isMarkdownContent(r.content_type)}
+                  rich={bodyFormat(r.content_type)}
                   className="whitespace-pre-wrap"
                 />
               </li>

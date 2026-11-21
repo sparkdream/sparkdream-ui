@@ -6,6 +6,7 @@ import { useVerdict } from "@/hooks/useVerdict";
 import { ImageLoadBar } from "@/components/content/ScannedMedia";
 import MarkdownText from "@/components/content/MarkdownText";
 import { splitBodyImages } from "@/lib/contentScan/bodyImages";
+import { bodyImages, type BodyFormat } from "@/lib/contentScan/bodyFormat";
 
 // A body that has already passed the scanner display policy (useScannedBody),
 // with its embedded image links rendered as images. The text stays plain
@@ -14,7 +15,7 @@ import { splitBodyImages } from "@/lib/contentScan/bodyImages";
 // (docs/content-scanning.md §6). With `markdown`, the text between images is
 // formatted as Markdown (MarkdownText), which fetches nothing either.
 
-function BodyImage({ uri, alt }: { uri: string; alt: string }) {
+export function BodyImage({ uri, alt }: { uri: string; alt: string }) {
   const [src, setSrc] = useState<string | null>(null);
   return (
     <figure className="my-3">
@@ -49,13 +50,12 @@ function PreviewImage({ uri, alt }: { uri: string; alt: string }) {
 /**
  * The images a body being written embeds, shown under the composer. An image
  * this browser uploaded is shown as it will appear; a linked one is named.
+ * `format` is how the body will be rendered, which decides what counts as an
+ * image in it.
  * Renders nothing when the body has no images.
  */
-export function BodyImagePreviews({ text }: { text: string }) {
-  const images = useMemo(
-    () => splitBodyImages(text).filter((s): s is Extract<typeof s, { type: "image" }> => s.type === "image"),
-    [text]
-  );
+export function BodyImagePreviews({ text, format }: { text: string; format?: BodyFormat | null }) {
+  const images = useMemo(() => bodyImages(text, format), [text, format]);
   if (images.length === 0) return null;
   return (
     <div className="mt-3">
