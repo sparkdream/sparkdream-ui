@@ -48,6 +48,7 @@ export default function ImageInsert({
   textareaRef,
   anonymous = false,
   onPermanentCopy,
+  onPendingChange,
 }: {
   body: string;
   onChange: (next: string) => void;
@@ -59,6 +60,10 @@ export default function ImageInsert({
   /** Called with an image's address once a permanent-copy request by this
    *  member names it, so the form can keep it out of an anonymous dream. */
   onPermanentCopy?: (url: string) => void;
+  /** Called when an image is picked or typed here but not yet in the body
+   *  (or no longer so). Publishing then would leave the image out without a
+   *  word, so the form holds its publish button until it is added or cancelled. */
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const { address, signerAddress, sessionActive, signAndBroadcast } = useWallet();
   const { config } = useChainConfig();
@@ -91,6 +96,14 @@ export default function ImageInsert({
       cancelled = true;
     };
   }, [open, policy]);
+
+  const pending = open && (busy || !!file || !!url.trim());
+  const reportPending = useRef(onPendingChange);
+  reportPending.current = onPendingChange;
+  useEffect(() => {
+    reportPending.current?.(pending);
+    return () => reportPending.current?.(false);
+  }, [pending]);
 
   // Uploading is signed by the member's own wallet, so it isn't offered to a
   // session key acting for them, or to someone who isn't a member.
@@ -150,6 +163,7 @@ export default function ImageInsert({
     setOpen(false);
     setError(null);
     setFile(null);
+    setUrl("");
     setSource(null);
   };
 
@@ -435,7 +449,17 @@ export default function ImageInsert({
           </p>
         </>
       )}
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && (
+        <p role="alert" className="rounded-lg border border-red-800 bg-red-900/20 px-3 py-2 text-sm text-red-400">
+          {error}
+        </p>
+      )}
+      {pending && !busy && (
+        <p className="text-xs text-amber-300">
+          This image is not in your dream yet. Choose {active === "upload" ? "Upload and insert" : "Insert image"} to
+          add it, or Cancel to leave it out.
+        </p>
+      )}
       <div className="flex items-center gap-3">
         {active === "upload" ? (
           <button

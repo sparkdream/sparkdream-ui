@@ -35,6 +35,8 @@ export default function EditPostForm({ post }: EditPostFormProps) {
   const [tags, setTags] = useState<string[]>(post.tags || []);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // An image picked in the image box but not yet placed in the body.
+  const [imagePending, setImagePending] = useState(false);
   const canCreateTags = useCanCreateTags(address);
   const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
   const dream = useDreamDenom();
@@ -51,7 +53,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!connected || !title.trim() || !body.trim()) return;
+    if (!connected || !title.trim() || !body.trim() || imagePending) return;
     if (mediaGate.blockReason) {
       setError(mediaGate.blockReason);
       return;
@@ -159,7 +161,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
           {body.length} characters
         </p>
         <div className="mt-2">
-          <ImageInsert body={body} onChange={setBody} textareaRef={bodyRef} />
+          <ImageInsert body={body} onChange={setBody} textareaRef={bodyRef} onPendingChange={setImagePending} />
         </div>
       </div>
 
@@ -218,6 +220,13 @@ export default function EditPostForm({ post }: EditPostFormProps) {
 
       <MediaWriteNotice flags={mediaFlags} gate={mediaGate} noun="dream" />
 
+      {imagePending && (
+        <div className="rounded-lg border border-amber-800/70 bg-amber-900/10 px-4 py-3 text-sm text-amber-300">
+          You picked an image that has not been added yet. Finish adding it in the image box above, or cancel it
+          there, before you publish.
+        </div>
+      )}
+
       {error && (
         <div className="rounded-lg border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
           {error}
@@ -228,7 +237,7 @@ export default function EditPostForm({ post }: EditPostFormProps) {
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          disabled={submitting || !title.trim() || !body.trim() || !!mediaGate.blockReason}
+          disabled={submitting || !title.trim() || !body.trim() || !!mediaGate.blockReason || imagePending}
           className="sd-btn sd-btn-primary"
         >
           {submitting ? "Saving..." : "Save changes"}

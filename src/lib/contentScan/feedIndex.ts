@@ -129,9 +129,15 @@ interface WorkerFeed {
 
 const feeds = new Map<string, WorkerFeed>();
 
-async function refreshWorkerFeed(worker: ScannerWorker): Promise<WorkerFeed> {
+// A scanner can't have scanned past the chain's head. A cached height well
+// beyond it is left over from a chain that has since been reset (a devnet
+// restarted under the same worker and feed address), so the cache is dropped.
+const RESET_SLACK_BLOCKS = 100;
+
+async function refreshWorkerFeed(worker: ScannerWorker, chainHeight: number): Promise<WorkerFeed> {
   let feed = feeds.get(worker.address);
-  if (!feed || feed.feedUrl !== worker.feedUrl || feed.verdictKey !== worker.verdictKey) {
+  const otherChain = !!feed && chainHeight > 0 && feed.scannedHeight > chainHeight + RESET_SLACK_BLOCKS;
+  if (!feed || otherChain || feed.feedUrl !== worker.feedUrl || feed.verdictKey !== worker.verdictKey) {
     feed = {
       feedUrl: worker.feedUrl,
       verdictKey: worker.verdictKey,
@@ -149,6 +155,14 @@ async function refreshWorkerFeed(worker: ScannerWorker): Promise<WorkerFeed> {
   }
   const latestSegment = Math.max(1, Number(manifest.latest_segment) || 1);
   const count = Number(manifest.count) || 0;
+  // Feeds only grow. One that shrank was started over: forget the old one.
+  if (latestSegment < feed.latestSegment || (latestSegment === feed.latestSegment && count < feed.count)) {
+    feed.finalSegments.clear();
+    feed.latest = [];
+    feed.latestSegment = 0;
+    feed.count = -1;
+    feed.scannedHeight = 0;
+  }
   feed.scannedHeight = Math.max(feed.scannedHeight, Number(manifest.scanned_height) || 0);
   if (count === feed.count && latestSegment === feed.latestSegment) return feed;
 
@@ -209,6 +223,13 @@ async function build(): Promise<IndexSnapshot> {
   const trusted = new Set(setup.workers.map((w) => w.address));
   for (const w of setup.workers) heights[w.address] = setup.checkpoints[w.address] || 0;
 
+  let latestHeight = 0;
+  try {
+    latestHeight = parseInt(await getLatestBlockHeight(), 10) || 0;
+  } catch {
+    // Unknown chain height: the client treats the data as stale.
+  }
+
   let atts: Attestation[] = [];
   const merged = mergedFeedUrls();
   if (merged.length) {
@@ -219,7 +240,7 @@ async function build(): Promise<IndexSnapshot> {
     await Promise.all(
       setup.workers.map(async (w) => {
         try {
-          await refreshWorkerFeed(w);
+          await refreshWorkerFeed(w, latestHeight);
         } catch (err) {
           errors[w.address] = err instanceof Error ? err.message : String(err);
         }
@@ -245,13 +266,6 @@ async function build(): Promise<IndexSnapshot> {
     heights[a.worker] = Math.max(heights[a.worker] || 0, a.scanned_height);
     if (a.subject.record) push(byRecord, a.subject.record, a);
     if (a.subject.uri) push(byUri, a.subject.uri, a);
-  }
-
-  let latestHeight = 0;
-  try {
-    latestHeight = parseInt(await getLatestBlockHeight(), 10) || 0;
-  } catch {
-    // Unknown chain height: the client treats the data as stale.
   }
 
   return {

@@ -55,6 +55,8 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
   const canCreateTags = useCanCreateTags(address);
   const [maxBond, setMaxBond] = useState<string | null>(null);
   const [anonymous, setAnonymous] = useState(false);
+  // An image picked in the image box but not yet placed in the body.
+  const [imagePending, setImagePending] = useState(false);
   // Images this member requested a permanent copy of while writing. The
   // request names them on chain next to the image's address, so such an
   // image in an anonymous dream would say who wrote it.
@@ -84,7 +86,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!connected || !title.trim() || !body.trim()) return;
+    if (!connected || !title.trim() || !body.trim() || imagePending) return;
     if (mediaGate.blockReason) {
       setError(mediaGate.blockReason);
       return;
@@ -206,7 +208,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
           {body.length} characters
         </p>
         <div className="mt-2">
-          <ImageInsert body={body} onChange={setBody} textareaRef={bodyRef} anonymous={anonymous} onPermanentCopy={(u) => setCopyUrls((prev) => (prev.includes(u) ? prev : [...prev, u]))} />
+          <ImageInsert body={body} onChange={setBody} textareaRef={bodyRef} anonymous={anonymous} onPendingChange={setImagePending} onPermanentCopy={(u) => setCopyUrls((prev) => (prev.includes(u) ? prev : [...prev, u]))} />
         </div>
       </div>
 
@@ -297,6 +299,13 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
         </div>
       )}
 
+      {imagePending && (
+        <div className="rounded-lg border border-amber-800/70 bg-amber-900/10 px-4 py-3 text-sm text-amber-300">
+          You picked an image that has not been added yet. Finish adding it in the image box above, or cancel it
+          there, before you publish.
+        </div>
+      )}
+
       <MediaWriteNotice flags={mediaFlags} gate={mediaGate} noun="dream" />
 
       {error && (
@@ -309,7 +318,7 @@ export default function CreatePostForm({ onCreated, onCancel }: CreatePostFormPr
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          disabled={submitting || !title.trim() || !body.trim() || !!mediaGate.blockReason || namedImage}
+          disabled={submitting || !title.trim() || !body.trim() || !!mediaGate.blockReason || namedImage || imagePending}
           className="sd-btn-gold px-6 py-2.5"
         >
           {anonPhase ? SHIELD_PHASE_LABELS[anonPhase] : submitting ? "Publishing..." : anonymous ? "Publish anonymously" : "Publish dream"}
