@@ -10,6 +10,8 @@ import { TrustLevel, type RepStake } from "@/types/rep";
 import PostRow from "@/components/PostRow";
 import ContentNotice from "@/components/content/ContentNotice";
 import { useScannedBody } from "@/hooks/useScannedBody";
+import { bodyPreviewText, firstBodyImage } from "@/lib/contentScan/bodyImages";
+import { useCardImage } from "@/hooks/useCardImage";
 import CreatePostForm from "@/components/CreatePostForm";
 import CreateTagForm from "@/components/CreateTagForm";
 import DreamDetail from "@/components/DreamDetail";
@@ -636,6 +638,11 @@ function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => v
     body_hash: post.body_hash,
     author: post.creator,
   });
+  // The dream's first image fills the art panel once it may load; until
+  // then, and whenever it may not, the panel keeps its gradient.
+  const cover = scanned.status === "show" ? firstBodyImage(scanned.text) : null;
+  const coverSrc = useCardImage(cover?.uri || "");
+  const preview = scanned.status === "show" ? bodyPreviewText(scanned.text, { skipFirstImage: !!coverSrc }) : "";
   const [counts, setCounts] = useState<ReactionCounts | null>(null);
   useEffect(() => {
     getReactionCounts(post.id)
@@ -650,12 +657,23 @@ function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => v
       style={{ background: "none", border: 0, padding: 0, cursor: "pointer", width: "100%", textAlign: "left", font: "inherit" }}
     >
       <div className="art">
-        <div className="glyph">
-          <div className="frame">
-            <b>◆ Pinned · Council memo</b>
-            <span className="hash">{formatTime(post.created_at)}</span>
+        {coverSrc ? (
+          // A verified blob URL, so next/image has nothing to optimise. It
+          // fills the panel, cropped, and sits over the gradient and its grid.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={coverSrc}
+            alt={cover?.alt || ""}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", maxWidth: "none", objectFit: "cover" }}
+          />
+        ) : (
+          <div className="glyph">
+            <div className="frame">
+              <b>◆ Pinned · Council memo</b>
+              <span className="hash">{formatTime(post.created_at)}</span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
       <div className="body">
         <div className="meta-row">
@@ -664,13 +682,13 @@ function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => v
           <span>{timeAgo(post.created_at)}</span>
         </div>
         <h2>{post.title}</h2>
-        <p>
-          {scanned.status === "show" ? (
-            scanned.text
-          ) : (
+        {scanned.status !== "show" ? (
+          <p>
             <ContentNotice status={scanned.status} reason={scanned.reason} noun="dream" compact />
-          )}
-        </p>
+          </p>
+        ) : (
+          preview && <p>{preview}</p>
+        )}
         <span className="more">Read more →</span>
         <div className="foot">
           <div className="who">

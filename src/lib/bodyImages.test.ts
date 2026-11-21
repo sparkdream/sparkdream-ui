@@ -48,6 +48,11 @@ test("incomplete or non-image syntax stays text", () => {
 test("previews replace images with a label", () => {
   assert.equal(bodyPreviewText("look\n![a cat](https://example.com/cat.png)\nnice"), "look [image: a cat] nice");
   assert.equal(bodyPreviewText("![](https://example.com/cat.png)"), "[image]");
+  assert.equal(bodyPreviewText("![a](https://example.com/a.png)", { skipFirstImage: true }), "");
+  assert.equal(
+    bodyPreviewText("look\n![a](https://example.com/a.png)\n![b](https://example.com/b.png)", { skipFirstImage: true }),
+    "look [image: b]"
+  );
 });
 
 test("buildImageMarkdown round-trips through the parser", () => {

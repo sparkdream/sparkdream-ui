@@ -54,11 +54,26 @@ export function hasBodyImages(text: string): boolean {
   return splitBodyImages(text).some((s) => s.type === "image");
 }
 
-/** A body for one-line previews: each image becomes "[image: description]". */
-export function bodyPreviewText(text: string): string {
-  return splitBodyImages(text)
-    .map((s) => (s.type === "text" ? s.text : s.alt ? `[image: ${s.alt}]` : "[image]"))
-    .join(" ");
+/** The first image a body embeds, or null. */
+export function firstBodyImage(text: string): { uri: string; alt: string } | null {
+  for (const s of splitBodyImages(text)) if (s.type === "image") return { uri: s.uri, alt: s.alt };
+  return null;
+}
+
+/**
+ * A body for one-line previews: each image becomes "[image: description]".
+ * `skipFirstImage` leaves the first one out, for a card that shows it as a
+ * picture.
+ */
+export function bodyPreviewText(text: string, opts: { skipFirstImage?: boolean } = {}): string {
+  let skip = !!opts.skipFirstImage;
+  const parts: string[] = [];
+  for (const s of splitBodyImages(text)) {
+    if (s.type === "text") parts.push(s.text);
+    else if (skip) skip = false;
+    else parts.push(s.alt ? `[image: ${s.alt}]` : "[image]");
+  }
+  return parts.join(" ").trim();
 }
 
 /**
