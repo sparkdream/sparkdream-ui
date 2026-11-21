@@ -144,6 +144,12 @@ export type UploadOutcome =
 
 const refuse = (status: number, message: string): UploadOutcome => ({ ok: false, status, message });
 
+// A refusal caused by the scanner or the storage behind this server is sent as
+// 503, never 502 or 504: a CDN in front of the site (Cloudflare) replaces the
+// body of those two with its own error page, and the member then sees only
+// "the upload didn't go through" instead of what went wrong.
+const UPSTREAM_FAILED = 503;
+
 // ---- Attempt limiter ------------------------------------------------------------
 //
 // The weekly allowance counts stored images. A scanner pre-check costs seconds
@@ -231,7 +237,7 @@ async function precheck(cfg: UploadConfig, bytes: Uint8Array, sha256: string): P
   }
   if (res.status === 422) return refuse(422, "The content scanner can't check this kind of image, so it can't be uploaded.");
   if (!res.ok || body.sha256 !== sha256) {
-    return refuse(502, "The content scanner couldn't check the image, so it wasn't uploaded. Try again later.");
+    return refuse(UPSTREAM_FAILED, "The content scanner couldn't check the image, so it wasn't uploaded. Try again later.");
   }
   if (body.verdict !== "clean") {
     return refuse(422, "The content scanner didn't clear this image, so it can't be uploaded.");
@@ -306,7 +312,7 @@ async function storeCounted(
   const url = `${cfg.publicBase}/${key}`;
   const prefix = quotaPrefix(cfg, address, now, kind);
   const marker = `${prefix}${sha256}`;
-  const unanswered = refuse(502, "Image storage didn't answer, so the image wasn't uploaded. Try again later.");
+  const unanswered = refuse(UPSTREAM_FAILED, "Image storage didn't answer, so the image wasn't uploaded. Try again later.");
   const full = refuse(
     429,
     kind === "copy"
@@ -355,7 +361,7 @@ async function storeCounted(
       await putObject(cfg.s3, key, bytes, info.type);
     } catch {
       if (!counted) await release();
-      return refuse(502, "Image storage refused the file. Try again later.");
+      return refuse(UPSTREAM_FAILED, "Image storage refused the file. Try again later.");
     }
   }
   return { ok: true, url, sha256, used, quota };
