@@ -29,6 +29,7 @@ import CopyableAddress from "@/components/CopyableAddress";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
+import { useAuthorNames, matchesAuthor } from "@/hooks/useAuthorNames";
 import ErrorState from "@/components/ErrorState";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import { isAnonymousAddress } from "@/lib/shield";
@@ -40,6 +41,9 @@ type BondSortOption = "date" | "high" | "low";
 
 // StakeTargetType numeric value for x/blog author bonds.
 const BLOG_AUTHOR_BOND = 7;
+// How many dreams a search will page in on its own before leaving the rest
+// to scrolling.
+const SEARCH_SCAN_LIMIT = 500;
 
 // Ordered high→low as rendered. `rank` is used for "this level and above" filtering.
 const TRUST_LEVELS: { key: string; label: string; cls: string; value: string; rank: number }[] = [
@@ -289,6 +293,23 @@ function ImaginariumPageInner() {
     return () => obs.disconnect();
   }, [fetchPosts]);
 
+  // Author names for the search box, so a query matches the name a dream is
+  // shown under as well as the address.
+  const searching = searchQuery.trim() !== "";
+  const authorAddresses = useMemo(
+    () => [...posts, ...(bondedPosts ?? [])].map((p) => p.creator),
+    [posts, bondedPosts]
+  );
+  const authorNames = useAuthorNames(authorAddresses, searching);
+
+  // A search only sees the pages loaded so far, so keep paging while one is
+  // active (up to a cap) instead of waiting for the reader to scroll.
+  useEffect(() => {
+    if (!searching || bondedOnly || !nextKey || loading || error) return;
+    if (posts.length >= SEARCH_SCAN_LIMIT) return;
+    fetchPosts(nextKey);
+  }, [searching, bondedOnly, nextKey, loading, error, posts.length, fetchPosts]);
+
   const filteredAndSorted = useMemo(() => {
     let result = bondedOnly ? bondedPosts ?? [] : posts;
     if (filter === "my-posts" && address) {
@@ -307,7 +328,7 @@ function ImaginariumPageInner() {
       result = result.filter((p) => {
         if (p.title?.toLowerCase().includes(q)) return true;
         if (p.body?.toLowerCase().includes(q)) return true;
-        if (p.creator?.toLowerCase().includes(q)) return true;
+        if (matchesAuthor(q, p.creator, authorNames)) return true;
         if ((p.tags || []).some((t) => t.toLowerCase().includes(q))) return true;
         return false;
       });
@@ -331,7 +352,7 @@ function ImaginariumPageInner() {
       );
     }
     return result;
-  }, [posts, filter, sort, memberAddresses, address, isMine, trustFilter, trustAddresses, tagFilter, searchQuery, bondedOnly, bondedPosts, bondMap, bondSort]);
+  }, [posts, filter, sort, memberAddresses, address, isMine, trustFilter, trustAddresses, tagFilter, searchQuery, authorNames, bondedOnly, bondedPosts, bondMap, bondSort]);
 
   // Pinned dreams lead the feed, most recently pinned first: the first is the
   // featured card and the rest head the list. Only pins among the loaded pages
@@ -515,7 +536,7 @@ function ImaginariumPageInner() {
           )}
         </>
       }
-      searchPlaceholder="Search dreams, tags, or addresses…"
+      searchPlaceholder="Search dreams, tags, or authors…"
       searchValue={searchQuery}
       onSearchChange={setSearchQuery}
       searchRef={searchRef}

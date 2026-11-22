@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   listForumPostsByCategory,
   listForumPosts,
@@ -22,6 +22,7 @@ import type { Category } from "@/types/commons";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
+import { useAuthorNames, matchesAuthor } from "@/hooks/useAuthorNames";
 
 function statusBadge(status: string) {
   const colors: Record<string, string> = {
@@ -38,6 +39,9 @@ function statusBadge(status: string) {
 }
 
 const PAGE_SIZE = "20";
+// How many threads a search will page in on its own before leaving the rest
+// to the "Load more" button.
+const SEARCH_SCAN_LIMIT = 500;
 
 // The pinned root threads of the given categories, in display order: lowest
 // pin_priority first (the chain's order within a category), newest pin first
@@ -77,16 +81,22 @@ interface ThreadListProps {
   tagFilter?: string | null;
   /** Authors at or above the selected trust level; null/undefined disables the filter. */
   trustAddresses?: Set<string> | null;
+  /** Free-text filter over spark text, tags, and author (address or name). */
+  search?: string;
+  /** Date order for the all, category and "my sparks" feeds. Pinned threads
+   *  stay on top, and the top, bonded and flagged feeds keep their own order. */
+  sort?: "newest" | "oldest";
   /** Optional CTA shown in the empty state to open the new-spark form. */
   onCreate?: () => void;
 }
 
-export default function ThreadList({ mode, category, onSelectThread, tagFilter, trustAddresses, onCreate }: ThreadListProps) {
+export default function ThreadList({ mode, category, onSelectThread, tagFilter, trustAddresses, search, sort = "newest", onCreate }: ThreadListProps) {
   const dream = useDreamDenom();
   const { address } = useWallet();
   const [threads, setThreads] = useState<ForumPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreFailed, setLoadMoreFailed] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [nextKey, setNextKey] = useState<string | null>(null);
   // Pinned threads for the "all" and category feeds, shown above the rest.
@@ -256,8 +266,10 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
 
       setThreads((prev) => [...prev, ...posts]);
       setNextKey(nk);
+      setLoadMoreFailed(false);
     } catch (err) {
       console.error("Load more failed:", err);
+      setLoadMoreFailed(true);
     } finally {
       setLoadingMore(false);
     }
@@ -266,6 +278,24 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
   useEffect(() => {
     fetchThreads();
   }, [fetchThreads]);
+
+  // Author names for the search, so a query matches the name a spark is shown
+  // under as well as the address.
+  const query = (search ?? "").trim().toLowerCase();
+  const authorAddresses = useMemo(
+    () => [...threads, ...pinned].map((p) => p.author),
+    [threads, pinned]
+  );
+  const authorNames = useAuthorNames(authorAddresses, query !== "");
+
+  // A search only sees the pages loaded so far, so keep paging while one is
+  // active (up to a cap) instead of waiting for "Load more". A failed page
+  // stops the scan; the button retries it.
+  useEffect(() => {
+    if (!query || !nextKey || loading || loadingMore || loadMoreFailed) return;
+    if (threads.length >= SEARCH_SCAN_LIMIT) return;
+    loadMore();
+  }, [query, nextKey, loading, loadingMore, loadMoreFailed, threads.length, loadMore]);
 
   if (loading) {
     return (
@@ -295,6 +325,27 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
     : feed;
   if (trustAddresses) {
     visible = visible.filter((p) => trustAddresses.has(p.author));
+  }
+  if (query) {
+    visible = visible.filter(
+      (p) =>
+        p.content?.toLowerCase().includes(query) ||
+        (p.tags || []).some((t) => t.toLowerCase().includes(query)) ||
+        matchesAuthor(query, p.author, authorNames)
+    );
+  }
+  if (mode === "all" || mode === "category" || mode === "my-posts") {
+    const pinnedIds = new Set(mode === "my-posts" ? [] : pinned.map((p) => p.post_id));
+    const dir = sort === "oldest" ? 1 : -1;
+    visible = [
+      ...visible.filter((p) => pinnedIds.has(p.post_id)),
+      ...visible
+        .filter((p) => !pinnedIds.has(p.post_id))
+        .sort(
+          (a, b) =>
+            dir * (parseInt(a.created_at || "0", 10) - parseInt(b.created_at || "0", 10))
+        ),
+    ];
   }
   if (mode === "bonded") {
     visible = [...visible].sort((a, b) => {
@@ -369,13 +420,15 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
       {visible.length === 0 ? (
         <div className="sd-hull-tile rounded-xl p-12 text-center">
           <p className="text-zinc-400">
-            {mode === "my-posts"
+            {query
+              ? "No sparks match your search"
+              : mode === "my-posts"
               ? "You have no sparks yet"
               : mode === "flagged"
                 ? "No flagged sparks"
                 : "No sparks found"}
           </p>
-          {onCreate && !tagFilter && !trustAddresses && (
+          {onCreate && !tagFilter && !trustAddresses && !query && (
             <button
               type="button"
               onClick={onCreate}

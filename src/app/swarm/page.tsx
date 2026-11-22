@@ -454,7 +454,7 @@ function SwarmPageInner() {
           </button>
         </>
       }
-      searchPlaceholder="Search sparks, tags, or addresses…"
+      searchPlaceholder="Search sparks, tags, or authors…"
       searchValue={searchQuery}
       onSearchChange={setSearchQuery}
       searchRef={searchRef}
@@ -487,6 +487,8 @@ function SwarmPageInner() {
           mode="all"
           onSelectThread={handleSelectThread}
           tagFilter={tagFilter}
+          search={searchQuery}
+          sort={sort}
           trustAddresses={trustAddresses}
           onCreate={connected ? () => switchView("create") : undefined}
         />
@@ -529,6 +531,8 @@ function SwarmPageInner() {
             category={selectedCategory}
             onSelectThread={handleSelectThread}
             tagFilter={tagFilter}
+            search={searchQuery}
+            sort={sort}
             trustAddresses={trustAddresses}
           />
         </div>
@@ -539,6 +543,8 @@ function SwarmPageInner() {
           mode="top"
           onSelectThread={handleSelectThread}
           tagFilter={tagFilter}
+          search={searchQuery}
+          sort={sort}
           trustAddresses={trustAddresses}
           onCreate={connected ? () => switchView("create") : undefined}
         />
@@ -549,6 +555,8 @@ function SwarmPageInner() {
           mode="bonded"
           onSelectThread={handleSelectThread}
           tagFilter={tagFilter}
+          search={searchQuery}
+          sort={sort}
           trustAddresses={trustAddresses}
           onCreate={connected ? () => switchView("create") : undefined}
         />
@@ -560,6 +568,8 @@ function SwarmPageInner() {
             mode="flagged"
             onSelectThread={handleSelectThread}
             tagFilter={tagFilter}
+            search={searchQuery}
+            sort={sort}
             trustAddresses={trustAddresses}
           />
         ) : (
@@ -579,6 +589,8 @@ function SwarmPageInner() {
             mode="my-posts"
             onSelectThread={handleSelectThread}
             tagFilter={tagFilter}
+            search={searchQuery}
+            sort={sort}
             trustAddresses={trustAddresses}
             onCreate={() => switchView("create")}
           />

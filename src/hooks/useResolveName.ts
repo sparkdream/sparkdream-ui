@@ -20,7 +20,8 @@ async function resolveDirect(address: string): Promise<string> {
   }
 }
 
-async function resolveWithCache(address: string): Promise<string> {
+/** The name shown for `address` ("" when it has none), from the shared cache. Never throws. */
+export async function resolveWithCache(address: string): Promise<string> {
   const cached = nameCache.get(address);
   if (cached && Date.now() - cached.ts < CACHE_TTL) {
     return cached.name;
