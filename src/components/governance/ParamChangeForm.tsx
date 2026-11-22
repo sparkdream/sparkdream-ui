@@ -7,6 +7,8 @@ import {
   MODULES,
   displayValue,
   parseDurationSeconds,
+  parseStringList,
+  parseIntList,
   getByPath,
   type FieldDef,
   type ModuleDef,
@@ -146,7 +148,7 @@ export default function ParamChangeForm({ onMessage }: ParamChangeFormProps) {
                   <ParamField
                     key={field.key}
                     field={field}
-                    value={editedValues[field.key] || ""}
+                    value={editedValues[field.key] ?? ""}
                     displayDenom={config.displayDenom}
                     dreamDenom={config.dreamDisplayDenom}
                     onChange={(val) =>
@@ -205,6 +207,50 @@ function ParamField({
     );
   }
 
+  if (field.kind === "enum") {
+    return (
+      <div>
+        <label className="mb-0.5 block text-xs font-medium text-zinc-400">
+          {fieldLabel}
+        </label>
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="sd-select w-full"
+        >
+          {(field.options ?? []).map((o) => (
+            <option key={o.name} value={o.name}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
+  if (isListKind(field)) {
+    const count = (field.kind === "int-list" ? parseIntList(value) : parseStringList(value)).length;
+    return (
+      <div className="sm:col-span-2">
+        <label className="mb-0.5 block text-xs font-medium text-zinc-400">
+          {fieldLabel} ({count})
+        </label>
+        <textarea
+          rows={6}
+          spellCheck={false}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full resize-y rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 font-mono text-xs text-white placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
+        />
+        {field.hint && (
+          <p className="mt-0.5 text-[10px] text-zinc-600">
+            {withDreamDenom(field.hint, dreamDenom)}
+          </p>
+        )}
+      </div>
+    );
+  }
+
   const label = field.unit
     ? `${fieldLabel} (${field.unit})`
     : field.kind === "coin" || field.kind === "coins" || field.kind === "amount"
@@ -256,7 +302,14 @@ async function encodeParamUpdate(
   if (moduleDef.generic) {
     const { MsgUpdateParams, Params } = await moduleDef.generic();
     const editedAmino = buildEditedAmino(moduleDef.fields, currentParams, editedValues);
-    const params = Params.fromAmino(normalizeDurationsForAmino(editedAmino));
+    let amino = normalizeDurationsForAmino(editedAmino) as Record<string, unknown>;
+    // A list entry shaped like a duration ("123s" is a valid name) must not be
+    // rewritten to nanoseconds, so lists go back in as they were.
+    for (const field of moduleDef.fields) {
+      if (!isListKind(field)) continue;
+      amino = setByPath(amino, field.apiKey, getByPath(editedAmino, field.apiKey) ?? []);
+    }
+    const params = Params.fromAmino(amino);
     return {
       typeUrl: moduleDef.typeUrl,
       value: MsgUpdateParams.encode(
@@ -287,14 +340,15 @@ async function encodeParamUpdate(
               minInitialDepositRatio: editedValues.minInitialDepositRatio || String(cur.min_initial_deposit_ratio || "0"),
               expeditedThreshold: editedValues.expeditedThreshold || String(cur.expedited_threshold || ""),
               expeditedVotingPeriod: toDuration(editedValues.expeditedVotingPeriod, 3600, cur.expedited_voting_period),
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              expeditedMinDeposit: (cur.expedited_min_deposit as any[]) || [],
-              proposalCancelRatio: String(cur.proposal_cancel_ratio || "0.5"),
-              proposalCancelDest: String(cur.proposal_cancel_dest || ""),
+              expeditedMinDeposit: toCoins(editedValues.expeditedMinDeposit, cur.expedited_min_deposit),
+              proposalCancelRatio: editedValues.proposalCancelRatio || String(cur.proposal_cancel_ratio || "0.5"),
+              // Empty is a value here (burn the cancelled share), so an
+              // emptied box clears the address.
+              proposalCancelDest: (editedValues.proposalCancelDest ?? String(cur.proposal_cancel_dest || "")).trim(),
               burnVoteQuorum: editedValues.burnVoteQuorum === "true",
-              burnProposalDepositPrevote: !!(cur.burn_proposal_deposit_prevote),
+              burnProposalDepositPrevote: editedValues.burnProposalDepositPrevote === "true",
               burnVoteVeto: editedValues.burnVoteVeto === "true",
-              minDepositRatio: String(cur.min_deposit_ratio || "0.01"),
+              minDepositRatio: editedValues.minDepositRatio || String(cur.min_deposit_ratio || "0.01"),
             },
           })
         ).finish(),
@@ -433,13 +487,18 @@ function buildEditedAmino(
   let out: Record<string, unknown> = { ...currentParams };
   for (const field of fields) {
     const v = editedValues[field.key];
-    if (v === undefined || v === "") continue;
+    // An emptied list is an edit (clear the list); an emptied scalar is not.
+    if (v === undefined || (v === "" && !isListKind(field))) continue;
     const converted = convertEditToAmino(field, v, getByPath(currentParams, field.apiKey));
     out = setByPath(out, field.apiKey, converted);
   }
   return out;
 }
 
+
+function isListKind(field: FieldDef): boolean {
+  return field.kind === "string-list" || field.kind === "int-list";
+}
 
 /** Immutably set a nested field, copying every object along the way so the
  * original LCD response isn't mutated and React can detect the state change. */
@@ -516,6 +575,16 @@ function convertEditToAmino(
       // 1_000_000 micro-DREAM).
       return (parseFloat(edited) * 1_000_000).toFixed(0);
     }
+    case "string-list":
+      return parseStringList(edited);
+    case "int-list":
+      // Decimal strings; the codec turns each into a BigInt and throws on
+      // anything else, which blocks the proposal until the entry is fixed.
+      return parseIntList(edited);
+    case "enum":
+      // The codec stores what it is given, so it must get the number. An
+      // unknown name is passed through for the chain to reject.
+      return field.options?.find((o) => o.name === edited)?.value ?? edited;
     case "string":
     case "int":
     case "dec":

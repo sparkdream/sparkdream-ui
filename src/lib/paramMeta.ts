@@ -35,7 +35,17 @@ export type FieldKind =
   // "(DREAM)" unit label. Use it for params consumed via LockDREAM / MintDREAM
   // / bonded-role DREAM amounts (NOT bond-denom uspark fields — those stay
   // "int"/"amount").
-  | "dream";
+  | "dream"
+  // `repeated string` params (allowlists, blocklists). Edited as one entry
+  // per line; an emptied box sends an empty list, it does not carry the
+  // current one forward.
+  | "string-list"
+  // `repeated uint64` params where order matters (level thresholds). Same
+  // one-per-line box; entries stay in the order typed and are not deduped.
+  | "int-list"
+  // A proto enum. The LCD reports the value's name, the codec wants its
+  // number: `options` maps one to the other and fills the dropdown.
+  | "enum";
 
 export interface FieldDef {
   /** Unique editedValues key. For nested fields use the dot path, e.g.
@@ -57,6 +67,8 @@ export interface FieldDef {
    * under one heading, in source order. Used by rep (90+ fields) to keep
    * the form scannable. */
   group?: string;
+  /** For enum: every selectable value. */
+  options?: { value: number; name: string; label: string }[];
 }
 
 /**
@@ -106,6 +118,11 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "expeditedVotingPeriod", apiKey: "expedited_voting_period", label: "Expedited Voting Period", kind: "duration", unit: "hours", unitDivisor: 3600 },
       { key: "burnVoteQuorum", apiKey: "burn_vote_quorum", label: "Burn on Quorum Failure", kind: "boolean" },
       { key: "burnVoteVeto", apiKey: "burn_vote_veto", label: "Burn on Veto", kind: "boolean" },
+      { key: "burnProposalDepositPrevote", apiKey: "burn_proposal_deposit_prevote", label: "Burn Deposit If Voting Never Starts", kind: "boolean" },
+      { key: "expeditedMinDeposit", apiKey: "expedited_min_deposit", label: "Expedited Min Deposit", kind: "coins" },
+      { key: "minDepositRatio", apiKey: "min_deposit_ratio", label: "Min Deposit Ratio", kind: "string", hint: "Smallest single deposit, as a fraction of the min deposit (e.g. 0.01)" },
+      { key: "proposalCancelRatio", apiKey: "proposal_cancel_ratio", label: "Proposal Cancel Ratio", kind: "string", hint: "Fraction of the deposit taken when a proposal is cancelled (e.g. 0.5)" },
+      { key: "proposalCancelDest", apiKey: "proposal_cancel_dest", label: "Proposal Cancel Destination", kind: "string", hint: "Address that receives the cancelled share. Empty burns it." },
     ],
   },
   staking: {
@@ -262,6 +279,11 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "Scheduled / One-shots", key: "maxEndblockerDispatchesPerPass", apiKey: "max_endblocker_dispatches_per_pass", label: "Max EndBlocker Dispatches Per Pass", kind: "number" },
 
       // Grantee consent (chain v1.0.57)
+      { group: "Message Types", key: "allowedMsgTypes", apiKey: "allowed_msg_types", label: "Allowed Msg Types", kind: "string-list", hint: "One type URL per line. Message types a session may be granted now. Each must also be in the ceiling below; the list cannot be empty." },
+      { group: "Message Types", key: "maxAllowedMsgTypes", apiKey: "max_allowed_msg_types", label: "Max Allowed Msg Types (Ceiling)", kind: "string-list", hint: "One type URL per line. Governance can only remove types here. A removed type comes back only with a chain upgrade." },
+      { group: "Allowances", key: "allowedDenoms", apiKey: "allowed_denoms", label: "Allowed Denoms", kind: "string-list", hint: "One denom per line. Extra denoms allowed in pull, allowance and one-shot grants; the bond denom is always allowed. Removing a denom strands the grants that use it." },
+      { group: "Trusted Modules", key: "authorizedGrantCreators", apiKey: "authorized_grant_creators", label: "Authorized Grant Creators", kind: "string-list", hint: "One address per line. Each can create grants for a module account with no signature check. Add only after a security review." },
+
       { group: "Grantee Consent", key: "pendingGrantDeposit", apiKey: "pending_grant_deposit", label: "Pending Grant Deposit", kind: "amount", hint: "SPARK a granter escrows on a session key or sign-in grant to a grantee that has not allowed them yet. Refunded on accept, decline or revoke; forfeited if it expires unaccepted. 0 disables the deposit, not the consent step" },
     ],
   },
@@ -389,6 +411,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "disputeStakeDream", apiKey: "dispute_stake_dream", label: "Dispute Stake", kind: "dream" },
       { key: "contestStakeDream", apiKey: "contest_stake_dream", label: "Contest Stake", kind: "dream" },
       { key: "disputeTimeoutBlocks", apiKey: "dispute_timeout_blocks", label: "Dispute Timeout (blocks)", kind: "bigint" },
+      { key: "blockedNames", apiKey: "blocked_names", label: "Blocked Names", kind: "string-list", hint: "One name per line. A name on this list cannot be registered. Names already registered are not affected." },
     ],
   },
   reveal: {
@@ -500,6 +523,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { group: "IBC", key: "ibcPort", apiKey: "ibc_port", label: "IBC Port", kind: "string" },
       { group: "IBC", key: "ibcChannelVersion", apiKey: "ibc_channel_version", label: "IBC Channel Version", kind: "string" },
       { group: "IBC", key: "ibcPacketTimeout", apiKey: "ibc_packet_timeout", label: "IBC Packet Timeout", kind: "duration", unit: "minutes", unitDivisor: 60 },
+      { group: "Content", key: "knownContentTypes", apiKey: "known_content_types", label: "Known Content Types", kind: "string-list", hint: "One content type per line." },
     ],
   },
   collect: {
@@ -711,6 +735,7 @@ export const MODULES: Record<string, ModuleDef> = {
       // Invite cleanup
       { group: "Invite Cleanup", key: "inviteCleanupIntervalBlocks", apiKey: "invite_cleanup_interval_blocks", label: "Invite Cleanup Interval (blocks)", kind: "number" },
       { group: "Invite Cleanup", key: "inviteCleanupBatchSize", apiKey: "invite_cleanup_batch_size", label: "Invite Cleanup Batch Size", kind: "number" },
+      { group: "XP", key: "levelThresholds", apiKey: "level_thresholds", label: "Level Thresholds", kind: "int-list", hint: "XP needed for each level, one per line, lowest level first. Must be strictly increasing and not empty." },
     ],
   },
   shield: {
@@ -764,6 +789,137 @@ export const MODULES: Record<string, ModuleDef> = {
     fields: [
       { key: "creationEnabled", apiKey: "creation_enabled", label: "Creation Enabled", kind: "boolean", hint: "Gates new vaults only; existing vaults keep working" },
       { key: "creationFeeAmount", apiKey: "creation_fee_amount", label: "Creation Fee", kind: "amount" },
+    ],
+  },
+  artifact: {
+    label: "Artifact",
+    paramPath: "/sparkdream/artifact/v1/params",
+    responseKey: "params",
+    typeUrl: "/sparkdream.artifact.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/artifact/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/artifact/v1/params");
+      return { MsgUpdateParams, Params };
+    },
+    fields: [
+      { group: "Gates", key: "minTrustLevelCreateClass", apiKey: "min_trust_level_create_class", label: "Min Trust Level to Create a Class", kind: "number", hint: "Trust level (0-4)" },
+      { group: "Gates", key: "maxClassesPerCreator", apiKey: "max_classes_per_creator", label: "Max Classes Per Creator", kind: "number" },
+      { group: "Gates", key: "defaultReceivePolicy", apiKey: "default_receive_policy", label: "Default Receive Policy", kind: "enum", options: [{ value: 1, name: "RECEIVE_POLICY_OPEN", label: "Open: accept every token" }, { value: 2, name: "RECEIVE_POLICY_MEMBERS", label: "Members: accept from members, inbox the rest" }, { value: 3, name: "RECEIVE_POLICY_INBOX", label: "Inbox: every token goes to the inbox" }] },
+      { group: "Gates", key: "marketEnabled", apiKey: "market_enabled", label: "Market Enabled", kind: "boolean" },
+      { group: "Gates", key: "publicMintEnabled", apiKey: "public_mint_enabled", label: "Public Mint Enabled", kind: "boolean" },
+      { group: "Gates", key: "renderersEnabled", apiKey: "renderers_enabled", label: "Renderers Enabled", kind: "boolean", hint: "Query-time renderer evaluation" },
+      { group: "Size Limits", key: "maxNameLength", apiKey: "max_name_length", label: "Max Name Length", kind: "number" },
+      { group: "Size Limits", key: "maxSymbolLength", apiKey: "max_symbol_length", label: "Max Symbol Length", kind: "number" },
+      { group: "Size Limits", key: "maxDescriptionLength", apiKey: "max_description_length", label: "Max Description Length", kind: "number" },
+      { group: "Size Limits", key: "maxUriLength", apiKey: "max_uri_length", label: "Max URI Length", kind: "number" },
+      { group: "Size Limits", key: "maxAttributes", apiKey: "max_attributes", label: "Max Attributes", kind: "number" },
+      { group: "Size Limits", key: "maxAttributeKeyLength", apiKey: "max_attribute_key_length", label: "Max Attribute Key Length", kind: "number" },
+      { group: "Size Limits", key: "maxAttributeValueLength", apiKey: "max_attribute_value_length", label: "Max Attribute Value Length", kind: "number" },
+      { group: "Size Limits", key: "maxMintersPerClass", apiKey: "max_minters_per_class", label: "Max Minters Per Class", kind: "number" },
+      { group: "Size Limits", key: "maxBatchSize", apiKey: "max_batch_size", label: "Max Batch Size", kind: "number" },
+      { group: "Size Limits", key: "maxIssueBatchSize", apiKey: "max_issue_batch_size", label: "Max Issue Batch Size", kind: "number", hint: "Recipients per issue" },
+      { group: "Size Limits", key: "allowedUriSchemes", apiKey: "allowed_uri_schemes", label: "Allowed URI Schemes", kind: "string-list", hint: "One scheme per line, lowercase, without ':' or '/'. The list cannot be empty." },
+      { group: "Market", key: "maxRoyaltyBps", apiKey: "max_royalty_bps", label: "Max Royalty (bps)", kind: "number", hint: "1000 = 10%" },
+      { group: "Market", key: "saleFeeBps", apiKey: "sale_fee_bps", label: "Sale Fee (bps)", kind: "number", hint: "100 = 1%" },
+      { group: "Market", key: "maxListingDuration", apiKey: "max_listing_duration", label: "Max Listing Duration (seconds)", kind: "bigint" },
+      { group: "Market", key: "maxRentalDuration", apiKey: "max_rental_duration", label: "Max Rental Duration (seconds)", kind: "bigint" },
+      { group: "Market", key: "maxOffersPerBidder", apiKey: "max_offers_per_bidder", label: "Max Offers Per Bidder", kind: "number", hint: "Open escrowed offers" },
+      { group: "Market", key: "auctionExtension", apiKey: "auction_extension", label: "Auction Extension (seconds)", kind: "bigint", hint: "How far a late bid pushes out an auction's end" },
+      { group: "Fees & Deposits", key: "classCreationFee", apiKey: "class_creation_fee", label: "Class Creation Fee", kind: "amount", hint: "Burned on class creation" },
+      { group: "Fees & Deposits", key: "tokenDeposit", apiKey: "token_deposit", label: "Token Deposit", kind: "amount", hint: "Held per token, refunded on burn or revoke" },
+      { group: "Fees & Deposits", key: "inboxFee", apiKey: "inbox_fee", label: "Inbox Fee", kind: "amount", hint: "Burned per inbox item" },
+      { group: "Inbox", key: "pendingTtl", apiKey: "pending_ttl", label: "Pending TTL (seconds)", kind: "bigint", hint: "How long an inbox item or class-owner proposal stays open" },
+      { group: "Inbox", key: "maxPendingPerPair", apiKey: "max_pending_per_pair", label: "Max Pending Per Pair", kind: "number" },
+      { group: "Inbox", key: "maxInboxPerRecipient", apiKey: "max_inbox_per_recipient", label: "Max Inbox Per Recipient", kind: "number" },
+      { group: "Inbox", key: "maxExpirationsPerBlock", apiKey: "max_expirations_per_block", label: "Max Expirations Per Block", kind: "number" },
+      { group: "Moderation", key: "maxHidesPerSentinelPerDay", apiKey: "max_hides_per_sentinel_per_day", label: "Max Hides Per Sentinel Per Day", kind: "number" },
+      { group: "Moderation", key: "sentinelUnhideWindowBlocks", apiKey: "sentinel_unhide_window_blocks", label: "Sentinel Unhide Window (blocks)", kind: "bigint" },
+      { group: "Moderation", key: "hideExpiryBlocks", apiKey: "hide_expiry_blocks", label: "Hide Expiry (blocks)", kind: "bigint" },
+      { group: "Moderation", key: "sentinelHideCommitDream", apiKey: "sentinel_hide_commit_dream", label: "Sentinel Hide Commit", kind: "dream", hint: "DREAM reserved on the sentinel bond per hide" },
+      { group: "Metadata & Media", key: "maxScheduleStages", apiKey: "max_schedule_stages", label: "Max Schedule Stages", kind: "number", hint: "Stages per token metadata schedule; 0 disables schedules" },
+      { group: "Metadata & Media", key: "maxMediaProposalsPerToken", apiKey: "max_media_proposals_per_token", label: "Max Media Proposals Per Token", kind: "number", hint: "Open proposals per token; 0 disables proposals" },
+      { group: "Metadata & Media", key: "maxMediaVersionsPerToken", apiKey: "max_media_versions_per_token", label: "Max Media Versions Per Token", kind: "number" },
+      { group: "Nesting & Crafting", key: "maxNestDepth", apiKey: "max_nest_depth", label: "Max Nest Depth", kind: "number", hint: "Levels a nested tree may have below its root" },
+      { group: "Nesting & Crafting", key: "maxNestedTokens", apiKey: "max_nested_tokens", label: "Max Nested Tokens", kind: "number", hint: "Tokens a nested tree may hold under its root" },
+      { group: "Nesting & Crafting", key: "maxCraftRecipesPerClass", apiKey: "max_craft_recipes_per_class", label: "Max Craft Recipes Per Class", kind: "number" },
+    ],
+  },
+  service: {
+    label: "Service",
+    paramPath: "/sparkdream/service/v1/params",
+    responseKey: "params",
+    typeUrl: "/sparkdream.service.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/service/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/service/v1/params");
+      return { MsgUpdateParams, Params };
+    },
+    fields: [
+      { group: "Per-Type Defaults", key: "defaultUnbondingPeriodBlocks", apiKey: "default_unbonding_period_blocks", label: "Default Unbonding Period (blocks)", kind: "bigint" },
+      { group: "Per-Type Defaults", key: "defaultUnilateralSlashCapBps", apiKey: "default_unilateral_slash_cap_bps", label: "Default Unilateral Slash Cap (bps)", kind: "number", hint: "Cap per slash; 500 = 5%" },
+      { group: "Per-Type Defaults", key: "defaultTier1WindowBlocks", apiKey: "default_tier1_window_blocks", label: "Default Tier-1 Window (blocks)", kind: "bigint", hint: "Rolling window for the aggregate cap" },
+      { group: "Per-Type Defaults", key: "defaultTier1AggregateCapBps", apiKey: "default_tier1_aggregate_cap_bps", label: "Default Tier-1 Aggregate Cap (bps)", kind: "number", hint: "Cumulative slash cap within the window; 1500 = 15%" },
+      { group: "Per-Type Defaults", key: "defaultTier1CooldownBlocks", apiKey: "default_tier1_cooldown_blocks", label: "Default Tier-1 Cooldown (blocks)", kind: "bigint", hint: "Minimum interval between tier-1 slashes of one operator" },
+      { group: "Per-Type Defaults", key: "defaultUnderfundedGraceBlocks", apiKey: "default_underfunded_grace_blocks", label: "Default Underfunded Grace (blocks)", kind: "bigint", hint: "Time to top up before a forced unbond" },
+      { group: "Reports", key: "reportContestWindowBlocks", apiKey: "report_contest_window_blocks", label: "Report Contest Window (blocks)", kind: "bigint", hint: "Window to contest a tier-1 slash; also the escrow release delay" },
+      { group: "Reports", key: "maxPendingBlocks", apiKey: "max_pending_blocks", label: "Max Pending (blocks)", kind: "bigint", hint: "Pending reports are dismissed after this long" },
+      { group: "Reports", key: "maxEscalatedBlocks", apiKey: "max_escalated_blocks", label: "Max Escalated (blocks)", kind: "bigint", hint: "Must be greater than max pending" },
+      { group: "Reports", key: "reportRefileCooldownBlocks", apiKey: "report_refile_cooldown_blocks", label: "Report Refile Cooldown (blocks)", kind: "bigint", hint: "Must be at least max pending" },
+      { group: "Reports", key: "reportDepositAmount", apiKey: "report_deposit_amount", label: "Report Deposit", kind: "amount" },
+      { group: "Reporters", key: "minReporterTrustLevel", apiKey: "min_reporter_trust_level", label: "Min Reporter Trust Level", kind: "string", hint: "Enum name, e.g. TRUST_LEVEL_ESTABLISHED" },
+      { group: "Reporters", key: "maxReportsPerReporterPerOperatorPerWindow", apiKey: "max_reports_per_reporter_per_operator_per_window", label: "Max Reports Per Reporter Per Operator", kind: "number", hint: "Within the rate limit window below" },
+      { group: "Reporters", key: "reporterRateLimitWindowBlocks", apiKey: "reporter_rate_limit_window_blocks", label: "Reporter Rate Limit Window (blocks)", kind: "bigint" },
+      { group: "System Reports", key: "maxSystemReportsPerCallerPerWindow", apiKey: "max_system_reports_per_caller_per_window", label: "Max System Reports Per Caller", kind: "number", hint: "Per calling module, within the window below" },
+      { group: "System Reports", key: "rateLimitWindowBlocks", apiKey: "rate_limit_window_blocks", label: "System Report Window (blocks)", kind: "bigint" },
+      { group: "Limits", key: "endblockerSweepLimit", apiKey: "endblocker_sweep_limit", label: "EndBlocker Sweep Limit", kind: "number", hint: "Records processed per queue per block" },
+      { group: "Limits", key: "maxMetadataBytes", apiKey: "max_metadata_bytes", label: "Max Metadata Bytes", kind: "number", hint: "Hard cap 65536" },
+      { group: "Limits", key: "maxReasonBytes", apiKey: "max_reason_bytes", label: "Max Reason Bytes", kind: "number", hint: "Hard cap 4096" },
+      { group: "Limits", key: "maxActiveOperatorsPerAddress", apiKey: "max_active_operators_per_address", label: "Max Active Operators Per Address", kind: "number" },
+      { group: "Reputation & Queries", key: "reputationGrantPerBondBlock", apiKey: "reputation_grant_per_bond_block", label: "Reputation Grant Per Bond Block", kind: "dec", hint: "Reputation accrued per SPARK-block of active bond" },
+      { group: "Reputation & Queries", key: "defaultPaginationLimit", apiKey: "default_pagination_limit", label: "Default Pagination Limit", kind: "number" },
+      { group: "Reputation & Queries", key: "maxPaginationLimit", apiKey: "max_pagination_limit", label: "Max Pagination Limit", kind: "number", hint: "Absolute cap 10000" },
+    ],
+  },
+  storage: {
+    label: "Storage",
+    paramPath: "/sparkdream/storage/v1/params",
+    responseKey: "params",
+    typeUrl: "/sparkdream.storage.v1.MsgUpdateParams",
+    generic: async () => {
+      const { MsgUpdateParams } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/storage/v1/tx");
+      const { Params } = await import("@sparkdreamnft/sparkdreamjs/sparkdream/storage/v1/params");
+      return { MsgUpdateParams, Params };
+    },
+    fields: [
+      { group: "Requests", key: "enabled", apiKey: "enabled", label: "Enabled", kind: "boolean", hint: "Off refuses new requests and nothing else" },
+      { group: "Requests", key: "minRequesterTrustLevel", apiKey: "min_requester_trust_level", label: "Min Requester Trust Level", kind: "number", hint: "Trust level (0-4)" },
+      { group: "Requests", key: "requestFee", apiKey: "request_fee", label: "Request Fee", kind: "amount", hint: "Burned per request, added source and non-requester dispute" },
+      { group: "Windows", key: "requestTtlBlocks", apiKey: "request_ttl_blocks", label: "Request TTL (blocks)", kind: "bigint", hint: "A pending request expires this long after it opens" },
+      { group: "Windows", key: "claimWindowBlocks", apiKey: "claim_window_blocks", label: "Claim Window (blocks)", kind: "bigint", hint: "How long a claim is exclusive" },
+      { group: "Windows", key: "settleWindowBlocks", apiKey: "settle_window_blocks", label: "Settle Window (blocks)", kind: "bigint", hint: "From completion to settlement" },
+      { group: "Windows", key: "disputeWindowBlocks", apiKey: "dispute_window_blocks", label: "Dispute Window (blocks)", kind: "bigint", hint: "How long a dispute holds settlement" },
+      { group: "Windows", key: "flagHoldBlocks", apiKey: "flag_hold_blocks", label: "Flag Hold (blocks)", kind: "bigint", hint: "How long a flagged request's fee is held before it burns" },
+      { group: "Windows", key: "minUnreachableBlocks", apiKey: "min_unreachable_blocks", label: "Min Unreachable (blocks)", kind: "bigint", hint: "Earliest unreachable decline after the newest source" },
+      { group: "Windows", key: "terminalRetentionBlocks", apiKey: "terminal_retention_blocks", label: "Terminal Retention (blocks)", kind: "bigint", hint: "How long a closed request is kept" },
+      { group: "Windows", key: "counterWindowBlocks", apiKey: "counter_window_blocks", label: "Counter Window (blocks)", kind: "bigint", hint: "Window for the per-window caps below" },
+      { group: "Windows", key: "deadlineRetryBlocks", apiKey: "deadline_retry_blocks", label: "Deadline Retry (blocks)", kind: "bigint", hint: "When a failed timer is tried again" },
+      { group: "Limits", key: "maxSourcesPerRequest", apiKey: "max_sources_per_request", label: "Max Sources Per Request", kind: "number" },
+      { group: "Limits", key: "maxAttestationsPerCompletion", apiKey: "max_attestations_per_completion", label: "Max Attestations Per Completion", kind: "number" },
+      { group: "Limits", key: "maxOperatorsPerBackend", apiKey: "max_operators_per_backend", label: "Max Operators Per Backend", kind: "number" },
+      { group: "Limits", key: "maxApprovedScanners", apiKey: "max_approved_scanners", label: "Max Approved Scanners", kind: "number" },
+      { group: "Limits", key: "maxOpenClaimsPerOperator", apiKey: "max_open_claims_per_operator", label: "Max Open Claims Per Operator", kind: "number" },
+      { group: "Limits", key: "maxOpenRequestsPerRequester", apiKey: "max_open_requests_per_requester", label: "Max Open Requests Per Requester", kind: "number" },
+      { group: "Limits", key: "maxBarredPerRequest", apiKey: "max_barred_per_request", label: "Max Barred Per Request", kind: "number" },
+      { group: "Limits", key: "maxFlagsPerHash", apiKey: "max_flags_per_hash", label: "Max Flags Per Hash", kind: "number" },
+      { group: "Limits", key: "maxHashesPerUnflag", apiKey: "max_hashes_per_unflag", label: "Max Hashes Per Unflag", kind: "number" },
+      { group: "Limits", key: "maxUrlBytes", apiKey: "max_url_bytes", label: "Max URL Bytes", kind: "number" },
+      { group: "Limits", key: "maxReasonBytes", apiKey: "max_reason_bytes", label: "Max Reason Bytes", kind: "number" },
+      { group: "Limits", key: "maxDeadlinesPerBlock", apiKey: "max_deadlines_per_block", label: "Max Deadlines Per Block", kind: "number" },
+      { group: "Per-Window Caps", key: "maxLapsesPerWindow", apiKey: "max_lapses_per_window", label: "Max Lapses", kind: "number" },
+      { group: "Per-Window Caps", key: "maxMismatchDeclinesPerOperatorPerWindow", apiKey: "max_mismatch_declines_per_operator_per_window", label: "Max Mismatch Declines Per Operator", kind: "number" },
+      { group: "Per-Window Caps", key: "maxUnreachableDeclinesPerOperatorPerWindow", apiKey: "max_unreachable_declines_per_operator_per_window", label: "Max Unreachable Declines Per Operator", kind: "number" },
+      { group: "Per-Window Caps", key: "maxCompletionsPerOperatorPerWindow", apiKey: "max_completions_per_operator_per_window", label: "Max Completions Per Operator", kind: "number" },
+      { group: "Per-Window Caps", key: "maxFlagsPerScannerPerWindow", apiKey: "max_flags_per_scanner_per_window", label: "Max Flags Per Scanner", kind: "number" },
     ],
   },
   rep: {
@@ -1112,12 +1268,41 @@ export function displayValue(field: FieldDef, raw: unknown): string {
     return String(!!raw);
   }
 
+  if (field.kind === "string-list" || field.kind === "int-list") {
+    return Array.isArray(raw) ? raw.map(String).join("\n") : "";
+  }
+
+  if (field.kind === "enum") {
+    // Name from the LCD, number from a decoded message; show the name either way.
+    const opt = field.options?.find((o) => o.name === raw || o.value === raw);
+    return opt ? opt.name : String(raw);
+  }
+
   if (field.kind === "dec-bytes") {
     // Decimal bytes — displayed as decimal string from API
     return String(raw);
   }
 
   return String(raw);
+}
+
+/** The entries of a "string-list" field's edit box: one per line, trimmed,
+ * blanks and repeats dropped, order kept. */
+export function parseStringList(text: string): string[] {
+  const seen = new Set<string>();
+  for (const line of text.split("\n")) {
+    const entry = line.trim();
+    if (entry) seen.add(entry);
+  }
+  return [...seen];
+}
+
+/** The entries of an "int-list" field's edit box, in the order typed. */
+export function parseIntList(text: string): string[] {
+  return text
+    .split(/[\n,]/)
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 export function parseDurationSeconds(raw: unknown): number {

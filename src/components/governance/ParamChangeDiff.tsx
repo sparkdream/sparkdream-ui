@@ -35,6 +35,9 @@ interface ParamDiffRow {
   to: string;
   /** Set when the path has no FieldDef, so the row can show the raw path */
   unlabeled: boolean;
+  /** For list params: the entries leaving and joining, shown instead of the
+   * two whole lists. */
+  list?: { removed: string[]; added: string[] };
 }
 
 /** One in-flight/settled params fetch per LCD path, shared by every card on
@@ -134,13 +137,37 @@ export default function ParamChangeDiff({
               >
                 {row.label}
               </span>
-              <span className="flex items-baseline gap-1.5 text-xs">
-                <span className="text-zinc-500 line-through decoration-zinc-700">
-                  {row.from}
+              {row.list ? (
+                <span className="flex flex-col items-end gap-0.5 text-xs">
+                  {row.list.removed.length > 0 && (
+                    <span className="text-zinc-500">
+                      Removed:{" "}
+                      <span className="line-through decoration-zinc-700">
+                        {row.list.removed.join(", ")}
+                      </span>
+                    </span>
+                  )}
+                  {row.list.added.length > 0 && (
+                    <span className="text-zinc-500">
+                      Added:{" "}
+                      <span className="font-medium text-white">
+                        {row.list.added.join(", ")}
+                      </span>
+                    </span>
+                  )}
+                  {row.list.removed.length === 0 && row.list.added.length === 0 && (
+                    <span className="text-zinc-500">Reordered</span>
+                  )}
                 </span>
-                <span className="text-zinc-600">&rarr;</span>
-                <span className="font-medium text-white">{row.to}</span>
-              </span>
+              ) : (
+                <span className="flex items-baseline gap-1.5 text-xs">
+                  <span className="text-zinc-500 line-through decoration-zinc-700">
+                    {row.from}
+                  </span>
+                  <span className="text-zinc-600">&rarr;</span>
+                  <span className="font-medium text-white">{row.to}</span>
+                </span>
+              )}
             </li>
           ))}
         </ul>
@@ -188,6 +215,7 @@ function diffParams(
       unlabeled: !field,
       from: formatParam(field, a, displayDenom, dreamDenom),
       to: formatParam(field, b, displayDenom, dreamDenom),
+      list: field?.kind === "string-list" ? listDelta(a, b) : undefined,
     });
   }
 
@@ -200,6 +228,15 @@ function diffParams(
     if (xi !== yi) return xi - yi;
     return x.path.localeCompare(y.path);
   });
+}
+
+function listDelta(a: unknown, b: unknown): { removed: string[]; added: string[] } {
+  const from = Array.isArray(a) ? a.map(String) : [];
+  const to = Array.isArray(b) ? b.map(String) : [];
+  return {
+    removed: from.filter((e) => !to.includes(e)),
+    added: to.filter((e) => !from.includes(e)),
+  };
 }
 
 function collectLeafPaths(
@@ -253,6 +290,14 @@ function formatParam(
     if (raw === undefined || raw === null) return "unset";
     if (typeof raw === "object") return JSON.stringify(raw);
     return String(raw);
+  }
+
+  if (field.kind === "int-list") {
+    return Array.isArray(raw) && raw.length ? raw.map(String).join(", ") : "none";
+  }
+  if (field.kind === "enum") {
+    const opt = field.options?.find((o) => o.name === raw || o.value === raw);
+    if (opt) return opt.label;
   }
 
   const shown = trimDecimal(displayValue(field, raw));
