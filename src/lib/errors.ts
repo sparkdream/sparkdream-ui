@@ -89,6 +89,20 @@ export function errorMessage(err: unknown): string {
   return "";
 }
 
+// The wallet rethrows a failed tx as `Transaction failed: <rawLog>`, where
+// rawLog is the chain's verbose form: "failed to execute message; message
+// index: 0: <reason>". Strip the preamble so the inline error shows just the
+// human reason (e.g. "project creator cannot self-assign initiatives").
+export function txErrorMessage(err: unknown, fallback: string): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const reason = raw
+    .replace(/^Transaction failed:\s*/, "")
+    .replace(/^failed to execute message; message index: \d+:\s*/, "")
+    .replace(/^[a-z0-9]+1[a-z0-9]+:\s*/i, "")
+    .trim();
+  return reason || fallback;
+}
+
 export interface ErrorDescription {
   kind: ErrorKind;
   /** Headline. Short, sentence case. */

@@ -55,7 +55,7 @@ import InitiativeChallengePanel from "@/components/contribute/InitiativeChalleng
 import InitiativeBountyPanel from "@/components/contribute/InitiativeBountyPanel";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import ErrorState from "@/components/ErrorState";
-import { isMissingEndpoint } from "@/lib/errors";
+import { isMissingEndpoint, txErrorMessage } from "@/lib/errors";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 import ContentLicenseNotice from "@/components/license/ContentLicenseNotice";
 import { useMyAliases } from "@/hooks/useMyAliases";
@@ -221,20 +221,6 @@ function tierColor(tier: string): string {
     case InitiativeTier.STANDARD: return "bg-blue-500/15 text-blue-400";
     default: return "bg-zinc-500/15 text-zinc-300";
   }
-}
-
-// The wallet rethrows a failed tx as `Transaction failed: <rawLog>`, where
-// rawLog is the chain's verbose form: "failed to execute message; message
-// index: 0: <reason>". Strip the preamble so the inline error shows just the
-// human reason (e.g. "project creator cannot self-assign initiatives").
-function txErrorMessage(err: unknown, fallback: string): string {
-  const raw = err instanceof Error ? err.message : String(err);
-  const reason = raw
-    .replace(/^Transaction failed:\s*/, "")
-    .replace(/^failed to execute message; message index: \d+:\s*/, "")
-    .replace(/^[a-z0-9]+1[a-z0-9]+:\s*/i, "")
-    .trim();
-  return reason || fallback;
 }
 
 function formatDream(amount: string): string {

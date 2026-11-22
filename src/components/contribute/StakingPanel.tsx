@@ -9,6 +9,9 @@ import {
   listRepMembers,
   listPosts,
   collectTags,
+  getRepMember,
+  getRepParams,
+  getLatestBlockHeight,
 } from "@/lib/api";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { truncateAddress } from "@/lib/utils";
@@ -18,7 +21,8 @@ import { STAKE_TARGET_LABELS, StakeTargetType } from "@/types/rep";
 import { stakeTargetTypeFromJSON } from "@sparkdreamnft/sparkdreamjs/sparkdream/rep/v1/stake";
 import SearchableSelect from "@/components/contribute/SearchableSelect";
 import ErrorState from "@/components/ErrorState";
-import { isMissingEndpoint } from "@/lib/errors";
+import { isMissingEndpoint, txErrorMessage } from "@/lib/errors";
+import { primeRepMember } from "@/lib/repMember";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
 
 interface TargetOption {
@@ -34,6 +38,52 @@ function formatDream(amount: string): string {
   const frac = n % divisor;
   if (frac === BigInt(0)) return whole.toLocaleString();
   return `${whole.toLocaleString()}.${frac.toString().padStart(6, "0").replace(/0+$/, "")}`;
+}
+
+// Decimal DREAM string to micro-DREAM, without the float rounding that
+// parseFloat(x) * 1e6 introduces. Digits past the sixth decimal are dropped.
+function toMicro(value: string): bigint | null {
+  const m = /^(\d*)(?:\.(\d*))?$/.exec(value.trim());
+  if (!m || (!m[1] && !m[2])) return null;
+  return BigInt(m[1] || "0") * BigInt(1000000) + BigInt((m[2] || "").slice(0, 6).padEnd(6, "0"));
+}
+
+// Micro-DREAM to a plain decimal string an amount input accepts (no grouping).
+function microToInput(micro: bigint): string {
+  const whole = micro / BigInt(1000000);
+  const frac = (micro % BigInt(1000000)).toString().padStart(6, "0").replace(/0+$/, "");
+  return frac ? `${whole}.${frac}` : whole.toString();
+}
+
+// How long a wallet prompt may stay open, in blocks, with Max still landing.
+const SIGNING_MARGIN_BLOCKS = 100;
+const DEC_ONE = BigInt("1000000000000000000");
+
+// An LCD LegacyDec string ("0.002000000000000000") as an 18-decimal integer.
+function decToInt18(value: string): bigint {
+  const [whole, frac = ""] = value.split(".");
+  return BigInt(whole || "0") * DEC_ONE + BigInt(frac.slice(0, 18).padEnd(18, "0"));
+}
+
+// The unlocked amount that is still there when the tx lands. Unstaked DREAM
+// decays at each epoch boundary (ApplyPendingDecay in the chain's
+// x/rep/keeper/dream.go), so an amount read just before a boundary is more
+// than the chain will lock just after it. For every boundary that falls inside
+// the signing margin, apply the chain's own step: trunc(unstaked * (1 - rate)).
+function spendableAfterDecay(
+  unlocked: bigint,
+  height: bigint,
+  epochBlocks: bigint,
+  decayRate: bigint
+): bigint {
+  if (epochBlocks <= BigInt(0) || decayRate <= BigInt(0)) return unlocked;
+  const crossings =
+    (height + BigInt(SIGNING_MARGIN_BLOCKS)) / epochBlocks - height / epochBlocks;
+  let amount = unlocked;
+  for (let i = BigInt(0); i < crossings && amount > BigInt(0); i++) {
+    amount = (amount * (DEC_ONE - decayRate)) / DEC_ONE;
+  }
+  return amount;
 }
 
 // Target types that populate target_id (numeric) via dropdown
@@ -77,6 +127,43 @@ export default function StakingPanel() {
   const [formTargetId, setFormTargetId] = useState("");
   const [formTargetIdentifier, setFormTargetIdentifier] = useState("");
   const [formAmount, setFormAmount] = useState("");
+  const [stakeError, setStakeError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
+  // Micro-DREAM that can be staked now: balance minus everything already
+  // locked, less any decay due before the tx can land. null until loaded.
+  const [available, setAvailable] = useState<bigint | null>(null);
+  // Set by the Max button, cleared by typing: stake whatever is available at
+  // submit time instead of the figure that was on screen when it was pressed.
+  const [stakeMax, setStakeMax] = useState(false);
+
+  const fetchAvailable = useCallback(async (): Promise<bigint | null> => {
+    if (!address) return null;
+    try {
+      // Height first: if a boundary passes between the two reads, the member
+      // record is the later one and already carries that epoch's decay.
+      const [height, params] = await Promise.all([getLatestBlockHeight(), getRepParams()]);
+      const res = await getRepMember(address);
+      if (!res.member?.address) return null;
+      primeRepMember(address, res.member);
+      const unlocked = BigInt(res.member.dream_balance || "0") - BigInt(res.member.staked_dream || "0");
+      const free = spendableAfterDecay(
+        unlocked > BigInt(0) ? unlocked : BigInt(0),
+        BigInt(height),
+        BigInt(String(params.params.epoch_blocks ?? "0")),
+        decToInt18(String(params.params.unstaked_decay_rate ?? "0"))
+      );
+      setAvailable(free);
+      return free;
+    } catch {
+      // The form still works without the hint; the chain enforces the limit.
+      return null;
+    }
+  }, [address]);
+
+  useEffect(() => {
+    setAvailable(null);
+    fetchAvailable();
+  }, [fetchAvailable]);
 
   // Target options for dropdown
   const [targetOptions, setTargetOptions] = useState<TargetOption[]>([]);
@@ -203,7 +290,22 @@ export default function StakingPanel() {
     if (!address || !formAmount) return;
     try {
       setSubmitting(true);
-      const amount = (BigInt(Math.floor(parseFloat(formAmount) * 1e6))).toString();
+      setStakeError(null);
+      let micro = toMicro(formAmount);
+      // Re-read the balance: the figure on screen may predate an epoch
+      // boundary or a lock taken elsewhere.
+      const fresh = await fetchAvailable();
+      if (fresh !== null) {
+        if (stakeMax) {
+          micro = fresh;
+          setFormAmount(microToInput(fresh));
+        } else if (micro !== null && micro > fresh) {
+          // The inline message under the field now explains why.
+          return;
+        }
+      }
+      if (micro === null || micro <= BigInt(0)) return;
+      const amount = micro.toString();
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.Stake,
         value: {
@@ -230,9 +332,11 @@ export default function StakingPanel() {
       setFormTargetId("");
       setFormTargetIdentifier("");
       setFormAmount("");
-      await fetchStakes();
+      setStakeMax(false);
+      await Promise.all([fetchStakes(), fetchAvailable()]);
     } catch (err) {
       console.error("Stake failed:", err);
+      setStakeError(txErrorMessage(err, "Failed to stake"));
     } finally {
       setSubmitting(false);
     }
@@ -242,6 +346,7 @@ export default function StakingPanel() {
     if (!address) return;
     try {
       setActionLoading(`claim-${stakeId}`);
+      setActionError(null);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.ClaimStakingRewards,
         // stake_id is uint64; pass BigInt so the override's `!== BigInt(0)`
@@ -249,9 +354,10 @@ export default function StakingPanel() {
         // always inequal, which signs "0" for any zero-valued numeric).
         value: { staker: address, stakeId: BigInt(stakeId) },
       }]);
-      await fetchStakes();
+      await Promise.all([fetchStakes(), fetchAvailable()]);
     } catch (err) {
       console.error("Claim failed:", err);
+      setActionError({ id: stakeId, message: txErrorMessage(err, "Failed to claim") });
     } finally {
       setActionLoading(null);
     }
@@ -261,13 +367,15 @@ export default function StakingPanel() {
     if (!address) return;
     try {
       setActionLoading(`compound-${stakeId}`);
+      setActionError(null);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.CompoundStakingRewards,
         value: { staker: address, stakeId: BigInt(stakeId) },
       }]);
-      await fetchStakes();
+      await Promise.all([fetchStakes(), fetchAvailable()]);
     } catch (err) {
       console.error("Compound failed:", err);
+      setActionError({ id: stakeId, message: txErrorMessage(err, "Failed to compound") });
     } finally {
       setActionLoading(null);
     }
@@ -277,17 +385,23 @@ export default function StakingPanel() {
     if (!address) return;
     try {
       setActionLoading(`unstake-${stakeId}`);
+      setActionError(null);
       await signAndBroadcast([{
         typeUrl: RepMsgTypeUrls.Unstake,
         value: { staker: address, stakeId: BigInt(stakeId), amount },
       }]);
-      await fetchStakes();
+      await Promise.all([fetchStakes(), fetchAvailable()]);
     } catch (err) {
       console.error("Unstake failed:", err);
+      setActionError({ id: stakeId, message: txErrorMessage(err, "Failed to unstake") });
     } finally {
       setActionLoading(null);
     }
   };
+
+  const amountMicro = formAmount ? toMicro(formAmount) : null;
+  const amountInvalid = formAmount !== "" && (amountMicro === null || amountMicro <= BigInt(0));
+  const overAvailable = available !== null && amountMicro !== null && amountMicro > available;
 
   const showIdDropdown = ID_DROPDOWN_TYPES.has(formTargetType);
   const showIdentifierDropdown = IDENTIFIER_DROPDOWN_TYPES.has(formTargetType);
@@ -315,7 +429,11 @@ export default function StakingPanel() {
         {canStake && !showForm && (
           <button
             type="button"
-            onClick={() => setShowForm(true)}
+            onClick={() => {
+              setShowForm(true);
+              // The balance decays and other panels lock DREAM, so re-read it.
+              fetchAvailable();
+            }}
             className="sd-btn sd-btn-primary"
           >
             New stake
@@ -409,25 +527,62 @@ export default function StakingPanel() {
               value={formAmount}
               onChange={(e) => {
                 const v = e.target.value;
-                if (v === "" || /^\d*\.?\d*$/.test(v)) setFormAmount(v);
+                if (v === "" || /^\d*\.?\d*$/.test(v)) {
+                  setFormAmount(v);
+                  setStakeMax(false);
+                  setStakeError(null);
+                }
               }}
               className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
             />
-            {formAmount && (parseFloat(formAmount) <= 0 || isNaN(parseFloat(formAmount))) && (
+            {available !== null && (
+              <div className="flex items-center justify-between gap-3 text-xs text-zinc-500">
+                <span>
+                  Available: {formatDream(available.toString())} {dream}
+                </span>
+                {available > BigInt(0) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormAmount(microToInput(available));
+                      setStakeMax(true);
+                      setStakeError(null);
+                    }}
+                    className="text-indigo-400 transition-colors hover:text-indigo-300"
+                  >
+                    Max
+                  </button>
+                )}
+              </div>
+            )}
+            {amountInvalid && (
               <p className="text-xs text-red-400">Enter a valid amount greater than 0</p>
+            )}
+            {overAvailable && (
+              <p className="text-xs text-red-400">
+                That is more than your available {dream}. Locked {dream} cannot be staked again.
+              </p>
+            )}
+            {stakeError && (
+              <div className="rounded-lg border border-red-800 bg-red-900/20 px-3 py-2 text-sm text-red-400">
+                {stakeError}
+              </div>
             )}
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={handleStake}
-                disabled={submitting || !formAmount || parseFloat(formAmount) <= 0 || isNaN(parseFloat(formAmount))}
+                disabled={submitting || !formAmount || amountInvalid || overAvailable}
                 className="sd-btn sd-btn-primary"
               >
                 {submitting ? "Staking..." : "Stake"}
               </button>
               <button
                 type="button"
-                onClick={() => setShowForm(false)}
+                onClick={() => {
+                  setShowForm(false);
+                  setStakeError(null);
+                }}
                 className="sd-btn sd-btn-secondary"
               >
                 Cancel
@@ -486,6 +641,9 @@ export default function StakingPanel() {
                   </button>
                 </div>
               </div>
+              {actionError?.id === s.id && (
+                <p className="mt-2 text-xs text-red-400">{actionError.message}</p>
+              )}
             </div>
           ))}
           {nextKey && (
