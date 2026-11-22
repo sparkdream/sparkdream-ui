@@ -9,7 +9,6 @@ import {
   authorBondsByType,
   listPostFlags,
   getPinnedForumPosts,
-  listCategories,
 } from "@/lib/api";
 import { timeAgo, formatSpark } from "@/lib/utils";
 import NameOrAddress from "@/components/NameOrAddress";
@@ -43,20 +42,14 @@ const PAGE_SIZE = "20";
 // to the "Load more" button.
 const SEARCH_SCAN_LIMIT = 500;
 
-// The pinned root threads of the given categories, in display order: lowest
-// pin_priority first (the chain's order within a category), newest pin first
-// between equal priorities. Hidden and deleted threads are left out, as in
-// the feeds. A category whose pins fail to load contributes none.
-async function fetchPinned(categoryIds: string[]): Promise<ForumPost[]> {
-  const pages = await Promise.all(
-    categoryIds.map((id) =>
-      getPinnedForumPosts(id)
-        .then((res) => res.posts || [])
-        .catch(() => [] as ForumPost[])
-    )
-  );
-  return pages
-    .flat()
+// The pinned root threads of one category, or of every category when
+// categoryId is "0", in display order: lowest pin_priority first (the chain's
+// order within a category), newest pin first between equal priorities. Hidden
+// and deleted threads are left out, as in the feeds. Pins that fail to load
+// leave the feed without them.
+async function fetchPinned(categoryId: string): Promise<ForumPost[]> {
+  const posts = await getPinnedForumPosts(categoryId).catch(() => [] as ForumPost[]);
+  return posts
     .filter(
       (p) =>
         p.pinned &&
@@ -127,12 +120,9 @@ export default function ThreadList({ mode, category, onSelectThread, tagFilter, 
       };
       setPinned([]);
       if (mode === "category" && category) {
-        fetchPinned([category.category_id]).then(applyPinned);
+        fetchPinned(category.category_id).then(applyPinned);
       } else if (mode === "all") {
-        listCategories({ limit: "200" })
-          .then((res) => fetchPinned((res.category || []).map((c) => c.category_id)))
-          .then(applyPinned)
-          .catch(() => applyPinned([]));
+        fetchPinned("0").then(applyPinned);
       }
 
       if (mode === "category" && category) {

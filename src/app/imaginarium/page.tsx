@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { Post, ReactionCounts } from "@/types/blog";
 import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
-import { listPosts, getPost, getAllMembers, listTags, getLatestBlockHeight, getReactionCounts, authorBondsByType } from "@/lib/api";
+import { listPosts, listAllPinnedPosts, getPost, getAllMembers, listTags, getLatestBlockHeight, getReactionCounts, authorBondsByType } from "@/lib/api";
 import { TrustLevel, type RepStake } from "@/types/rep";
 import PostRow from "@/components/PostRow";
 import ContentNotice from "@/components/content/ContentNotice";
@@ -231,6 +231,38 @@ function ImaginariumPageInner() {
     fetchPosts();
   }, [fetchPosts]);
 
+  // Pinned dreams come from the chain's pinned post index, so a pin shows
+  // however far back its dream sits in the feed. Reloaded each time the list
+  // comes back into view, since a dream can be pinned or unpinned from its
+  // detail view. null means the query is unavailable (an older node, an
+  // archive snapshot) and pins are read off the loaded feed pages instead.
+  const [pinned, setPinned] = useState<Post[] | null>(null);
+  const listVisible = !selectedPostId && !showCreate;
+  useEffect(() => {
+    if (!listVisible) return;
+    let cancelled = false;
+    listAllPinnedPosts()
+      .then((res) => { if (!cancelled) setPinned(res); })
+      .catch(() => { if (!cancelled) setPinned(null); });
+    return () => { cancelled = true; };
+  }, [listVisible]);
+
+  // The feed with the pinned index applied: pinned dreams not yet paged in are
+  // added, and each loaded dream takes its pin state from the index, so a
+  // stale feed page can't show a dream as pinned after it was unpinned.
+  const feedBase = useMemo(() => {
+    const base = bondedOnly ? bondedPosts ?? [] : posts;
+    if (!pinned) return base;
+    const pinnedById = new Map(pinned.map((p) => [p.id, p]));
+    const merged = base.map(
+      (p) => pinnedById.get(p.id) ?? (p.pinned_by ? { ...p, pinned_by: "", pinned_at: "0" } : p)
+    );
+    // The bonded view stays limited to bonded dreams.
+    if (bondedOnly) return merged;
+    const loaded = new Set(base.map((p) => p.id));
+    return [...pinned.filter((p) => !loaded.has(p.id)), ...merged];
+  }, [posts, bondedOnly, bondedPosts, pinned]);
+
   // Load the bonded set when the Bonded filter is switched on: all author
   // bond stakes for blog posts, then the posts themselves (getPost is cached,
   // and bonds are few relative to posts).
@@ -297,8 +329,8 @@ function ImaginariumPageInner() {
   // shown under as well as the address.
   const searching = searchQuery.trim() !== "";
   const authorAddresses = useMemo(
-    () => [...posts, ...(bondedPosts ?? [])].map((p) => p.creator),
-    [posts, bondedPosts]
+    () => [...posts, ...(bondedPosts ?? []), ...(pinned ?? [])].map((p) => p.creator),
+    [posts, bondedPosts, pinned]
   );
   const authorNames = useAuthorNames(authorAddresses, searching);
 
@@ -311,7 +343,7 @@ function ImaginariumPageInner() {
   }, [searching, bondedOnly, nextKey, loading, error, posts.length, fetchPosts]);
 
   const filteredAndSorted = useMemo(() => {
-    let result = bondedOnly ? bondedPosts ?? [] : posts;
+    let result = feedBase;
     if (filter === "my-posts" && address) {
       result = result.filter((p) => isMine(p.creator));
     } else if (filter === "members" && memberAddresses.size > 0) {
@@ -352,12 +384,12 @@ function ImaginariumPageInner() {
       );
     }
     return result;
-  }, [posts, filter, sort, memberAddresses, address, isMine, trustFilter, trustAddresses, tagFilter, searchQuery, authorNames, bondedOnly, bondedPosts, bondMap, bondSort]);
+  }, [feedBase, filter, sort, memberAddresses, address, isMine, trustFilter, trustAddresses, tagFilter, searchQuery, authorNames, bondedOnly, bondMap, bondSort]);
 
   // Pinned dreams lead the feed, most recently pinned first: the first is the
-  // featured card and the rest head the list. Only pins among the loaded pages
-  // are known (the blog module has no pinned-posts query), so an old pin
-  // surfaces once its page loads.
+  // featured card and the rest head the list. feedBase already carries every
+  // pinned dream (see the pinned index above), and the feed's filters apply to
+  // them like any other dream.
   const pinnedPosts = useMemo(
     () =>
       filteredAndSorted

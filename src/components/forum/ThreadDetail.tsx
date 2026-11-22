@@ -504,8 +504,9 @@ export default function ThreadDetail({ threadId, onBack }: ThreadDetailProps) {
     await run(`pin-${postId}`, async () => {
       await signAndBroadcast([{
         typeUrl: pin ? ForumMsgTypeUrls.PinPost : ForumMsgTypeUrls.UnpinPost,
-        // MsgPinPost carries a pin_priority (higher sorts first); 0 keeps the
-        // chain's default ordering. MsgUnpinPost takes no priority.
+        // MsgPinPost carries a pin_priority (lower sorts first, see ThreadList's
+        // fetchPinned); 0 puts the pin in the top tier, newest pin first.
+        // MsgUnpinPost takes no priority.
         value: pin
           ? { creator: address, postId: BigInt(postId), priority: BigInt(0) }
           : { creator: address, postId: BigInt(postId) },

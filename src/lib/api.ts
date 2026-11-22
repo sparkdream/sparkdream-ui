@@ -14,6 +14,7 @@ import type {
   ReactionCountsResponse,
   UserReactionResponse,
   ListPostsByCreatorResponse,
+  Post,
   ListReactionsResponse,
   ListReactionsByCreatorResponse,
   ListExpiringContentResponse,
@@ -182,6 +183,7 @@ import type {
   ForumStatusResponse,
   ForumParamsResponse,
   PinnedPostsResponse,
+  ForumPost,
   LockedThreadsResponse,
   TopPostsResponse,
   GetSentinelActivityResponse,
@@ -541,6 +543,32 @@ export async function listPostsByCreator(
         `/sparkdream/blog/v1/list_posts_by_creator/${creator}`,
         paginationParams(pagination)
       ),
+    { ttl: 30_000, swr: true }
+  );
+}
+
+// Every pinned post, most recently pinned first, from the chain's pinned post
+// index. Hidden and deleted posts are left out by the chain, so a page can
+// come back short or empty while more follow: next_key alone marks the end.
+// The cache key sits under "posts|list|" so invalidatePostsLists() clears it.
+export async function listAllPinnedPosts(): Promise<Post[]> {
+  return cachedFetch(
+    "posts|list|pinned|",
+    async () => {
+      const posts: Post[] = [];
+      let key: string | undefined;
+      // Hard cap so a misbehaving LCD can't keep this paging forever.
+      for (let page = 0; page < 20; page++) {
+        const res = await get<ListPostsByCreatorResponse>(
+          "/sparkdream/blog/v1/list_pinned_posts",
+          paginationParams({ limit: "100", ...(key ? { key } : {}) })
+        );
+        posts.push(...(res.posts || []));
+        key = res.pagination?.next_key || undefined;
+        if (!key) break;
+      }
+      return posts;
+    },
     { ttl: 30_000, swr: true }
   );
 }
@@ -1973,10 +2001,22 @@ export async function getTopForumPosts(
   );
 }
 
-export async function getPinnedForumPosts(
-  categoryId: string
-): Promise<PinnedPostsResponse> {
-  return get<PinnedPostsResponse>(`/sparkdream/forum/v1/pinned_posts/${categoryId}`);
+// Every pinned root post of a category, or of all categories when categoryId
+// is "0". The chain filters as it pages, so next_key alone marks the end.
+export async function getPinnedForumPosts(categoryId: string): Promise<ForumPost[]> {
+  const posts: ForumPost[] = [];
+  let key: string | undefined;
+  // Hard cap so a misbehaving LCD can't keep this paging forever.
+  for (let page = 0; page < 20; page++) {
+    const res = await get<PinnedPostsResponse>(
+      `/sparkdream/forum/v1/pinned_posts/${categoryId}`,
+      paginationParams({ limit: "100", ...(key ? { key } : {}) })
+    );
+    posts.push(...(res.posts || []));
+    key = res.pagination?.next_key || undefined;
+    if (!key) break;
+  }
+  return posts;
 }
 
 export async function getLockedThreads(

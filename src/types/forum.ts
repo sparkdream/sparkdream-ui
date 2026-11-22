@@ -607,6 +607,7 @@ export interface ForumParamsResponse {
 
 export interface PinnedPostsResponse {
   posts: ForumPost[];
+  pagination: Pagination;
 }
 
 export interface LockedThreadsResponse {
