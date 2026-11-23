@@ -6,34 +6,12 @@ import type { Post, ReactionCounts } from "@/types/blog";
 import { PostStatus, REACTION_INFO, ReactionType } from "@/types/blog";
 import { timeAgo, countToNum, formatSpark } from "@/lib/utils";
 import { getReactionCounts } from "@/lib/api";
-import { useDisplayName } from "@/hooks/useDisplayName";
+import MemberAvatar from "@/components/MemberAvatar";
 import CopyableAddress from "@/components/CopyableAddress";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
-import { isAnonymousAddress } from "@/lib/shield";
 import ContentNotice from "@/components/content/ContentNotice";
 import { useScannedBody } from "@/hooks/useScannedBody";
 import { bodyFormat, previewText } from "@/lib/contentScan/bodyFormat";
-
-const AVATAR_GRADIENTS = [
-  "linear-gradient(135deg, #6366f1, #f472b6)",
-  "linear-gradient(135deg, #34d399, #6366f1)",
-  "linear-gradient(135deg, #f59e0b, #f472b6)",
-  "linear-gradient(135deg, #60a5fa, #34d399)",
-  "linear-gradient(135deg, #f472b6, #f59e0b)",
-  "linear-gradient(135deg, #7c7fff, #60a5fa)",
-];
-
-function gradientFor(addr: string): string {
-  let h = 0;
-  for (let i = 0; i < addr.length; i++) h = (h * 31 + addr.charCodeAt(i)) >>> 0;
-  return AVATAR_GRADIENTS[h % AVATAR_GRADIENTS.length];
-}
-
-function initialFor(name: string | null, addr: string): string {
-  const src = name || addr;
-  const match = src.match(/[A-Za-z]/);
-  return (match ? match[0] : "•").toUpperCase();
-}
 
 export default function PostRow({
   post,
@@ -55,7 +33,6 @@ export default function PostRow({
 }) {
   const dream = useDreamDenom();
   const [counts, setCounts] = useState<ReactionCounts | null>(null);
-  const { name } = useDisplayName(post.creator);
   const scanned = useScannedBody({
     kind: "blog-post",
     id: post.id,
@@ -83,13 +60,7 @@ export default function PostRow({
   const inner = (
     <>
       <div className="who-col">
-        {isAnonymousAddress(post.creator) ? (
-          <div className="sd-avatar" style={{ background: "var(--panel-2)" }}>?</div>
-        ) : (
-          <div className="sd-avatar" style={{ background: gradientFor(post.creator) }}>
-            {initialFor(name, post.creator)}
-          </div>
-        )}
+        <MemberAvatar address={post.creator} nested />
       </div>
       <div className="body-col">
         <div className="head">

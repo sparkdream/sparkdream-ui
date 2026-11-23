@@ -1392,6 +1392,16 @@ body > * { position: relative; z-index: 1; }
 }
 .sd-avatar.sm { width: 22px; height: 22px; font-size: 10px; }
 .sd-avatar.lg { width: 40px; height: 40px; font-size: 15px; }
+.sd-avatar-link {
+  cursor: pointer;
+  text-decoration: none;
+  transition: box-shadow 0.15s ease;
+}
+.sd-avatar-link:hover,
+.sd-avatar-link:focus-visible {
+  box-shadow: 0 0 0 2px var(--violet-hi);
+  outline: none;
+}
 
 /* ========== Page shell ========== */
 .sd-page {

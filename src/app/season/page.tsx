@@ -23,6 +23,12 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useMyAliases } from "@/hooks/useMyAliases";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import CopyableAddress from "@/components/CopyableAddress";
+import MemberAvatar, { memberHref } from "@/components/MemberAvatar";
+import { loadNames, loadRoleBonds } from "@/lib/memberInfo";
+import type { Names, RoleBond } from "@/lib/memberInfo";
+import { loadRepMember } from "@/lib/repMember";
+import { formatDream as formatDreamExact } from "@/lib/reveal-fmt";
+import type { RepMember } from "@/types/rep";
 import type {
   Achievement,
   Title,
@@ -1326,7 +1332,14 @@ function OverviewView({
                 label="Guild"
                 value={profile.guild_id && profile.guild_id !== "0" ? `#${profile.guild_id}` : "—"}
               />
+              <MemberHoldingsRows address={profile.address} />
             </div>
+            <Link
+              href={memberHref(profile.address)}
+              style={{ display: "inline-block", marginTop: 14, fontSize: 12, color: "var(--violet-hi)" }}
+            >
+              View your member page →
+            </Link>
           </div>
         </>
       )}
@@ -1708,9 +1721,7 @@ function ProfileCard({
     <div className="sd-rail-card">
       <h5>Your profile</h5>
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-        <div className="sd-avatar lg">
-          {(profile.display_name || profile.address).charAt(profile.display_name ? 0 : 8).toUpperCase()}
-        </div>
+        <MemberAvatar address={profile.address} size="lg" />
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 600, color: "var(--ink)" }}>
             {profile.display_name || profile.username || "Unnamed"}
@@ -1852,6 +1863,81 @@ function MiniStat({ label, value }: { label: string; value: string }) {
       <div style={{ fontSize: 11, color: "var(--ink-mute)" }}>{label}</div>
       <div style={{ fontSize: 18, color: "var(--ink)", fontWeight: 600 }}>{value}</div>
     </div>
+  );
+}
+
+/**
+ * Names, role bonds and locked DREAM for the Identity card: the parts of a
+ * member's standing that live outside x/season. Each row appears once its own
+ * read lands, and a failed read just leaves its row out.
+ */
+function MemberHoldingsRows({ address }: { address: string }) {
+  const dream = useDreamDenom();
+  const [names, setNames] = useState<Names | null>(null);
+  const [bonds, setBonds] = useState<RoleBond[] | null>(null);
+  const [member, setMember] = useState<RepMember | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    loadNames(address).then((n) => alive && setNames(n), () => {});
+    loadRoleBonds(address).then((b) => alive && setBonds(b), () => {});
+    loadRepMember(address).then((m) => alive && setMember(m), () => {});
+    return () => {
+      alive = false;
+    };
+  }, [address]);
+
+  const chips: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "flex-end" };
+
+  return (
+    <>
+      {names && (
+        <IdentityRow
+          label="Names"
+          value={
+            names.owned.length === 0 ? (
+              "—"
+            ) : (
+              <span style={chips}>
+                {names.owned.map((n) => (
+                  <span
+                    key={n.name}
+                    className={`sd-pill${n.name === names.primary ? " trust-trusted" : ""}`}
+                    title={n.name === names.primary ? "Primary name" : undefined}
+                  >
+                    {n.name}
+                  </span>
+                ))}
+              </span>
+            )
+          }
+        />
+      )}
+      {bonds && (
+        <IdentityRow
+          label="Role bonds"
+          value={
+            bonds.length === 0 ? (
+              "—"
+            ) : (
+              <span style={chips}>
+                {bonds.map((b) => (
+                  <span key={b.label} className="sd-pill">
+                    {b.label} · {formatDreamExact(b.role.current_bond)} {dream}
+                  </span>
+                ))}
+              </span>
+            )
+          }
+        />
+      )}
+      {member && (
+        <IdentityRow
+          label={`Locked ${dream}`}
+          value={`${formatDreamExact(member.staked_dream)} ${dream}`}
+        />
+      )}
+    </>
   );
 }
 
@@ -2824,7 +2910,7 @@ function GuildDetailView({
                   borderRadius: "var(--r-sm)",
                 }}
               >
-                <div className="sd-avatar sm">{m.member.charAt(8).toUpperCase()}</div>
+                <MemberAvatar address={m.member} size="sm" />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, color: "var(--ink)", fontFamily: "var(--font-mono), monospace" }}>
                     <CopyableAddress address={m.member} />

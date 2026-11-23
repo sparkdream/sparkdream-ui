@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { listRepMembers, membersByTrustLevel } from "@/lib/api";
 import NameOrAddress from "@/components/NameOrAddress";
+import Link from "next/link";
+import { memberHref } from "@/components/MemberAvatar";
 import { licenseLabel } from "@/lib/contentLicense";
 import type { RepMember } from "@/types/rep";
 import { TRUST_LEVEL_LABELS, MEMBER_STATUS_LABELS, MemberStatus, TrustLevel } from "@/types/rep";
@@ -184,6 +186,9 @@ export default function MemberList() {
 
               {expanded === m.address && (
                 <div className="border-t border-zinc-800 px-4 py-3">
+                  <Link href={memberHref(m.address)} className="mb-3 inline-block text-xs text-indigo-400 hover:text-indigo-300">
+                    View profile
+                  </Link>
                   <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
                     <div>
                       <dt className="text-xs text-zinc-500">Staked</dt>

@@ -26,7 +26,7 @@ import { useSessionPermits } from "@/hooks/useSessionPermits";
 import { RepMsgTypeUrls } from "@/lib/tx";
 import { timeAgo, formatTime, countToNum } from "@/lib/utils";
 import CopyableAddress from "@/components/CopyableAddress";
-import { useDisplayName } from "@/hooks/useDisplayName";
+import MemberAvatar from "@/components/MemberAvatar";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import { useAuthorNames, matchesAuthor } from "@/hooks/useAuthorNames";
@@ -686,7 +686,6 @@ function ImaginariumPageInner() {
 }
 
 function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => void }) {
-  const { name } = useDisplayName(post.creator);
   const scanned = useScannedBody({
     kind: "blog-post",
     id: post.id,
@@ -749,9 +748,7 @@ function FeaturedPost({ post, onSelect }: { post: Post; onSelect: (p: Post) => v
         <span className="more">Read more →</span>
         <div className="foot">
           <div className="who">
-            <div className="sd-avatar">
-              {isAnonymousAddress(post.creator) ? "?" : (name || post.creator).charAt(name ? 0 : 8).toUpperCase()}
-            </div>
+            <MemberAvatar address={post.creator} nested />
             <div>
               <div className="name"><CopyableAddress address={post.creator} resolveName nested /></div>
               {!isAnonymousAddress(post.creator) && (
@@ -831,27 +828,18 @@ function ActiveVoicesCard({ posts }: { posts: Post[] }) {
           No voices yet.
         </div>
       ) : (
-        voices.map(([addr, count], i) => (
-          <ActiveVoiceRow key={addr} addr={addr} count={count} idx={i} />
+        voices.map(([addr, count]) => (
+          <ActiveVoiceRow key={addr} addr={addr} count={count} />
         ))
       )}
     </div>
   );
 }
 
-function ActiveVoiceRow({ addr, count, idx }: { addr: string; count: number; idx: number }) {
-  const { name } = useDisplayName(addr);
-  const gradients = [
-    "linear-gradient(135deg, var(--violet), var(--rose))",
-    "linear-gradient(135deg, var(--green), var(--violet))",
-    "linear-gradient(135deg, var(--amber), var(--rose))",
-  ];
-  const initial = (name || addr).charAt(name ? 0 : 8).toUpperCase();
+function ActiveVoiceRow({ addr, count }: { addr: string; count: number }) {
   return (
     <div className="sd-member-row">
-      <div className="sd-avatar sm" style={{ background: gradients[idx % gradients.length] }}>
-        {initial}
-      </div>
+      <MemberAvatar address={addr} size="sm" />
       <div className="info">
         <CopyableAddress className="addr" address={addr} resolveName />
         <div className="meta">{count} {count === 1 ? "dream" : "dreams"}</div>

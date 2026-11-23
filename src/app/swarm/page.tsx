@@ -19,7 +19,7 @@ import {
 } from "@/components/layout/ContentPageLayout";
 import ConnectPrompt from "@/components/layout/ConnectPrompt";
 import CopyableAddress from "@/components/CopyableAddress";
-import { useDisplayName } from "@/hooks/useDisplayName";
+import MemberAvatar from "@/components/MemberAvatar";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import { useCommonsCouncil } from "@/hooks/useCommonsCouncil";
@@ -747,27 +747,18 @@ function ActiveSparkVoicesCard({ sparks }: { sparks: ForumPost[] }) {
           No voices yet.
         </div>
       ) : (
-        voices.map(([addr, count], i) => (
-          <ActiveVoiceRow key={addr} addr={addr} count={count} idx={i} />
+        voices.map(([addr, count]) => (
+          <ActiveVoiceRow key={addr} addr={addr} count={count} />
         ))
       )}
     </div>
   );
 }
 
-function ActiveVoiceRow({ addr, count, idx }: { addr: string; count: number; idx: number }) {
-  const { name } = useDisplayName(addr);
-  const gradients = [
-    "linear-gradient(135deg, var(--violet), var(--rose))",
-    "linear-gradient(135deg, var(--green), var(--violet))",
-    "linear-gradient(135deg, var(--amber), var(--rose))",
-  ];
-  const initial = (name || addr).charAt(name ? 0 : 8).toUpperCase();
+function ActiveVoiceRow({ addr, count }: { addr: string; count: number }) {
   return (
     <div className="sd-member-row">
-      <div className="sd-avatar sm" style={{ background: gradients[idx % gradients.length] }}>
-        {initial}
-      </div>
+      <MemberAvatar address={addr} size="sm" />
       <div className="info">
         <CopyableAddress className="addr" address={addr} resolveName />
         <div className="meta">{count} {count === 1 ? "spark" : "sparks"}</div>

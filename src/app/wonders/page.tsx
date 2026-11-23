@@ -17,7 +17,7 @@ import {
 } from "@/components/layout/ContentPageLayout";
 import ConnectPrompt from "@/components/layout/ConnectPrompt";
 import CopyableAddress from "@/components/CopyableAddress";
-import { useDisplayName } from "@/hooks/useDisplayName";
+import MemberAvatar from "@/components/MemberAvatar";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { useSearchShortcut } from "@/hooks/useSearchShortcut";
 import { CollectionStatus, CollectionType } from "@/types/collect";
@@ -401,27 +401,18 @@ function ActiveCuratorsCard({ collections }: { collections: Collection[] }) {
           No curators yet.
         </div>
       ) : (
-        curators.map(([addr, count], i) => (
-          <CuratorRow key={addr} addr={addr} count={count} idx={i} />
+        curators.map(([addr, count]) => (
+          <CuratorRow key={addr} addr={addr} count={count} />
         ))
       )}
     </div>
   );
 }
 
-function CuratorRow({ addr, count, idx }: { addr: string; count: number; idx: number }) {
-  const { name } = useDisplayName(addr);
-  const gradients = [
-    "linear-gradient(135deg, var(--violet), var(--rose))",
-    "linear-gradient(135deg, var(--green), var(--violet))",
-    "linear-gradient(135deg, var(--amber), var(--rose))",
-  ];
-  const initial = (name || addr).charAt(name ? 0 : 8).toUpperCase();
+function CuratorRow({ addr, count }: { addr: string; count: number }) {
   return (
     <div className="sd-member-row">
-      <div className="sd-avatar sm" style={{ background: gradients[idx % gradients.length] }}>
-        {initial}
-      </div>
+      <MemberAvatar address={addr} size="sm" />
       <div className="info">
         <CopyableAddress className="addr" address={addr} resolveName />
         <div className="meta">{count} {count === 1 ? "collection" : "collections"}</div>
