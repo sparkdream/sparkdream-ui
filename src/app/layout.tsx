@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { ChainConfigProvider } from "@/contexts/ChainConfigContext";
 import { WalletProvider } from "@/contexts/WalletContext";
@@ -10,14 +10,21 @@ import ChainStatusBanner from "@/components/ChainStatusBanner";
 import TombstoneBanner from "@/components/identity/TombstoneBanner";
 import VersionFooter from "@/components/VersionFooter";
 
-const geistSans = Geist({
+// Geist is bundled (src/app/fonts, SIL Open Font License 1.1, see OFL.txt
+// there) instead of fetched from Google Fonts, so a build needs no network
+// beyond npm. The files are the variable fonts from the `geist` npm package.
+const geistSans = localFont({
+  src: "./fonts/Geist-Variable.woff2",
   variable: "--font-geist-sans",
-  subsets: ["latin"],
+  weight: "100 900",
 });
 
-const geistMono = Geist_Mono({
+const geistMono = localFont({
+  src: "./fonts/GeistMono-Variable.woff2",
   variable: "--font-geist-mono",
-  subsets: ["latin"],
+  weight: "100 900",
+  // The default metric-matched fallback is Arial, which is wrong for monospace.
+  adjustFontFallback: false,
 });
 
 export const metadata: Metadata = {

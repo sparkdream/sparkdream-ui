@@ -31,24 +31,24 @@ export default function LicensePage() {
         <Dedication />
         <ul style={{ ...list, marginTop: 14 }}>
           <li>
-            <strong>Only post what you have the right to give away.</strong> Your own words, images and code are
+            <strong>Only post what you have the right to give away.</strong>{" "}Your own words, images and code are
             fine. Someone else&rsquo;s copyrighted work is not yours to dedicate, even with credit. Link to it
             instead of copying it in.
           </li>
           <li>
-            <strong>It covers everything you publish,</strong> anonymous posts included. A collection item that
+            <strong>It covers everything you publish,</strong>{" "}anonymous posts included. A collection item that
             points at an NFT or a web page dedicates what you wrote about it, not the work it points at.
           </li>
           <li>
-            <strong>It can&rsquo;t be taken back.</strong> CC0 is irrevocable, and a committed block is permanent.
+            <strong>It can&rsquo;t be taken back.</strong>{" "}CC0 is irrevocable, and a committed block is permanent.
             Editing or deleting a post doesn&rsquo;t withdraw earlier versions.
           </li>
           <li>
-            <strong>Credit is a courtesy, not a condition.</strong> The chain records who wrote what and this app
+            <strong>Credit is a courtesy, not a condition.</strong>{" "}The chain records who wrote what and this app
             shows it; reusers are encouraged, not required, to say where something came from.
           </li>
           <li>
-            <strong>Moderation is separate.</strong> Sentinels and councils can still hide content that breaks
+            <strong>Moderation is separate.</strong>{" "}Sentinels and councils can still hide content that breaks
             community rules, including work posted without the right to dedicate it.
           </li>
         </ul>
