@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useSyncExternalStore } from "react";
 import { isChainDown, subscribeChainStatus } from "@/lib/chainStatus";
 
@@ -30,7 +31,10 @@ export default function ChainStatusBanner() {
         style={{ background: "var(--amber)" }}
       />
       Chain node unreachable. Onchain data can&apos;t load right now, so counts and lists on this
-      page may be empty or out of date.
+      page may be empty or out of date.{" "}
+      <Link href="/status" className="underline hover:text-white">
+        Check status
+      </Link>
     </div>
   );
 }

@@ -84,6 +84,10 @@ export default function VersionFooter() {
           <span>chain {chainVersion.startsWith("v") ? chainVersion : `v${chainVersion}`}</span>
         </>
       )}
+      <span aria-hidden className="mx-2">·</span>
+      <Link href="/status" className="underline hover:text-white">
+        Status
+      </Link>
     </footer>
   );
 }

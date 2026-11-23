@@ -1,0 +1,129 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useChainConfig } from "@/contexts/ChainConfigContext";
+import type { ServiceReport, SiteStatusResponse } from "@/lib/serviceStatus";
+import ServiceCard, { type CardRow } from "./ServiceCard";
+
+// The server refreshes its checks every 15 seconds; asking more often than
+// that would only return the same answer.
+const POLL_MS = 30_000;
+
+// Reports arrive by id. An id this build doesn't know (a newer server) is
+// left out, never shown as a bare key.
+const COPY: Record<string, { name: string; purpose: string }> = {
+  explorer: { name: "Block explorer", purpose: "Where transaction, block and account links open." },
+  scanners: { name: "Content scanners", purpose: "Check images and flagged posts before they are shown." },
+  images: { name: "Image uploads", purpose: "Storing the pictures members add to dreams and profiles." },
+  arweave: { name: "Permanent storage gateway", purpose: "Reading permanent copies and ar:// images." },
+  archive: { name: "Archive snapshots", purpose: "The list of read-only snapshots on the Archive page." },
+};
+const ORDER = Object.keys(COPY);
+
+function host(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+function rows(report: ServiceReport): CardRow[] {
+  const out: CardRow[] = report.facts.map((f) => ({ label: f.label, value: f.value }));
+  if (report.latency_ms !== null) out.push({ label: "Response time", value: `${report.latency_ms} ms` });
+  return out;
+}
+
+/** The Other services section of the Status page, read from /api/status. */
+export default function SiteStatusSection() {
+  const { config } = useChainConfig();
+  const [data, setData] = useState<SiteStatusResponse | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const running = useRef(false);
+
+  const run = useCallback(async () => {
+    if (running.current) return;
+    running.current = true;
+    setChecking(true);
+    try {
+      const res = await fetch("/api/status", { cache: "no-store", signal: AbortSignal.timeout(20_000) });
+      if (!res.ok) throw new Error(String(res.status));
+      setData((await res.json()) as SiteStatusResponse);
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    } finally {
+      running.current = false;
+      setChecking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState === "visible") void run();
+    };
+    tick();
+    const timer = setInterval(tick, POLL_MS);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [run]);
+
+  const byId = new Map((data?.services ?? []).map((s) => [s.id, s]));
+  // Before the first answer, show the services every site has so the page
+  // doesn't jump; afterwards, exactly the ones the server reported.
+  const ids = data ? ORDER.filter((id) => byId.has(id)) : ORDER.filter((id) => id !== "archive");
+
+  return (
+    <section aria-labelledby="site-status" className="mt-10">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h2 id="site-status" className="text-lg font-semibold text-white">
+          Other services
+        </h2>
+        <div className="flex items-center gap-3 text-xs text-zinc-500">
+          <span aria-live="polite">
+            {data ? `Checked ${new Date(data.generated_at).toLocaleTimeString()}` : failed ? "" : "Checking"}
+          </span>
+          <button type="button" className="sd-btn-ghost" onClick={() => void run()} disabled={checking}>
+            {checking ? "Checking" : "Check again"}
+          </button>
+        </div>
+      </div>
+
+      {failed && (
+        <p role="status" className="mb-4 text-sm" style={{ color: "var(--rose)" }}>
+          These checks can&apos;t be loaded from this site right now.
+          {data ? " The results below are the last ones received." : ""}
+        </p>
+      )}
+
+      {(data || !failed) && (
+        <div className="grid gap-4">
+          {ids.map((id) => {
+            const report = byId.get(id);
+            return (
+              <ServiceCard
+                key={id}
+                name={COPY[id].name}
+                purpose={COPY[id].purpose}
+                endpoint={id === "explorer" ? host(config.explorerUrl) : undefined}
+                state={report?.state ?? null}
+                issues={report?.issues ?? []}
+                rows={report ? rows(report) : []}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      <p className="mt-4 text-xs leading-relaxed text-zinc-500">
+        These are checked from this site&apos;s server, not your browser, and refreshed about every
+        15 seconds. For image uploads and the explorer, working means the service answered, not that
+        every feature behind it was exercised.
+      </p>
+    </section>
+  );
+}

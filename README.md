@@ -90,6 +90,15 @@ All configuration is read at runtime. Set these as environment variables in the 
 | `ARWEAVE_GATEWAY` | `https://arweave.net/{id}` | Where `ar://` images and permanent copies are read from. Keep it the same as the scanners' `CS_ARWEAVE_GATEWAY`. |
 | `CONTENT_SCAN_MAX_LAG_BLOCKS` | `1800` | Freshness limit. When the scanners' effective scanned height trails the chain by more than this many blocks, flagged content stays "Being checked" (text keeps working). `0` turns the check off. Workers checkpoint every 600 blocks by default, so keep this well above that. |
 
+## Status page
+
+`/status` shows live checks of what the app depends on, for the environment this build is configured for.
+
+- **Chain.** The public node's REST API and RPC, checked from the visitor's browser: chain id, node name, versions, latest block and its age, syncing, response time. The node is whichever sentry holds the public domains at the moment, and the node name says which. It is marked degraded when it is on the wrong chain, still syncing, has produced no block for a minute, or when one endpoint is more than 20 blocks behind the other. The REST API is checked through `/api/lcd`, the way the app reads it.
+- **Other services.** The explorer, content scanners, image uploads, the Arweave gateway and the remote snapshot list, checked by this server at `/api/status` and cached for 15 seconds. A service the site doesn't have set up is shown as such, not as a failure. The response names no private address.
+
+The app has no node failover of its own: the launcher moves the public domains to a standby sentry when the serving one fails, and the app follows them.
+
 ## Anonymous prover
 
 Anonymous actions (x/shield) are proved in the browser by `shield.wasm`, the chain's own Go prover, in a Web Worker ([public/zk/shield-worker.js](public/zk/shield-worker.js)). The prover must come from the same chain release as the node: one from another release can derive the proof's public inputs differently, and the chain then rejects every anonymous action with "ZK proof verification failed".

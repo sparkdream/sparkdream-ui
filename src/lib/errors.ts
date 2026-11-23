@@ -22,6 +22,11 @@ export type ErrorKind =
 // mean the same thing to a reader: the node isn't answering.
 const GATEWAY_STATUSES = new Set([502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 527, 530]);
 
+/** True when an HTTP status came from something in front of the node, not the node. */
+export function isGatewayStatus(status: number): boolean {
+  return GATEWAY_STATUSES.has(status);
+}
+
 export class ApiError extends Error {
   constructor(
     /** HTTP status, or 0 for a network failure or timeout with no response. */
