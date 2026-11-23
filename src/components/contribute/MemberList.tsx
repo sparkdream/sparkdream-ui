@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { listRepMembers, membersByTrustLevel } from "@/lib/api";
 import NameOrAddress from "@/components/NameOrAddress";
 import Link from "next/link";
-import { memberHref } from "@/components/MemberAvatar";
+import MemberAvatar, { memberHref } from "@/components/MemberAvatar";
 import { licenseLabel } from "@/lib/contentLicense";
 import type { RepMember } from "@/types/rep";
 import { TRUST_LEVEL_LABELS, MEMBER_STATUS_LABELS, MemberStatus, TrustLevel } from "@/types/rep";
@@ -163,6 +163,7 @@ export default function MemberList() {
               >
                 <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
                   <div className="flex items-center gap-3">
+                    <MemberAvatar address={m.address} size="sm" nested />
                     <NameOrAddress address={m.address} className="hidden font-mono text-sm text-zinc-300 @2xl:inline" full />
                     <NameOrAddress address={m.address} className="font-mono text-sm text-zinc-300 @2xl:hidden" />
                     {trustLevelBadge(m.trust_level)}

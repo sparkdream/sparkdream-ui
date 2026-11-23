@@ -2,13 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   getBankBalance,
+  getDelegatorRewards,
+  getForumPost,
   getGuild,
   getMemberProfile,
+  getRepAliases,
   getRepMember,
+  initiativesByAssignee,
   listDelegationsByDelegator,
   listStakingValidators,
   listTitles,
@@ -18,7 +22,7 @@ import { loadNames, loadRoleBonds, orEmpty } from "@/lib/memberInfo";
 import type { Names, RoleBond } from "@/lib/memberInfo";
 import { formatDream } from "@/lib/reveal-fmt";
 import { isAnonymousAddress } from "@/lib/shield";
-import { formatSpark, formatTime, truncateAddress } from "@/lib/utils";
+import { decCoinToBaseDenom, formatSpark, formatTime, truncateAddress } from "@/lib/utils";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { useDreamDenom } from "@/hooks/useDreamDenom";
@@ -26,7 +30,7 @@ import { useMyAliases } from "@/hooks/useMyAliases";
 import CopyableAddress from "@/components/CopyableAddress";
 import ErrorState from "@/components/ErrorState";
 import MemberAvatar, { memberHref } from "@/components/MemberAvatar";
-import type { RepMember, RepStake, StakesByStakerResponse } from "@/types/rep";
+import type { Initiative, InitiativesByAssigneeResponse, RepMember, RepStake, StakesByStakerResponse } from "@/types/rep";
 import {
   BONDED_ROLE_STATUS_LABELS,
   BondedRoleStatus,
@@ -65,7 +69,10 @@ interface SeasonInfo {
 }
 
 interface Delegations {
-  rows: DelegationResponse[];
+  /** `previous` marks a delegation still held at an address the member moved away from. */
+  rows: (DelegationResponse & { previous: boolean; reward: bigint })[];
+  /** Unclaimed staking rewards across `rows`, in the bond denom's base unit. */
+  pendingRewards: bigint;
   monikers: Record<string, string>;
 }
 
@@ -88,6 +95,28 @@ async function loadStakes(address: string): Promise<Stakes> {
     const req: { limit: string; key?: string } = key ? { limit: String(STAKE_PAGE), key } : { limit: String(STAKE_PAGE) };
     const res: StakesByStakerResponse | null = await orEmpty(stakesByStaker(address, req), null);
     rows.push(...(res?.stakes || []));
+    key = res?.pagination?.next_key || null;
+    if (!key) break;
+  }
+  return { rows, partial: !!key };
+}
+
+interface AssignmentBonds {
+  /** Initiatives this member is assigned to that still hold a self-assign bond. */
+  rows: Initiative[];
+  /** More assignments exist than were read, so `rows` may be missing bonds. */
+  partial: boolean;
+}
+
+// The chain zeroes self_assign_bond when it releases or burns the bond, so a
+// positive amount means DREAM is locked right now, whatever the status.
+async function loadAssignmentBonds(address: string): Promise<AssignmentBonds> {
+  const rows: Initiative[] = [];
+  let key: string | null = null;
+  for (let page = 0; page < 5; page++) {
+    const req: { limit: string; key?: string } = key ? { limit: "200", key } : { limit: "200" };
+    const res: InitiativesByAssigneeResponse | null = await orEmpty(initiativesByAssignee(address, req), null);
+    rows.push(...(res?.initiatives || []).filter((i) => /^[1-9]\d*$/.test(i.self_assign_bond || "")));
     key = res?.pagination?.next_key || null;
     if (!key) break;
   }
@@ -120,15 +149,39 @@ async function loadSeason(address: string): Promise<SeasonInfo | null> {
   };
 }
 
-async function loadDelegations(address: string): Promise<Delegations> {
-  const res = await orEmpty(listDelegationsByDelegator(address, { limit: "200" }), null);
-  const rows = (res?.delegation_responses || []).filter((d) => d.balance?.amount && d.balance.amount !== "0");
+// A key migration leaves delegations at the address the member moved away
+// from (the old key still manages them), so the member's current address is
+// read together with every earlier one.
+async function loadDelegations(address: string, denom: string): Promise<Delegations> {
+  const aliases = await getRepAliases(address).catch(() => null);
+  const earlier = aliases?.canonical === address ? (aliases.addresses || []).filter((a) => a !== address) : [];
+  const perHolder = await Promise.all(
+    [address, ...earlier].map(async (holder) => {
+      const [res, rewards] = await Promise.all([
+        orEmpty(listDelegationsByDelegator(holder, { limit: "200" }), null),
+        // Rewards are a nicety: a failed read shows the delegations without them.
+        getDelegatorRewards(holder).catch(() => null),
+      ]);
+      const rewardBy = new Map<string, bigint>();
+      for (const r of rewards?.rewards || []) {
+        rewardBy.set(r.validator_address, decCoinToBaseDenom(r.reward?.find((c) => c.denom === denom)?.amount));
+      }
+      return (res?.delegation_responses || [])
+        .filter((d) => d.balance?.amount && d.balance.amount !== "0")
+        .map((d) => ({
+          ...d,
+          previous: holder !== address,
+          reward: rewardBy.get(d.delegation.validator_address) ?? BigInt(0),
+        }));
+    }),
+  );
+  const rows = perHolder.flat();
   const monikers: Record<string, string> = {};
   if (rows.length > 0) {
     const validators = await listStakingValidators("", { limit: "500" }).catch(() => null);
     for (const v of validators?.validators || []) monikers[v.operator_address] = v.description?.moniker || "";
   }
-  return { rows, monikers };
+  return { rows, monikers, pendingRewards: rows.reduce((sum, r) => sum + r.reward, BigInt(0)) };
 }
 
 export default function MemberPage() {
@@ -186,6 +239,7 @@ function MemberView({ address }: { address: string }) {
   const [stakes, setStakes] = useState<Loaded<Stakes>>(LOADING);
   const [names, setNames] = useState<Loaded<Names>>(LOADING);
   const [roleBonds, setRoleBonds] = useState<Loaded<RoleBond[]>>(LOADING);
+  const [assignBonds, setAssignBonds] = useState<Loaded<AssignmentBonds>>(LOADING);
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
@@ -202,9 +256,10 @@ function MemberView({ address }: { address: string }) {
       setLiquidSpark,
       live,
     );
-    settle(loadDelegations(address), setDelegations, live);
+    settle(loadDelegations(address, config.denom), setDelegations, live);
     settle(loadNames(address), setNames, live);
     settle(loadRoleBonds(address), setRoleBonds, live);
+    settle(loadAssignmentBonds(address), setAssignBonds, live);
     settle(loadStakes(address), setStakes, live);
     return () => {
       alive = false;
@@ -219,6 +274,7 @@ function MemberView({ address }: { address: string }) {
     setStakes(LOADING);
     setNames(LOADING);
     setRoleBonds(LOADING);
+    setAssignBonds(LOADING);
     setNonce((n) => n + 1);
   }, []);
 
@@ -238,14 +294,23 @@ function MemberView({ address }: { address: string }) {
     delegations.state === "ok"
       ? delegations.data.rows.reduce((sum, d) => sum + BigInt(d.balance.amount), BigInt(0)).toString()
       : null;
-  // Staked DREAM the two lists below do not account for. Only known once
-  // every stake page is loaded; other modules lock DREAM too (invitations,
+  // Staked DREAM the lists below do not account for. Only known once every
+  // list is read in full; other modules lock DREAM too (invitations,
   // nominations, challenges, reports) and have no per-member listing.
   let otherLocked: bigint | null = null;
-  if (m && stakes.state === "ok" && !stakes.data.partial && roleBonds.state === "ok" && /^\d+$/.test(m.staked_dream || "")) {
+  if (
+    m &&
+    stakes.state === "ok" &&
+    !stakes.data.partial &&
+    roleBonds.state === "ok" &&
+    assignBonds.state === "ok" &&
+    !assignBonds.data.partial &&
+    /^\d+$/.test(m.staked_dream || "")
+  ) {
     const listed =
       stakes.data.rows.reduce((sum, st) => sum + BigInt(st.amount || "0"), BigInt(0)) +
-      roleBonds.data.reduce((sum, r) => sum + BigInt(r.role.current_bond), BigInt(0));
+      roleBonds.data.reduce((sum, r) => sum + BigInt(r.role.current_bond), BigInt(0)) +
+      assignBonds.data.rows.reduce((sum, i) => sum + BigInt(i.self_assign_bond || "0"), BigInt(0));
     const rest = BigInt(m.staked_dream) - listed;
     otherLocked = rest > BigInt(0) ? rest : null;
   }
@@ -335,6 +400,12 @@ function MemberView({ address }: { address: string }) {
           <Stat label={`Liquid ${dream}`} value={amount(member, (v) => formatDream(v?.dream_balance))} />
           <Stat label={`Staked ${dream}`} value={amount(member, (v) => formatDream(v?.staked_dream))} />
         </div>
+        {delegations.state === "ok" && delegations.data.pendingRewards > BigInt(0) && (
+          <p className="mt-3 text-xs text-zinc-500">
+            Plus {formatSpark(delegations.data.pendingRewards, { maxFractionDigits: 2 })} {spark} in unclaimed staking
+            rewards.
+          </p>
+        )}
         {member.state === "ok" && !m && (
           <p className="mt-3 text-xs text-zinc-500">Only members hold {dream}. This address has not joined.</p>
         )}
@@ -394,10 +465,12 @@ function MemberView({ address }: { address: string }) {
         {(rows) =>
           rows.length === 0 ? null : (
             <div className="space-y-2">
-              {rows.map(({ label, role }) => (
+              {rows.map(({ label, href, role }) => (
                 <div key={label} className="flex items-center justify-between gap-3 rounded-lg bg-zinc-800/30 px-3 py-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="truncate text-sm text-zinc-300">{label}</span>
+                    <Link href={href} className={`truncate text-sm text-zinc-300 ${LINK}`}>
+                      {label}
+                    </Link>
                     {role.bond_status !== BondedRoleStatus.NORMAL && (
                       <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-400">
                         {BONDED_ROLE_STATUS_LABELS[role.bond_status] || role.bond_status}
@@ -414,10 +487,33 @@ function MemberView({ address }: { address: string }) {
         }
       </Section>
 
+      {/* Assignment bonds */}
+      <Section title="Assignment bonds" loaded={assignBonds} empty="No assignment bonds">
+        {(d) =>
+          d.rows.length === 0 ? null : (
+            <div className="space-y-2">
+              {d.rows.map((ini) => (
+                <div key={ini.id} className="flex items-center justify-between gap-3 rounded-lg bg-zinc-800/30 px-3 py-2">
+                  <Link
+                    href={`/contribute?view=initiatives&initiative=${ini.id}`}
+                    className={`min-w-0 truncate text-sm text-zinc-300 ${LINK}`}
+                  >
+                    #{ini.id} {ini.title}
+                  </Link>
+                  <span className="shrink-0 font-mono text-sm text-zinc-300">
+                    {formatDream(ini.self_assign_bond)} {dream}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )
+        }
+      </Section>
+
       {otherLocked !== null && (
         <p className="px-1 text-xs text-zinc-500">
-          Another {formatDream(otherLocked.toString())} {dream} is locked outside stakes and role bonds, for example in
-          invitations, nominations or challenges.
+          Another {formatDream(otherLocked.toString())} {dream} is locked outside stakes and bonds, for example in invitations,
+          nominations or challenges.
         </p>
       )}
 
@@ -429,12 +525,32 @@ function MemberView({ address }: { address: string }) {
               {d.rows.map((row) => {
                 const val = row.delegation.validator_address;
                 return (
-                  <div key={val} className="flex items-center justify-between gap-3 rounded-lg bg-zinc-800/30 px-3 py-2">
+                  <div
+                    key={`${row.delegation.delegator_address}/${val}`}
+                    className="flex items-center justify-between gap-3 rounded-lg bg-zinc-800/30 px-3 py-2"
+                  >
                     <span className="min-w-0 truncate text-sm text-zinc-300">
-                      {d.monikers[val] || <CopyableAddress className="font-mono text-xs" address={val} />}
+                      {d.monikers[val] ? (
+                        <Link href="/contribute?view=delegate" className={LINK}>
+                          {d.monikers[val]}
+                        </Link>
+                      ) : (
+                        <CopyableAddress className="font-mono text-xs" address={val} />
+                      )}
+                      {row.previous && (
+                        <span className="ml-2 text-xs text-zinc-500">
+                          held at previous address{" "}
+                          <CopyableAddress className="font-mono" address={row.delegation.delegator_address} />
+                        </span>
+                      )}
                     </span>
-                    <span className="shrink-0 font-mono text-sm text-zinc-300">
+                    <span className="shrink-0 text-right font-mono text-sm text-zinc-300">
                       {formatSpark(row.balance.amount, { maxFractionDigits: 2 })} {spark}
+                      {row.reward > BigInt(0) && (
+                        <span className="block text-xs text-zinc-500">
+                          +{formatSpark(row.reward, { maxFractionDigits: 2 })} pending rewards
+                        </span>
+                      )}
                     </span>
                   </div>
                 );
@@ -640,26 +756,66 @@ function StakeList({ stakes }: { stakes: Stakes }) {
   );
 }
 
+const LINK = "underline decoration-zinc-600 underline-offset-2 hover:text-white hover:decoration-zinc-300";
+
+/**
+ * A stake on a spark. The stake names a post id, which may be a reply, while
+ * Swarm opens threads by their root post. The root is looked up on click, so
+ * a long stake list costs no requests until a link is used.
+ */
+function SparkLink({ postId }: { postId: string }) {
+  const router = useRouter();
+  return (
+    <a
+      href={`/swarm?thread=${postId}`}
+      className={LINK}
+      onClick={async (e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+        e.preventDefault();
+        let root = postId;
+        try {
+          const { post } = await getForumPost(postId);
+          if (Number(post.root_id) > 0) root = post.root_id;
+        } catch {
+          // fall through to the id as given
+        }
+        router.push(`/swarm?thread=${root}`);
+      }}
+    >
+      #{postId}
+    </a>
+  );
+}
+
 /** What a stake is on, linked where the target has a page of its own. */
 function StakeTarget({ stake }: { stake: RepStake }) {
-  const { name } = useDisplayName(stake.target_type === StakeTargetType.MEMBER ? stake.target_identifier : null);
-  if (stake.target_type === StakeTargetType.MEMBER && stake.target_identifier) {
+  const type = stake.target_type;
+  const id = /^\d+$/.test(stake.target_id || "") ? stake.target_id : "";
+  const { name } = useDisplayName(type === StakeTargetType.MEMBER ? stake.target_identifier : null);
+
+  if (type === StakeTargetType.MEMBER && stake.target_identifier) {
     return (
-      <Link href={memberHref(stake.target_identifier)} className="hover:text-white hover:underline">
+      <Link href={memberHref(stake.target_identifier)} className={LINK}>
         {name || truncateAddress(stake.target_identifier)}
       </Link>
     );
   }
-  if (
-    (stake.target_type === StakeTargetType.BLOG_CONTENT || stake.target_type === StakeTargetType.BLOG_AUTHOR_BOND) &&
-    /^\d+$/.test(stake.target_id || "")
-  ) {
+  if (id && (type === StakeTargetType.FORUM_CONTENT || type === StakeTargetType.FORUM_AUTHOR_BOND)) {
+    return <SparkLink postId={id} />;
+  }
+  let href = "";
+  if (id && type === StakeTargetType.INITIATIVE) href = `/contribute?view=initiatives&initiative=${id}`;
+  else if (id && type === StakeTargetType.PROJECT) href = `/contribute?view=projects&project=${id}`;
+  else if (id && (type === StakeTargetType.BLOG_CONTENT || type === StakeTargetType.BLOG_AUTHOR_BOND))
+    href = `/imaginarium/${id}`;
+  if (href) {
     return (
-      <Link href={`/imaginarium/${stake.target_id}`} className="hover:text-white hover:underline">
-        #{stake.target_id}
+      <Link href={href} className={LINK}>
+        #{id}
       </Link>
     );
   }
+  // Tags, collections and dream replies have no page to link to.
   return <>{stake.target_identifier || `#${stake.target_id}`}</>;
 }
 

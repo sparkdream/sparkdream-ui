@@ -17,24 +17,26 @@ export async function orEmpty<T>(p: Promise<T>, empty: T): Promise<T> {
 }
 
 /** Roles a member holds by locking a DREAM bond (x/rep bonded roles). */
-const BONDED_ROLES: { type: RoleTypeValue; label: string }[] = [
-  { type: RoleType.CONTENT_SENTINEL, label: "Content sentinel" },
-  { type: RoleType.COLLECT_CURATOR, label: "Collection curator" },
-  { type: RoleType.FEDERATION_VERIFIER, label: "Federation verifier" },
-  { type: RoleType.INITIATIVE_REVIEWER, label: "Initiative reviewer" },
+const BONDED_ROLES: { type: RoleTypeValue; label: string; href: string }[] = [
+  { type: RoleType.CONTENT_SENTINEL, label: "Content sentinel", href: "/swarm" },
+  { type: RoleType.COLLECT_CURATOR, label: "Collection curator", href: "/wonders" },
+  { type: RoleType.FEDERATION_VERIFIER, label: "Federation verifier", href: "/federation" },
+  { type: RoleType.INITIATIVE_REVIEWER, label: "Initiative reviewer", href: "/contribute?view=review" },
 ];
 
 export interface RoleBond {
   label: string;
+  /** The page where this role does its work. */
+  href: string;
   role: BondedRole;
 }
 
 export async function loadRoleBonds(address: string): Promise<RoleBond[]> {
   const roles = await Promise.all(
-    BONDED_ROLES.map(async ({ type, label }) => {
+    BONDED_ROLES.map(async ({ type, label, href }) => {
       const res = await orEmpty(getBondedRole(type, address), null);
       const role = res?.bonded_role;
-      return role?.address && /^\d+$/.test(role.current_bond || "") && role.current_bond !== "0" ? { label, role } : null;
+      return role?.address && /^\d+$/.test(role.current_bond || "") && role.current_bond !== "0" ? { label, href, role } : null;
     }),
   );
   return roles.filter((r): r is RoleBond => r !== null);

@@ -5,6 +5,7 @@ import type { Group, Member } from "@/types/commons";
 import { useWallet } from "@/contexts/WalletContext";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import CopyableAddress from "@/components/CopyableAddress";
+import MemberAvatar from "@/components/MemberAvatar";
 
 interface CommunityMembersProps {
   group: Group;
@@ -50,7 +51,8 @@ export default function CommunityMembers({ group, members }: CommunityMembersPro
                   : "sd-hull-tile"
               }`}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <MemberAvatar address={m.address} size="sm" />
                 <span
                   className={`font-mono text-sm ${
                     m.address === address ? "text-indigo-400" : "text-zinc-300"
