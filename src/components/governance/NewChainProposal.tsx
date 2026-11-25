@@ -6,6 +6,7 @@ import { BallotMode, BallotModeNumber } from "@/types/commons";
 import { GovMsgTypeUrls, UpgradeMsgTypeUrls, CommonsMsgTypeUrls, RepIdentityMsgTypeUrls, GO_ZERO_TIME } from "@/lib/tx";
 import { listGroups, getCurrentUpgradePlan, getGovDepositParams, type UpgradePlan } from "@/lib/api";
 import { getGovModuleAddress } from "@/lib/gov";
+import { encodeProposalMessages, microToDisplay, parseProposalFile, type JsonObject, type PackedMessage } from "@/lib/proposalJson";
 import { useWallet } from "@/contexts/WalletContext";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import ParamChangeForm from "./ParamChangeForm";
@@ -21,7 +22,8 @@ type ChainProposalType =
   | "software-upgrade"
   | "cancel-upgrade"
   | "register-council"
-  | "force-migration";
+  | "force-migration"
+  | "custom";
 
 const CHAIN_PROPOSAL_TYPES: {
   value: ChainProposalType;
@@ -35,6 +37,7 @@ const CHAIN_PROPOSAL_TYPES: {
   { value: "cancel-upgrade", label: "Cancel upgrade", description: "Abort a pending software upgrade" },
   { value: "register-council", label: "Register council", description: "Create a new council/committee" },
   { value: "force-migration", label: "Move memberships", description: "Force members who lost their key onto new addresses" },
+  { value: "custom", label: "Custom message", description: "Paste a proposal as the JSON the chain's command line takes" },
 ];
 
 /** Deposit thresholds of one proposal mode, in display units and micro-units. */
@@ -155,6 +158,53 @@ export default function NewChainProposal({
   const [forceRows, setForceRows] = useState<ForceRow[]>(() => [emptyForceRow()]);
   const forceChecks = useForceBatchChecks(forceRows, config.bech32Prefix, type === "force-migration", true);
   const forceBlocked = type === "force-migration" && (forceChecks.blocked || forceChecks.checking);
+
+  // Custom message: the proposal JSON as pasted, and what the chain node
+  // made of it once "Read proposal" has run. Editing the JSON clears it.
+  const [customJson, setCustomJson] = useState("");
+  const [customReading, setCustomReading] = useState(false);
+  const [custom, setCustom] = useState<{
+    packed: PackedMessage[];
+    chainRead: JsonObject[];
+    metadata: string;
+    /** Why a Ledger cannot sign it, when it cannot. */
+    ledgerError: string | null;
+  } | null>(null);
+
+  const readCustomProposal = async () => {
+    setError(null);
+    setCustom(null);
+    setCustomReading(true);
+    try {
+      const file = parseProposalFile(customJson);
+      if (file.deposit.length > 1 || (file.deposit[0] && file.deposit[0].denom !== config.denom)) {
+        throw new Error(`The deposit must be a single amount in ${config.denom}`);
+      }
+      const { packed, chainRead } = await encodeProposalMessages(file.messages);
+      // A Ledger signs amino JSON, which needs a converter for every inner
+      // message. Rendering the proposal now tells before the wallet opens.
+      let ledgerError: string | null = null;
+      try {
+        const { buildSigningTypes } = await import("@/lib/signingTypes");
+        const { aminoTypes } = await buildSigningTypes();
+        aminoTypes.toAmino({
+          typeUrl: GovMsgTypeUrls.SubmitProposal,
+          value: { messages: packed, initialDeposit: file.deposit, proposer: address, metadata: file.metadata, title: file.title, summary: file.summary, expedited: file.expedited },
+        });
+      } catch (err) {
+        ledgerError = err instanceof Error ? err.message : String(err);
+      }
+      if (file.title) setTitle(file.title);
+      if (file.summary) setSummary(file.summary);
+      setExpedited(file.expedited);
+      if (file.deposit[0]) setDeposit(microToDisplay(file.deposit[0].amount));
+      setCustom({ packed, chainRead, metadata: file.metadata, ledgerError });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not read the proposal");
+    } finally {
+      setCustomReading(false);
+    }
+  };
 
   useEffect(() => {
     if (type === "council-election") {
@@ -483,6 +533,9 @@ export default function NewChainProposal({
             ).finish(),
           });
         }
+      } else if (type === "custom") {
+        if (!custom) throw new Error("Read the proposal JSON first");
+        govMessages.push(...custom.packed);
       }
       // "general" has no inner messages
 
@@ -501,7 +554,9 @@ export default function NewChainProposal({
       const metadata =
         govMessages.length === 0
           ? JSON.stringify({ title: proposalTitle, summary: proposalSummary })
-          : "";
+          : type === "custom" && custom
+            ? custom.metadata
+            : "";
 
       await signAndBroadcast([
         {
@@ -804,6 +859,55 @@ export default function NewChainProposal({
         />
       )}
 
+      {type === "custom" && (
+        <div className="space-y-3 rounded-lg border border-zinc-700/50 bg-zinc-800/20 p-4">
+          <h4 className="text-sm font-medium text-zinc-300">Custom message</h4>
+          <p className="text-xs text-zinc-500">
+            Paste the proposal file the chain&apos;s command line takes: messages with an @type, and
+            optionally title, summary, deposit, metadata and expedited. The chain node reads the
+            messages, and the title, summary and deposit above are filled in from the file.
+          </p>
+          <textarea
+            value={customJson}
+            onChange={(e) => {
+              setCustomJson(e.target.value);
+              setCustom(null);
+            }}
+            placeholder='{"messages": [{"@type": "/sparkdream...", "authority": "..."}], "deposit": "...", "title": "...", "summary": "..."}'
+            rows={10}
+            spellCheck={false}
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 font-mono text-xs text-white placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={readCustomProposal}
+            disabled={customReading || !customJson.trim()}
+            className="sd-btn sd-btn-secondary"
+          >
+            {customReading ? "Reading..." : "Read proposal"}
+          </button>
+          {custom && (
+            <div className="space-y-2">
+              <p className="text-xs text-zinc-400">
+                The chain read {custom.packed.length === 1 ? "this message" : `these ${custom.packed.length} messages`}.
+                Every value of the file matches. Values the file left out are shown at their defaults.
+              </p>
+              <pre className="max-h-96 overflow-auto rounded-lg border border-zinc-700 bg-zinc-900/60 p-3 font-mono text-[11px] text-zinc-300">
+                {JSON.stringify(custom.chainRead, null, 2)}
+              </pre>
+              {custom.ledgerError ? (
+                <p className="text-xs text-amber-400">
+                  A Ledger cannot sign this proposal, because the app cannot render one of its
+                  messages for it ({custom.ledgerError}). A software key can still sign it.
+                </p>
+              ) : (
+                <p className="text-xs text-zinc-500">A Ledger can sign this proposal.</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Register council fields */}
       {type === "register-council" && (
         <div className="space-y-3 rounded-lg border border-zinc-700/50 bg-zinc-800/20 p-4">
@@ -960,7 +1064,7 @@ export default function NewChainProposal({
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          disabled={submitting || depositBelowFloor || forceBlocked}
+          disabled={submitting || depositBelowFloor || forceBlocked || (type === "custom" && !custom)}
           title={
             depositBelowFloor && depositFloor
               ? `Initial deposit must be at least ${depositFloor.submit} ${config.displayDenom}`

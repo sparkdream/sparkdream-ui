@@ -25,6 +25,44 @@ function errorBody(status: number, message: string) {
   return NextResponse.json({ code: status, message }, { status, headers: NO_STORE });
 }
 
+// The two POST calls the proxy forwards: the node turns a transaction written
+// as JSON into bytes and back (lib/proposalJson). Neither signs, simulates or
+// broadcasts anything, and no other POST path is let through.
+const POST_PATHS = new Set(["cosmos/tx/v1beta1/encode", "cosmos/tx/v1beta1/decode"]);
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  const { path } = await params;
+  const joined = path.join("/");
+  if (!POST_PATHS.has(joined)) return errorBody(405, "Method not allowed");
+
+  let res: Response;
+  try {
+    res = await fetch(`${LCD_ENDPOINT.replace(/\/+$/, "")}/${joined}`, {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: await request.text(),
+      cache: "no-store",
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
+  } catch (err) {
+    const timedOut = err instanceof Error && err.name === "TimeoutError";
+    return errorBody(503, timedOut ? "Chain node did not respond in time" : "Chain node unreachable");
+  }
+  const body = await res.text();
+  try {
+    JSON.parse(body);
+  } catch {
+    return errorBody(res.status === 200 ? 502 : res.status, `Chain node unreachable (${res.status})`);
+  }
+  return new NextResponse(body, {
+    status: res.status,
+    headers: { "Content-Type": "application/json", ...NO_STORE },
+  });
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
