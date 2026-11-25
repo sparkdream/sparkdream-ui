@@ -17,6 +17,7 @@ import {
 } from "@/types/service";
 import CopyableAddress from "@/components/CopyableAddress";
 import ScannerOperatorPanel from "@/components/governance/ScannerOperatorPanel";
+import ArchiverOperatorPanel from "@/components/governance/ArchiverOperatorPanel";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
 
@@ -30,8 +31,9 @@ import { isMissingEndpoint } from "@/lib/errors";
 // observers can audit operator bond, status, and slash history without
 // dropping to the LCD. An operator registers itself (MsgRegisterOperator is
 // signed by the operator, naming the council as controller);
-// ScannerOperatorPanel does that for content scanners, the one type whose
-// operators are ordinary members rather than launcher-run daemons.
+// ScannerOperatorPanel does that for content scanners and
+// ArchiverOperatorPanel for chain archivers, the types whose operators
+// register by hand rather than through a launcher-run daemon.
 
 function formatSpark(amount: string): string {
   if (!amount || amount === "0") return "0";
@@ -183,6 +185,7 @@ export default function ServiceOperators() {
       </div>
 
       <ScannerOperatorPanel onChanged={fetchData} />
+      <ArchiverOperatorPanel onChanged={fetchData} />
 
       {/* Per-service-type summary + filter */}
       {types.length > 0 && (
