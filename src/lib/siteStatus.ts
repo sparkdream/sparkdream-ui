@@ -15,6 +15,10 @@ import { effectiveScannedHeight } from "@/lib/contentScan/protocol";
 import { arweaveGateway, uploadConfig } from "@/lib/imageUpload/server";
 import { listKeys } from "@/lib/imageUpload/s3";
 import { isGatewayStatus, type ServiceReport, type ServiceState } from "@/lib/serviceStatus";
+import { assessArchiver, checkpointTxId, leadingArchiver, parseArweaveTx, type ArweaveTx } from "@/lib/archiverStatus";
+import { CHAIN_ARCHIVER_SERVICE_TYPE } from "@/lib/chainArchiver";
+import { defaults } from "@/lib/chain";
+import type { Checkpoint, Operator, ServiceTypeConfig } from "@/types/service";
 
 const TIMEOUT_MS = 6_000;
 // One round of checks serves everyone who has the page open.
@@ -241,6 +245,86 @@ export async function checkArweave(template: string): Promise<ServiceReport> {
   return { id, state: "ok", issues: [], latency_ms: r.ms, facts };
 }
 
+// ---- Chain archiver -------------------------------------------------------------
+
+/** What the gateway's index says about one transaction; undefined when it can't say. */
+async function arweaveTx(origin: string, id: string): Promise<ArweaveTx | null | undefined> {
+  try {
+    const res = await fetch(`${origin}/graphql`, {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      // The id is 43 base64url characters (checkpointTxId), safe to inline.
+      body: JSON.stringify({
+        query: `{transaction(id:"${id}"){owner{address} tags{name value} block{timestamp}}}`,
+      }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!res.ok) return undefined;
+    return parseArweaveTx(await res.json());
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The permanent copy of the block history: the chain-archiver operators and
+ * their checkpoints from the chain, and the newest range's transaction from
+ * the gateway's index. `lcd` is the node this server reads.
+ */
+export async function checkArchiver(lcd: string, chainId: string, gatewayTemplate: string): Promise<ServiceReport> {
+  const id = "archiver";
+  const base = lcd.replace(/\/+$/, "");
+  const type = encodeURIComponent(CHAIN_ARCHIVER_SERVICE_TYPE);
+  const page = "pagination.limit=200";
+  const [cfg, ops, cps, block] = await Promise.all([
+    reach(`${base}/sparkdream/service/v1/service_type/${type}`),
+    reach(`${base}/sparkdream/service/v1/operators_by_service_type/${type}?${page}`),
+    reach(`${base}/sparkdream/service/v1/checkpoints_by_service_type/${type}?${page}`),
+    reach(`${base}/cosmos/base/tendermint/v1beta1/blocks/latest`),
+  ]);
+  const cantRead: ServiceReport = {
+    id,
+    state: "unreachable",
+    issues: ["The chain couldn't be read, so the state of its permanent copy is unknown."],
+    latency_ms: null,
+    facts: [],
+  };
+  if (!cfg.res || isGatewayStatus(cfg.res.status)) return cantRead;
+
+  let maxLagBlocks: number | null = null;
+  let operators: Operator[] = [];
+  let checkpoints: Checkpoint[] = [];
+  let latestHeight = 0;
+  // 404 is a chain without the type, 501 one without x/service at all.
+  if (cfg.res.status !== 404 && cfg.res.status !== 501) {
+    if (!cfg.res.ok || !ops.res?.ok || !cps.res?.ok) return cantRead;
+    try {
+      const config = ((await cfg.res.json()) as { config?: ServiceTypeConfig }).config;
+      if (config?.enabled) maxLagBlocks = Number(config.checkpoint_max_lag_blocks || 0) || 0;
+      operators = ((await ops.res.json()) as { operators?: Operator[] }).operators ?? [];
+      checkpoints = ((await cps.res.json()) as { checkpoints?: Checkpoint[] }).checkpoints ?? [];
+      if (block.res?.ok) {
+        const header = ((await block.res.json()) as { block?: { header?: { height?: string } } }).block?.header;
+        latestHeight = Number(header?.height) || 0;
+      }
+    } catch {
+      return cantRead;
+    }
+  }
+
+  let tx: ArweaveTx | null | undefined;
+  const txId = checkpointTxId(leadingArchiver(operators, checkpoints)?.checkpoint?.root ?? "");
+  if (maxLagBlocks !== null && txId) {
+    try {
+      tx = await arweaveTx(new URL(gatewayTemplate).origin, txId);
+    } catch {
+      // Not a URL: checkArweave reports that.
+    }
+  }
+  return assessArchiver({ chainId, maxLagBlocks, operators, checkpoints, latestHeight, tx, now: Date.now() });
+}
+
 // ---- Archive snapshots ----------------------------------------------------------
 
 /** The remote snapshot list, when the site uses one. */
@@ -280,6 +364,8 @@ async function runAll(env: NodeJS.ProcessEnv): Promise<ServiceReport[]> {
   const checks: Promise<ServiceReport>[] = [];
   if (explorer) checks.push(checkPage("explorer", explorer));
   checks.push(checkScanners(), checkImages(env), checkArweave(arweaveGateway(env)));
+  // The same node and chain the rest of this server reads (lib/api.ts).
+  checks.push(checkArchiver(env.LCD_ENDPOINT || defaults.lcdEndpoint, env.CHAIN_ID || defaults.chainId, arweaveGateway(env)));
   // Without a remote list, snapshots are files on this server: nothing to reach.
   if (manifest) checks.push(checkArchive(manifest));
   return Promise.all(checks);

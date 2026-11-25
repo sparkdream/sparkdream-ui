@@ -16,6 +16,7 @@ const COPY: Record<string, { name: string; purpose: string }> = {
   scanners: { name: "Content scanners", purpose: "Check images and flagged posts before they are shown." },
   images: { name: "Image uploads", purpose: "Storing the pictures members add to dreams and profiles." },
   arweave: { name: "Permanent storage gateway", purpose: "Reading permanent copies and ar:// images." },
+  archiver: { name: "Permanent block archive", purpose: "The copy of this chain's block history kept on Arweave." },
   archive: { name: "Archive snapshots", purpose: "The list of read-only snapshots on the Archive page." },
 };
 const ORDER = Object.keys(COPY);
@@ -122,7 +123,9 @@ export default function SiteStatusSection() {
       <p className="mt-4 text-xs leading-relaxed text-zinc-500">
         These are checked from this site&apos;s server, not your browser, and refreshed about every
         15 seconds. For image uploads and the explorer, working means the service answered, not that
-        every feature behind it was exercised.
+        every feature behind it was exercised. For the permanent block archive, working means the
+        archiver&apos;s latest checkpoint is recent and the range it names is on Arweave under the
+        archiver&apos;s wallet, not that the whole copy was downloaded and verified.
       </p>
     </section>
   );

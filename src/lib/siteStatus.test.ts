@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessScanners, checkArchive, checkArweave, checkPage, type ScannerMeta } from "./siteStatus";
+import { assessScanners, checkArchive, checkArchiver, checkArweave, checkPage, type ScannerMeta } from "./siteStatus";
 
 function meta(over: Partial<ScannerMeta> = {}): ScannerMeta {
   return {
@@ -81,4 +81,61 @@ test("archive: the snapshot list must be readable", async () => {
   assert.equal(ok.facts[0].value, "2");
   const bad = await withFetch(() => new Response("<html>"), () => checkArchive("https://s.test/m.json"));
   assert.equal(bad.state, "degraded");
+});
+
+test("archiver: the chain's checkpoint and the gateway's index make one report", async () => {
+  const wallet = "10tJ9DsLQ97USrpb7xKYTW0jwXJ9IGhmjqqce6mcEP0";
+  const metadata = Buffer.from(JSON.stringify({ v: 1, backend: "arweave", wallets: [wallet] })).toString("base64");
+  const seen: string[] = [];
+  const answer = (url: string) => {
+    seen.push(url);
+    const json = (body: unknown) => new Response(JSON.stringify(body));
+    if (url.includes("/service_type/")) return json({ config: { enabled: true, checkpoint_max_lag_blocks: "34560" } });
+    if (url.includes("/operators_by_service_type/")) {
+      return json({ operators: [{ address: "op", status: "OPERATOR_STATUS_ACTIVE", metadata, registered_at: "1" }] });
+    }
+    if (url.includes("/checkpoints_by_service_type/")) {
+      return json({ checkpoints: [{ operator: "op", height: "230000", root: "uo94t4K0yA6mknk28GwNmOrM/FexblhPbxNdgeTw24g=" }] });
+    }
+    if (url.includes("/blocks/latest")) return json({ block: { header: { height: "236000" } } });
+    if (url === "https://gw.test/graphql") {
+      return json({
+        data: {
+          transaction: {
+            owner: { address: wallet },
+            block: { timestamp: 1_795_583_418 },
+            tags: [
+              { name: "App-Name", value: "sparkdream-block-archive" },
+              { name: "Chain-ID", value: "sparkdream-test-1" },
+              { name: "Archive-Kind", value: "blocks" },
+              { name: "Archive-Format", value: "1" },
+              { name: "Block-Range-From", value: "220001" },
+              { name: "Block-Range-To", value: "230000" },
+            ],
+          },
+        },
+      });
+    }
+    return new Response("", { status: 404 });
+  };
+  const got = await withFetch(answer, () => checkArchiver("https://lcd.test/", "sparkdream-test-1", "https://gw.test/{id}"));
+  assert.equal(got.state, "ok", got.issues.join(" "));
+  assert.ok(seen.includes("https://lcd.test/sparkdream/service/v1/service_type/chain-archiver"));
+  assert.ok(seen.includes("https://gw.test/graphql"));
+  assert.equal(got.facts.find((f) => f.label === "Archived through block")?.value, "230,000");
+
+  // A chain without the service type is off, and the gateway is never asked.
+  seen.length = 0;
+  const off = await withFetch(
+    (url) => {
+      seen.push(url);
+      return new Response("{}", { status: 404 });
+    },
+    () => checkArchiver("https://lcd.test", "sparkdream-test-1", "https://gw.test/{id}")
+  );
+  assert.equal(off.state, "off");
+  assert.ok(!seen.includes("https://gw.test/graphql"));
+
+  const down = await withFetch(() => new Response("", { status: 502 }), () => checkArchiver("https://lcd.test", "c", "https://gw.test/{id}"));
+  assert.equal(down.state, "unreachable");
 });
