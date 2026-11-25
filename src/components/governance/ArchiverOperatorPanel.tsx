@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { getServiceOperator, getServiceType, listGroups } from "@/lib/api";
+import { getPolicyPermissions, getServiceOperator, getServiceType, listGroups } from "@/lib/api";
 import { errorKind } from "@/lib/errors";
 import { ServiceMsgTypeUrls } from "@/lib/tx";
 import { formatSpark } from "@/lib/utils";
@@ -21,9 +21,12 @@ import CopyableAddress from "@/components/CopyableAddress";
 import { OPERATOR_STATUS_LABELS, type Operator, type ServiceTypeConfig } from "@/types/service";
 import type { Group } from "@/types/commons";
 
-// The council that answers for the chain's own infrastructure: it resolves
-// the liveness report x/service files against a stalled archiver.
-const DEFAULT_CONTROLLER = "Technical Council";
+// The committee that answers for the chain's own infrastructure: it resolves
+// the liveness report x/service files against a stalled archiver. A
+// controller can only do that if its group holds MsgResolveReport, which the
+// panel checks before it lets an archiver register under it.
+const DEFAULT_CONTROLLER = "Technical Operations Committee";
+const RESOLVE_REPORT = "/sparkdream.service.v1.MsgResolveReport";
 
 function toMicro(amount: string): string {
   return BigInt(Math.floor(parseFloat(amount) * 1_000_000)).toString();
@@ -55,6 +58,8 @@ export default function ArchiverOperatorPanel({ onChanged }: { onChanged?: () =>
   const [open, setOpen] = useState(false);
   const [walletText, setWalletText] = useState("");
   const [controller, setController] = useState("");
+  // Whether the chosen controller holds MsgResolveReport. null: not known yet.
+  const [canResolve, setCanResolve] = useState<boolean | null>(null);
   const [bond, setBond] = useState("");
   const [topUp, setTopUp] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -90,6 +95,26 @@ export default function ArchiverOperatorPanel({ onChanged }: { onChanged?: () =>
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // A group executes only the messages on its list, and a controller answers
+  // a report with MsgResolveReport: under a group without it, every report
+  // against the archiver would only time out.
+  useEffect(() => {
+    setCanResolve(null);
+    if (!controller) return;
+    let stale = false;
+    getPolicyPermissions(controller).then(
+      (r) => {
+        if (!stale) setCanResolve((r.policy_permissions?.allowed_messages || []).includes(RESOLVE_REPORT));
+      },
+      () => {
+        if (!stale) setCanResolve(false);
+      },
+    );
+    return () => {
+      stale = true;
+    };
+  }, [controller]);
 
   const published = useMemo(() => (operator ? parseArchiverMetadata(operator.metadata) : null), [operator]);
   const groupName = (addr: string) => groups.find((g) => g.policy_address === addr)?.index;
@@ -227,9 +252,9 @@ export default function ArchiverOperatorPanel({ onChanged }: { onChanged?: () =>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-xs text-zinc-500">
-              Controller (the council that answers for the archive)
+              Controller (the group that answers for the archive)
               <select className={`${field} mt-1`} value={controller} onChange={(e) => setController(e.target.value)}>
-                <option value="">Choose a council</option>
+                <option value="">Choose a group</option>
                 {groups.map((g) => (
                   <option key={g.policy_address} value={g.policy_address}>
                     {g.index}
@@ -244,6 +269,13 @@ export default function ArchiverOperatorPanel({ onChanged }: { onChanged?: () =>
           </div>
 
           {walletErrors}
+          {controller && canResolve === false && (
+            <p className="text-xs text-red-400">
+              {groupName(controller) || "This group"} cannot resolve service reports (its permissions lack{" "}
+              <span className="font-mono">MsgResolveReport</span>), so a report against the archiver could never be
+              answered. Choose a group that can, or have governance grant it the message first.
+            </p>
+          )}
           {bondMicro > BigInt(0) && bondMicro < minBond && (
             <p className="text-xs text-red-400">The bond must be at least {formatSpark(minBond)} {spark}.</p>
           )}
@@ -256,7 +288,7 @@ export default function ArchiverOperatorPanel({ onChanged }: { onChanged?: () =>
             <button
               type="button"
               className="sd-btn sd-btn-primary"
-              disabled={problems.length > 0 || !controller || bondMicro < minBond || bondMicro === BigInt(0) || !!busy}
+              disabled={problems.length > 0 || !controller || canResolve !== true || bondMicro < minBond || bondMicro === BigInt(0) || !!busy}
               onClick={() =>
                 send(
                   {

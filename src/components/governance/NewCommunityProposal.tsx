@@ -88,9 +88,12 @@ const REQUIRED_MESSAGES: Record<ProposalType, string[]> = {
   // Operations Committees (and gov) hold these.
   "complete-project": [RepMsgTypeUrls.CompleteProject],
   "resolve-curation": [CollectMsgTypeUrls.ResolveCurationChallenge],
-  // x/storage: the Commons Council and the Commons Operations Committee hold
-  // the approval, void and unflag messages; only the committee holds the
-  // price message (docs/x-storage-spec.md §7 in the chain repo).
+  // x/storage: a body is offered what its list holds. The Technical
+  // Operations Committee, the storage operators' controller, holds the
+  // operator side (approve, remove, void) and the price message; the Commons
+  // Council and the Commons Operations Committee hold the scanner side
+  // (approve, remove, unflag) as well as the operator side
+  // (docs/x-storage-spec.md §7 and §8.2 in the chain repo).
   ...STORAGE_REQUIRED_MESSAGES,
 };
 
