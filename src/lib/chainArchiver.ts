@@ -53,3 +53,10 @@ export function parseArchiverMetadata(b64: string): ArchiverMetadata | null {
     return null;
   }
 }
+
+/**
+ * Service type of the operators that make members' permanent copies on
+ * Arweave (chain repo: docs/x-storage-spec.md §8.1). Its operator metadata is
+ * the same document as the archiver's, so the functions above serve both.
+ */
+export const STORAGE_ARWEAVE_SERVICE_TYPE = "storage-arweave";
