@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessScanners, checkArchive, checkArchiver, checkArweave, checkPage, type ScannerMeta } from "./siteStatus";
+import { assessScanners, checkArchive, checkArchiver, checkArweave, checkPage, checkStorage, type ScannerMeta } from "./siteStatus";
 
 function meta(over: Partial<ScannerMeta> = {}): ScannerMeta {
   return {
@@ -137,5 +137,42 @@ test("archiver: the chain's checkpoint and the gateway's index make one report",
   assert.ok(!seen.includes("https://gw.test/graphql"));
 
   const down = await withFetch(() => new Response("", { status: 502 }), () => checkArchiver("https://lcd.test", "c", "https://gw.test/{id}"));
+  assert.equal(down.state, "unreachable");
+});
+
+test("storage: the chain's lists and the wallet's balance make one report", async () => {
+  const wallet = "10tJ9DsLQ97USrpb7xKYTW0jwXJ9IGhmjqqce6mcEP0";
+  const metadata = Buffer.from(JSON.stringify({ v: 1, backend: "arweave", wallets: [wallet] })).toString("base64");
+  const json = (body: unknown) => new Response(JSON.stringify(body));
+  const answer = (url: string) => {
+    if (url.endsWith("/storage/v1/params")) return json({ params: { enabled: true } });
+    if (url.endsWith("/storage/v1/backends")) {
+      return json({ backends: [{ name: "arweave", service_type: "storage-arweave", enabled: true, types: [{ content_type: "image/png", scanned: true, max_size: "1" }] }] });
+    }
+    if (url.includes("/operators_by_service_type/storage-arweave")) {
+      return json({ operators: [{ address: "op", status: "OPERATOR_STATUS_ACTIVE", metadata }] });
+    }
+    if (url.includes("/approved_operators/arweave")) return json({ operators: [{ backend: "arweave", operator: "op", controller: "c" }] });
+    if (url.includes("/operators_by_service_type/content-scanner")) return json({ operators: [{ address: "scan", status: "OPERATOR_STATUS_ACTIVE" }] });
+    if (url.includes("/approved_scanners")) return json({ scanners: [{ scanner: "scan", controller: "c" }] });
+    if (url.includes("/service_type/content-scanner")) return json({ config: { enabled: true, attestation_quorum: 1 } });
+    if (url.includes("/requests_by_status/arweave/REQUEST_STATUS_PENDING")) return json({ requests: [], pagination: { total: "3" } });
+    if (url.includes("/requests_by_status/arweave/REQUEST_STATUS_CLAIMED")) return json({ requests: [], pagination: { total: "0" } });
+    if (url === `https://gw.test/wallet/${wallet}/balance`) return new Response("250000000000");
+    return new Response("", { status: 404 });
+  };
+  const got = await withFetch(answer, () => checkStorage("https://lcd.test/", "https://gw.test/{id}", {} as NodeJS.ProcessEnv));
+  assert.equal(got.state, "ok", got.issues.join(" "));
+  assert.deepEqual(got.facts, [
+    { label: "Storage operators", value: "1 ready" },
+    { label: "Approved scanners", value: "1, 1 must agree" },
+    { label: "Waiting for an operator", value: "3" },
+    { label: "Being copied", value: "0" },
+    { label: "Operator funds", value: "0.25 AR" },
+  ]);
+
+  const off = await withFetch(() => new Response("{}", { status: 501 }), () => checkStorage("https://lcd.test", "https://gw.test/{id}", {} as NodeJS.ProcessEnv));
+  assert.equal(off.state, "off");
+  const down = await withFetch(() => new Response("", { status: 502 }), () => checkStorage("https://lcd.test", "https://gw.test/{id}", {} as NodeJS.ProcessEnv));
   assert.equal(down.state, "unreachable");
 });

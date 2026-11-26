@@ -16,6 +16,7 @@ const COPY: Record<string, { name: string; purpose: string }> = {
   scanners: { name: "Content scanners", purpose: "Check images and flagged posts before they are shown." },
   images: { name: "Image uploads", purpose: "Storing the pictures members add to dreams and profiles." },
   arweave: { name: "Permanent storage gateway", purpose: "Reading permanent copies and ar:// images." },
+  storage: { name: "Permanent copies", purpose: "Copying scanned images to Arweave when a member asks." },
   archiver: { name: "Permanent block archive", purpose: "The copy of this chain's block history kept on Arweave." },
   archive: { name: "Archive snapshots", purpose: "The list of read-only snapshots on the Archive page." },
 };
@@ -125,7 +126,9 @@ export default function SiteStatusSection() {
         15 seconds. For image uploads and the explorer, working means the service answered, not that
         every feature behind it was exercised. For the permanent block archive, working means the
         archiver&apos;s latest checkpoint is recent and the range it names is on Arweave under the
-        archiver&apos;s wallet, not that the whole copy was downloaded and verified.
+        archiver&apos;s wallet, not that the whole copy was downloaded and verified. For permanent
+        copies, working means an approved, funded storage operator and enough approved scanners are
+        registered on chain, not that the operator&apos;s worker is running.
       </p>
     </section>
   );

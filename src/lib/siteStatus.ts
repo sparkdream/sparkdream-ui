@@ -12,13 +12,17 @@
 
 import { getVerdictIndex, imagesDisabled } from "@/lib/contentScan/feedIndex";
 import { effectiveScannedHeight } from "@/lib/contentScan/protocol";
-import { arweaveGateway, uploadConfig } from "@/lib/imageUpload/server";
+import { arweaveGateway, permanentCopiesOn, uploadConfig } from "@/lib/imageUpload/server";
 import { listKeys } from "@/lib/imageUpload/s3";
 import { isGatewayStatus, type ServiceReport, type ServiceState } from "@/lib/serviceStatus";
 import { assessArchiver, checkpointTxId, leadingArchiver, parseArweaveTx, type ArweaveTx } from "@/lib/archiverStatus";
 import { CHAIN_ARCHIVER_SERVICE_TYPE } from "@/lib/chainArchiver";
 import { defaults } from "@/lib/chain";
+import { arweaveNodeOf, operatorWallets } from "@/lib/storageFunds";
+import { assessStorage, readyOperators } from "@/lib/storageStatus";
+import { CONTENT_SCANNER_SERVICE_TYPE } from "@/types/service";
 import type { Checkpoint, Operator, ServiceTypeConfig } from "@/types/service";
+import type { ApprovedOperator, ApprovedScanner, StorageBackend } from "@/types/storage";
 
 const TIMEOUT_MS = 6_000;
 // One round of checks serves everyone who has the page open.
@@ -325,6 +329,113 @@ export async function checkArchiver(lcd: string, chainId: string, gatewayTemplat
   return assessArchiver({ chainId, maxLagBlocks, operators, checkpoints, latestHeight, tx, now: Date.now() });
 }
 
+// ---- Permanent copies -----------------------------------------------------------
+
+/** The JSON body of an answer that was 2xx, or null. */
+async function okJson<T>(r: Reached): Promise<T | null> {
+  if (!r.res?.ok) return null;
+  try {
+    return (await r.res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function walletBalance(node: string, address: string): Promise<string | null> {
+  const r = await reach(`${node}/wallet/${address}/balance`);
+  if (!r.res?.ok) return null;
+  const text = (await r.res.text().catch(() => "")).trim();
+  return /^\d+$/.test(text) ? text : null;
+}
+
+/**
+ * Permanent copies (x/storage): whether an approved, active, funded storage
+ * operator and enough approved scanners are in place for the backend, and
+ * what is waiting. `lcd` is the node this server reads.
+ */
+export async function checkStorage(
+  lcd: string,
+  gatewayTemplate: string,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<ServiceReport> {
+  const base = lcd.replace(/\/+$/, "");
+  const storage = `${base}/sparkdream/storage/v1`;
+  const service = `${base}/sparkdream/service/v1`;
+  const page = "pagination.limit=200";
+  const cantRead: ServiceReport = {
+    id: "storage",
+    state: "unreachable",
+    issues: ["The chain couldn't be read, so the state of permanent copies is unknown."],
+    latency_ms: null,
+    facts: [],
+  };
+  const none = { operators: [], approvedOperators: [], scanners: [], approvedScanners: [], scannerQuorum: 0 };
+  const idle = { ...none, pending: null, claimed: null, balances: {}, siteOffers: permanentCopiesOn(env) };
+
+  const [paramsR, backendsR] = await Promise.all([reach(`${storage}/params`), reach(`${storage}/backends`)]);
+  if (!paramsR.res || isGatewayStatus(paramsR.res.status)) return cantRead;
+  // 501 is a chain without x/storage.
+  if (paramsR.res.status === 501 || paramsR.res.status === 404) return assessStorage({ ...idle, enabled: null, backend: null });
+  const params = await okJson<{ params?: { enabled?: boolean } }>(paramsR);
+  const backends = await okJson<{ backends?: StorageBackend[] }>(backendsR);
+  if (!params || !backends) return cantRead;
+  const all = backends.backends ?? [];
+  const backend = all.find((b) => b.enabled) ?? all[0] ?? null;
+  const enabled = params.params?.enabled === true;
+  if (!backend || !enabled || !backend.enabled) return assessStorage({ ...idle, enabled, backend });
+
+  const name = encodeURIComponent(backend.name);
+  const scannerType = encodeURIComponent(CONTENT_SCANNER_SERVICE_TYPE);
+  const count = "pagination.limit=1&pagination.count_total=true";
+  const [opsR, approvedR, scannersR, approvedScannersR, scannerTypeR, pendingR, claimedR] = await Promise.all([
+    reach(`${service}/operators_by_service_type/${encodeURIComponent(backend.service_type)}?${page}`),
+    reach(`${storage}/approved_operators/${name}?${page}`),
+    reach(`${service}/operators_by_service_type/${scannerType}?${page}`),
+    reach(`${storage}/approved_scanners?${page}`),
+    reach(`${service}/service_type/${scannerType}`),
+    reach(`${storage}/requests_by_status/${name}/REQUEST_STATUS_PENDING?${count}`),
+    reach(`${storage}/requests_by_status/${name}/REQUEST_STATUS_CLAIMED?${count}`),
+  ]);
+  const ops = await okJson<{ operators?: Operator[] }>(opsR);
+  const approved = await okJson<{ operators?: ApprovedOperator[] }>(approvedR);
+  const scanners = await okJson<{ operators?: Operator[] }>(scannersR);
+  const approvedScanners = await okJson<{ scanners?: ApprovedScanner[] }>(approvedScannersR);
+  if (!ops || !approved || !scanners || !approvedScanners) return cantRead;
+  // A chain without the scanner type has no quorum: the same as a quorum of 0.
+  const scannerConfig = (await okJson<{ config?: ServiceTypeConfig }>(scannerTypeR))?.config;
+  const total = async (r: Reached) => {
+    const t = (await okJson<{ pagination?: { total?: string } }>(r))?.pagination?.total;
+    return t && /^\d+$/.test(t) ? Number(t) : null;
+  };
+
+  const operators = ops.operators ?? [];
+  const approvedOperators = approved.operators ?? [];
+  const node = arweaveNodeOf(gatewayTemplate);
+  const wallets = [
+    ...new Set(readyOperators(operators, approvedOperators).flatMap((o) => operatorWallets(o.metadata, backend.name))),
+  ].slice(0, 10);
+  const balances: Record<string, string | null> = {};
+  await Promise.all(
+    wallets.map(async (w) => {
+      balances[w] = await walletBalance(node, w);
+    })
+  );
+
+  return assessStorage({
+    enabled,
+    backend,
+    operators,
+    approvedOperators,
+    scanners: scanners.operators ?? [],
+    approvedScanners: approvedScanners.scanners ?? [],
+    scannerQuorum: scannerConfig?.enabled ? Number(scannerConfig.attestation_quorum) || 0 : 0,
+    pending: await total(pendingR),
+    claimed: await total(claimedR),
+    balances,
+    siteOffers: permanentCopiesOn(env),
+  });
+}
+
 // ---- Archive snapshots ----------------------------------------------------------
 
 /** The remote snapshot list, when the site uses one. */
@@ -365,7 +476,9 @@ async function runAll(env: NodeJS.ProcessEnv): Promise<ServiceReport[]> {
   if (explorer) checks.push(checkPage("explorer", explorer));
   checks.push(checkScanners(), checkImages(env), checkArweave(arweaveGateway(env)));
   // The same node and chain the rest of this server reads (lib/api.ts).
-  checks.push(checkArchiver(env.LCD_ENDPOINT || defaults.lcdEndpoint, env.CHAIN_ID || defaults.chainId, arweaveGateway(env)));
+  const lcd = env.LCD_ENDPOINT || defaults.lcdEndpoint;
+  checks.push(checkStorage(lcd, arweaveGateway(env), env));
+  checks.push(checkArchiver(lcd, env.CHAIN_ID || defaults.chainId, arweaveGateway(env)));
   // Without a remote list, snapshots are files on this server: nothing to reach.
   if (manifest) checks.push(checkArchive(manifest));
   return Promise.all(checks);
