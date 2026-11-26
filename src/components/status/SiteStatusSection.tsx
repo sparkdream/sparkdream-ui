@@ -52,7 +52,7 @@ export default function SiteStatusSection() {
     running.current = true;
     setChecking(true);
     try {
-      const res = await fetch("/api/status", { cache: "no-store", signal: AbortSignal.timeout(20_000) });
+      const res = await fetch("/api/status", { cache: "no-store", signal: AbortSignal.timeout(30_000) });
       if (!res.ok) throw new Error(String(res.status));
       setData((await res.json()) as SiteStatusResponse);
       setFailed(false);
@@ -129,7 +129,9 @@ export default function SiteStatusSection() {
         15 seconds. For image uploads and the explorer, working means the service answered, not that
         every feature behind it was exercised. For the permanent block archive, working means the
         archiver&apos;s latest checkpoint is recent and the range it names is on Arweave under the
-        archiver&apos;s wallet, not that the whole copy was downloaded and verified. For permanent
+        archiver&apos;s wallet, not that the whole copy was downloaded and verified. Its worker is
+        shown by what its wallet has done on Arweave: the newest range uploaded, and whether the
+        wallet can pay for the next. For permanent
         copies, working means an approved, funded storage operator and enough approved scanners are
         registered on chain, and that the operator&apos;s worker has checked in there recently. For a
         worker that has never checked in, the card shows when it last claimed or copied something

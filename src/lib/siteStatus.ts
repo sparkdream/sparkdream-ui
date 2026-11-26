@@ -15,8 +15,17 @@ import { effectiveScannedHeight } from "@/lib/contentScan/protocol";
 import { arweaveGateway, permanentCopiesOn, uploadConfig } from "@/lib/imageUpload/server";
 import { listKeys } from "@/lib/imageUpload/s3";
 import { isGatewayStatus, type ServiceReport, type ServiceState } from "@/lib/serviceStatus";
-import { assessArchiver, checkpointTxId, leadingArchiver, parseArweaveTx, type ArweaveTx } from "@/lib/archiverStatus";
-import { CHAIN_ARCHIVER_SERVICE_TYPE } from "@/lib/chainArchiver";
+import {
+  ARCHIVE_APP_NAME,
+  assessArchiver,
+  checkpointTxId,
+  leadingArchiver,
+  parseArweaveTx,
+  parseNewestRange,
+  type ArchiveWorker,
+  type ArweaveTx,
+} from "@/lib/archiverStatus";
+import { CHAIN_ARCHIVER_SERVICE_TYPE, parseArchiverMetadata } from "@/lib/chainArchiver";
 import { defaults } from "@/lib/chain";
 import { arweaveNodeOf, operatorWallets } from "@/lib/storageFunds";
 import { assessStorage, checkpointWallet, readyOperators, type WorkerEvidence } from "@/lib/storageStatus";
@@ -389,6 +398,102 @@ async function arweaveTx(origin: string, id: string): Promise<ArweaveTx | null |
   }
 }
 
+// A gateway's index can take several seconds over a wallet's transactions.
+const INDEX_TIMEOUT_MS = 10_000;
+
+/** A gateway's GraphQL answer, or undefined when it gave none. */
+async function arweaveQuery(origin: string, query: string): Promise<unknown> {
+  try {
+    const res = await fetch(`${origin}/graphql`, {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ query }),
+      signal: AbortSignal.timeout(INDEX_TIMEOUT_MS),
+    });
+    return res.ok ? await res.json() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// How many of a wallet's latest ranges are read to find the one that reaches
+// furthest: several can be mined in one Arweave block, in no set order. Kept
+// small, since the index slows with every transaction it returns.
+const NEWEST_RANGES = 5;
+// A range is uploaded about every 16 hours and the index is slow, so its
+// answer is asked for at most this often, and the last one stands in for a
+// while when the index doesn't answer.
+const NEWEST_RANGE_FRESH_MS = 5 * 60_000;
+const NEWEST_RANGE_KEEP_MS = 60 * 60_000;
+type NewestRange = NonNullable<ReturnType<typeof parseNewestRange>> | null;
+const newestRanges = new Map<string, { at: number; newest: NewestRange }>();
+
+const newestRangeRefreshes = new Map<string, Promise<NewestRange | undefined>>();
+
+/**
+ * The furthest range the wallets have uploaded: null for none, undefined
+ * when it can't be said. Only the first call for a wallet waits for the
+ * index. Later ones answer from the last result and, once it is no longer
+ * fresh, ask again in the background, so a slow index never holds the
+ * whole status response.
+ */
+async function newestRange(origin: string, owners: string[], chainId: string): Promise<NewestRange | undefined> {
+  const key = `${origin}|${chainId}|${owners.join(",")}`;
+  const had = newestRanges.get(key);
+  const age = had ? Date.now() - had.at : Infinity;
+  if (had && age < NEWEST_RANGE_FRESH_MS) return had.newest;
+
+  let refresh = newestRangeRefreshes.get(key);
+  if (!refresh) {
+    const tags = [
+      ["App-Name", ARCHIVE_APP_NAME],
+      ["Chain-ID", chainId],
+      ["Archive-Kind", "blocks"],
+      ["Archive-Format", "1"],
+    ]
+      .map(([name, value]) => `{name:"${name}",values:["${value}"]}`)
+      .join(",");
+    const query = `{transactions(owners:[${owners.map((o) => `"${o}"`).join(",")}],tags:[${tags}],first:${NEWEST_RANGES},sort:HEIGHT_DESC){edges{node{tags{name value} block{timestamp} data{size}}}}}`;
+    refresh = arweaveQuery(origin, query)
+      .then((answer) => {
+        const newest = answer === undefined ? undefined : parseNewestRange(answer);
+        if (newest !== undefined) newestRanges.set(key, { at: Date.now(), newest });
+        return newest;
+      })
+      .finally(() => newestRangeRefreshes.delete(key));
+    newestRangeRefreshes.set(key, refresh);
+  }
+  // An answer that is not too old stands in while the new one is fetched.
+  if (had && age < NEWEST_RANGE_KEEP_MS) return had.newest;
+  return refresh;
+}
+
+/**
+ * What Arweave shows of an archiver's worker: the newest range its listed
+ * wallets signed, and what those wallets hold against the price of another
+ * range that size. The wallets and the chain id go into the query, so both
+ * are checked to be plain before they do.
+ */
+async function archiveWorker(origin: string, wallets: string[], chainId: string): Promise<ArchiveWorker | undefined> {
+  const owners = wallets.filter((w) => /^[A-Za-z0-9_-]{43}$/.test(w)).slice(0, 5);
+  if (owners.length === 0 || !/^[A-Za-z0-9._-]{1,64}$/.test(chainId)) return undefined;
+  const [newest, balances] = await Promise.all([
+    newestRange(origin, owners, chainId),
+    Promise.all(owners.map((o) => walletBalance(origin, o))),
+  ]);
+  const balance = balances.every((b) => b !== null)
+    ? balances.reduce((sum, b) => sum + BigInt(b as string), BigInt(0)).toString()
+    : null;
+  let rangePrice: string | null = null;
+  if (newest && newest.size > 0) {
+    const r = await reach(`${origin}/price/${newest.size}`);
+    const text = r.res?.ok ? (await r.res.text().catch(() => "")).trim() : "";
+    rangePrice = /^\d+$/.test(text) ? text : null;
+  }
+  return { newest: newest && { from: newest.from, to: newest.to, minedAt: newest.minedAt }, balance, rangePrice };
+}
+
 /**
  * The permanent copy of the block history: the chain-archiver operators and
  * their checkpoints from the chain, and the newest range's transaction from
@@ -436,19 +541,27 @@ export async function checkArchiver(lcd: string, chainId: string, gatewayTemplat
   }
 
   let tx: ArweaveTx | null | undefined;
-  const txId = checkpointTxId(leadingArchiver(operators, checkpoints)?.checkpoint?.root ?? "");
-  if (maxLagBlocks !== null && txId) {
+  let worker: ArchiveWorker | undefined;
+  let keys: SessionNote[] = [];
+  const leader = maxLagBlocks !== null ? leadingArchiver(operators, checkpoints) : null;
+  const txId = checkpointTxId(leader?.checkpoint?.root ?? "");
+  if (leader) {
+    let origin = "";
     try {
-      tx = await arweaveTx(new URL(gatewayTemplate).origin, txId);
+      origin = new URL(gatewayTemplate).origin;
     } catch {
       // Not a URL: checkArweave reports that.
     }
+    const wallets = parseArchiverMetadata(leader.operator.metadata)?.wallets ?? [];
+    // Arweave and the chain are asked together: each can take its full timeout.
+    [tx, worker, keys] = await Promise.all([
+      origin && txId ? arweaveTx(origin, txId) : Promise.resolve(undefined),
+      origin ? archiveWorker(origin, wallets, chainId) : Promise.resolve(undefined),
+      sessionNotes(lcd, [{ address: leader.operator.address, who: "The archiver's" }], CHECKPOINT_MSG),
+    ]);
   }
-  const leader = maxLagBlocks !== null ? leadingArchiver(operators, checkpoints) : null;
-  const keys = leader
-    ? await sessionNotes(lcd, [{ address: leader.operator.address, who: "The archiver's" }], CHECKPOINT_MSG)
-    : [];
-  return withSessions(assessArchiver({ chainId, maxLagBlocks, operators, checkpoints, latestHeight, tx, now: Date.now() }), keys);
+  const report = assessArchiver({ chainId, maxLagBlocks, operators, checkpoints, latestHeight, tx, worker, now: Date.now() });
+  return withSessions(report, keys);
 }
 
 // ---- Permanent copies -----------------------------------------------------------

@@ -122,9 +122,23 @@ test("archiver: the chain's checkpoint and the gateway's index make one report",
       return json({ checkpoints: [{ operator: "op", height: "230000", root: "uo94t4K0yA6mknk28GwNmOrM/FexblhPbxNdgeTw24g=" }] });
     }
     if (url.includes("/blocks/latest")) return json({ block: { header: { height: "236000" } } });
+    if (url === `https://gw.test/wallet/${wallet}/balance`) return new Response("2000000000000");
+    if (url === "https://gw.test/price/5356871") return new Response("40000000000");
     if (url === "https://gw.test/graphql") {
       return json({
         data: {
+          // Both queries are answered at once: the checkpoint's transaction and the wallet's newest range.
+          transactions: {
+            edges: [
+              {
+                node: {
+                  tags: [{ name: "Block-Range-From", value: "230001" }, { name: "Block-Range-To", value: "240000" }],
+                  block: { timestamp: 1_795_641_217 },
+                  data: { size: "5356871" },
+                },
+              },
+            ],
+          },
           transaction: {
             owner: { address: wallet },
             block: { timestamp: 1_795_583_418 },
@@ -147,6 +161,8 @@ test("archiver: the chain's checkpoint and the gateway's index make one report",
   assert.ok(seen.includes("https://lcd.test/sparkdream/service/v1/service_type/chain-archiver"));
   assert.ok(seen.includes("https://gw.test/graphql"));
   assert.equal(got.facts.find((f) => f.label === "Archived through block")?.value, "230,000");
+  assert.match(got.facts.find((f) => f.label === "Newest upload")?.value ?? "", /^Blocks 230,001 to 240,000, /);
+  assert.equal(got.facts.find((f) => f.label === "Worker funds")?.value, "2 AR, about 50 more ranges");
 
   // A chain without the service type is off, and the gateway is never asked.
   seen.length = 0;

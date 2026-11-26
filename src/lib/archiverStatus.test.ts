@@ -5,6 +5,8 @@ import {
   checkpointTxId,
   leadingArchiver,
   parseArweaveTx,
+  parseNewestRange,
+  type ArchiveWorker,
   type ArchiverInput,
   type ArweaveTx,
 } from "./archiverStatus";
@@ -95,7 +97,7 @@ test("a recent checkpoint whose range is on Arweave under the listed wallet is o
   assert.equal(fact(got, "Archivers"), "1 active");
   assert.equal(fact(got, "Archived through block"), "230,000");
   assert.equal(fact(got, "Behind the chain"), "6,000 blocks, limit 34,560");
-  assert.equal(fact(got, "Newest range"), "Blocks 220,001 to 230,000");
+  assert.equal(fact(got, "Checkpointed range"), "Blocks 220,001 to 230,000");
   assert.equal(fact(got, "Arweave transaction"), TX_ID);
   assert.equal(fact(got, "Signed by wallet"), WALLET);
   assert.equal(fact(got, "Stored on Arweave"), "3h ago");
@@ -199,4 +201,75 @@ test("a gateway's GraphQL answer: found, absent, or not an answer", () => {
   assert.equal(parseArweaveTx({ data: { transaction: null } }), null);
   assert.equal(parseArweaveTx({ errors: [{ message: "nope" }] }), undefined);
   assert.equal(parseArweaveTx("<html>"), undefined);
+});
+
+const AR = "1000000000000";
+function worker(over: Partial<ArchiveWorker> = {}): ArchiveWorker {
+  return {
+    newest: { from: 230_001, to: 240_000, minedAt: NOW - 5 * 3_600_000 },
+    balance: String(12 * Number(AR)),
+    rangePrice: "40000000000",
+    ...over,
+  };
+}
+
+test("the worker's newest upload and funds are shown, ahead of the checkpoint or not", () => {
+  const got = assessArchiver(input({ worker: worker() }));
+  assert.equal(got.state, "ok");
+  assert.equal(fact(got, "Newest upload"), "Blocks 230,001 to 240,000, 5h ago");
+  assert.equal(fact(got, "Worker funds"), "12 AR, about 300 more ranges");
+  const pending = assessArchiver(input({ worker: worker({ newest: { from: 230_001, to: 240_000, minedAt: null } }) }));
+  assert.equal(fact(pending, "Newest upload"), "Blocks 230,001 to 240,000, waiting for confirmation");
+  assert.equal(fact(assessArchiver(input({ worker: worker({ newest: null }) })), "Newest upload"), "None found on Arweave");
+  // An index that couldn't be asked, or a balance that couldn't be read, adds no row.
+  const blind = assessArchiver(input({ worker: worker({ newest: undefined, balance: null }) }));
+  assert.equal(fact(blind, "Newest upload"), undefined);
+  assert.equal(fact(blind, "Worker funds"), undefined);
+  assert.equal(fact(assessArchiver(input({ worker: worker({ rangePrice: null }) })), "Worker funds"), "12 AR");
+  assert.equal(fact(assessArchiver(input({ worker: worker({ balance: String(5000 * Number(AR)) }) })), "Worker funds"), "5000 AR, over 1,000 more ranges");
+});
+
+test("a wallet that can't pay for the next range degrades", () => {
+  const short = assessArchiver(input({ worker: worker({ balance: "30000000000" }) }));
+  assert.equal(short.state, "degraded");
+  assert.match(short.issues[0], /wallet can't pay for the next range/);
+  assert.match(fact(short, "Worker funds") ?? "", /about 0 more ranges$/);
+  assert.equal(assessArchiver(input({ worker: worker({ balance: "0", rangePrice: null }) })).state, "degraded");
+});
+
+test("uploads two ranges ahead of the checkpoint mean checkpoints aren't getting through", () => {
+  const stuck = assessArchiver(input({ worker: worker({ newest: { from: 240_001, to: 250_000, minedAt: NOW } }) }));
+  assert.equal(stuck.state, "degraded");
+  assert.match(stuck.issues[0], /uploaded through block 250,000 but checkpointed only through 230,000/);
+  // One range ahead is a range waiting for its confirmations.
+  assert.equal(assessArchiver(input({ worker: worker() })).state, "ok");
+});
+
+test("before the first checkpoint the worker's uploads are already shown", () => {
+  const got = assessArchiver(input({ maxLagBlocks: 0, checkpoints: [], tx: undefined, latestHeight: 210_000, worker: worker() }));
+  assert.equal(got.state, "ok");
+  assert.equal(fact(got, "Archived through block"), "None yet");
+  assert.equal(fact(got, "Newest upload"), "Blocks 230,001 to 240,000, 5h ago");
+});
+
+test("a gateway's answer for the newest range: found, none, or not an answer", () => {
+  const node = {
+    tags: [{ name: "Block-Range-From", value: "230001" }, { name: "Block-Range-To", value: "240000" }],
+    block: { timestamp: 1_795_641_217 },
+    data: { size: "5356871" },
+  };
+  assert.deepEqual(parseNewestRange({ data: { transactions: { edges: [{ node }] } } }), {
+    from: 230_001,
+    to: 240_000,
+    minedAt: 1_795_641_217_000,
+    size: 5_356_871,
+  });
+  assert.equal(parseNewestRange({ data: { transactions: { edges: [{ node: { ...node, block: null } }] } } })?.minedAt, null);
+  assert.equal(parseNewestRange({ data: { transactions: { edges: [] } } }), null);
+  // Several ranges mined in one Arweave block come in no set order: the furthest wins.
+  const range = (from: string, to: string) => ({ node: { ...node, tags: [{ name: "Block-Range-From", value: from }, { name: "Block-Range-To", value: to }] } });
+  const mixed = { data: { transactions: { edges: [range("210001", "220000"), range("230001", "240000"), range("220001", "230000"), { node: { tags: [] } }] } } };
+  assert.equal(parseNewestRange(mixed)?.to, 240_000);
+  assert.equal(parseNewestRange({ data: { transaction: null } }), undefined);
+  assert.equal(parseNewestRange({ data: { transactions: { edges: [{ node: { tags: [] } }] } } }), undefined);
 });
