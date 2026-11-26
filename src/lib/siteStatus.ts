@@ -52,8 +52,6 @@ import { assessGov, type GovProposal } from "@/lib/govStatus";
 import { assessShield } from "@/lib/shieldStatus";
 import { assessCerts, httpsHosts, type CertReading } from "@/lib/certStatus";
 import { connect as tlsConnect } from "node:tls";
-import { stat, readFile } from "node:fs/promises";
-import path from "node:path";
 import { assessIbc, type IbcChannel, type IbcLink, type IbcPeerClient, type IbcRelayer } from "@/lib/ibcStatus";
 import { assessMirror, type MirrorRebuild, type MirrorSync } from "@/lib/mirrorStatus";
 import {
@@ -77,23 +75,45 @@ type Reached =
   | { res: Response; ms: number }
   | { res: null; reason: string };
 
+// A request that fails once is tried once more before a card says a service
+// can't be reached: a connection the far end has just closed, a dropped
+// lookup or a proxy's momentary 502 is a property of one request, not of the
+// service, and each round sends dozens. Both tries share the one time limit.
+// (The commonest such failure, a connection attempt cut off after 250 ms, is
+// also dealt with at its root in src/instrumentation.ts.)
+const RETRY_AFTER_MS = 300;
+const TRANSIENT_STATUSES = new Set([429, 502, 503, 504]);
+
 async function reach(url: string, method: "GET" | "HEAD" = "GET"): Promise<Reached> {
   const started = performance.now();
-  try {
-    const res = await fetch(url, {
-      method,
-      cache: "no-store",
-      redirect: "follow",
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    return { res, ms: Math.round(performance.now() - started) };
-  } catch (err) {
-    const timedOut = err instanceof Error && err.name === "TimeoutError";
-    return {
-      res: null,
-      reason: timedOut ? `Did not respond within ${TIMEOUT_MS / 1000} seconds.` : "Could not be reached.",
-    };
+  const deadline = started + TIMEOUT_MS;
+  let last: Reached = { res: null, reason: "Could not be reached." };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const left = deadline - performance.now();
+    if (attempt > 0) {
+      if (left < RETRY_AFTER_MS * 2) break;
+      await new Promise((r) => setTimeout(r, RETRY_AFTER_MS));
+    }
+    try {
+      const res = await fetch(url, {
+        method,
+        cache: "no-store",
+        redirect: "follow",
+        signal: AbortSignal.timeout(Math.max(1, Math.round(deadline - performance.now()))),
+      });
+      last = { res, ms: Math.round(performance.now() - started) };
+      if (!TRANSIENT_STATUSES.has(res.status)) return last;
+    } catch (err) {
+      const timedOut = err instanceof Error && err.name === "TimeoutError";
+      last = {
+        res: null,
+        reason: timedOut ? `Did not respond within ${TIMEOUT_MS / 1000} seconds.` : "Could not be reached.",
+      };
+      // Out of time is out of time: a second try would have none.
+      if (timedOut) return last;
+    }
   }
+  return last;
 }
 
 /** Something at the address answered, whatever it said. */
@@ -1057,20 +1077,24 @@ function pinsDigests(raw: string | undefined): boolean {
 
 /**
  * Whether the prover files for `version` are where the browser will look
- * for them: under ZK_ASSETS_URL when that is an address, or in this site's
- * own public/zk directory. Returns what is wrong, or null. The files'
- * contents are not hashed here (the browser does that before using them).
+ * for them: under ZK_ASSETS_URL when that is an address, or served by this
+ * site itself under /zk. Returns what is wrong, null when nothing is, or
+ * undefined when it couldn't be checked. The files' contents are not hashed
+ * here (the browser does that before using them).
  */
-export async function proverProblem(
-  version: string,
-  env: NodeJS.ProcessEnv = process.env,
-  publicDir: string = path.join(process.cwd(), "public")
-): Promise<string | null> {
+export async function proverProblem(version: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null | undefined> {
   // The version becomes part of a path: a plain release name, never "." or "..".
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(version) || version.includes("..")) {
     return "The chain's version can't be read, so the prover files can't be looked up.";
   }
-  const base = (env.ZK_ASSETS_URL || env.NEXT_PUBLIC_ZK_ASSETS_URL || "/zk").replace(/\/+$/, "");
+  let base = (env.ZK_ASSETS_URL || env.NEXT_PUBLIC_ZK_ASSETS_URL || "/zk").replace(/\/+$/, "");
+  if (!/^https?:\/\//.test(base)) {
+    // Served by this site itself. They are asked for the way a browser would
+    // ask, from this server at its own port, which also proves they are
+    // served and not merely on disk. Without a known port nothing can be said.
+    if (!/^\d{1,5}$/.test(env.PORT ?? "")) return undefined;
+    base = `http://127.0.0.1:${env.PORT}/${base.replace(/^\/+/, "")}`;
+  }
   const missing = `The prover files for ${version} aren't published.`;
   const wrong = `The prover manifest for ${version} isn't valid.`;
   // With the files' digests pinned in the site's settings the browser never
@@ -1086,30 +1110,15 @@ export async function proverProblem(
       return wrong;
     }
   };
-  if (/^https?:\/\//.test(base)) {
-    if (!digestsPinned) {
-      const r = await reach(`${base}/${version}/manifest.json`);
-      if (!r.res?.ok) return missing;
-      const bad = checkManifest(await r.res.text().catch(() => ""));
-      if (bad) return bad;
-    }
-    const heads = await Promise.all(PROVER_FILES.map((f) => reach(`${base}/${version}/${f}`, "HEAD")));
-    if (heads.every((h) => !h.res?.ok)) return missing;
-    return heads.every((h) => h.res?.ok) ? null : `Some prover files for ${version} are missing.`;
-  }
-  // Served by this site from its public directory.
-  const dir = path.join(publicDir, base.replace(/^\/+/, ""), version);
   if (!digestsPinned) {
-    try {
-      const bad = checkManifest(await readFile(path.join(dir, "manifest.json"), "utf8"));
-      if (bad) return bad;
-    } catch {
-      return missing;
-    }
+    const r = await reach(`${base}/${version}/manifest.json`);
+    if (!r.res?.ok) return missing;
+    const bad = checkManifest(await r.res.text().catch(() => ""));
+    if (bad) return bad;
   }
-  const present = await Promise.all(PROVER_FILES.map((f) => stat(path.join(dir, f)).then((st) => st.size > 0, () => false)));
-  if (!present.some(Boolean)) return missing;
-  return present.every(Boolean) ? null : `Some prover files for ${version} are missing.`;
+  const heads = await Promise.all(PROVER_FILES.map((f) => reach(`${base}/${version}/${f}`, "HEAD")));
+  if (heads.every((h) => !h.res?.ok)) return missing;
+  return heads.every((h) => h.res?.ok) ? null : `Some prover files for ${version} are missing.`;
 }
 
 /**
@@ -1183,7 +1192,7 @@ export async function checkShield(
   const chainVersion = (await okJson<{ application_version?: { version?: string } }>(infoR))?.application_version?.version || "";
   const pinned = env.ZK_VERSION || env.NEXT_PUBLIC_ZK_VERSION || "";
   const version = pinned || chainVersion;
-  const proverOf = async (): Promise<string | null> => {
+  const proverOf = async (): Promise<string | null | undefined> => {
     if (pinned && chainVersion && pinned !== chainVersion) {
       return `This site's prover is pinned to ${pinned}, but the chain runs ${chainVersion}.`;
     }
@@ -1192,6 +1201,7 @@ export async function checkShield(
   const pending = (await okJson<{ count?: string }>(pendingR))?.count;
   const keySet = (await okJson<{ key_set?: { master_public_key?: string | null } }>(keySetR))?.key_set;
 
+  const proverFinding = version ? await proverOf() : undefined;
   return assessShield({
     enabled: true,
     balance,
@@ -1201,7 +1211,7 @@ export async function checkShield(
     // The pool holds decimal amounts: the whole part is what can be drawn.
     communityPool: held !== null && /^\d+(\.\d+)?$/.test(held) ? BigInt(held.split(".")[0]) : null,
     hasVerificationKey,
-    prover: version ? { version, problem: await proverOf() } : null,
+    prover: version && proverFinding !== undefined ? { version, problem: proverFinding } : null,
     batches: keySet ? { enabled: params.encrypted_batch_enabled === true, hasKey: !!keySet.master_public_key, pending: pending && /^\d+$/.test(pending) ? Number(pending) : null } : null,
     symbol: units.symbol,
   });

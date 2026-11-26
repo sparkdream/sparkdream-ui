@@ -924,26 +924,22 @@ test("prover files: a published release under an address, a wrong manifest, a mi
     assert.match((await proverProblem(bad, env)) ?? "", /version can't be read/, bad);
   }
 
-  // Served by this site: a release in its public directory, whole, then with a file gone.
-  const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
-  const pub = await mkdtemp(join(tmpdir(), "status-zk-"));
-  try {
-    const dir = join(pub, "zk", "v1.1.1");
-    await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, "manifest.json"), manifest("v1.1.1"));
-    for (const f of ["shield.wasm", "wasm_exec.js", "proving_key.raw.bin", "circuit.r1cs"]) await writeFile(join(dir, f), "x");
-    const local = {} as NodeJS.ProcessEnv;
-    assert.equal(await proverProblem("v1.1.1", local, pub), null);
-    await writeFile(join(dir, "circuit.r1cs"), "");
-    assert.equal(await proverProblem("v1.1.1", local, pub), "Some prover files for v1.1.1 are missing.");
-    assert.equal(await proverProblem("v1.2.0", local, pub), "The prover files for v1.2.0 aren't published.");
-  } finally {
-    await rm(pub, { recursive: true, force: true });
-  }
-  // Served by this site: a release that isn't in its public directory.
-  assert.equal(await proverProblem("v0.0.0-none", {} as NodeJS.ProcessEnv), "The prover files for v0.0.0-none aren't published.");
+  // Served by this site itself: asked for at the server's own port, as a browser would.
+  served = manifest("v1.1.1");
+  const seen: string[] = [];
+  const own = await withFetch(
+    (url) => {
+      seen.push(url);
+      return answer(url.replace("http://127.0.0.1:4321/zk", "https://zk.test"));
+    },
+    () => proverProblem("v1.1.1", { PORT: "4321" } as unknown as NodeJS.ProcessEnv)
+  );
+  assert.equal(own, null);
+  assert.ok(seen.includes("http://127.0.0.1:4321/zk/v1.1.1/manifest.json"));
+  assert.ok(seen.includes("http://127.0.0.1:4321/zk/v1.1.1/shield.wasm"));
+  // Without a port to ask at, nothing is claimed either way.
+  assert.equal(await proverProblem("v1.1.1", {} as NodeJS.ProcessEnv), undefined);
+  assert.equal(await proverProblem("v1.1.1", { PORT: "not-a-port" } as unknown as NodeJS.ProcessEnv), undefined);
 });
 
 test("certificates: each configured https host is asked once, and a probe that fails is unreachable", async () => {
@@ -1007,4 +1003,47 @@ test("certificates: the reader against a real TLS server, a closed port and a ho
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("a request that fails once is tried again before a service is called unreachable", async () => {
+  // A dropped connection, then an answer.
+  let calls = 0;
+  const flaky = await withFetch(() => {
+    if (++calls === 1) throw new TypeError("fetch failed");
+    return new Response("ok");
+  }, () => checkPage("explorer", "https://e.test/x"));
+  assert.equal(calls, 2);
+  assert.equal(flaky.state, "ok");
+
+  // A proxy's momentary 502, then an answer.
+  calls = 0;
+  const proxied = await withFetch(() => new Response("", { status: ++calls === 1 ? 502 : 200 }), () => checkPage("explorer", "https://e.test/x"));
+  assert.equal(calls, 2);
+  assert.equal(proxied.state, "ok");
+
+  // Failing both times is a service that can't be reached, and it is asked no third time.
+  calls = 0;
+  const down = await withFetch(() => {
+    calls++;
+    throw new TypeError("fetch failed");
+  }, () => checkPage("explorer", "https://e.test/x"));
+  assert.equal(calls, 2);
+  assert.equal(down.state, "unreachable");
+
+  // An answer of the service's own, even an error, is not retried.
+  calls = 0;
+  const broken = await withFetch(() => (calls++, new Response("", { status: 500 })), () => checkPage("explorer", "https://e.test/x"));
+  assert.equal(calls, 1);
+  assert.equal(broken.state, "degraded");
+
+  // Nor is a request that ran out of time: a second try would have none left.
+  calls = 0;
+  const slow = await withFetch(() => {
+    calls++;
+    const err = new Error("timed out");
+    err.name = "TimeoutError";
+    throw err;
+  }, () => checkPage("explorer", "https://e.test/x"));
+  assert.equal(calls, 1);
+  assert.match(slow.issues[0], /Did not respond within/);
 });

@@ -143,7 +143,18 @@ export default function ChainStatusSection() {
   useEffect(() => {
     if (!ready) return;
     const tick = () => {
-      if (document.visibilityState === "visible") void run();
+      if (document.visibilityState === "visible") {
+        void run();
+        return;
+      }
+      // Nothing is checked while the page isn't being looked at, and a live
+      // check still waiting for its block is let go: it is made afresh on return.
+      if (liveAbort.current) {
+        liveAbort.current.abort();
+        liveAbort.current = null;
+        liveRunning.current = false;
+        liveCheckedAt.current = 0;
+      }
     };
     tick();
     const timer = setInterval(tick, POLL_MS);
