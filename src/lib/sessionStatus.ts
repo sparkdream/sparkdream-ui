@@ -50,19 +50,59 @@ function big(v: string | undefined): bigint {
 
 const pct = (v: number) => `${Math.max(0, Math.floor(v * 100))}%`;
 
+/** The other messages a worker sends with the same key. */
+export interface AlsoSends {
+  /** Messages its work can't be finished without: a key lacking one is a fault. */
+  required?: string[];
+  /** Messages it can run without (a check-in the operator may have turned off): only noted. */
+  optional?: string[];
+}
+
+const shortName = (typeUrl: string) => typeUrl.slice(typeUrl.lastIndexOf(".") + 1);
+
 /**
  * Judge the session `granter` gave its worker for `msgType`. `who` names the
- * worker in an issue ("The archiver's", "A scanner's"). With several sessions
- * covering the message, the one that will last longest is judged.
+ * worker in an issue ("The archiver's", "A scanner's"). A worker holds one
+ * key, so that one session also has to cover whatever else it sends (`also`).
+ * The chain doesn't say which of an operator's sessions the worker holds, so
+ * with several covering the message the most serviceable is judged: usable
+ * before dead, then the one covering most of what the worker sends, then the
+ * one that lasts longest. An old key beside its replacement is thus ignored.
  */
-export function assessSession(sessions: Session[], msgType: string, who: string, now: number): SessionNote {
+export function assessSession(
+  sessions: Session[],
+  msgType: string,
+  who: string,
+  now: number,
+  also: AlsoSends = {}
+): SessionNote {
   const covering = sessions.filter((s) => (s.allowed_msg_types || []).includes(msgType));
   if (covering.length === 0) {
     return { state: "none", value: "None on chain for its messages", issue: null };
   }
-  const judged = covering.map((s) => judge(s, who, now));
+  const lacks = (s: Session, types: string[] = []) => types.filter((t) => !(s.allowed_msg_types || []).includes(t));
+  const expiry = (s: Session) => Date.parse(s.expiration) || 0;
   const order = { ok: 0, soon: 1, dead: 2, none: 3 };
-  return judged.sort((a, b) => order[a.state] - order[b.state])[0];
+  const best = covering
+    .map((s) => ({ session: s, note: judge(s, who, now) }))
+    .sort(
+      (a, b) =>
+        order[a.note.state] - order[b.note.state] ||
+        lacks(a.session, also.required).length - lacks(b.session, also.required).length ||
+        lacks(a.session, also.optional).length - lacks(b.session, also.optional).length ||
+        expiry(b.session) - expiry(a.session)
+    )[0];
+  const missing = lacks(best.session, also.required).map(shortName);
+  const unused = lacks(best.session, also.optional).map(shortName);
+  let { state, value, issue } = best.note;
+  if (unused.length) value += `, doesn't cover ${unused.join(", ")}`;
+  // A key that is already dead says so; a live one that can't finish the work is the news.
+  if (missing.length && state !== "dead") {
+    state = "soon";
+    issue = `${who} session key doesn't cover ${missing.join(", ")}, so the chain refuses ${missing.length === 1 ? "that message" : "those messages"} from its worker.`;
+    value += `, doesn't cover ${missing.join(", ")}`;
+  }
+  return { state, value, issue };
 }
 
 function judge(s: Session, who: string, now: number): SessionNote {
@@ -73,8 +113,10 @@ function judge(s: Session, who: string, now: number): SessionNote {
   const cap = big(s.max_exec_count);
   const uses = share(cap - big(s.exec_count), cap);
   const used = Date.parse(s.last_used_at);
-  // A session that was never used carries the zero time.
-  const lastUsed = Number.isFinite(used) && used > 86_400_000 ? Math.max(0, now - used) : null;
+  // A session that was never used carries the time it was created, or the
+  // zero time: its count of uses is what says so.
+  const everUsed = big(s.exec_count) > BigInt(0);
+  const lastUsed = everUsed && Number.isFinite(used) && used > 86_400_000 ? Math.max(0, now - used) : null;
 
   const parts: string[] = [];
   if (left !== null) parts.push(left > 0 ? `Expires in ${formatAge(left)}` : `Expired ${formatAge(-left)} ago`);
@@ -145,24 +187,24 @@ export function rememberExpiry(
 }
 
 /**
- * Add the workers' session keys to a card: one row, and an issue for each
- * key that is dead or nearly so. A card that is off or unreadable is left
+ * Add the workers' session keys to a card: one row under `label`, and an
+ * issue for each key that is dead or nearly so. A card that is off or unreadable is left
  * alone, and so is one with no worker to speak of.
  */
-export function withSessions(report: ServiceReport, notes: SessionNote[]): ServiceReport {
+export function withSessions(report: ServiceReport, notes: SessionNote[], label = "Session key"): ServiceReport {
   if (notes.length === 0 || report.state === "off" || report.state === "unreachable") return report;
   const order = { dead: 0, soon: 1, ok: 2, none: 3 };
   const sorted = [...notes].sort((a, b) => order[a.state] - order[b.state]);
   const granted = notes.filter((n) => n.state !== "none");
   let fact: ServiceFact;
   if (notes.length === 1) {
-    fact = { label: "Session key", value: notes[0].value };
+    fact = { label, value: notes[0].value };
   } else if (granted.length === 0) {
-    fact = { label: "Session keys", value: "None on chain for their messages" };
+    fact = { label: `${label}s`, value: "None on chain for their messages" };
   } else {
     const usable = granted.filter((n) => n.state !== "dead").length;
     // The row describes the key in the most trouble.
-    fact = { label: "Session keys", value: `${usable} of ${granted.length} usable. Nearest its end: ${lower(sorted[0].value)}` };
+    fact = { label: `${label}s`, value: `${usable} of ${granted.length} usable. Nearest its end: ${lower(sorted[0].value)}` };
   }
   const issues = sorted.map((n) => n.issue).filter((i): i is string => !!i).slice(0, 4);
   return {

@@ -17,7 +17,7 @@ const COPY: Record<string, { name: string; purpose: string }> = {
   images: { name: "Image uploads", purpose: "Storing the pictures members add to dreams and profiles." },
   arweave: { name: "Permanent storage gateway", purpose: "Reading permanent copies and ar:// images." },
   relayer: { name: "IBC relayer", purpose: "Carrying transfers and federated posts between this chain and its peer chains." },
-  bridges: { name: "Federation bridges", purpose: "Bringing posts in from other networks, such as Mastodon." },
+  bridges: { name: "Federation bridges", purpose: "Bringing posts in from other networks, such as Mastodon, and verifying them." },
   storage: { name: "Permanent copies", purpose: "Copying scanned images to Arweave when a member asks." },
   mirror: { name: "Archive mirror", purpose: "The copy of every block kept outside the deployment, from which the permanent archive is made." },
   archiver: { name: "Permanent block archive", purpose: "The copy of this chain's block history kept on Arweave." },
@@ -138,7 +138,10 @@ export default function SiteStatusSection() {
         and flags a request nobody has touched for a long while, which can also mean a file it
         can&apos;t fetch. For federation
         bridges, working means each bridge&apos;s operator and peer are active, the peer&apos;s server answers and the bridge
-        brought a post in within the chain&apos;s inactivity limit, not that its daemon is running. The IBC relayer
+        brought a post in within the chain&apos;s inactivity limit, not that its daemon is running. A bridged post is
+        not trusted until a verifier, a separate bonded member, has fetched it and found the same
+        content, so the card also says whether a verifier is in good standing and whether posts are
+        left waiting. The IBC relayer
         has no record on chain, so it is judged by what it leaves there: the light client it must
         keep updated, the channels, and packets still waiting. Only this chain&apos;s side is read. The
         archive mirror is shown as it last reported itself: the results of its hourly sync and its

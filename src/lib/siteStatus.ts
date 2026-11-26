@@ -36,12 +36,25 @@ import {
   readyOperators,
   type WorkerEvidence,
 } from "@/lib/storageStatus";
-import { assessBridges, BRIDGE_SERVICE_TYPE_PREFIX } from "@/lib/bridgeStatus";
+import {
+  assessBridges,
+  BRIDGE_SERVICE_TYPE_PREFIX,
+  canVerify,
+  type VerifierInput,
+  type VerifierRole,
+} from "@/lib/bridgeStatus";
 import type { BridgeBinding } from "@/types/federation";
 import { headPinned, publicHttpsTarget } from "@/lib/publicUrl";
 import { assessIbc, type IbcChannel, type IbcLink } from "@/lib/ibcStatus";
 import { assessMirror, type MirrorRebuild, type MirrorSync } from "@/lib/mirrorStatus";
-import { assessSession, rememberExpiry, withSessions, type ExpiryMemory, type SessionNote } from "@/lib/sessionStatus";
+import {
+  assessSession,
+  rememberExpiry,
+  withSessions,
+  type AlsoSends,
+  type ExpiryMemory,
+  type SessionNote,
+} from "@/lib/sessionStatus";
 import type { Session } from "@/types/session";
 import { CONTENT_SCANNER_SERVICE_TYPE, OperatorStatus, OPERATOR_STATUS_LABELS } from "@/types/service";
 import type { Checkpoint, Operator, ServiceTypeConfig } from "@/types/service";
@@ -111,18 +124,19 @@ const keyExpiries: ExpiryMemory = new Map();
  */
 async function sessionNotes(
   lcd: string,
-  owners: { address: string; who: string }[],
-  msgType: string
+  owners: { address: string; who: string; also?: AlsoSends }[],
+  msgType: string,
+  also?: AlsoSends
 ): Promise<SessionNote[]> {
   const base = `${lcd.replace(/\/+$/, "")}/sparkdream/session/v1/sessions_by_granter`;
   const notes = await Promise.all(
-    owners.slice(0, MAX_SESSION_OWNERS).map(async ({ address, who }) => {
+    owners.slice(0, MAX_SESSION_OWNERS).map(async ({ address, who, also: own }) => {
       const r = await reach(`${base}/${encodeURIComponent(address)}?pagination.limit=100`);
       if (!r.res?.ok) return null;
       try {
         const sessions = ((await r.res.json()) as { sessions?: Session[] }).sessions ?? [];
         const now = Date.now();
-        const note = assessSession(sessions, msgType, who, now);
+        const note = assessSession(sessions, msgType, who, now, own ?? also);
         return rememberExpiry(keyExpiries, `${address}|${msgType}`, sessions, msgType, note, who, now);
       } catch {
         return null;
@@ -275,20 +289,53 @@ async function scannerRegistrations(lcd: string, trusted: Set<string>): Promise<
   return out;
 }
 
+const FLAG_REMOVED_MSG = "/sparkdream.storage.v1.MsgFlagRemoved";
+
+/** The scanners x/storage counts for permanent copies. Empty when it can't be read or the chain has no x/storage. */
+async function storageScanners(lcd: string): Promise<Set<string>> {
+  const r = await reach(`${lcd.replace(/\/+$/, "")}/sparkdream/storage/v1/approved_scanners?pagination.limit=200`);
+  if (!r.res?.ok) return new Set();
+  try {
+    const scanners = ((await r.res.json()) as { scanners?: ApprovedScanner[] }).scanners ?? [];
+    return new Set(scanners.filter((a) => !a.stale).map((a) => a.scanner));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * The session key of each active scanner's worker. Every scanner checkpoints
+ * with it; one approved for permanent copies also flags removed files there
+ * (MsgFlagRemoved) with the same key, so for it that message has to be
+ * covered too.
+ */
+export async function scannerKeys(lcd: string, workers: string[]): Promise<SessionNote[]> {
+  if (workers.length === 0) return [];
+  const forStorage = await storageScanners(lcd);
+  return sessionNotes(
+    lcd,
+    workers.map((address) => ({
+      address,
+      who: workers.length > 1 ? "A scanner's" : "The scanner's",
+      also: forStorage.has(address) ? { required: [FLAG_REMOVED_MSG] } : undefined,
+    })),
+    CHECKPOINT_MSG
+  );
+}
+
 async function checkScanners(lcd: string): Promise<ServiceReport> {
   try {
     const snap = await withTimeout(getVerdictIndex(), TIMEOUT_MS);
     const trusted = new Set(snap.setup.workers.map((w) => w.address));
-    const many = snap.setup.workers.length > 1;
-    const keys = await sessionNotes(
-      lcd,
-      snap.setup.workers.map((w) => ({ address: w.address, who: many ? "A scanner's" : "The scanner's" })),
-      CHECKPOINT_MSG
-    );
+    // Read together: each may take its full timeout.
+    const [keys, registrations] = await Promise.all([
+      scannerKeys(lcd, snap.setup.workers.map((w) => w.address)),
+      snap.setup.quorum > 0 ? scannerRegistrations(lcd, trusted) : Promise.resolve({}),
+    ]);
     return withSessions(assessScanners({
       feedHosts: [...new Set(snap.setup.workers.map((w) => hostOf(w.feedUrl)).filter(Boolean))],
       checkpoints: snap.setup.checkpoints,
-      ...(snap.setup.quorum > 0 ? await scannerRegistrations(lcd, trusted) : {}),
+      ...registrations,
       workers: snap.setup.workers.map((w) => w.address),
       quorum: snap.setup.quorum,
       heights: snap.heights,
@@ -733,10 +780,22 @@ export async function checkStorage(
         }
       : undefined;
 
+  // The key each worker holds, shown for an operator still waiting for its
+  // approval too, so it can see the key was granted. One key has to cover
+  // the whole of a request's life; the check-in is the operator's to leave out.
+  const keyed = fundedOperators(operators, approvedOperators).slice(0, 5);
   const keys = await sessionNotes(
     lcd,
-    ready.map((o) => ({ address: o.address, who: ready.length > 1 ? "A storage worker's" : "The storage worker's" })),
-    "/sparkdream.storage.v1.MsgClaimRequest"
+    keyed.map((o) => ({ address: o.address, who: keyed.length > 1 ? "A storage worker's" : "The storage worker's" })),
+    "/sparkdream.storage.v1.MsgClaimRequest",
+    {
+      required: [
+        "/sparkdream.storage.v1.MsgExtendClaim",
+        "/sparkdream.storage.v1.MsgCompleteRequest",
+        "/sparkdream.storage.v1.MsgDeclineRequest",
+      ],
+      optional: [CHECKPOINT_MSG],
+    }
   );
   return withSessions(assessStorage({
     enabled,
@@ -775,6 +834,83 @@ const probeEndpoint: EndpointProbe = async (endpoint) => {
 function durationSeconds(v: unknown): number {
   const m = typeof v === "string" ? /^(\d+)(?:\.\d+)?s$/.exec(v) : null;
   return m ? Number(m[1]) : 0;
+}
+
+const VERIFIER_ROLE = "ROLE_TYPE_FEDERATION_VERIFIER";
+const VERIFY_MSG = "/sparkdream.federation.v1.MsgVerifyContent";
+
+/**
+ * The verifiers of what the bridges bring in: the holders of the bonded
+ * verifier role (x/rep), what they have verified, and the bridged posts
+ * still waiting for one. Undefined when the role's holders can't be read.
+ */
+async function bridgeVerifiers(lcd: string): Promise<{ input: VerifierInput; addresses: string[] } | undefined> {
+  const base = lcd.replace(/\/+$/, "");
+  const federation = `${base}/sparkdream/federation/v1`;
+  const pendingQuery = "status=FEDERATED_CONTENT_STATUS_PENDING_VERIFICATION&pagination.count_total=true";
+  const [rolesR, configR, pendingR] = await Promise.all([
+    reach(`${base}/sparkdream/rep/v1/bonded_roles_by_type/${VERIFIER_ROLE}?pagination.limit=200`),
+    reach(`${base}/sparkdream/rep/v1/bonded_role_config/${VERIFIER_ROLE}`),
+    // The list is in id order, so its first entry has waited longest.
+    reach(`${federation}/list_federated_content?${pendingQuery}&pagination.limit=1`),
+  ]);
+  const roles = (await okJson<{ bonded_roles?: (VerifierRole & { address?: string })[] }>(rolesR))?.bonded_roles;
+  if (!roles) return undefined;
+  const minBond = (await okJson<{ bonded_role_config?: { min_bond?: string } }>(configR))?.bonded_role_config?.min_bond ?? "0";
+  // Those the chain lets verify come first: theirs are the keys worth showing.
+  const able = roles.filter((r) => canVerify(r, minBond));
+  const addresses = [...able, ...roles.filter((r) => !able.includes(r))].map((r) => r.address || "").filter(Boolean);
+  // A total over some of the verifiers would read as the whole: with too many to ask, none is given.
+  const asked = addresses.length <= MAX_SESSION_OWNERS ? addresses : [];
+  const now = Date.now();
+  const ableAddresses = able.map((r) => r.address || "").filter(Boolean);
+  // Asked together: what each has verified, and each able one's overturn
+  // cooldown. The cooldown is on the role's activity record in x/rep, in
+  // unix seconds: 0, or a time already past, is a verifier that may verify,
+  // and so is one with no activity record yet.
+  const [counts, cooldowns] = await Promise.all([
+    Promise.all(
+      asked.map(async (a) => {
+        const r = await reach(`${federation}/verifier_activity/${encodeURIComponent(a)}`);
+        const total = (await okJson<{ activity?: { total_verifications?: string } }>(r))?.activity?.total_verifications;
+        return total && /^\d+$/.test(total) ? Number(total) : r.res?.status === 404 ? 0 : null;
+      })
+    ),
+    asked.length === addresses.length
+      ? Promise.all(
+          ableAddresses.map(async (a) => {
+            const r = await reach(`${base}/sparkdream/rep/v1/role_activity/${VERIFIER_ROLE}/${encodeURIComponent(a)}`);
+            if (r.res?.status === 404) return 0;
+            if (!r.res?.ok) return null;
+            const until = (await okJson<{ role_activity?: { overturn_cooldown_until?: string } }>(r))?.role_activity
+              ?.overturn_cooldown_until;
+            // A zero the node left out of its answer is still zero.
+            if (until === undefined) return 0;
+            return /^\d+$/.test(until) ? Number(until) * 1000 : null;
+          })
+        )
+      : Promise.resolve(null),
+  ]);
+  const cooldownsRead = cooldowns !== null && cooldowns.every((c) => c !== null);
+  const locked = cooldownsRead ? (cooldowns as number[]).filter((c) => c > now) : [];
+  const pending = await okJson<{ content?: { received_at?: string }[]; pagination?: { total?: string } }>(pendingR);
+  const total = pending?.pagination?.total;
+  const oldest = pending?.content?.[0]?.received_at;
+  return {
+    addresses,
+    input: {
+      holders: roles.length,
+      able: able.length,
+      cooling: cooldownsRead ? locked.length : null,
+      coolingEndsAt: locked.length ? Math.min(...locked) : null,
+      verified:
+        asked.length === addresses.length && counts.every((c) => c !== null)
+          ? counts.reduce<number>((sum, c) => sum + (c ?? 0), 0)
+          : null,
+      pending: total && /^\d+$/.test(total) ? Number(total) : null,
+      oldestPendingAt: oldest && /^\d+$/.test(oldest) && Number(oldest) > 0 ? Number(oldest) * 1000 : null,
+    },
+  };
 }
 
 /**
@@ -823,6 +959,9 @@ export async function checkBridges(lcd: string, probe: EndpointProbe = probeEndp
     durationSeconds(params?.rate_limit_window) * ((Number(params?.bridge_inactivity_threshold) || 0) + 1);
 
   const all = bindings.bridge_bindings ?? [];
+  // The verifiers matter only where there is a bridge whose posts need them.
+  // Asked for now, alongside the endpoints, and awaited below.
+  const verifiersP = all.length > 0 ? bridgeVerifiers(lcd) : Promise.resolve(undefined);
   const reachable: Record<string, boolean | null> = {};
   await Promise.all(
     [...new Set(all.map((b) => b.endpoint).filter(Boolean))].slice(0, MAX_ENDPOINTS).map(async (endpoint) => {
@@ -832,19 +971,57 @@ export async function checkBridges(lcd: string, probe: EndpointProbe = probeEndp
 
   // One key per bridge operator, however many peers it is bound to.
   const owners = [...new Set(all.map((b) => b.address))];
-  const keys = await sessionNotes(
-    lcd,
-    owners.map((address) => ({ address, who: owners.length > 1 ? "A bridge's" : "The bridge's" })),
-    "/sparkdream.federation.v1.MsgSubmitFederatedContent"
+  // Reports nobody has resolved yet, per bridge operator and the type it is registered under.
+  const bridgeOperators = (ops.operators ?? []).filter((o) => o.service_type.startsWith(BRIDGE_SERVICE_TYPE_PREFIX));
+  const openReports: Record<string, number | null> = {};
+  const reportsP = Promise.all(
+    owners.slice(0, MAX_SESSION_OWNERS).map(async (address) => {
+      const mine = bridgeOperators.filter((o) => o.address === address);
+      // The chain filters by status, so a long history of closed reports
+      // can't push the open ones off the page.
+      const counts = await Promise.all(
+        mine.flatMap((o) =>
+          ["REPORT_STATUS_PENDING", "REPORT_STATUS_ESCALATED"].map(async (status) => {
+            const r = await reach(
+              `${base}/sparkdream/service/v1/reports_by_operator/${encodeURIComponent(address)}/${encodeURIComponent(o.service_type)}?status_filter=${status}&pagination.limit=200`
+            );
+            const reports = (await okJson<{ reports?: { status?: string }[] }>(r))?.reports;
+            return reports ? reports.filter((x) => x.status === status).length : null;
+          })
+        )
+      );
+      openReports[address] = counts.every((c) => c !== null) ? counts.reduce<number>((sum, c) => sum + (c ?? 0), 0) : null;
+    })
   );
-  return withSessions(assessBridges({
+  const verifiers = await verifiersP;
+  const [keys, verifierKeys] = await Promise.all([
+    sessionNotes(
+      lcd,
+      owners.map((address) => ({ address, who: owners.length > 1 ? "A bridge's" : "The bridge's" })),
+      "/sparkdream.federation.v1.MsgSubmitFederatedContent"
+    ),
+    sessionNotes(
+      lcd,
+      (verifiers?.addresses ?? []).map((address) => ({
+        address,
+        who: (verifiers?.addresses.length ?? 0) > 1 ? "A verifier's" : "The verifier's",
+      })),
+      VERIFY_MSG
+    ),
+    reportsP,
+  ]);
+  const report = assessBridges({
     bindings: all,
     reachable,
     peers,
-    operators: (ops.operators ?? []).filter((o) => o.service_type.startsWith(BRIDGE_SERVICE_TYPE_PREFIX)),
+    operators: bridgeOperators,
     inactivitySeconds,
+    openReports,
+    bondSymbol: defaults.displayDenom,
+    verifiers: verifiers?.input,
     now: Date.now(),
-  }), keys);
+  });
+  return withSessions(withSessions(report, keys, "Bridge session key"), verifierKeys, "Verifier session key");
 }
 
 // ---- IBC relayer ----------------------------------------------------------------

@@ -32,6 +32,8 @@ test("a session with time, budget and uses left is ok and says what is left", ()
   assert.equal(got.issue, null);
   assert.equal(got.value, "Expires in 26d, last used 19m ago, 95% of its fee budget and 98% of its uses left");
   assert.match(judge({ last_used_at: "0001-01-01T00:00:00Z" }).value, /never used/);
+  // The chain stamps a new key's last use with its creation: only the count says it was never used.
+  assert.match(judge({ exec_count: "0" }).value, /never used/);
 });
 
 test("an expired, spent or used-up session is dead", () => {
@@ -98,6 +100,9 @@ test("several keys are counted, the row describes the one nearest its end, and o
   assert.equal(withSessions(report("off"), [note("dead")]).facts.length, 1);
   assert.equal(withSessions(report("degraded"), [note("dead")]).issues.length, 2);
   assert.equal(withSessions(report(), []).facts.length, 1);
+  // A card with two kinds of worker names each row.
+  assert.equal(withSessions(report(), [note("ok")], "Verifier session key").facts[1].label, "Verifier session key");
+  assert.equal(withSessions(report(), [note("ok"), note("ok")], "Verifier session key").facts[1].label, "Verifier session keys");
 });
 
 test("a key the chain removed at its expiry is reported as expired if it was seen before", () => {
@@ -125,4 +130,51 @@ test("a key that vanished before its expiry was revoked or replaced: absent, and
   rememberExpiry(memory, "k", [session()], MSG, assessSession([session()], MSG, "The scanner's", NOW), "The scanner's", NOW);
   assert.equal(rememberExpiry(memory, "k", [], MSG, none, "The scanner's", NOW + 1000).state, "none");
   assert.equal(memory.has("k"), false);
+});
+
+test("the one key a worker holds has to cover everything it sends", () => {
+  const CLAIM = "/sparkdream.storage.v1.MsgClaimRequest";
+  const COMPLETE = "/sparkdream.storage.v1.MsgCompleteRequest";
+  const also = { required: [COMPLETE], optional: [MSG] };
+  const check = (types: string[], over: Partial<Session> = {}) =>
+    assessSession([session({ allowed_msg_types: types, ...over })], CLAIM, "The storage worker's", NOW, also);
+
+  const full = check([CLAIM, COMPLETE, MSG]);
+  assert.equal(full.state, "ok");
+  assert.doesNotMatch(full.value, /cover/);
+
+  // Without the check-in it works, and the row says what is left out.
+  const quiet = check([CLAIM, COMPLETE]);
+  assert.equal(quiet.state, "ok");
+  assert.equal(quiet.issue, null);
+  assert.match(quiet.value, /, doesn't cover MsgSubmitCheckpoint$/);
+
+  // Without a message the work needs, the key is a fault while it still claims.
+  const partial = check([CLAIM, MSG]);
+  assert.equal(partial.state, "soon");
+  assert.equal(partial.issue, "The storage worker's session key doesn't cover MsgCompleteRequest, so the chain refuses that message from its worker.");
+  assert.match(partial.value, /doesn't cover MsgCompleteRequest$/);
+
+  // A dead key is reported as dead, not for what it lacked.
+  const dead = check([CLAIM], { exec_count: "10000" });
+  assert.equal(dead.state, "dead");
+  assert.match(dead.issue ?? "", /used up its uses/);
+  assert.equal(check([COMPLETE, MSG]).state, "none");
+
+  // An older, narrower key beside the one that covers everything is not what is judged,
+  // whichever the chain lists first.
+  const narrow = session({ allowed_msg_types: [CLAIM] });
+  const whole = session({ allowed_msg_types: [CLAIM, COMPLETE, MSG], expiration: "2026-12-10T00:00:00Z" });
+  for (const pair of [[narrow, whole], [whole, narrow]]) {
+    const got = assessSession(pair, CLAIM, "The storage worker's", NOW, also);
+    assert.equal(got.state, "ok");
+    assert.match(got.value, /^Expires in 14d/);
+  }
+});
+
+test("of two keys alike in every other way, the one that lasts longest is judged", () => {
+  const short = session({ expiration: "2026-12-01T04:00:00Z" });
+  for (const pair of [[short, session()], [session(), short]]) {
+    assert.match(assessSession(pair, MSG, "The scanner's", NOW).value, /^Expires in 26d/);
+  }
 });

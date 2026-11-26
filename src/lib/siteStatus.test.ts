@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessScanners, checkArchive, checkArchiver, checkBridges, checkIbc, checkMirror, checkArweave, checkPage, checkStorage, type ScannerMeta } from "./siteStatus";
+import { assessScanners, checkArchive, checkArchiver, checkBridges, checkIbc, checkMirror, checkArweave, checkPage, checkStorage, scannerKeys, type ScannerMeta } from "./siteStatus";
 
 function meta(over: Partial<ScannerMeta> = {}): ScannerMeta {
   return {
@@ -111,6 +111,8 @@ test("archiver: the chain's checkpoint and the gateway's index make one report",
   const wallet = "10tJ9DsLQ97USrpb7xKYTW0jwXJ9IGhmjqqce6mcEP0";
   const metadata = Buffer.from(JSON.stringify({ v: 1, backend: "arweave", wallets: [wallet] })).toString("base64");
   const seen: string[] = [];
+  // Days left on the archive worker's session key.
+  let keyDays = 20;
   const answer = (url: string) => {
     seen.push(url);
     const json = (body: unknown) => new Response(JSON.stringify(body));
@@ -120,6 +122,21 @@ test("archiver: the chain's checkpoint and the gateway's index make one report",
     }
     if (url.includes("/checkpoints_by_service_type/")) {
       return json({ checkpoints: [{ operator: "op", height: "230000", root: "uo94t4K0yA6mknk28GwNmOrM/FexblhPbxNdgeTw24g=" }] });
+    }
+    if (url.includes("/session/v1/sessions_by_granter/op")) {
+      return json({
+        sessions: [
+          {
+            allowed_msg_types: ["/sparkdream.service.v1.MsgSubmitCheckpoint"],
+            spend_limit: { amount: "5000000" },
+            spent: { amount: "50000" },
+            expiration: new Date(Date.now() + keyDays * 86_400_000).toISOString(),
+            last_used_at: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+            exec_count: "10",
+            max_exec_count: "1000",
+          },
+        ],
+      });
     }
     if (url.includes("/blocks/latest")) return json({ block: { header: { height: "236000" } } });
     if (url === `https://gw.test/wallet/${wallet}/balance`) return new Response("2000000000000");
@@ -163,6 +180,16 @@ test("archiver: the chain's checkpoint and the gateway's index make one report",
   assert.equal(got.facts.find((f) => f.label === "Archived through block")?.value, "230,000");
   assert.match(got.facts.find((f) => f.label === "Newest upload")?.value ?? "", /^Blocks 230,001 to 240,000, /);
   assert.equal(got.facts.find((f) => f.label === "Worker funds")?.value, "2 AR, about 50 more ranges");
+  // The archive worker's session key is the card's last row.
+  assert.deepEqual(got.facts.at(-1), {
+    label: "Session key",
+    value: "Expires in 20d, last used 2h ago, 99% of its fee budget and 99% of its uses left",
+  });
+  // A key about to expire is said so while the archive itself is fine.
+  keyDays = 1;
+  const soon = await withFetch(answer, () => checkArchiver("https://lcd.test/", "sparkdream-test-1", "https://gw.test/{id}"));
+  assert.equal(soon.state, "degraded");
+  assert.deepEqual(soon.issues, ["The archiver's session key expires in 24h. Its operator needs to grant a new one."]);
 
   // A chain without the service type is off, and the gateway is never asked.
   seen.length = 0;
@@ -201,6 +228,22 @@ test("storage: the chain's lists and the wallet's balance make one report", asyn
     }
     if (url.includes("/requests_by_operator/op")) return json({ requests: [{ claimed_at: "970", completed_at: "985" }, { claimed_at: "900" }] });
     if (url.includes("/operator_standing/arweave/op")) return json({ lapses: { count: "0" } });
+    if (url.includes("/session/v1/sessions_by_granter/op")) {
+      const storage = ["MsgClaimRequest", "MsgExtendClaim", "MsgCompleteRequest", "MsgDeclineRequest"].map((m) => `/sparkdream.storage.v1.${m}`);
+      return json({
+        sessions: [
+          {
+            allowed_msg_types: storage,
+            spend_limit: { amount: "100" },
+            spent: { amount: "50" },
+            expiration: new Date(Date.now() + 10 * 86_400_000).toISOString(),
+            last_used_at: new Date(Date.now() - 3 * 60_000).toISOString(),
+            exec_count: "5",
+            max_exec_count: "100",
+          },
+        ],
+      });
+    }
     if (url.includes("/checkpoints_by_service_type/storage-arweave")) {
       return json({ checkpoints: [{ operator: "op", height: "900", root: "10tJ9DsLQ97USrpb7xKYTW0jwXJ9IGhmjqqce6mcEP0=" }, { operator: "other", height: "999", root: "" }] });
     }
@@ -222,6 +265,10 @@ test("storage: the chain's lists and the wallet's balance make one report", asyn
     { label: "Worker last checked in", value: "100 blocks ago, limit 1,800" },
     { label: "Worker last acted", value: "15 blocks ago" },
     { label: "Longest wait", value: "40 blocks" },
+    {
+      label: "Session key",
+      value: "Expires in 10d, last used 3m ago, 50% of its fee budget and 95% of its uses left, doesn't cover MsgSubmitCheckpoint",
+    },
   ]);
 
   const off = await withFetch(() => new Response("{}", { status: 501 }), () => checkStorage("https://lcd.test", "https://gw.test/{id}", {} as NodeJS.ProcessEnv));
@@ -233,12 +280,45 @@ test("storage: the chain's lists and the wallet's balance make one report", asyn
 test("bridges: bindings, peers, operators and the chain's inactivity limit make one report", async () => {
   const json = (body: unknown) => new Response(JSON.stringify(body));
   const last = Math.floor(Date.now() / 1000) - 3_600;
+  // The verifier's overturn cooldown, unix seconds: none to begin with.
+  let cooldownUntil = 0;
   const answer = (url: string) => {
     if (url.includes("/list_bridge_bindings")) {
       return json({ bridge_bindings: [{ address: "op", peer_id: "mstdn.test", protocol: "activitypub", endpoint: "https://mstdn.test/x", content_submitted: "4", last_submission_at: String(last), suspended: false }] });
     }
     if (url.includes("/list_peers")) return json({ peers: [{ id: "mstdn.test", status: "PEER_STATUS_ACTIVE" }] });
     if (url.endsWith("/federation/v1/params")) return json({ params: { rate_limit_window: "43200s", bridge_inactivity_threshold: "100" } });
+    if (url.includes("/service/v1/reports_by_operator/op/federation-bridge-activitypub")) {
+      // The chain returns the reports in the status asked for: one pending, one escalated, others closed.
+      const status = new URL(url).searchParams.get("status_filter");
+      const open = ["REPORT_STATUS_PENDING", "REPORT_STATUS_ESCALATED"];
+      return json({ reports: status && open.includes(status) ? [{ status }] : [{ status: "REPORT_STATUS_AUTO_DISMISSED" }] });
+    }
+    if (url.includes("/rep/v1/bonded_roles_by_type/ROLE_TYPE_FEDERATION_VERIFIER")) {
+      return json({ bonded_roles: [{ address: "ver", bond_status: "BONDED_ROLE_STATUS_NORMAL" }] });
+    }
+    if (url.endsWith("/federation/v1/verifier_activity/ver")) return json({ activity: { total_verifications: "3" } });
+    if (url.endsWith("/rep/v1/role_activity/ROLE_TYPE_FEDERATION_VERIFIER/ver")) {
+      return json({ role_activity: { overturn_cooldown_until: String(cooldownUntil) } });
+    }
+    if (url.includes("/list_federated_content?status=FEDERATED_CONTENT_STATUS_PENDING_VERIFICATION")) {
+      return json({ content: [{ received_at: String(Math.floor(Date.now() / 1000) - 120) }], pagination: { total: "2" } });
+    }
+    if (url.endsWith("/session/v1/sessions_by_granter/ver?pagination.limit=100")) {
+      return json({
+        sessions: [
+          {
+            allowed_msg_types: ["/sparkdream.federation.v1.MsgVerifyContent"],
+            spend_limit: { amount: "100" },
+            spent: { amount: "0" },
+            expiration: new Date(Date.now() + 14 * 86_400_000).toISOString(),
+            last_used_at: "0001-01-01T00:00:00Z",
+            exec_count: "0",
+            max_exec_count: "100",
+          },
+        ],
+      });
+    }
     if (url.endsWith("/session/v1/sessions_by_granter/op?pagination.limit=100")) {
       return json({
         sessions: [
@@ -257,7 +337,7 @@ test("bridges: bindings, peers, operators and the chain's inactivity limit make 
     if (url.includes("/service/v1/operators")) {
       return json({
         operators: [
-          { address: "op", service_type: "federation-bridge-activitypub", status: "OPERATOR_STATUS_ACTIVE" },
+          { address: "op", service_type: "federation-bridge-activitypub", status: "OPERATOR_STATUS_ACTIVE", bond_amount: "1000000000" },
           { address: "op", service_type: "content-scanner", status: "OPERATOR_STATUS_UNBONDING" },
         ],
       });
@@ -275,7 +355,26 @@ test("bridges: bindings, peers, operators and the chain's inactivity limit make 
   assert.equal(got.facts[0].value, "1 of 1 working");
   assert.equal(got.facts[1].value, "activitypub, last post 60m ago");
   assert.deepEqual(got.facts[2], { label: "mstdn.test endpoint", value: "Answering" });
-  assert.match(got.facts.at(-1)?.value ?? "", /^Expires in 30d, last used 60m ago, 90% of its fee budget and 99% of its uses left$/);
+  const byLabel = (label: string) => got.facts.find((f) => f.label === label)?.value;
+  assert.equal(byLabel("Bridge session key"), "Expires in 30d, last used 60m ago, 90% of its fee budget and 99% of its uses left");
+  // One pending and one escalated report: both still open.
+  assert.match(byLabel("mstdn.test operator") ?? "", /^Active, 1,000 \S+ bonded, 2 open reports$/);
+  assert.equal(byLabel("mstdn.test posts"), "0 verified, 0 rejected, 0 unverified");
+  assert.equal(byLabel("Verifiers"), "1 in good standing");
+  assert.equal(byLabel("Posts verified"), "3");
+  assert.equal(byLabel("Waiting for verification"), "2, the oldest for 2m");
+  assert.equal(byLabel("Verifier session key"), "Expires in 14d, never used, 100% of its fee budget and 100% of its uses left");
+  assert.equal(byLabel("Overturn cooldown"), undefined);
+
+  // A cooldown that has passed is no lockout; one still running locks the only verifier out.
+  cooldownUntil = Math.floor(Date.now() / 1000) - 60;
+  assert.equal((await withFetch(answer, () => checkBridges("https://lcd.test/", up))).state, "ok");
+  cooldownUntil = Math.floor(Date.now() / 1000) + 2 * 3_600;
+  const locked = await withFetch(answer, () => checkBridges("https://lcd.test/", up));
+  assert.equal(locked.state, "degraded");
+  assert.match(locked.issues[0], /^The verifier is locked out after overturned verifications for another (2h|120m|119m)/);
+  assert.match(locked.facts.find((f) => f.label === "Overturn cooldown")?.value ?? "", /^1 verifier locked out, the first free in /);
+  cooldownUntil = 0;
 
   // An endpoint this server won't contact is left unchecked; one that fails is not answering.
   const unchecked = await withFetch(answer, () => checkBridges("https://lcd.test/", async () => null));
@@ -366,4 +465,50 @@ test("mirror: status.json and the rebuild document beside it make one report", a
   const html = await withFetch(() => new Response("<html>"), () => checkMirror("https://b.test/mirror/status.json", "c-1"));
   assert.equal(html.state, "unreachable");
   assert.equal((await checkMirror("not a url", "c-1")).state, "degraded");
+});
+
+test("scanners: each worker's key is judged, and one approved for storage must also cover flagging", async () => {
+  const json = (body: unknown) => new Response(JSON.stringify(body));
+  const key = (types: string[]) => ({
+    sessions: [
+      {
+        allowed_msg_types: types,
+        spend_limit: { amount: "100" },
+        spent: { amount: "10" },
+        expiration: new Date(Date.now() + 20 * 86_400_000).toISOString(),
+        last_used_at: new Date(Date.now() - 600_000).toISOString(),
+        exec_count: "1",
+        max_exec_count: "100",
+      },
+    ],
+  });
+  const CHECKPOINT = "/sparkdream.service.v1.MsgSubmitCheckpoint";
+  const FLAG = "/sparkdream.storage.v1.MsgFlagRemoved";
+  let approved = ["scan-b"];
+  let bTypes = [CHECKPOINT, FLAG];
+  const answer = (url: string) => {
+    if (url.includes("/storage/v1/approved_scanners")) {
+      return json({ scanners: [...approved.map((scanner) => ({ scanner })), { scanner: "scan-a", stale: true }] });
+    }
+    if (url.includes("/sessions_by_granter/scan-a")) return json(key([CHECKPOINT]));
+    if (url.includes("/sessions_by_granter/scan-b")) return json(key(bTypes));
+    return new Response("", { status: 404 });
+  };
+  // scan-a isn't counted for storage (its approval is stale), so checkpointing is all its key needs.
+  let got = await withFetch(answer, () => scannerKeys("https://lcd.test/", ["scan-a", "scan-b"]));
+  assert.deepEqual(got.map((n) => n.state), ["ok", "ok"]);
+  assert.doesNotMatch(got[0].value, /cover/);
+
+  bTypes = [CHECKPOINT];
+  got = await withFetch(answer, () => scannerKeys("https://lcd.test/", ["scan-a", "scan-b"]));
+  assert.deepEqual(got.map((n) => n.state), ["ok", "soon"]);
+  assert.equal(got[1].issue, "A scanner's session key doesn't cover MsgFlagRemoved, so the chain refuses that message from its worker.");
+
+  // Not approved for storage, or a chain without x/storage: nothing more is asked of the key.
+  approved = [];
+  got = await withFetch(answer, () => scannerKeys("https://lcd.test/", ["scan-b"]));
+  assert.equal(got[0].state, "ok");
+  const bare = await withFetch((url) => (url.includes("approved_scanners") ? new Response("", { status: 501 }) : answer(url)), () => scannerKeys("https://lcd.test/", ["scan-b"]));
+  assert.equal(bare[0].state, "ok");
+  assert.deepEqual(await scannerKeys("https://lcd.test/", []), []);
 });
