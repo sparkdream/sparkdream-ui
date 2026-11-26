@@ -143,7 +143,12 @@ export default function SiteStatusSection() {
         content, so the card also says whether a verifier is in good standing and whether posts are
         left waiting. The IBC relayer
         has no record on chain, so it is judged by what it leaves there: the light client it must
-        keep updated, the channels, and packets still waiting. Only this chain&apos;s side is read. The
+        keep updated, the channels, and packets still waiting. Its account is the one that last
+        updated that client, shown with the fees it can still pay. Where this site
+        knows the peer chain&apos;s API, the card also shows the relayer&apos;s account there, the
+        peer&apos;s own light client of this chain, which the relayer must keep updated just the
+        same, and the peer&apos;s height, which reveals a peer that was reset: the link then leads
+        nowhere. The same comparison the other way round reveals a reset of this chain. The
         archive mirror is shown as it last reported itself: the results of its hourly sync and its
         weekly rebuild check. A session key is what an operator grants its worker so the
         operator&apos;s own key stays off that machine. When it expires or runs out, the chain

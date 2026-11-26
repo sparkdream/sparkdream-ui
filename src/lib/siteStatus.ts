@@ -45,7 +45,7 @@ import {
 } from "@/lib/bridgeStatus";
 import type { BridgeBinding } from "@/types/federation";
 import { headPinned, publicHttpsTarget } from "@/lib/publicUrl";
-import { assessIbc, type IbcChannel, type IbcLink } from "@/lib/ibcStatus";
+import { assessIbc, type IbcChannel, type IbcLink, type IbcPeerClient, type IbcRelayer } from "@/lib/ibcStatus";
 import { assessMirror, type MirrorRebuild, type MirrorSync } from "@/lib/mirrorStatus";
 import {
   assessSession,
@@ -105,6 +105,25 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
     const timer = setTimeout(() => reject(new Error("timed out")), ms);
     p.then(resolve, reject).finally(() => clearTimeout(timer));
   });
+}
+
+// ---- The chain's own denomination -----------------------------------------------
+
+/** The chain's fee and bond denomination and its display name. */
+export interface ChainUnits {
+  denom: string;
+  symbol: string;
+  /** This chain's id, to tell a peer's light client of it from one of another chain. */
+  chainId?: string;
+}
+
+/** As /api/config resolves them: the runtime setting wins over the build's. */
+export function chainUnits(env: NodeJS.ProcessEnv = process.env): ChainUnits {
+  return {
+    denom: env.CHAIN_DENOM || defaults.denom,
+    symbol: env.DISPLAY_DENOM || defaults.displayDenom,
+    chainId: env.CHAIN_ID || defaults.chainId,
+  };
 }
 
 // ---- Session keys ---------------------------------------------------------------
@@ -924,7 +943,11 @@ async function bridgeVerifiers(lcd: string): Promise<{ input: VerifierInput; add
  * bare HEAD that follows no redirect, and nothing of the answer is reported
  * but that one came. `probe` stands in for that request in tests.
  */
-export async function checkBridges(lcd: string, probe: EndpointProbe = probeEndpoint): Promise<ServiceReport> {
+export async function checkBridges(
+  lcd: string,
+  probe: EndpointProbe = probeEndpoint,
+  units: ChainUnits = chainUnits()
+): Promise<ServiceReport> {
   const base = lcd.replace(/\/+$/, "");
   const federation = `${base}/sparkdream/federation/v1`;
   const page = "pagination.limit=200";
@@ -1017,7 +1040,7 @@ export async function checkBridges(lcd: string, probe: EndpointProbe = probeEndp
     operators: bridgeOperators,
     inactivitySeconds,
     openReports,
-    bondSymbol: defaults.displayDenom,
+    bondSymbol: units.symbol,
     verifiers: verifiers?.input,
     now: Date.now(),
   });
@@ -1032,10 +1055,162 @@ interface IbcPeer {
   status?: string;
   ibc_channel_id?: string;
   ibc_transfer_channel_id?: string;
+  /** The peer chain's own denominations, given when it was registered. */
+  peer_identity?: { bond_denom?: string; bond_display_symbol?: string } | null;
+}
+
+/**
+ * PEER_CHAINS: {"<chain id>": "<REST API URL>", ...} for the chains this one
+ * relays with, set by the launcher (the same setting /api/config serves).
+ * Anything that does not parse as that shape is ignored.
+ */
+export function peerChainApis(raw: string | undefined): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (e): e is [string, string] => typeof e[1] === "string" && /^https?:\/\//.test(e[1])
+      )
+    );
+  } catch {
+    return {};
+  }
 }
 
 // The same bound as the peers the card lists (lib/ibcStatus.ts).
 const MAX_IBC_PEERS = 3;
+
+// A node whose latest block is older than this is not at its chain's tip,
+// and its height is not taken as the chain's. Kept short so that, with the
+// reset margin (lib/ibcStatus.ts), a lagging node can't look like a reset
+// even on a chain with one-second blocks.
+const PEER_TIP_MS = 2 * 60_000;
+
+// Who relays for a client changes rarely and finding out means searching the
+// node's transactions, so the answer is kept for a while.
+const RELAYER_FRESH_MS = 10 * 60_000;
+const relayers = new Map<
+  string,
+  { at: number; found: { address: string; payer: string; fee: string | null; denom: string } | null }
+>();
+
+/**
+ * A light client on the peer chain, from the peer's own API: its status, its
+ * trusting period and when it last moved. Null when the id isn't one, or
+ * nothing of it could be read.
+ *
+ * `ours` says whether it is a client of this chain. Client ids are only
+ * counters, so after a peer is reset the id a connection names can belong
+ * to a client of some other chain: that one is reported as not found, and
+ * nothing more is read of it.
+ */
+async function ibcPeerClient(
+  peerApi: string,
+  clientId: string,
+  thisChainId: string
+): Promise<{ client: IbcPeerClient; ours: boolean } | null> {
+  if (!/^[a-z0-9-]{1,64}$/.test(clientId)) return null;
+  const client = `${peerApi}/ibc/core/client/v1`;
+  const id = encodeURIComponent(clientId);
+  const [statusR, stateR] = await Promise.all([reach(`${client}/client_status/${id}`), reach(`${client}/client_states/${id}`)]);
+  const status = (await okJson<{ status?: string }>(statusR))?.status ?? null;
+  const state = (
+    await okJson<{
+      client_state?: {
+        chain_id?: string;
+        latest_height?: { revision_number?: string; revision_height?: string };
+        trusting_period?: string;
+      };
+    }>(stateR)
+  )?.client_state;
+  if (status === null && !state) return null;
+  const missing = { client: { status: "Unknown", updatedAt: null, trustingSeconds: 0 }, ours: false };
+  if (!state || status === "Unknown") return missing;
+  if (thisChainId && state.chain_id && state.chain_id !== thisChainId) return missing;
+  let updatedAt: number | null = null;
+  const latest = state.latest_height;
+  if (latest?.revision_height) {
+    const r = await reach(
+      `${client}/consensus_states/${id}/revision/${encodeURIComponent(latest.revision_number || "0")}/height/${encodeURIComponent(latest.revision_height)}`
+    );
+    const stamp = Date.parse((await okJson<{ consensus_state?: { timestamp?: string } }>(r))?.consensus_state?.timestamp ?? "");
+    updatedAt = Number.isFinite(stamp) ? stamp : null;
+  }
+  const seen = latest?.revision_height && /^\d+$/.test(latest.revision_height) ? Number(latest.revision_height) : null;
+  return { client: { status, updatedAt, trustingSeconds: durationSeconds(state.trusting_period), height: seen }, ours: true };
+}
+
+/** Whether a client on the peer chain follows this chain: read before anything is looked up by its id. */
+async function followsThisChain(peerApi: string, clientId: string, thisChainId: string): Promise<boolean> {
+  if (!/^[a-z0-9-]{1,64}$/.test(clientId)) return false;
+  if (!thisChainId) return true;
+  const r = await reach(`${peerApi}/ibc/core/client/v1/client_states/${encodeURIComponent(clientId)}`);
+  const chain = (await okJson<{ client_state?: { chain_id?: string } }>(r))?.client_state?.chain_id;
+  return chain === thisChainId;
+}
+
+/**
+ * The relayer's account on this chain for one light client: the signer of
+ * the last transaction that updated it, with what it holds in the
+ * denomination that transaction paid its fee in. Null when the node's
+ * transaction index has no such update (or keeps no index).
+ */
+async function ibcRelayer(base: string, clientId: string): Promise<IbcRelayer | null> {
+  // Client ids are "07-tendermint-0": anything else isn't put into a query.
+  if (!/^[a-z0-9-]{1,64}$/.test(clientId)) return null;
+  const key = `${base}|${clientId}`;
+  let known = relayers.get(key);
+  if (!known || Date.now() - known.at > RELAYER_FRESH_MS) {
+    const query = new URLSearchParams({
+      query: `update_client.client_id='${clientId}'`,
+      order_by: "ORDER_BY_DESC",
+      limit: "1",
+      "pagination.limit": "1",
+    });
+    const r = await reach(`${base}/cosmos/tx/v1beta1/txs?${query}`);
+    const tx = (
+      await okJson<{
+        txs?: {
+          body?: { messages?: { "@type"?: string; signer?: string }[] };
+          auth_info?: { fee?: { amount?: { denom?: string; amount?: string }[]; payer?: string; granter?: string } };
+        }[];
+      }>(r)
+    )?.txs?.[0];
+    const address = tx?.body?.messages?.find((m) => m["@type"] === "/ibc.core.client.v1.MsgUpdateClient")?.signer;
+    const paid = tx?.auth_info?.fee;
+    const fee = paid?.amount?.[0];
+    if (r.res?.ok) {
+      known = {
+        at: Date.now(),
+        found:
+          address && fee?.denom
+            ? {
+                address,
+                // A fee can be paid for the signer by another account: that one's funds are what run out.
+                payer: paid?.granter || paid?.payer || address,
+                fee: fee.amount && /^\d+$/.test(fee.amount) ? fee.amount : null,
+                denom: fee.denom,
+              }
+            : null,
+      };
+      relayers.set(key, known);
+    }
+  }
+  const found = known?.found;
+  if (!found) return null;
+  const r = await reach(
+    `${base}/cosmos/bank/v1beta1/balances/${encodeURIComponent(found.payer)}/by_denom?denom=${encodeURIComponent(found.denom)}`
+  );
+  const amount = (await okJson<{ balance?: { amount?: string } }>(r))?.balance?.amount;
+  return {
+    address: found.address,
+    denom: found.denom,
+    balance: amount && /^\d+$/.test(amount) ? amount : null,
+    lastFee: found.fee,
+  };
+}
 
 /**
  * The IBC relayer, judged by this chain's side of each link the federation
@@ -1043,7 +1218,11 @@ const MAX_IBC_PEERS = 3;
  * behind them and the packets still waiting. `lcd` is the node this server
  * reads.
  */
-export async function checkIbc(lcd: string): Promise<ServiceReport> {
+export async function checkIbc(
+  lcd: string,
+  units: ChainUnits = chainUnits(),
+  peerApis: Record<string, string> = peerChainApis(process.env.PEER_CHAINS)
+): Promise<ServiceReport> {
   const base = lcd.replace(/\/+$/, "");
   const federation = `${base}/sparkdream/federation/v1`;
   const ibc = `${base}/ibc/core`;
@@ -1054,10 +1233,19 @@ export async function checkIbc(lcd: string): Promise<ServiceReport> {
     latency_ms: null,
     facts: [],
   };
-  const [peersR, paramsR] = await Promise.all([
+  const [peersR, paramsR, blockR] = await Promise.all([
     reach(`${federation}/list_peers?pagination.limit=200`),
     reach(`${federation}/params`),
+    reach(`${base}/cosmos/base/tendermint/v1beta1/blocks/latest`),
   ]);
+  // This chain's height, for a peer's light client to be held against: only
+  // from a node at the tip, as with the peer's own height.
+  const header = (await okJson<{ block?: { header?: { height?: string; time?: string } } }>(blockR))?.block?.header;
+  const headerAt = Date.parse(header?.time ?? "");
+  const thisHeight =
+    Number.isFinite(headerAt) && Date.now() - headerAt < PEER_TIP_MS && header?.height && /^\d+$/.test(header.height)
+      ? Number(header.height)
+      : null;
   if (!peersR.res || isGatewayStatus(peersR.res.status)) return cantRead;
   if (peersR.res.status === 501 || peersR.res.status === 404) return assessIbc({ links: null, now: Date.now() });
   const peers = await okJson<{ peers?: IbcPeer[] }>(peersR);
@@ -1075,6 +1263,10 @@ export async function checkIbc(lcd: string): Promise<ServiceReport> {
         { port: "transfer", id: peer.ibc_transfer_channel_id || "" },
       ].filter((c) => c.id);
       let clientId = "";
+      // For the relayer's account on the peer chain: which chain the client
+      // follows, and the connection that names the peer's client of this one.
+      let peerChainId = "";
+      let connectionId = "";
       let latest: { revision_number?: string; revision_height?: string } | undefined;
       let trustingSeconds = 0;
       const channels = await Promise.all(
@@ -1085,12 +1277,13 @@ export async function checkIbc(lcd: string): Promise<ServiceReport> {
             reach(`${at}/client_state`),
             reach(`${at}/packet_commitments?pagination.limit=1&pagination.count_total=true`),
           ]);
-          const channel = await okJson<{ channel?: { state?: string } }>(channelR);
+          const channel = await okJson<{ channel?: { state?: string; connection_hops?: string[] } }>(channelR);
+          if (!connectionId) connectionId = channel?.channel?.connection_hops?.[0] ?? "";
           const client = (
             await okJson<{
               identified_client_state?: {
                 client_id?: string;
-                client_state?: { latest_height?: typeof latest; trusting_period?: string };
+                client_state?: { latest_height?: typeof latest; trusting_period?: string; chain_id?: string };
               };
             }>(clientR)
           )?.identified_client_state;
@@ -1099,6 +1292,7 @@ export async function checkIbc(lcd: string): Promise<ServiceReport> {
             clientId = client.client_id;
             latest = client.client_state?.latest_height;
             trustingSeconds = durationSeconds(client.client_state?.trusting_period);
+            peerChainId = client.client_state?.chain_id ?? "";
           }
           const total = (await okJson<{ pagination?: { total?: string } }>(pendingR))?.pagination?.total;
           return {
@@ -1112,8 +1306,45 @@ export async function checkIbc(lcd: string): Promise<ServiceReport> {
 
       let clientStatus: string | null = null;
       let updatedAt: number | null = null;
+      let relayer: IbcRelayer | null = null;
+      let peerRelayer: IbcRelayer | null = null;
+      let peerHeight: number | null = null;
+      let peerClient: IbcPeerClient | null = null;
       if (clientId) {
         const client = `${ibc}/client/v1`;
+        const relayerP = ibcRelayer(base, clientId);
+        const peerApi = (peerApis[peerChainId] || "").replace(/\/+$/, "");
+        // The peer's height now: only if it answers as the chain the client
+        // follows, and from a node at the tip. One still syncing, or stalled,
+        // reports a height the chain has long passed, which would read as a reset.
+        const peerHeightP = peerApi
+          ? reach(`${peerApi}/cosmos/base/tendermint/v1beta1/blocks/latest`)
+              .then((r) => okJson<{ block?: { header?: { height?: string; chain_id?: string; time?: string } } }>(r))
+              .then((b) => {
+                const header = b?.block?.header;
+                const at = Date.parse(header?.time ?? "");
+                const atTip = Number.isFinite(at) && Date.now() - at < PEER_TIP_MS;
+                return header?.chain_id === peerChainId && atTip && header.height && /^\d+$/.test(header.height)
+                  ? Number(header.height)
+                  : null;
+              })
+          : Promise.resolve(null);
+        // The connection names the peer's light client of this chain: its
+        // state and the account that updates it are read from the peer's API.
+        const theirClientP: Promise<string> =
+          peerApi && connectionId
+            ? reach(`${ibc}/connection/v1/connections/${encodeURIComponent(connectionId)}`)
+                .then((r) => okJson<{ connection?: { counterparty?: { client_id?: string } } }>(r))
+                .then((c) => c?.connection?.counterparty?.client_id ?? "")
+            : Promise.resolve("");
+        // The account is looked up by the client's id, so only once that id
+        // is known to be a client of this chain and not some other's.
+        const peerRelayerP = theirClientP.then(async (theirs) =>
+          theirs && (await followsThisChain(peerApi, theirs, units.chainId ?? "")) ? ibcRelayer(peerApi, theirs) : null
+        );
+        const peerClientP = theirClientP.then(async (theirs) =>
+          theirs ? ((await ibcPeerClient(peerApi, theirs, units.chainId ?? ""))?.client ?? null) : null
+        );
         const [statusR, consensusR] = await Promise.all([
           reach(`${client}/client_status/${encodeURIComponent(clientId)}`),
           reach(
@@ -1123,11 +1354,28 @@ export async function checkIbc(lcd: string): Promise<ServiceReport> {
         clientStatus = (await okJson<{ status?: string }>(statusR))?.status ?? null;
         const stamp = Date.parse((await okJson<{ consensus_state?: { timestamp?: string } }>(consensusR))?.consensus_state?.timestamp ?? "");
         updatedAt = Number.isFinite(stamp) ? stamp : null;
+        [relayer, peerRelayer, peerHeight, peerClient] = await Promise.all([relayerP, peerRelayerP, peerHeightP, peerClientP]);
       }
-      return { peer: peer.display_name || peer.id || "peer", channels, clientStatus, updatedAt, trustingSeconds };
+      const identity = peer.peer_identity;
+      return {
+        peer: peer.display_name || peer.id || "peer",
+        channels,
+        clientStatus,
+        updatedAt,
+        trustingSeconds,
+        relayer,
+        peerRelayer,
+        peerClient,
+        clientHeight: latest?.revision_height && /^\d+$/.test(latest.revision_height) ? Number(latest.revision_height) : null,
+        peerHeight,
+        peerFee:
+          identity?.bond_denom && identity.bond_display_symbol
+            ? { denom: identity.bond_denom, symbol: identity.bond_display_symbol }
+            : undefined,
+      };
     })
   );
-  return assessIbc({ links, now: Date.now() });
+  return assessIbc({ links, fee: units, thisHeight, now: Date.now() });
 }
 
 // ---- Archive mirror -------------------------------------------------------------
@@ -1198,8 +1446,9 @@ async function runAll(env: NodeJS.ProcessEnv): Promise<ServiceReport[]> {
   // The same node and chain the rest of this server reads (lib/api.ts).
   const lcd = env.LCD_ENDPOINT || defaults.lcdEndpoint;
   checks.push(checkScanners(lcd), checkImages(env), checkArweave(arweaveGateway(env)));
-  checks.push(checkIbc(lcd));
-  checks.push(checkBridges(lcd));
+  const units = chainUnits(env);
+  checks.push(checkIbc(lcd, units, peerChainApis(env.PEER_CHAINS)));
+  checks.push(checkBridges(lcd, undefined, units));
   checks.push(checkStorage(lcd, arweaveGateway(env), env));
   const chainId = env.CHAIN_ID || defaults.chainId;
   // The mirror is seen only through what its operator publishes: no address, no card.

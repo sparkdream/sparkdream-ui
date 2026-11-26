@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessScanners, checkArchive, checkArchiver, checkBridges, checkIbc, checkMirror, checkArweave, checkPage, checkStorage, scannerKeys, type ScannerMeta } from "./siteStatus";
+import { assessScanners, checkArchive, checkArchiver, checkBridges, checkIbc, checkMirror, checkArweave, checkPage, checkStorage, chainUnits, peerChainApis, scannerKeys, type ScannerMeta } from "./siteStatus";
 
 function meta(over: Partial<ScannerMeta> = {}): ScannerMeta {
   return {
@@ -419,16 +419,35 @@ test("relayer: the peer's channels, their client and waiting packets make one re
     if (url.includes("/packet_commitments")) return json({ commitments: [], pagination: { total: "0" } });
     if (/\/channels\/channel-\d\/ports\/\w+$/.test(url)) return json({ channel: { state: "STATE_OPEN" } });
     if (url.endsWith("/client_status/07-tendermint-0")) return json({ status: "Active" });
+    if (url.includes("/cosmos/tx/v1beta1/txs?")) {
+      const q = new URL(url).searchParams;
+      assert.equal(q.get("query"), "update_client.client_id='07-tendermint-0'");
+      assert.equal(q.get("order_by"), "ORDER_BY_DESC");
+      return json({
+        txs: [
+          {
+            body: { messages: [{ "@type": "/ibc.core.client.v1.MsgUpdateClient", signer: "sprkdrm1relayer" }] },
+            // The fee is paid for the relayer by another account: that one's balance is read.
+            auth_info: { fee: { amount: [{ denom: "uspark", amount: "8000" }], granter: "sprkdrm1payer" } },
+          },
+        ],
+      });
+    }
+    if (url.includes("/cosmos/bank/v1beta1/balances/sprkdrm1payer/by_denom?denom=uspark")) {
+      return json({ balance: { denom: "uspark", amount: "4000000" } });
+    }
     if (url.endsWith("/consensus_states/07-tendermint-0/revision/1/height/622608")) return json({ consensus_state: { timestamp: updated } });
     return new Response("", { status: 404 });
   };
-  const got = await withFetch(answer, () => checkIbc("https://lcd.test/"));
+  const got = await withFetch(answer, () => checkIbc("https://lcd.test/", { denom: "uspark", symbol: "SPARZ" }));
   assert.equal(got.state, "ok", got.issues.join(" "));
   assert.deepEqual(got.facts.slice(0, 3), [
     { label: "Peer chain", value: "Devnet" },
     { label: "Channels", value: "federation channel-0, transfer channel-1" },
     { label: "Light client", value: "Active, updated 2h ago" },
   ]);
+  assert.equal(got.facts.find((f) => f.label === "Relayer")?.value, "sprkdrm1relayer");
+  assert.match(got.facts.find((f) => f.label === "Relayer funds")?.value ?? "", /^4 SPARZ, about 500 more transactions$/);
   // Removed peers and peers without a channel are not asked about.
   assert.ok(!seen.some((u) => u.includes("channel-9")));
 
@@ -511,4 +530,157 @@ test("scanners: each worker's key is judged, and one approved for storage must a
   const bare = await withFetch((url) => (url.includes("approved_scanners") ? new Response("", { status: 501 }) : answer(url)), () => scannerKeys("https://lcd.test/", ["scan-b"]));
   assert.equal(bare[0].state, "ok");
   assert.deepEqual(await scannerKeys("https://lcd.test/", []), []);
+});
+
+test("the chain's denomination and its display name: the runtime setting wins", () => {
+  const set = chainUnits({ CHAIN_DENOM: "usparz.sparkdreamdev", DISPLAY_DENOM: "SPARZ" } as unknown as NodeJS.ProcessEnv);
+  assert.equal(set.denom, "usparz.sparkdreamdev");
+  assert.equal(set.symbol, "SPARZ");
+  assert.equal(chainUnits({ CHAIN_ID: "x-1" } as unknown as NodeJS.ProcessEnv).chainId, "x-1");
+  const unset = chainUnits({} as NodeJS.ProcessEnv);
+  assert.ok(unset.denom.length > 0 && unset.symbol.length > 0);
+});
+
+test("relayer: the peer chain's API gives its height and the relayer's account there", async () => {
+  const json = (body: unknown) => new Response(JSON.stringify(body));
+  const updated = new Date(Date.now() - 3_600_000).toISOString();
+  let peerHeight = "700000";
+  // This chain's own height and how old its latest block is.
+  let thisHeight = "200000";
+  let thisBlockAge = 5_000;
+  // The chain the peer's client under that id follows: this one, as it should be.
+  let peerClientOf = "this-1";
+  // How long since the peer's light client of this chain was updated.
+  let peerClientAge = 3 * 3_600_000;
+  // How old the peer node's latest block is: a few seconds at the chain's tip.
+  let peerBlockAge = 5_000;
+  const answer = (url: string) => {
+    // This chain.
+    if (url.startsWith("https://lcd.test/")) {
+      if (url.includes("/list_peers")) {
+        return json({
+          peers: [
+            {
+              id: "peer-1",
+              display_name: "Peer",
+              status: "PEER_STATUS_ACTIVE",
+              ibc_transfer_channel_id: "channel-1",
+              peer_identity: { bond_denom: "upeer", bond_display_symbol: "PEER" },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/federation/v1/params")) return json({ params: {} });
+      if (url.endsWith("/client_state")) {
+        return json({
+          identified_client_state: {
+            client_id: "07-tendermint-5",
+            client_state: { chain_id: "peer-1", latest_height: { revision_number: "1", revision_height: "622608" }, trusting_period: "1209600s" },
+          },
+        });
+      }
+      if (url.endsWith("/blocks/latest")) {
+        return json({ block: { header: { height: thisHeight, time: new Date(Date.now() - thisBlockAge).toISOString() } } });
+      }
+      if (url.includes("/packet_commitments")) return json({ commitments: [], pagination: { total: "0" } });
+      if (url.endsWith("/channels/channel-1/ports/transfer")) return json({ channel: { state: "STATE_OPEN", connection_hops: ["connection-4"] } });
+      if (url.endsWith("/connections/connection-4")) return json({ connection: { counterparty: { client_id: "07-tendermint-9" } } });
+      if (url.endsWith("/client_status/07-tendermint-5")) return json({ status: "Active" });
+      if (url.includes("/consensus_states/07-tendermint-5/")) return json({ consensus_state: { timestamp: updated } });
+      return new Response("", { status: 404 });
+    }
+    // The peer chain, asked about its own client of this chain.
+    if (url.startsWith("https://peer.test/")) {
+      if (url.endsWith("/blocks/latest")) {
+        return json({ block: { header: { chain_id: "peer-1", height: peerHeight, time: new Date(Date.now() - peerBlockAge).toISOString() } } });
+      }
+      if (url.includes("/cosmos/tx/v1beta1/txs?")) {
+        assert.equal(new URL(url).searchParams.get("query"), "update_client.client_id='07-tendermint-9'");
+        return json({
+          txs: [
+            {
+              body: { messages: [{ "@type": "/ibc.core.client.v1.MsgUpdateClient", signer: "peer1relayer" }] },
+              auth_info: { fee: { amount: [{ denom: "upeer", amount: "1000" }] } },
+            },
+          ],
+        });
+      }
+      if (url.includes("/balances/peer1relayer/by_denom?denom=upeer")) return json({ balance: { amount: "3000000" } });
+      if (url.endsWith("/ibc/core/client/v1/client_status/07-tendermint-9")) return json({ status: "Active" });
+      if (url.endsWith("/ibc/core/client/v1/client_states/07-tendermint-9")) {
+        return json({
+          client_state: { chain_id: peerClientOf, latest_height: { revision_number: "1", revision_height: "164852" }, trusting_period: "1209600s" },
+        });
+      }
+      if (url.endsWith("/consensus_states/07-tendermint-9/revision/1/height/164852")) {
+        return json({ consensus_state: { timestamp: new Date(Date.now() - peerClientAge).toISOString() } });
+      }
+    }
+    return new Response("", { status: 404 });
+  };
+  const units = { denom: "uspark", symbol: "SPARK", chainId: "this-1" };
+  const apis = { "peer-1": "https://peer.test/" };
+  const got = await withFetch(answer, () => checkIbc("https://lcd.test/", units, apis));
+  assert.equal(got.state, "ok", got.issues.join(" "));
+  const byLabel = (label: string) => got.facts.find((f) => f.label === label)?.value;
+  assert.equal(byLabel("Peer chain height"), "700,000, the light client has seen 622,608");
+  assert.equal(byLabel("Relayer on the peer"), "peer1relayer");
+  assert.equal(byLabel("Its funds there"), "3 PEER, about 3,000 more transactions");
+  assert.equal(byLabel("Peer's light client"), "Active, updated 3h ago");
+  assert.equal(byLabel("Peer's client expires"), "In 14d unless updated");
+
+  // The relayer has let the peer's client go stale while the one here is fresh.
+  peerClientAge = 11 * 86_400_000;
+  const stale = await withFetch(answer, () => checkIbc("https://lcd.test/", units, apis));
+  assert.equal(stale.state, "degraded");
+  assert.match(stale.issues[0], /hasn't updated Peer's light client of this chain for 11d/);
+  peerClientAge = 3 * 3_600_000;
+
+  // The peer answers from below what the client has seen: it was reset.
+  peerHeight = "211334";
+  const reset = await withFetch(answer, () => checkIbc("https://lcd.test/", units, apis));
+  assert.equal(reset.state, "degraded");
+  assert.match(reset.issues[0], /was reset since/);
+
+  // The id the connection names now belongs to a client of another chain (a reset peer reuses
+  // its counters): neither that client nor the account updating it is taken for this link's.
+  peerClientOf = "osmo-test-5";
+  peerHeight = "700000";
+  const foreign = await withFetch(answer, () => checkIbc("https://lcd.test/", units, apis));
+  assert.equal(foreign.facts.find((f) => f.label === "Peer's light client")?.value, "Not found on the peer");
+  assert.equal(foreign.facts.find((f) => f.label === "Relayer on the peer"), undefined);
+  assert.equal(foreign.state, "ok", foreign.issues.join(" "));
+  peerClientOf = "this-1";
+  peerHeight = "211334";
+
+  // The same low height from a node whose latest block is hours old is a node still syncing, not a reset.
+  peerBlockAge = 3 * 3_600_000;
+  const syncing = await withFetch(answer, () => checkIbc("https://lcd.test/", units, apis));
+  assert.equal(syncing.state, "ok", syncing.issues.join(" "));
+  assert.equal(syncing.facts.find((f) => f.label === "Peer chain height"), undefined);
+  peerBlockAge = 5_000;
+
+  // This chain is far behind what the peer's client has seen of it (block 164,852): it was reset.
+  peerHeight = "700000";
+  thisHeight = "9000";
+  const resetHere = await withFetch(answer, () => checkIbc("https://lcd.test/", units, apis));
+  assert.equal(resetHere.state, "degraded");
+  assert.equal(resetHere.issues.length, 1);
+  assert.match(resetHere.issues[0], /^This chain is at block 9,000, behind block 164,852/);
+  // From a node that isn't at the tip, the same height proves nothing.
+  thisBlockAge = 3 * 3_600_000;
+  assert.equal((await withFetch(answer, () => checkIbc("https://lcd.test/", units, apis))).state, "ok");
+  thisHeight = "200000";
+  thisBlockAge = 5_000;
+
+  // Without the peer's API nothing of its side is asked or shown.
+  const seen: string[] = [];
+  const alone = await withFetch((url) => (seen.push(url), answer(url)), () => checkIbc("https://lcd.test/", units, {}));
+  assert.equal(alone.facts.find((f) => f.label === "Relayer on the peer"), undefined);
+  assert.ok(!seen.some((u) => u.startsWith("https://peer.test")));
+});
+
+test("PEER_CHAINS: a JSON object of chain id to API address, anything else ignored", () => {
+  assert.deepEqual(peerChainApis('{"a-1":"https://a.test","b-1":"ftp://b","c-1":5}'), { "a-1": "https://a.test" });
+  for (const raw of [undefined, "", "nope", "[]", '"x"']) assert.deepEqual(peerChainApis(raw), {});
 });
