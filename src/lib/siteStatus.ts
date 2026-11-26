@@ -20,7 +20,7 @@ import { CHAIN_ARCHIVER_SERVICE_TYPE } from "@/lib/chainArchiver";
 import { defaults } from "@/lib/chain";
 import { arweaveNodeOf, operatorWallets } from "@/lib/storageFunds";
 import { assessStorage, readyOperators } from "@/lib/storageStatus";
-import { CONTENT_SCANNER_SERVICE_TYPE } from "@/types/service";
+import { CONTENT_SCANNER_SERVICE_TYPE, OperatorStatus, OPERATOR_STATUS_LABELS } from "@/types/service";
 import type { Checkpoint, Operator, ServiceTypeConfig } from "@/types/service";
 import type { ApprovedOperator, ApprovedScanner, StorageBackend } from "@/types/storage";
 
@@ -98,6 +98,14 @@ export interface ScannerMeta {
   /** Feed addresses (or worker addresses) that could not be read. */
   errors: Record<string, string>;
   imagesDisabled: boolean;
+  /** Hosts the active scanners publish their verdicts from. */
+  feedHosts?: string[];
+  /** Latest onchain checkpoint height per active scanner. */
+  checkpoints?: Record<string, number>;
+  /** The type's checkpoint_max_lag_blocks: past it the chain files a liveness report. 0 = not tracked. */
+  checkpointMaxLag?: number;
+  /** Why each registered scanner that isn't counted is left out ("underfunded", ...). */
+  notCounted?: string[];
 }
 
 const n = (v: number) => v.toLocaleString("en-US");
@@ -121,6 +129,10 @@ export function assessScanners(meta: ScannerMeta): ServiceReport {
   const issues: string[] = [];
   const facts = [{ label: "Active scanners", value: `${meta.workers.length}, ${meta.quorum} must agree` }];
 
+  const idle = [...new Set(meta.notCounted ?? [])];
+  if (idle.length > 0) facts.push({ label: "Registered, not counted", value: `${meta.notCounted!.length} (${idle.join(", ")})` });
+  if (meta.feedHosts?.length) facts.push({ label: meta.feedHosts.length === 1 ? "Verdict feed" : "Verdict feeds", value: meta.feedHosts.join(", ") });
+
   if (meta.workers.length < meta.quorum) {
     issues.push(
       `Only ${meta.workers.length} of the ${meta.quorum} scanners needed ${meta.workers.length === 1 ? "is" : "are"} active, so media can't be cleared.`
@@ -141,6 +153,24 @@ export function assessScanners(meta: ScannerMeta): ServiceReport {
     }
   }
 
+  // The scanners' onchain checkpoints: what the chain itself holds them to,
+  // apart from the freshness limit this site applies to their feeds.
+  if (meta.checkpoints && meta.latestHeight > 0 && meta.workers.length > 0) {
+    const limit = meta.checkpointMaxLag ?? 0;
+    const lags = meta.workers.map((w) => (meta.checkpoints![w] ? Math.max(0, meta.latestHeight - meta.checkpoints![w]) : null));
+    const newest = lags.filter((l): l is number => l !== null).sort((a, b) => a - b)[0];
+    facts.push({
+      label: "Last onchain checkpoint",
+      value: newest === undefined ? "None yet" : `${n(newest)} blocks ago${limit > 0 ? `, limit ${n(limit)}` : ""}`,
+    });
+    const late = limit > 0 ? lags.filter((l) => l !== null && l > limit).length : 0;
+    if (late > 0) {
+      issues.push(
+        `${late === 1 ? "One scanner hasn't" : `${late} scanners haven't`} checkpointed on chain within the ${n(limit)} blocks it allows.`
+      );
+    }
+  }
+
   const unread = Object.keys(meta.errors).length;
   if (unread > 0) {
     issues.push(unread === 1 ? "One scanner feed could not be read." : `${unread} scanner feeds could not be read.`);
@@ -151,10 +181,47 @@ export function assessScanners(meta: ScannerMeta): ServiceReport {
   return { id, state: issues.length ? "degraded" : "ok", issues, latency_ms: null, facts };
 }
 
-async function checkScanners(): Promise<ServiceReport> {
+/**
+ * What the chain says of the scanner operators beyond the ones the verdict
+ * index trusts: the liveness limit, and the registered scanners left out.
+ * Empty when it can't be read; the card then shows what the index knows.
+ */
+async function scannerRegistrations(lcd: string, trusted: Set<string>): Promise<Pick<ScannerMeta, "checkpointMaxLag" | "notCounted">> {
+  const base = `${lcd.replace(/\/+$/, "")}/sparkdream/service/v1`;
+  const type = encodeURIComponent(CONTENT_SCANNER_SERVICE_TYPE);
+  const [cfgR, opsR] = await Promise.all([
+    reach(`${base}/service_type/${type}`),
+    reach(`${base}/operators_by_service_type/${type}?pagination.limit=200`),
+  ]);
+  const out: Pick<ScannerMeta, "checkpointMaxLag" | "notCounted"> = {};
+  try {
+    if (cfgR.res?.ok) {
+      const config = ((await cfgR.res.json()) as { config?: ServiceTypeConfig }).config;
+      out.checkpointMaxLag = Number(config?.checkpoint_max_lag_blocks || 0) || 0;
+    }
+    if (opsR.res?.ok) {
+      const operators = ((await opsR.res.json()) as { operators?: Operator[] }).operators ?? [];
+      out.notCounted = operators
+        .filter((o) => !trusted.has(o.address) && o.status !== OperatorStatus.RETIRED)
+        .map((o) =>
+          // An active scanner the index leaves out names no verdict key or feed.
+          o.status === OperatorStatus.ACTIVE ? "metadata unreadable" : (OPERATOR_STATUS_LABELS[o.status] ?? "Unknown").toLowerCase()
+        );
+    }
+  } catch {
+    // Unreadable answers: leave the extras out.
+  }
+  return out;
+}
+
+async function checkScanners(lcd: string): Promise<ServiceReport> {
   try {
     const snap = await withTimeout(getVerdictIndex(), TIMEOUT_MS);
+    const trusted = new Set(snap.setup.workers.map((w) => w.address));
     return assessScanners({
+      feedHosts: [...new Set(snap.setup.workers.map((w) => hostOf(w.feedUrl)).filter(Boolean))],
+      checkpoints: snap.setup.checkpoints,
+      ...(snap.setup.quorum > 0 ? await scannerRegistrations(lcd, trusted) : {}),
       workers: snap.setup.workers.map((w) => w.address),
       quorum: snap.setup.quorum,
       heights: snap.heights,
@@ -474,9 +541,9 @@ async function runAll(env: NodeJS.ProcessEnv): Promise<ServiceReport[]> {
   const manifest = env.REMOTE_MANIFEST_URL || env.NEXT_PUBLIC_REMOTE_MANIFEST_URL || "";
   const checks: Promise<ServiceReport>[] = [];
   if (explorer) checks.push(checkPage("explorer", explorer));
-  checks.push(checkScanners(), checkImages(env), checkArweave(arweaveGateway(env)));
   // The same node and chain the rest of this server reads (lib/api.ts).
   const lcd = env.LCD_ENDPOINT || defaults.lcdEndpoint;
+  checks.push(checkScanners(lcd), checkImages(env), checkArweave(arweaveGateway(env)));
   checks.push(checkStorage(lcd, arweaveGateway(env), env));
   checks.push(checkArchiver(lcd, env.CHAIN_ID || defaults.chainId, arweaveGateway(env)));
   // Without a remote list, snapshots are files on this server: nothing to reach.

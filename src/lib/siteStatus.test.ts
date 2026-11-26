@@ -37,6 +37,30 @@ test("scanners: too few workers, a stale quorum, unread feeds and the image swit
   assert.match(off.issues[0], /switched off/);
 });
 
+test("scanners: feeds, uncounted registrations and the onchain checkpoint are reported", () => {
+  const got = assessScanners(
+    meta({
+      feedHosts: ["scan.test"],
+      checkpoints: { a: 9_700, b: 9_400 },
+      checkpointMaxLag: 500,
+      notCounted: ["underfunded", "underfunded", "metadata unreadable"],
+    })
+  );
+  const fact = (label: string) => got.facts.find((f) => f.label === label)?.value;
+  assert.equal(fact("Verdict feed"), "scan.test");
+  assert.equal(fact("Registered, not counted"), "3 (underfunded, metadata unreadable)");
+  // The newest checkpoint is shown; b's is past the limit and c has none.
+  assert.equal(fact("Last onchain checkpoint"), "300 blocks ago, limit 500");
+  assert.equal(got.state, "degraded");
+  assert.match(got.issues[0], /One scanner hasn't checkpointed on chain within the 500 blocks/);
+
+  const fresh = assessScanners(meta({ checkpoints: {}, checkpointMaxLag: 500 }));
+  assert.equal(fresh.facts.find((f) => f.label === "Last onchain checkpoint")?.value, "None yet");
+  assert.equal(fresh.state, "ok");
+  const untracked = assessScanners(meta({ checkpoints: { a: 1 }, checkpointMaxLag: 0 }));
+  assert.equal(untracked.state, "ok");
+});
+
 async function withFetch<T>(impl: (url: string) => Response | Promise<Response>, run: () => Promise<T>): Promise<T> {
   const real = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL) => impl(String(input))) as typeof fetch;
