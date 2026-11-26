@@ -48,6 +48,7 @@ import { headPinned, publicHttpsTarget } from "@/lib/publicUrl";
 import { createHash } from "node:crypto";
 import { toBech32 } from "@cosmjs/encoding";
 import { assessValidators, type ActiveValidator } from "@/lib/validatorStatus";
+import { assessGov, type GovProposal } from "@/lib/govStatus";
 import { assessIbc, type IbcChannel, type IbcLink, type IbcPeerClient, type IbcRelayer } from "@/lib/ibcStatus";
 import { assessMirror, type MirrorRebuild, type MirrorSync } from "@/lib/mirrorStatus";
 import {
@@ -947,6 +948,91 @@ export async function checkValidators(lcd: string): Promise<ServiceReport> {
   });
 }
 
+// ---- Governance -----------------------------------------------------------------
+
+interface RawProposal {
+  id?: string;
+  status?: string;
+  voting_start_time?: string;
+  voting_end_time?: string;
+}
+
+function proposalOf(p: RawProposal, turnout: number | null = null): GovProposal {
+  const at = (t: string | undefined) => {
+    const ms = Date.parse(t ?? "");
+    return Number.isFinite(ms) && ms > 0 ? ms : null;
+  };
+  return {
+    id: p.id ?? "?",
+    status: p.status ?? "",
+    votingStart: at(p.voting_start_time),
+    votingEnd: at(p.voting_end_time),
+    turnout,
+  };
+}
+
+/**
+ * Chain governance: the proposals in voting with how much of the voting
+ * power has voted, the last one decided, and a scheduled upgrade. `lcd` is
+ * the node this server reads.
+ */
+export async function checkGovernance(lcd: string): Promise<ServiceReport> {
+  const base = lcd.replace(/\/+$/, "");
+  const gov = `${base}/cosmos/gov/v1`;
+  const [votingR, depositR, recentR, paramsR, poolR, planR, blockR] = await Promise.all([
+    reach(`${gov}/proposals?proposal_status=PROPOSAL_STATUS_VOTING_PERIOD&pagination.limit=100`),
+    reach(`${gov}/proposals?proposal_status=PROPOSAL_STATUS_DEPOSIT_PERIOD&pagination.limit=100`),
+    reach(`${gov}/proposals?proposal_status=PROPOSAL_STATUS_FAILED&pagination.reverse=true&pagination.limit=5`),
+    reach(`${gov}/params/tallying`),
+    reach(`${base}/cosmos/staking/v1beta1/pool`),
+    reach(`${base}/cosmos/upgrade/v1beta1/current_plan`),
+    reach(`${base}/cosmos/base/tendermint/v1beta1/blocks/latest`),
+  ]);
+  const none = { inDeposit: null, failed: [], quorum: 0, upgrade: null, latestHeight: null, latestBlockAt: null, now: Date.now() };
+  if (!votingR.res || isGatewayStatus(votingR.res.status)) {
+    return { id: "governance", state: "unreachable", issues: ["The chain couldn't be read, so its governance is unknown."], latency_ms: null, facts: [] };
+  }
+  // 501 is a chain without x/gov v1.
+  if (votingR.res.status === 501 || votingR.res.status === 404) return assessGov({ ...none, voting: null });
+  const voting = (await okJson<{ proposals?: RawProposal[] }>(votingR))?.proposals;
+  if (!voting) {
+    return { id: "governance", state: "unreachable", issues: ["The chain's proposals couldn't be read."], latency_ms: null, facts: [] };
+  }
+
+  // Turnout: the votes cast so far against the bonded voting power.
+  const bonded = BigInt((await okJson<{ pool?: { bonded_tokens?: string } }>(poolR))?.pool?.bonded_tokens?.match(/^\d+$/)?.[0] ?? "0");
+  const tallied = await Promise.all(
+    voting.slice(0, 5).map(async (p) => {
+      const r = await reach(`${gov}/proposals/${encodeURIComponent(p.id ?? "")}/tally`);
+      const t = (await okJson<{ tally?: Record<string, string> }>(r))?.tally;
+      if (!t || bonded <= BigInt(0)) return proposalOf(p);
+      const cast = ["yes_count", "abstain_count", "no_count", "no_with_veto_count"].reduce(
+        (sum, k) => sum + BigInt(/^\d+$/.test(t[k] ?? "") ? t[k] : "0"),
+        BigInt(0)
+      );
+      return proposalOf(p, Number((cast * BigInt(1_000_000)) / bonded) / 1_000_000);
+    })
+  );
+  // The newest proposals that failed when carried out; the judging keeps those of the past week.
+  const failed = ((await okJson<{ proposals?: RawProposal[] }>(recentR))?.proposals ?? [])
+    .filter((p) => p.status === "PROPOSAL_STATUS_FAILED")
+    .map((p) => proposalOf(p));
+  const params = await okJson<{ params?: { quorum?: string }; tally_params?: { quorum?: string } }>(paramsR);
+  const plan = (await okJson<{ plan?: { name?: string; height?: string } | null }>(planR))?.plan;
+  const header = (await okJson<{ block?: { header?: { height?: string; time?: string } } }>(blockR))?.block?.header;
+  const blockAt = Date.parse(header?.time ?? "");
+  return assessGov({
+    voting: [...tallied, ...voting.slice(5).map((p) => proposalOf(p))],
+    inDeposit: (await okJson<{ proposals?: unknown[] }>(depositR))?.proposals?.length ?? null,
+    failed,
+    quorum: Number(params?.params?.quorum ?? params?.tally_params?.quorum) || 0,
+    upgrade: plan?.name && plan.height && /^\d+$/.test(plan.height) ? { name: moniker(plan.name), height: Number(plan.height) } : null,
+    latestHeight: header?.height && /^\d+$/.test(header.height) ? Number(header.height) : null,
+    latestBlockAt: Number.isFinite(blockAt) ? blockAt : null,
+    now: Date.now(),
+  });
+}
+
 // ---- Federation bridges ---------------------------------------------------------
 
 // The same bound as the rows the card lists (lib/bridgeStatus.ts).
@@ -1562,6 +1648,7 @@ async function runAll(env: NodeJS.ProcessEnv): Promise<ServiceReport[]> {
   checks.push(checkScanners(lcd), checkImages(env), checkArweave(arweaveGateway(env)));
   const units = chainUnits(env);
   checks.push(checkValidators(lcd));
+  checks.push(checkGovernance(lcd));
   checks.push(checkIbc(lcd, units, peerChainApis(env.PEER_CHAINS)));
   checks.push(checkBridges(lcd, undefined, units));
   checks.push(checkStorage(lcd, arweaveGateway(env), env));

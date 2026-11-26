@@ -13,6 +13,7 @@ const POLL_MS = 30_000;
 // left out, never shown as a bare key.
 const COPY: Record<string, { name: string; purpose: string }> = {
   validators: { name: "Validators", purpose: "The nodes that make the chain's blocks, behind the node this app reads." },
+  governance: { name: "Chain governance", purpose: "Whether a vote, a passed decision or an upgrade needs someone to act." },
   explorer: { name: "Block explorer", purpose: "Where transaction, block and account links open." },
   scanners: { name: "Content scanners", purpose: "Check images and flagged posts before they are shown." },
   images: { name: "Image uploads", purpose: "Storing the pictures members add to dreams and profiles." },

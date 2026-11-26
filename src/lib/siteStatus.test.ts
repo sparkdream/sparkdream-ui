@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessScanners, checkArchive, checkArchiver, checkBridges, checkIbc, checkMirror, checkArweave, checkPage, checkStorage, checkValidators, chainUnits, peerChainApis, scannerKeys, type ScannerMeta } from "./siteStatus";
+import { assessScanners, checkArchive, checkArchiver, checkBridges, checkIbc, checkMirror, checkArweave, checkPage, checkGovernance, checkStorage, checkValidators, chainUnits, peerChainApis, scannerKeys, type ScannerMeta } from "./siteStatus";
 
 function meta(over: Partial<ScannerMeta> = {}): ScannerMeta {
   return {
@@ -762,5 +762,47 @@ test("validators: the set, the last commit and the slashing record make one repo
   assert.equal(newest.facts.find((f) => f.label === "Signed the last block"), undefined);
 
   const down = await withFetch(() => new Response("", { status: 502 }), () => checkValidators("https://lcd.test"));
+  assert.equal(down.state, "unreachable");
+});
+
+test("governance: proposals, their tally against the bonded power, and the upgrade plan make one report", async () => {
+  const json = (body: unknown) => new Response(JSON.stringify(body));
+  const soon = new Date(Date.now() + 30 * 60_000).toISOString();
+  const began = new Date(Date.now() - 5.5 * 3_600_000).toISOString();
+  const answer = (url: string) => {
+    if (url.includes("proposal_status=PROPOSAL_STATUS_VOTING_PERIOD")) {
+      return json({ proposals: [{ id: "7", status: "PROPOSAL_STATUS_VOTING_PERIOD", voting_start_time: began, voting_end_time: soon }] });
+    }
+    if (url.includes("proposal_status=PROPOSAL_STATUS_DEPOSIT_PERIOD")) return json({ proposals: [{}] });
+    if (url.includes("proposal_status=PROPOSAL_STATUS_FAILED")) {
+      return json({
+        proposals: [
+          { id: "4", status: "PROPOSAL_STATUS_FAILED", voting_end_time: new Date(Date.now() - 30 * 3_600_000).toISOString() },
+          { id: "1", status: "PROPOSAL_STATUS_FAILED", voting_end_time: new Date(Date.now() - 30 * 86_400_000).toISOString() },
+        ],
+      });
+    }
+    if (url.endsWith("/proposals/7/tally")) return json({ tally: { yes_count: "150", abstain_count: "0", no_count: "50", no_with_veto_count: "0" } });
+    if (url.endsWith("/params/tallying")) return json({ params: { quorum: "0.334000000000000000" } });
+    if (url.endsWith("/staking/v1beta1/pool")) return json({ pool: { bonded_tokens: "1000" } });
+    if (url.endsWith("/upgrade/v1beta1/current_plan")) return json({ plan: { name: "v2", height: "5000" } });
+    if (url.endsWith("/blocks/latest")) return json({ block: { header: { height: "4000", time: new Date().toISOString() } } });
+    return new Response("", { status: 404 });
+  };
+  const got = await withFetch(answer, () => checkGovernance("https://lcd.test/"));
+  // 200 of 1,000 bonded voted, short of quorum with half an hour left. The proposals themselves are not listed.
+  assert.equal(got.facts.find((f) => f.label.startsWith("#7")), undefined);
+  assert.equal(got.state, "degraded");
+  assert.match(got.issues[0], /^Proposal #7 ends in 30m with 20% of the voting power voted/);
+  const byLabel = (label: string) => got.facts.find((f) => f.label === label)?.value;
+  assert.equal(byLabel("Collecting a deposit"), "1");
+  // Of the two failed executions, the one from last month is history.
+  assert.equal(got.issues.length, 2);
+  assert.match(got.issues[1], /^Proposal #4 passed its vote but failed when the chain carried it out/);
+  assert.equal(byLabel("Scheduled upgrade"), "v2 at block 5,000, in 1,000 blocks");
+
+  const off = await withFetch(() => new Response("{}", { status: 501 }), () => checkGovernance("https://lcd.test"));
+  assert.equal(off.state, "off");
+  const down = await withFetch(() => new Response("", { status: 502 }), () => checkGovernance("https://lcd.test"));
   assert.equal(down.state, "unreachable");
 });
