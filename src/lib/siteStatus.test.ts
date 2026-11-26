@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessScanners, checkArchive, checkArchiver, checkBridges, checkArweave, checkPage, checkStorage, type ScannerMeta } from "./siteStatus";
+import { assessScanners, checkArchive, checkArchiver, checkBridges, checkIbc, checkArweave, checkPage, checkStorage, type ScannerMeta } from "./siteStatus";
 
 function meta(over: Partial<ScannerMeta> = {}): ScannerMeta {
   return {
@@ -245,5 +245,51 @@ test("bridges: bindings, peers, operators and the chain's inactivity limit make 
   const off = await withFetch(() => new Response("{}", { status: 501 }), () => checkBridges("https://lcd.test"));
   assert.equal(off.state, "off");
   const down = await withFetch(() => new Response("", { status: 502 }), () => checkBridges("https://lcd.test"));
+  assert.equal(down.state, "unreachable");
+});
+
+test("relayer: the peer's channels, their client and waiting packets make one report", async () => {
+  const json = (body: unknown) => new Response(JSON.stringify(body));
+  const updated = new Date(Date.now() - 2 * 3_600_000).toISOString();
+  const seen: string[] = [];
+  const answer = (url: string) => {
+    seen.push(url);
+    if (url.includes("/list_peers")) {
+      return json({
+        peers: [
+          { id: "sparkdream-dev-1", display_name: "Devnet", status: "PEER_STATUS_ACTIVE", ibc_channel_id: "channel-0", ibc_transfer_channel_id: "channel-1" },
+          { id: "mstdn.test", status: "PEER_STATUS_ACTIVE", ibc_channel_id: "" },
+          { id: "gone-1", status: "PEER_STATUS_REMOVED", ibc_channel_id: "channel-9" },
+        ],
+      });
+    }
+    if (url.endsWith("/federation/v1/params")) return json({ params: { ibc_port: "federation" } });
+    if (url.endsWith("/client_state")) {
+      return json({
+        identified_client_state: {
+          client_id: "07-tendermint-0",
+          client_state: { latest_height: { revision_number: "1", revision_height: "622608" }, trusting_period: "1209600s" },
+        },
+      });
+    }
+    if (url.includes("/packet_commitments")) return json({ commitments: [], pagination: { total: "0" } });
+    if (/\/channels\/channel-\d\/ports\/\w+$/.test(url)) return json({ channel: { state: "STATE_OPEN" } });
+    if (url.endsWith("/client_status/07-tendermint-0")) return json({ status: "Active" });
+    if (url.endsWith("/consensus_states/07-tendermint-0/revision/1/height/622608")) return json({ consensus_state: { timestamp: updated } });
+    return new Response("", { status: 404 });
+  };
+  const got = await withFetch(answer, () => checkIbc("https://lcd.test/"));
+  assert.equal(got.state, "ok", got.issues.join(" "));
+  assert.deepEqual(got.facts.slice(0, 3), [
+    { label: "Peer chain", value: "Devnet" },
+    { label: "Channels", value: "federation channel-0, transfer channel-1" },
+    { label: "Light client", value: "Active, updated 2h ago" },
+  ]);
+  // Removed peers and peers without a channel are not asked about.
+  assert.ok(!seen.some((u) => u.includes("channel-9")));
+
+  const off = await withFetch(() => new Response("{}", { status: 501 }), () => checkIbc("https://lcd.test"));
+  assert.equal(off.state, "off");
+  const down = await withFetch(() => new Response("", { status: 502 }), () => checkIbc("https://lcd.test"));
   assert.equal(down.state, "unreachable");
 });

@@ -23,6 +23,7 @@ import { assessStorage, readyOperators } from "@/lib/storageStatus";
 import { assessBridges, BRIDGE_SERVICE_TYPE_PREFIX } from "@/lib/bridgeStatus";
 import type { BridgeBinding } from "@/types/federation";
 import { headPinned, publicHttpsTarget } from "@/lib/publicUrl";
+import { assessIbc, type IbcChannel, type IbcLink } from "@/lib/ibcStatus";
 import { CONTENT_SCANNER_SERVICE_TYPE, OperatorStatus, OPERATOR_STATUS_LABELS } from "@/types/service";
 import type { Checkpoint, Operator, ServiceTypeConfig } from "@/types/service";
 import type { ApprovedOperator, ApprovedScanner, StorageBackend } from "@/types/storage";
@@ -591,6 +592,112 @@ export async function checkBridges(lcd: string, probe: EndpointProbe = probeEndp
   });
 }
 
+// ---- IBC relayer ----------------------------------------------------------------
+
+interface IbcPeer {
+  id?: string;
+  display_name?: string;
+  status?: string;
+  ibc_channel_id?: string;
+  ibc_transfer_channel_id?: string;
+}
+
+// The same bound as the peers the card lists (lib/ibcStatus.ts).
+const MAX_IBC_PEERS = 3;
+
+/**
+ * The IBC relayer, judged by this chain's side of each link the federation
+ * module names: the channels to every active peer chain, the light client
+ * behind them and the packets still waiting. `lcd` is the node this server
+ * reads.
+ */
+export async function checkIbc(lcd: string): Promise<ServiceReport> {
+  const base = lcd.replace(/\/+$/, "");
+  const federation = `${base}/sparkdream/federation/v1`;
+  const ibc = `${base}/ibc/core`;
+  const cantRead: ServiceReport = {
+    id: "relayer",
+    state: "unreachable",
+    issues: ["The chain couldn't be read, so the state of its IBC links is unknown."],
+    latency_ms: null,
+    facts: [],
+  };
+  const [peersR, paramsR] = await Promise.all([
+    reach(`${federation}/list_peers?pagination.limit=200`),
+    reach(`${federation}/params`),
+  ]);
+  if (!peersR.res || isGatewayStatus(peersR.res.status)) return cantRead;
+  if (peersR.res.status === 501 || peersR.res.status === 404) return assessIbc({ links: null, now: Date.now() });
+  const peers = await okJson<{ peers?: IbcPeer[] }>(peersR);
+  if (!peers) return cantRead;
+  const federationPort = (await okJson<{ params?: { ibc_port?: string } }>(paramsR))?.params?.ibc_port || "federation";
+
+  const linked = (peers.peers ?? [])
+    .filter((p) => p.status === "PEER_STATUS_ACTIVE" && (p.ibc_channel_id || p.ibc_transfer_channel_id))
+    .slice(0, MAX_IBC_PEERS);
+
+  const links = await Promise.all(
+    linked.map(async (peer): Promise<IbcLink> => {
+      const named = [
+        { port: federationPort, id: peer.ibc_channel_id || "" },
+        { port: "transfer", id: peer.ibc_transfer_channel_id || "" },
+      ].filter((c) => c.id);
+      let clientId = "";
+      let latest: { revision_number?: string; revision_height?: string } | undefined;
+      let trustingSeconds = 0;
+      const channels = await Promise.all(
+        named.map(async (c): Promise<IbcChannel> => {
+          const at = `${ibc}/channel/v1/channels/${encodeURIComponent(c.id)}/ports/${encodeURIComponent(c.port)}`;
+          const [channelR, clientR, pendingR] = await Promise.all([
+            reach(at),
+            reach(`${at}/client_state`),
+            reach(`${at}/packet_commitments?pagination.limit=1&pagination.count_total=true`),
+          ]);
+          const channel = await okJson<{ channel?: { state?: string } }>(channelR);
+          const client = (
+            await okJson<{
+              identified_client_state?: {
+                client_id?: string;
+                client_state?: { latest_height?: typeof latest; trusting_period?: string };
+              };
+            }>(clientR)
+          )?.identified_client_state;
+          // Both channels to a peer normally ride one connection: the first client read stands for the link.
+          if (client?.client_id && !clientId) {
+            clientId = client.client_id;
+            latest = client.client_state?.latest_height;
+            trustingSeconds = durationSeconds(client.client_state?.trusting_period);
+          }
+          const total = (await okJson<{ pagination?: { total?: string } }>(pendingR))?.pagination?.total;
+          return {
+            port: c.port,
+            id: c.id,
+            state: channel?.channel?.state ?? null,
+            pending: total && /^\d+$/.test(total) ? Number(total) : null,
+          };
+        })
+      );
+
+      let clientStatus: string | null = null;
+      let updatedAt: number | null = null;
+      if (clientId) {
+        const client = `${ibc}/client/v1`;
+        const [statusR, consensusR] = await Promise.all([
+          reach(`${client}/client_status/${encodeURIComponent(clientId)}`),
+          reach(
+            `${client}/consensus_states/${encodeURIComponent(clientId)}/revision/${encodeURIComponent(latest?.revision_number || "0")}/height/${encodeURIComponent(latest?.revision_height || "0")}`
+          ),
+        ]);
+        clientStatus = (await okJson<{ status?: string }>(statusR))?.status ?? null;
+        const stamp = Date.parse((await okJson<{ consensus_state?: { timestamp?: string } }>(consensusR))?.consensus_state?.timestamp ?? "");
+        updatedAt = Number.isFinite(stamp) ? stamp : null;
+      }
+      return { peer: peer.display_name || peer.id || "peer", channels, clientStatus, updatedAt, trustingSeconds };
+    })
+  );
+  return assessIbc({ links, now: Date.now() });
+}
+
 // ---- Archive snapshots ----------------------------------------------------------
 
 /** The remote snapshot list, when the site uses one. */
@@ -632,6 +739,7 @@ async function runAll(env: NodeJS.ProcessEnv): Promise<ServiceReport[]> {
   // The same node and chain the rest of this server reads (lib/api.ts).
   const lcd = env.LCD_ENDPOINT || defaults.lcdEndpoint;
   checks.push(checkScanners(lcd), checkImages(env), checkArweave(arweaveGateway(env)));
+  checks.push(checkIbc(lcd));
   checks.push(checkBridges(lcd));
   checks.push(checkStorage(lcd, arweaveGateway(env), env));
   checks.push(checkArchiver(lcd, env.CHAIN_ID || defaults.chainId, arweaveGateway(env)));
