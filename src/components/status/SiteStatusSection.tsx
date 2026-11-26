@@ -16,6 +16,7 @@ const COPY: Record<string, { name: string; purpose: string }> = {
   scanners: { name: "Content scanners", purpose: "Check images and flagged posts before they are shown." },
   images: { name: "Image uploads", purpose: "Storing the pictures members add to dreams and profiles." },
   arweave: { name: "Permanent storage gateway", purpose: "Reading permanent copies and ar:// images." },
+  bridges: { name: "Federation bridges", purpose: "Bringing posts in from other networks, such as Mastodon." },
   storage: { name: "Permanent copies", purpose: "Copying scanned images to Arweave when a member asks." },
   archiver: { name: "Permanent block archive", purpose: "The copy of this chain's block history kept on Arweave." },
   archive: { name: "Archive snapshots", purpose: "The list of read-only snapshots on the Archive page." },
@@ -128,7 +129,9 @@ export default function SiteStatusSection() {
         archiver&apos;s latest checkpoint is recent and the range it names is on Arweave under the
         archiver&apos;s wallet, not that the whole copy was downloaded and verified. For permanent
         copies, working means an approved, funded storage operator and enough approved scanners are
-        registered on chain, not that the operator&apos;s worker is running.
+        registered on chain, not that the operator&apos;s worker is running. For federation
+        bridges, working means each bridge&apos;s operator and peer are active, the peer&apos;s server answers and the bridge
+        brought a post in within the chain&apos;s inactivity limit, not that its daemon is running.
       </p>
     </section>
   );

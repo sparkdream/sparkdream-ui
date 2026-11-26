@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessScanners, checkArchive, checkArchiver, checkArweave, checkPage, checkStorage, type ScannerMeta } from "./siteStatus";
+import { assessScanners, checkArchive, checkArchiver, checkBridges, checkArweave, checkPage, checkStorage, type ScannerMeta } from "./siteStatus";
 
 function meta(over: Partial<ScannerMeta> = {}): ScannerMeta {
   return {
@@ -198,5 +198,52 @@ test("storage: the chain's lists and the wallet's balance make one report", asyn
   const off = await withFetch(() => new Response("{}", { status: 501 }), () => checkStorage("https://lcd.test", "https://gw.test/{id}", {} as NodeJS.ProcessEnv));
   assert.equal(off.state, "off");
   const down = await withFetch(() => new Response("", { status: 502 }), () => checkStorage("https://lcd.test", "https://gw.test/{id}", {} as NodeJS.ProcessEnv));
+  assert.equal(down.state, "unreachable");
+});
+
+test("bridges: bindings, peers, operators and the chain's inactivity limit make one report", async () => {
+  const json = (body: unknown) => new Response(JSON.stringify(body));
+  const last = Math.floor(Date.now() / 1000) - 3_600;
+  const answer = (url: string) => {
+    if (url.includes("/list_bridge_bindings")) {
+      return json({ bridge_bindings: [{ address: "op", peer_id: "mstdn.test", protocol: "activitypub", endpoint: "https://mstdn.test/x", content_submitted: "4", last_submission_at: String(last), suspended: false }] });
+    }
+    if (url.includes("/list_peers")) return json({ peers: [{ id: "mstdn.test", status: "PEER_STATUS_ACTIVE" }] });
+    if (url.endsWith("/federation/v1/params")) return json({ params: { rate_limit_window: "43200s", bridge_inactivity_threshold: "100" } });
+    if (url.includes("/service/v1/operators")) {
+      return json({
+        operators: [
+          { address: "op", service_type: "federation-bridge-activitypub", status: "OPERATOR_STATUS_ACTIVE" },
+          { address: "op", service_type: "content-scanner", status: "OPERATOR_STATUS_UNBONDING" },
+        ],
+      });
+    }
+    return new Response("", { status: 404 });
+  };
+  const probed: string[] = [];
+  const up = async (endpoint: string) => {
+    probed.push(endpoint);
+    return true;
+  };
+  const got = await withFetch(answer, () => checkBridges("https://lcd.test/", up));
+  assert.deepEqual(probed, ["https://mstdn.test/x"]);
+  assert.equal(got.state, "ok", got.issues.join(" "));
+  assert.equal(got.facts[0].value, "1 of 1 working");
+  assert.equal(got.facts[1].value, "activitypub, last post 60m ago");
+  assert.deepEqual(got.facts[2], { label: "mstdn.test endpoint", value: "Answering" });
+
+  // An endpoint this server won't contact is left unchecked; one that fails is not answering.
+  const unchecked = await withFetch(answer, () => checkBridges("https://lcd.test/", async () => null));
+  assert.equal(unchecked.state, "ok");
+  assert.equal(unchecked.facts[2].value, "Not checked");
+  const dead = await withFetch(answer, () => checkBridges("https://lcd.test/", async () => false));
+  assert.equal(dead.state, "degraded");
+  assert.match(dead.issues[0], /mstdn.test isn't answering/);
+  const broken = await withFetch(answer, () => checkBridges("https://lcd.test/", async () => Promise.reject(new Error("boom"))));
+  assert.equal(broken.facts[2].value, "Not answering");
+
+  const off = await withFetch(() => new Response("{}", { status: 501 }), () => checkBridges("https://lcd.test"));
+  assert.equal(off.state, "off");
+  const down = await withFetch(() => new Response("", { status: 502 }), () => checkBridges("https://lcd.test"));
   assert.equal(down.state, "unreachable");
 });

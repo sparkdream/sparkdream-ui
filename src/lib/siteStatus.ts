@@ -20,6 +20,9 @@ import { CHAIN_ARCHIVER_SERVICE_TYPE } from "@/lib/chainArchiver";
 import { defaults } from "@/lib/chain";
 import { arweaveNodeOf, operatorWallets } from "@/lib/storageFunds";
 import { assessStorage, readyOperators } from "@/lib/storageStatus";
+import { assessBridges, BRIDGE_SERVICE_TYPE_PREFIX } from "@/lib/bridgeStatus";
+import type { BridgeBinding } from "@/types/federation";
+import { headPinned, publicHttpsTarget } from "@/lib/publicUrl";
 import { CONTENT_SCANNER_SERVICE_TYPE, OperatorStatus, OPERATOR_STATUS_LABELS } from "@/types/service";
 import type { Checkpoint, Operator, ServiceTypeConfig } from "@/types/service";
 import type { ApprovedOperator, ApprovedScanner, StorageBackend } from "@/types/storage";
@@ -503,6 +506,91 @@ export async function checkStorage(
   });
 }
 
+// ---- Federation bridges ---------------------------------------------------------
+
+// The same bound as the rows the card lists (lib/bridgeStatus.ts).
+const MAX_ENDPOINTS = 5;
+
+/** Whether an endpoint answers: null when it isn't an address this server will contact. */
+export type EndpointProbe = (endpoint: string) => Promise<boolean | null>;
+
+const probeEndpoint: EndpointProbe = async (endpoint) => {
+  const target = await publicHttpsTarget(endpoint);
+  if (!target) return null;
+  const status = await headPinned(target, TIMEOUT_MS);
+  // Any answer of the server's own counts, a redirect or a refusal of HEAD included.
+  return status !== null && !isGatewayStatus(status);
+};
+
+/** A protobuf Duration in JSON ("43200s") as seconds; 0 if it isn't one. */
+function durationSeconds(v: unknown): number {
+  const m = typeof v === "string" ? /^(\d+)(?:\.\d+)?s$/.exec(v) : null;
+  return m ? Number(m[1]) : 0;
+}
+
+/**
+ * The federation bridges (x/federation): each binding with its operator's
+ * and its peer's status, and how long since it last brought a post in.
+ * `lcd` is the node this server reads.
+ *
+ * Each binding's endpoint (the peer's server) is asked whether it answers.
+ * It is an address an operator wrote on chain, so only a public https origin
+ * is contacted, at the address that was checked (lib/publicUrl.ts), with a
+ * bare HEAD that follows no redirect, and nothing of the answer is reported
+ * but that one came. `probe` stands in for that request in tests.
+ */
+export async function checkBridges(lcd: string, probe: EndpointProbe = probeEndpoint): Promise<ServiceReport> {
+  const base = lcd.replace(/\/+$/, "");
+  const federation = `${base}/sparkdream/federation/v1`;
+  const page = "pagination.limit=200";
+  const cantRead: ServiceReport = {
+    id: "bridges",
+    state: "unreachable",
+    issues: ["The chain couldn't be read, so the state of the federation bridges is unknown."],
+    latency_ms: null,
+    facts: [],
+  };
+  const [bindingsR, peersR, paramsR, opsR] = await Promise.all([
+    reach(`${federation}/list_bridge_bindings?${page}`),
+    reach(`${federation}/list_peers?${page}`),
+    reach(`${federation}/params`),
+    reach(`${base}/sparkdream/service/v1/operators?${page}`),
+  ]);
+  if (!bindingsR.res || isGatewayStatus(bindingsR.res.status)) return cantRead;
+  const none = { peers: {}, operators: [], inactivitySeconds: 0, now: Date.now() };
+  // 501 is a chain without x/federation.
+  if (bindingsR.res.status === 501 || bindingsR.res.status === 404) return assessBridges({ ...none, bindings: null });
+  const bindings = await okJson<{ bridge_bindings?: BridgeBinding[] }>(bindingsR);
+  const ops = await okJson<{ operators?: Operator[] }>(opsR);
+  if (!bindings || !ops) return cantRead;
+
+  const peers: Record<string, string> = {};
+  for (const p of (await okJson<{ peers?: { id?: string; status?: string }[] }>(peersR))?.peers ?? []) {
+    if (p.id && p.status) peers[p.id] = p.status;
+  }
+  // The chain warns after more than `threshold` whole rate-limit windows.
+  const params = (await okJson<{ params?: { rate_limit_window?: string; bridge_inactivity_threshold?: string } }>(paramsR))?.params;
+  const inactivitySeconds =
+    durationSeconds(params?.rate_limit_window) * ((Number(params?.bridge_inactivity_threshold) || 0) + 1);
+
+  const all = bindings.bridge_bindings ?? [];
+  const reachable: Record<string, boolean | null> = {};
+  await Promise.all(
+    [...new Set(all.map((b) => b.endpoint).filter(Boolean))].slice(0, MAX_ENDPOINTS).map(async (endpoint) => {
+      reachable[endpoint] = await probe(endpoint).catch(() => false);
+    })
+  );
+
+  return assessBridges({
+    bindings: all,
+    reachable,
+    peers,
+    operators: (ops.operators ?? []).filter((o) => o.service_type.startsWith(BRIDGE_SERVICE_TYPE_PREFIX)),
+    inactivitySeconds,
+    now: Date.now(),
+  });
+}
+
 // ---- Archive snapshots ----------------------------------------------------------
 
 /** The remote snapshot list, when the site uses one. */
@@ -544,6 +632,7 @@ async function runAll(env: NodeJS.ProcessEnv): Promise<ServiceReport[]> {
   // The same node and chain the rest of this server reads (lib/api.ts).
   const lcd = env.LCD_ENDPOINT || defaults.lcdEndpoint;
   checks.push(checkScanners(lcd), checkImages(env), checkArweave(arweaveGateway(env)));
+  checks.push(checkBridges(lcd));
   checks.push(checkStorage(lcd, arweaveGateway(env), env));
   checks.push(checkArchiver(lcd, env.CHAIN_ID || defaults.chainId, arweaveGateway(env)));
   // Without a remote list, snapshots are files on this server: nothing to reach.
