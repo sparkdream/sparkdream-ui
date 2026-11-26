@@ -180,7 +180,16 @@ test("storage: the chain's lists and the wallet's balance make one report", asyn
     if (url.includes("/operators_by_service_type/content-scanner")) return json({ operators: [{ address: "scan", status: "OPERATOR_STATUS_ACTIVE" }] });
     if (url.includes("/approved_scanners")) return json({ scanners: [{ scanner: "scan", controller: "c" }] });
     if (url.includes("/service_type/content-scanner")) return json({ config: { enabled: true, attestation_quorum: 1 } });
-    if (url.includes("/requests_by_status/arweave/REQUEST_STATUS_PENDING")) return json({ requests: [], pagination: { total: "3" } });
+    if (url.includes("/requests_by_status/arweave/REQUEST_STATUS_PENDING")) {
+      return json({ requests: [{ opened_at: "960" }, { opened_at: "990" }, { opened_at: "995" }], pagination: { total: "3" } });
+    }
+    if (url.includes("/requests_by_operator/op")) return json({ requests: [{ claimed_at: "970", completed_at: "985" }, { claimed_at: "900" }] });
+    if (url.includes("/operator_standing/arweave/op")) return json({ lapses: { count: "0" } });
+    if (url.includes("/checkpoints_by_service_type/storage-arweave")) {
+      return json({ checkpoints: [{ operator: "op", height: "900", root: "10tJ9DsLQ97USrpb7xKYTW0jwXJ9IGhmjqqce6mcEP0=" }, { operator: "other", height: "999", root: "" }] });
+    }
+    if (url.includes("/service_type/storage-arweave")) return json({ config: { enabled: true, checkpoint_max_lag_blocks: "0" } });
+    if (url.includes("/blocks/latest")) return json({ block: { header: { height: "1000" } } });
     if (url.includes("/requests_by_status/arweave/REQUEST_STATUS_CLAIMED")) return json({ requests: [], pagination: { total: "0" } });
     if (url === `https://gw.test/wallet/${wallet}/balance`) return new Response("250000000000");
     return new Response("", { status: 404 });
@@ -193,6 +202,9 @@ test("storage: the chain's lists and the wallet's balance make one report", asyn
     { label: "Waiting for an operator", value: "3" },
     { label: "Being copied", value: "0" },
     { label: "Operator funds", value: "0.25 AR" },
+    { label: "Worker last checked in", value: "100 blocks ago, limit 1,800" },
+    { label: "Worker last acted", value: "15 blocks ago" },
+    { label: "Longest wait", value: "40 blocks" },
   ]);
 
   const off = await withFetch(() => new Response("{}", { status: 501 }), () => checkStorage("https://lcd.test", "https://gw.test/{id}", {} as NodeJS.ProcessEnv));

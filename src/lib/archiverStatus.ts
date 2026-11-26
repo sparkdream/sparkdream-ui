@@ -7,6 +7,11 @@
 // what a gateway says about the transaction into one report. It only judges;
 // lib/siteStatus.ts does the reading.
 //
+// Archiving is voluntary and best effort, so the chain may set no limit on
+// how far a checkpoint trails (checkpoint_max_lag_blocks of 0) and then files
+// no report against an archiver that falls behind. The page still says when
+// the copy trails, against a limit of its own.
+//
 // It does not download or replay anything. `archiveworker verify` is the real
 // check of the copy; this is whether the copy is keeping up and whether its
 // newest range is where the chain says it is.
@@ -27,9 +32,17 @@ export interface ArweaveTx {
   minedAt: number | null;
 }
 
+// Where the chain sets no limit: about two days of blocks. A range is 10,000
+// blocks, so this is a late range with a full range of slack and the time
+// Arweave takes to confirm. It was the chain's own limit while it had one.
+export const ARCHIVE_STALE_BLOCKS = 34_560;
+
 export interface ArchiverInput {
   chainId: string;
-  /** Null when the chain has no enabled chain-archiver service type. */
+  /**
+   * The type's checkpoint_max_lag_blocks: 0 when the chain sets no limit,
+   * null when it has no enabled chain-archiver service type.
+   */
   maxLagBlocks: number | null;
   operators: Operator[];
   checkpoints: Checkpoint[];
@@ -103,15 +116,22 @@ export function assessArchiver(input: ArchiverInput): ServiceReport {
   const facts: ServiceFact[] = [{ label: "Archivers", value: `${n(active)} active` }];
   const issues: string[] = [];
   const { operator, checkpoint } = leader;
-  const maxLag = input.maxLagBlocks;
+  // The chain's limit, which it enforces with a report, or the page's own.
+  const enforced = input.maxLagBlocks > 0;
+  const maxLag = enforced ? input.maxLagBlocks : ARCHIVE_STALE_BLOCKS;
 
   if (!checkpoint) {
     facts.push({ label: "Archived through block", value: "None yet" });
-    // A new archiver has one lag window from its registration to checkpoint.
-    const overdue = input.latestHeight - height(operator.registered_at) - maxLag;
-    if (maxLag > 0 && input.latestHeight > 0 && overdue > 0) {
-      issues.push(`The archiver hasn't made its first checkpoint, due ${blocks(overdue)} ago.`);
-    } else if (maxLag > 0 && input.latestHeight > 0) {
+    // Measured from registration, as the chain measures a new archiver.
+    const waited = input.latestHeight - height(operator.registered_at);
+    const overdue = waited - maxLag;
+    if (input.latestHeight > 0 && overdue > 0) {
+      issues.push(
+        enforced
+          ? `The archiver hasn't made its first checkpoint, due ${blocks(overdue)} ago.`
+          : `The archiver registered ${blocks(waited)} ago and hasn't made its first checkpoint.`
+      );
+    } else if (enforced && input.latestHeight > 0) {
       facts.push({ label: "First checkpoint", value: `Due within ${blocks(-overdue)}` });
     }
     return report(issues.length ? "degraded" : "ok", issues, facts);
@@ -123,10 +143,14 @@ export function assessArchiver(input: ArchiverInput): ServiceReport {
     const lag = Math.max(0, input.latestHeight - archived);
     facts.push({
       label: "Behind the chain",
-      value: maxLag > 0 ? `${blocks(lag)}, limit ${n(maxLag)}` : blocks(lag),
+      value: enforced ? `${blocks(lag)}, limit ${n(maxLag)}` : `${blocks(lag)}, normally within ${n(maxLag)}`,
     });
-    if (maxLag > 0 && lag > maxLag) {
-      issues.push(`The permanent copy is ${blocks(lag)} behind the chain, past the ${n(maxLag)} the chain allows.`);
+    if (lag > maxLag) {
+      issues.push(
+        enforced
+          ? `The permanent copy is ${blocks(lag)} behind the chain, past the ${n(maxLag)} the chain allows.`
+          : `The permanent copy is ${blocks(lag)} behind the chain. The archiver normally keeps it within ${n(maxLag)}.`
+      );
     }
   }
 

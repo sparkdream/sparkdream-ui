@@ -116,13 +116,29 @@ test("registered archivers that aren't active degrade", () => {
   assert.match(got.issues[0], /No archiver is active \(underfunded\)/);
 });
 
-test("a checkpoint past the lag limit degrades; without a limit it is only reported", () => {
-  const late = assessArchiver(input({ latestHeight: 270_000 }));
+test("a checkpoint past the chain's limit degrades", () => {
+  const late = assessArchiver(input({ latestHeight: 270_000, maxLagBlocks: 20_000 }));
   assert.equal(late.state, "degraded");
-  assert.match(late.issues[0], /40,000 blocks behind the chain, past the 34,560/);
-  const untracked = assessArchiver(input({ latestHeight: 270_000, maxLagBlocks: 0 }));
-  assert.equal(untracked.state, "ok");
-  assert.equal(fact(untracked, "Behind the chain"), "40,000 blocks");
+  assert.equal(fact(late, "Behind the chain"), "40,000 blocks, limit 20,000");
+  assert.match(late.issues[0], /40,000 blocks behind the chain, past the 20,000 the chain allows/);
+});
+
+test("where the chain sets no limit, the page marks a trailing copy against its own", () => {
+  const near = assessArchiver(input({ maxLagBlocks: 0 }));
+  assert.equal(near.state, "ok");
+  assert.equal(fact(near, "Behind the chain"), "6,000 blocks, normally within 34,560");
+  const late = assessArchiver(input({ latestHeight: 270_000, maxLagBlocks: 0 }));
+  assert.equal(late.state, "degraded");
+  assert.match(late.issues[0], /40,000 blocks behind the chain. The archiver normally keeps it within 34,560/);
+  assert.doesNotMatch(late.issues[0], /allows/);
+
+  // A new archiver with no deadline on chain: nothing is "due".
+  const fresh = assessArchiver(input({ maxLagBlocks: 0, checkpoints: [], tx: undefined, latestHeight: 210_000 }));
+  assert.equal(fresh.state, "ok");
+  assert.equal(fact(fresh, "First checkpoint"), undefined);
+  const idle = assessArchiver(input({ maxLagBlocks: 0, checkpoints: [], tx: undefined, latestHeight: 240_000 }));
+  assert.equal(idle.state, "degraded");
+  assert.match(idle.issues[0], /registered 40,000 blocks ago and hasn't made its first checkpoint/);
 });
 
 test("a new archiver has one lag window to make its first checkpoint", () => {

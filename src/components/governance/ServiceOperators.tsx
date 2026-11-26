@@ -19,6 +19,7 @@ import CopyableAddress from "@/components/CopyableAddress";
 import ScannerOperatorPanel from "@/components/governance/ScannerOperatorPanel";
 import ArchiverOperatorPanel from "@/components/governance/ArchiverOperatorPanel";
 import StorageOperatorPanel from "@/components/governance/StorageOperatorPanel";
+import { CHAIN_ARCHIVER_SERVICE_TYPE, STORAGE_ARWEAVE_SERVICE_TYPE } from "@/lib/chainArchiver";
 import ErrorState from "@/components/ErrorState";
 import { isMissingEndpoint } from "@/lib/errors";
 
@@ -64,10 +65,17 @@ function toInt(v: string | number | undefined): number {
 }
 
 // Types whose operators checkpoint: liveness tracking on, an attestation
-// quorum set, or the seeded content-scanner type.
+// quorum set, or one of the seeded types whose workers checkpoint. The chain
+// archivers and storage operators do so with no liveness limit on their
+// types (the roles are best effort), so they are named, not inferred.
+const CHECKPOINTING_TYPES = new Set<string>([
+  CONTENT_SCANNER_SERVICE_TYPE,
+  CHAIN_ARCHIVER_SERVICE_TYPE,
+  STORAGE_ARWEAVE_SERVICE_TYPE,
+]);
 function tracksCheckpoints(t: ServiceTypeConfig): boolean {
   return (
-    t.service_type === CONTENT_SCANNER_SERVICE_TYPE ||
+    CHECKPOINTING_TYPES.has(t.service_type) ||
     toInt(t.checkpoint_max_lag_blocks) > 0 ||
     toInt(t.attestation_quorum) > 0
   );

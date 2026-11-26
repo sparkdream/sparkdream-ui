@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessStorage, readyOperators, type StorageInput } from "./storageStatus";
+import { assessStorage, checkpointWallet, readyOperators, type StorageInput } from "./storageStatus";
 import { OperatorStatus, type Operator } from "@/types/service";
 import type { StorageBackend } from "@/types/storage";
 
@@ -115,4 +115,77 @@ test("the site's switch degrades, and unread request counts are left out", () =>
   assert.equal(off.state, "degraded");
   assert.match(off.issues[0], /switched off by the site operator/);
   assert.equal(fact(assessStorage(input({ pending: null })), "Waiting for an operator"), undefined);
+});
+
+const worker = (over: Partial<NonNullable<StorageInput["worker"]>> = {}) => ({
+  latestHeight: 10_000,
+  lastActedAt: 9_900,
+  lapses: 0,
+  oldestWaitingSince: 9_950,
+  stuckAfterBlocks: 1_440,
+  checkpoint: null,
+  checkpointMaxLag: 0,
+  ...over,
+});
+
+test("the worker's last action and the longest wait are shown", () => {
+  const got = assessStorage(input({ worker: worker() }));
+  assert.equal(got.state, "ok");
+  assert.equal(fact(got, "Worker last acted"), "100 blocks ago");
+  assert.equal(fact(got, "Worker last checked in"), "Never");
+  assert.equal(fact(got, "Longest wait"), "50 blocks");
+  const idle = assessStorage(input({ worker: worker({ lastActedAt: null, oldestWaitingSince: null }) }));
+  assert.equal(idle.state, "ok");
+  assert.equal(fact(idle, "Worker last acted"), "No claim or copy on record");
+  assert.equal(fact(idle, "Longest wait"), undefined);
+});
+
+test("a long wait with no operator acting since may be a stopped worker; a worker that acted since is not", () => {
+  const stuck = assessStorage(input({ worker: worker({ oldestWaitingSince: 8_000, lastActedAt: 7_000 }) }));
+  assert.equal(stuck.state, "degraded");
+  assert.match(stuck.issues[0], /waited 2,000 blocks and no operator has acted since it was opened. The worker may be stopped/);
+  assert.equal(assessStorage(input({ worker: worker({ oldestWaitingSince: 8_000, lastActedAt: null }) })).state, "degraded");
+  // It took another request after this one opened: it is running and left this one alone.
+  assert.equal(assessStorage(input({ worker: worker({ oldestWaitingSince: 8_000, lastActedAt: 9_000 }) })).state, "ok");
+  // Within one claim window nothing is concluded.
+  assert.equal(assessStorage(input({ worker: worker({ oldestWaitingSince: 9_000, lastActedAt: null }) })).state, "ok");
+});
+
+test("lapsed claims degrade, and worker evidence is left out without a ready operator", () => {
+  const lapsed = assessStorage(input({ worker: worker({ lapses: 2 }) }));
+  assert.equal(lapsed.state, "degraded");
+  assert.equal(fact(lapsed, "Lapsed claims"), "2");
+  assert.match(lapsed.issues[0], /2 claims were left to lapse/);
+  const none = assessStorage(input({ approvedOperators: [], worker: worker({ lapses: 2 }) }));
+  assert.equal(fact(none, "Worker last acted"), undefined);
+  assert.equal(none.issues.length, 1);
+});
+
+test("a worker that checks in is running; one that stopped checking in has stopped", () => {
+  const live = assessStorage(input({ worker: worker({ checkpoint: { height: 9_700, wallet: WALLET } }) }));
+  assert.equal(live.state, "ok");
+  assert.equal(fact(live, "Worker last checked in"), "300 blocks ago, limit 1,800");
+  const stopped = assessStorage(input({ worker: worker({ checkpoint: { height: 7_000, wallet: WALLET } }) }));
+  assert.equal(stopped.state, "degraded");
+  assert.match(stopped.issues[0], /last checked in 3,000 blocks ago, so it has probably stopped/);
+  // The chain's own limit, when the type has one, replaces the default.
+  const strict = assessStorage(input({ worker: worker({ checkpoint: { height: 9_700, wallet: WALLET }, checkpointMaxLag: 200 }) }));
+  assert.equal(strict.state, "degraded");
+  assert.equal(fact(strict, "Worker last checked in"), "300 blocks ago, limit 200");
+});
+
+test("a worker that checks in is not suspected over a long wait, and its wallet must be a listed one", () => {
+  const waiting = assessStorage(
+    input({ worker: worker({ oldestWaitingSince: 8_000, lastActedAt: null, checkpoint: { height: 9_900, wallet: WALLET } }) })
+  );
+  assert.equal(waiting.state, "ok");
+  const other = assessStorage(input({ worker: worker({ checkpoint: { height: 9_900, wallet: "x".repeat(43) } }) }));
+  assert.equal(other.state, "degraded");
+  assert.match(other.issues[0], /wallet its operator doesn't list/);
+});
+
+test("a checkpoint root is the wallet address it encodes", () => {
+  assert.equal(checkpointWallet("10tJ9DsLQ97USrpb7xKYTW0jwXJ9IGhmjqqce6mcEP0="), WALLET);
+  assert.equal(checkpointWallet("uo94t4K0yA6mknk28GwNmOrM/FexblhPbxNdgeTw24g="), "uo94t4K0yA6mknk28GwNmOrM_FexblhPbxNdgeTw24g");
+  assert.equal(checkpointWallet("AAAA"), "");
 });

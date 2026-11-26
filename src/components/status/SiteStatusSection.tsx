@@ -131,7 +131,10 @@ export default function SiteStatusSection() {
         archiver&apos;s latest checkpoint is recent and the range it names is on Arweave under the
         archiver&apos;s wallet, not that the whole copy was downloaded and verified. For permanent
         copies, working means an approved, funded storage operator and enough approved scanners are
-        registered on chain, not that the operator&apos;s worker is running. For federation
+        registered on chain, and that the operator&apos;s worker has checked in there recently. For a
+        worker that has never checked in, the card shows when it last claimed or copied something
+        and flags a request nobody has touched for a long while, which can also mean a file it
+        can&apos;t fetch. For federation
         bridges, working means each bridge&apos;s operator and peer are active, the peer&apos;s server answers and the bridge
         brought a post in within the chain&apos;s inactivity limit, not that its daemon is running. The IBC relayer
         has no record on chain, so it is judged by what it leaves there: the light client it must

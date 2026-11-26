@@ -8,9 +8,17 @@
 // exist to clear the file. This file turns those lists into one report; it
 // only judges, lib/siteStatus.ts does the reading.
 //
-// Storage operators don't checkpoint, so nothing here proves a worker is
-// running: the report says an operator is in place and funded, and shows what
-// is waiting.
+// A worker says it is running with a checkpoint (cmd/storageworker in the
+// chain repo: every 600 blocks by default, the height its last clean pass
+// read and, as the root, the Arweave wallet it uploads from). A worker that
+// has checkpointed and then stops doing so has stopped. One that never has
+// may predate checkpoints or hold a session key without the message, so for
+// it the chain holds only what the worker did: the height of its last claim
+// or completion, the claims it let lapse, and how long the oldest request
+// has waited. A request that has waited past one claim window with no
+// operator acting since it opened is then the nearest thing to "the worker
+// has stopped", and is reported as that possibility, not as a fact: a worker
+// also leaves alone a file it can't fetch or that isn't cleared.
 
 import { formatAr, operatorWallets } from "./storageFunds";
 import type { ServiceFact, ServiceReport } from "./serviceStatus";
@@ -37,6 +45,34 @@ export interface StorageInput {
   balances: Record<string, string | null>;
   /** The site's own switch (ARWEAVE_UPLOADS_DISABLED). */
   siteOffers: boolean;
+  /** What the chain holds of the ready operators' workers. Absent when unread. */
+  worker?: WorkerEvidence;
+}
+
+export interface WorkerEvidence {
+  latestHeight: number;
+  /** Height of the newest claim or completion by a ready operator. Null: none on record. */
+  lastActedAt: number | null;
+  /** Claims the ready operators let lapse in the current counting window. */
+  lapses: number;
+  /** Height the longest-waiting pending request was opened at. Null: nothing waits. */
+  oldestWaitingSince: number | null;
+  /** claim_window_blocks: a wait past this with no operator acting is reported. */
+  stuckAfterBlocks: number;
+  /** The newest checkpoint among the ready operators. Null: none has checkpointed. */
+  checkpoint: { height: number; wallet: string } | null;
+  /** The service type's checkpoint_max_lag_blocks. 0: the chain sets no limit. */
+  checkpointMaxLag: number;
+}
+
+// Workers checkpoint every 600 blocks unless told otherwise. Without a limit
+// from the chain, three missed checkpoints is a worker that has stopped.
+export const CHECKPOINT_STALE_BLOCKS = 1_800;
+
+/** A checkpoint root (32 bytes, base64) as the Arweave address it encodes. "" if it isn't one. */
+export function checkpointWallet(root: string): string {
+  const address = (root || "").trim().replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+  return /^[A-Za-z0-9_-]{43}$/.test(address) ? address : "";
 }
 
 const n = (v: number) => v.toLocaleString("en-US");
@@ -116,6 +152,45 @@ export function assessStorage(input: StorageInput): ServiceReport {
       if (total === BigInt(0)) issues.push("The operators' Arweave wallets are empty, so no copy can be paid for.");
     } else {
       facts.push({ label: "Operator funds", value: "Not checked, the gateway didn't answer" });
+    }
+  }
+
+  const w = input.worker;
+  if (w && ready.length > 0 && w.latestHeight > 0) {
+    const ago = (h: number) => `${n(Math.max(0, w.latestHeight - h))} blocks ago`;
+    let running = false;
+    if (w.checkpoint) {
+      const limit = w.checkpointMaxLag > 0 ? w.checkpointMaxLag : CHECKPOINT_STALE_BLOCKS;
+      const behind = Math.max(0, w.latestHeight - w.checkpoint.height);
+      running = behind <= limit;
+      facts.push({ label: "Worker last checked in", value: `${ago(w.checkpoint.height)}, limit ${n(limit)}` });
+      if (!running) {
+        issues.push(`The worker last checked in ${n(behind)} blocks ago, so it has probably stopped. Requests wait until it runs again.`);
+      }
+      const listed = ready.flatMap((o) => operatorWallets(o.metadata, backend.name));
+      if (w.checkpoint.wallet && listed.length > 0 && !listed.includes(w.checkpoint.wallet)) {
+        issues.push("The worker uploads from an Arweave wallet its operator doesn't list.");
+      }
+    } else {
+      facts.push({ label: "Worker last checked in", value: "Never" });
+    }
+    facts.push({ label: "Worker last acted", value: w.lastActedAt === null ? "No claim or copy on record" : ago(w.lastActedAt) });
+    if (w.oldestWaitingSince !== null) {
+      const waited = Math.max(0, w.latestHeight - w.oldestWaitingSince);
+      facts.push({ label: "Longest wait", value: `${n(waited)} blocks` });
+      const actedSince = w.lastActedAt !== null && w.lastActedAt >= w.oldestWaitingSince;
+      // A worker that checks in is running: a long wait is then its choice.
+      if (w.stuckAfterBlocks > 0 && waited > w.stuckAfterBlocks && !actedSince && !w.checkpoint) {
+        issues.push(
+          `A request has waited ${n(waited)} blocks and no operator has acted since it was opened. The worker may be stopped, or it can't fetch the file or the scanners haven't cleared it.`
+        );
+      }
+    }
+    if (w.lapses > 0) {
+      facts.push({ label: "Lapsed claims", value: n(w.lapses) });
+      issues.push(
+        `${w.lapses === 1 ? "A claim was" : `${n(w.lapses)} claims were`} left to lapse recently: the worker took ${w.lapses === 1 ? "a request" : "requests"} and didn't finish.`
+      );
     }
   }
 

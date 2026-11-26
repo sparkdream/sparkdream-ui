@@ -35,7 +35,8 @@ import type { ApprovedOperator } from "@/types/storage";
 const DEFAULT_CONTROLLER = "Technical Operations Committee";
 const RESOLVE_REPORT = "/sparkdream.service.v1.MsgResolveReport";
 // What the worker signs with its session key (cmd/storageworker in the chain repo).
-const WORKER_MESSAGES = ["MsgClaimRequest", "MsgExtendClaim", "MsgCompleteRequest", "MsgDeclineRequest"];
+// The last is x/service's: the worker checkpoints to say it is running.
+const WORKER_MESSAGES = ["MsgClaimRequest", "MsgExtendClaim", "MsgCompleteRequest", "MsgDeclineRequest", "MsgSubmitCheckpoint"];
 
 function WorkerMessages() {
   return (

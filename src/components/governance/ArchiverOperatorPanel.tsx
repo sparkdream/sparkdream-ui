@@ -22,7 +22,8 @@ import { OPERATOR_STATUS_LABELS, type Operator, type ServiceTypeConfig } from "@
 import type { Group } from "@/types/commons";
 
 // The committee that answers for the chain's own infrastructure: it resolves
-// the liveness report x/service files against a stalled archiver. A
+// a report against an archiver (a wrong copy reported by a member, or a
+// liveness report where the chain sets a checkpoint limit). A
 // controller can only do that if its group holds MsgResolveReport, which the
 // panel checks before it lets an archiver register under it.
 const DEFAULT_CONTROLLER = "Technical Operations Committee";
@@ -230,11 +231,10 @@ export default function ArchiverOperatorPanel({ onChanged }: { onChanged?: () =>
               address it prints with AR, and paste the address below.
             </li>
             <li>
-              Let the worker upload the history first (it uploads without a chain connection). From registration it has
-              {typeConfig?.checkpoint_max_lag_blocks
-                ? ` ${Number(typeConfig.checkpoint_max_lag_blocks).toLocaleString("en-US")} blocks`
-                : " one lag window"}{" "}
-              to make its first checkpoint before an automatic liveness report.
+              Let the worker upload the history first (it uploads without a chain connection).
+              {Number(typeConfig?.checkpoint_max_lag_blocks || 0) > 0
+                ? ` From registration it has ${Number(typeConfig?.checkpoint_max_lag_blocks).toLocaleString("en-US")} blocks to make its first checkpoint before an automatic liveness report.`
+                : " The bond is locked from registration, and the first checkpoint only comes once a range is confirmed."}
             </li>
             <li>Register here. This account bonds the SPARK and stays the operator.</li>
             <li>

@@ -19,7 +19,7 @@ import { assessArchiver, checkpointTxId, leadingArchiver, parseArweaveTx, type A
 import { CHAIN_ARCHIVER_SERVICE_TYPE } from "@/lib/chainArchiver";
 import { defaults } from "@/lib/chain";
 import { arweaveNodeOf, operatorWallets } from "@/lib/storageFunds";
-import { assessStorage, readyOperators } from "@/lib/storageStatus";
+import { assessStorage, checkpointWallet, readyOperators, type WorkerEvidence } from "@/lib/storageStatus";
 import { assessBridges, BRIDGE_SERVICE_TYPE_PREFIX } from "@/lib/bridgeStatus";
 import type { BridgeBinding } from "@/types/federation";
 import { headPinned, publicHttpsTarget } from "@/lib/publicUrl";
@@ -413,6 +413,18 @@ async function okJson<T>(r: Reached): Promise<T | null> {
   }
 }
 
+/** The request fields the worker evidence reads: block heights as decimal strings. */
+interface StoredRequest {
+  created_at?: string;
+  opened_at?: string;
+  claimed_at?: string;
+  completed_at?: string;
+}
+
+function height(v: string | undefined): number {
+  return v && /^\d+$/.test(v) ? Number(v) : 0;
+}
+
 async function walletBalance(node: string, address: string): Promise<string | null> {
   const r = await reach(`${node}/wallet/${address}/balance`);
   if (!r.res?.ok) return null;
@@ -448,7 +460,7 @@ export async function checkStorage(
   if (!paramsR.res || isGatewayStatus(paramsR.res.status)) return cantRead;
   // 501 is a chain without x/storage.
   if (paramsR.res.status === 501 || paramsR.res.status === 404) return assessStorage({ ...idle, enabled: null, backend: null });
-  const params = await okJson<{ params?: { enabled?: boolean } }>(paramsR);
+  const params = await okJson<{ params?: { enabled?: boolean; claim_window_blocks?: string } }>(paramsR);
   const backends = await okJson<{ backends?: StorageBackend[] }>(backendsR);
   if (!params || !backends) return cantRead;
   const all = backends.backends ?? [];
@@ -459,14 +471,19 @@ export async function checkStorage(
   const name = encodeURIComponent(backend.name);
   const scannerType = encodeURIComponent(CONTENT_SCANNER_SERVICE_TYPE);
   const count = "pagination.limit=1&pagination.count_total=true";
-  const [opsR, approvedR, scannersR, approvedScannersR, scannerTypeR, pendingR, claimedR] = await Promise.all([
+  const storageType = encodeURIComponent(backend.service_type);
+  const [opsR, approvedR, scannersR, approvedScannersR, scannerTypeR, pendingR, claimedR, blockR, checkpointsR, typeR] = await Promise.all([
     reach(`${service}/operators_by_service_type/${encodeURIComponent(backend.service_type)}?${page}`),
     reach(`${storage}/approved_operators/${name}?${page}`),
     reach(`${service}/operators_by_service_type/${scannerType}?${page}`),
     reach(`${storage}/approved_scanners?${page}`),
     reach(`${service}/service_type/${scannerType}`),
-    reach(`${storage}/requests_by_status/${name}/REQUEST_STATUS_PENDING?${count}`),
+    // The whole first page, for how long the oldest has waited.
+    reach(`${storage}/requests_by_status/${name}/REQUEST_STATUS_PENDING?${page}&pagination.count_total=true`),
     reach(`${storage}/requests_by_status/${name}/REQUEST_STATUS_CLAIMED?${count}`),
+    reach(`${base}/cosmos/base/tendermint/v1beta1/blocks/latest`),
+    reach(`${service}/checkpoints_by_service_type/${storageType}?${page}`),
+    reach(`${service}/service_type/${storageType}`),
   ]);
   const ops = await okJson<{ operators?: Operator[] }>(opsR);
   const approved = await okJson<{ operators?: ApprovedOperator[] }>(approvedR);
@@ -475,10 +492,13 @@ export async function checkStorage(
   if (!ops || !approved || !scanners || !approvedScanners) return cantRead;
   // A chain without the scanner type has no quorum: the same as a quorum of 0.
   const scannerConfig = (await okJson<{ config?: ServiceTypeConfig }>(scannerTypeR))?.config;
-  const total = async (r: Reached) => {
-    const t = (await okJson<{ pagination?: { total?: string } }>(r))?.pagination?.total;
+  type Listed = { requests?: StoredRequest[]; pagination?: { total?: string } } | null;
+  const total = (body: Listed) => {
+    const t = body?.pagination?.total;
     return t && /^\d+$/.test(t) ? Number(t) : null;
   };
+  const pendingBody = await okJson<NonNullable<Listed>>(pendingR);
+  const claimedBody = await okJson<NonNullable<Listed>>(claimedR);
 
   const operators = ops.operators ?? [];
   const approvedOperators = approved.operators ?? [];
@@ -487,11 +507,52 @@ export async function checkStorage(
     ...new Set(readyOperators(operators, approvedOperators).flatMap((o) => operatorWallets(o.metadata, backend.name))),
   ].slice(0, 10);
   const balances: Record<string, string | null> = {};
-  await Promise.all(
-    wallets.map(async (w) => {
-      balances[w] = await walletBalance(node, w);
-    })
-  );
+  const ready = readyOperators(operators, approvedOperators).slice(0, 5);
+  const [, acts] = await Promise.all([
+    Promise.all(
+      wallets.map(async (w) => {
+        balances[w] = await walletBalance(node, w);
+      })
+    ),
+    // What each ready operator's worker has done: its newest requests and its lapse count.
+    Promise.all(
+      ready.map(async (o) => {
+        const at = encodeURIComponent(o.address);
+        const [mineR, standingR] = await Promise.all([
+          reach(`${storage}/requests_by_operator/${at}?pagination.limit=50&pagination.reverse=true`),
+          reach(`${storage}/operator_standing/${name}/${at}`),
+        ]);
+        const mine = (await okJson<{ requests?: StoredRequest[] }>(mineR))?.requests ?? [];
+        const standing = await okJson<{ lapses?: { count?: string } }>(standingR);
+        return {
+          lastActedAt: Math.max(0, ...mine.flatMap((r) => [height(r.claimed_at), height(r.completed_at)])),
+          lapses: height(standing?.lapses?.count),
+        };
+      })
+    ),
+  ]);
+  const latestHeight = height((await okJson<{ block?: { header?: { height?: string } } }>(blockR))?.block?.header?.height);
+  const waiting = (pendingBody?.requests ?? []).map((r) => height(r.opened_at) || height(r.created_at)).filter((h) => h > 0);
+  const lastActedAt = Math.max(0, ...acts.map((a) => a.lastActedAt));
+  // The newest checkpoint among the ready operators: one running worker is enough.
+  const mine = new Set(ready.map((o) => o.address));
+  const checkpoint = ((await okJson<{ checkpoints?: Checkpoint[] }>(checkpointsR))?.checkpoints ?? [])
+    .filter((c) => mine.has(c.operator))
+    .map((c) => ({ height: height(c.height), wallet: checkpointWallet(c.root) }))
+    .sort((a, b) => b.height - a.height)[0];
+  const typeConfig = (await okJson<{ config?: ServiceTypeConfig }>(typeR))?.config;
+  const worker: WorkerEvidence | undefined =
+    latestHeight > 0 && pendingBody
+      ? {
+          latestHeight,
+          lastActedAt: lastActedAt > 0 ? lastActedAt : null,
+          lapses: acts.reduce((sum, a) => sum + a.lapses, 0),
+          oldestWaitingSince: waiting.length ? Math.min(...waiting) : null,
+          stuckAfterBlocks: height(params.params?.claim_window_blocks),
+          checkpoint: checkpoint && checkpoint.height > 0 ? checkpoint : null,
+          checkpointMaxLag: height(typeConfig?.checkpoint_max_lag_blocks),
+        }
+      : undefined;
 
   return assessStorage({
     enabled,
@@ -501,9 +562,10 @@ export async function checkStorage(
     scanners: scanners.operators ?? [],
     approvedScanners: approvedScanners.scanners ?? [],
     scannerQuorum: scannerConfig?.enabled ? Number(scannerConfig.attestation_quorum) || 0 : 0,
-    pending: await total(pendingR),
-    claimed: await total(claimedR),
+    pending: total(pendingBody),
+    claimed: total(claimedBody),
     balances,
+    worker,
     siteOffers: permanentCopiesOn(env),
   });
 }
