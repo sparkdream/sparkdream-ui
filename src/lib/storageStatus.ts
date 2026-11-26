@@ -20,7 +20,7 @@
 // has stopped", and is reported as that possibility, not as a fact: a worker
 // also leaves alone a file it can't fetch or that isn't cleared.
 
-import { formatAr, operatorWallets } from "./storageFunds";
+import { copiesAfforded, formatAr, operatorWallets } from "./storageFunds";
 import type { ServiceFact, ServiceReport } from "./serviceStatus";
 import { OperatorStatus, OPERATOR_STATUS_LABELS, type Operator } from "@/types/service";
 import type { ApprovedOperator, ApprovedScanner, StorageBackend } from "@/types/storage";
@@ -41,8 +41,13 @@ export interface StorageInput {
   /** Requests waiting for an operator, and claimed by one. Null when unread. */
   pending: number | null;
   claimed: number | null;
-  /** Winston per Arweave wallet of the ready operators; null where the node didn't answer. */
+  /**
+   * Winston per Arweave wallet of the operators whose funds are shown
+   * (fundedOperators); null where the node didn't answer.
+   */
   balances: Record<string, string | null>;
+  /** What the network charges now for the largest file the backend takes, in winston. Null or absent when unknown. */
+  largestFilePrice?: string | null;
   /** The site's own switch (ARWEAVE_UPLOADS_DISABLED). */
   siteOffers: boolean;
   /** What the chain holds of the ready operators' workers. Absent when unread. */
@@ -81,6 +86,26 @@ const n = (v: number) => v.toLocaleString("en-US");
 export function readyOperators(operators: Operator[], approved: ApprovedOperator[]): Operator[] {
   const counting = new Set(approved.filter((a) => !a.stale).map((a) => a.operator));
   return operators.filter((o) => o.status === OperatorStatus.ACTIVE && counting.has(o.address));
+}
+
+/**
+ * The operators whose Arweave funds the card shows: the ready ones, or,
+ * before any is approved, the active ones, so an operator setting up can see
+ * its wallet was found and funded.
+ */
+export function fundedOperators(operators: Operator[], approved: ApprovedOperator[]): Operator[] {
+  const ready = readyOperators(operators, approved);
+  return ready.length > 0 ? ready : operators.filter((o) => o.status === OperatorStatus.ACTIVE);
+}
+
+/** The largest file the backend takes, in bytes. 0 when it lists none. */
+export function largestFileBytes(backend: StorageBackend): number {
+  return Math.max(0, ...(backend.types || []).map((t) => (/^\d+$/.test(t.max_size) ? Number(t.max_size) : 0)));
+}
+
+function fileSize(bytes: number): string {
+  const mib = bytes / (1024 * 1024);
+  return mib >= 1 ? `${Number.isInteger(mib) ? mib : mib.toFixed(1)} MiB` : `${Math.max(1, Math.round(bytes / 1024))} KiB`;
 }
 
 export function assessStorage(input: StorageInput): ServiceReport {
@@ -139,17 +164,39 @@ export function assessStorage(input: StorageInput): ServiceReport {
   if (input.pending !== null) facts.push({ label: "Waiting for an operator", value: n(input.pending) });
   if (input.claimed !== null) facts.push({ label: "Being copied", value: n(input.claimed) });
 
-  // What the ready operators have to pay Arweave with. Their wallets are
-  // their own statement (lib/storageFunds.ts); the balances are public.
-  if (ready.length > 0) {
-    const wallets = [...new Set(ready.flatMap((o) => operatorWallets(o.metadata, backend.name)))];
+  // What the operators have to pay Arweave with. Their wallets are their own
+  // statement (lib/storageFunds.ts); the balances are public. A file costs
+  // by its size, so the funds are set against the largest the backend takes:
+  // enough for that is enough for any request.
+  const funded = fundedOperators(input.operators, input.approvedOperators);
+  if (funded.length > 0) {
+    const wallets = [...new Set(funded.flatMap((o) => operatorWallets(o.metadata, backend.name)))];
     const known = wallets.map((w) => input.balances[w]).filter((b): b is string => typeof b === "string" && /^\d+$/.test(b));
     if (wallets.length === 0) {
-      issues.push("No ready operator lists an Arweave wallet, so its funds and its copies can't be told apart from anyone's.");
+      // Before approval a missing wallet is one more step of setting up.
+      if (ready.length > 0) {
+        issues.push("No ready operator lists an Arweave wallet, so its funds and its copies can't be told apart from anyone's.");
+      }
     } else if (known.length === wallets.length) {
-      const total = known.reduce((sum, b) => sum + BigInt(b), BigInt(0));
-      facts.push({ label: "Operator funds", value: `${formatAr(total.toString())} AR` });
-      if (total === BigInt(0)) issues.push("The operators' Arweave wallets are empty, so no copy can be paid for.");
+      const total = known.reduce((sum, b) => sum + BigInt(b), BigInt(0)).toString();
+      const largest = largestFileBytes(backend);
+      // A copy is paid from one wallet, so two that each hold half the price
+      // pay for none: the copies are counted wallet by wallet.
+      const each = known.map((b) => (largest > 0 ? copiesAfforded(b, input.largestFilePrice ?? null) : null));
+      const copies = each.every((c): c is number => c !== null) ? each.reduce((sum, c) => sum + c, 0) : null;
+      const of = `of the largest file (${fileSize(largest)})`;
+      let enough = "";
+      if (copies !== null) {
+        if (copies >= 1000) enough = `, over 1,000 copies ${of}`;
+        else if (copies >= 1) enough = `, about ${n(copies)} ${copies === 1 ? "copy" : "copies"} ${of}`;
+        else enough = `, less than one copy ${of}`;
+      }
+      facts.push({ label: "Operator funds", value: `${formatAr(total)} AR${enough}` });
+      if (/^0+$/.test(total)) {
+        issues.push("The operators' Arweave wallets are empty, so no copy can be paid for.");
+      } else if (copies === 0) {
+        issues.push(`No operator's Arweave wallet can pay for a copy ${of}, so a large request may wait.`);
+      }
     } else {
       facts.push({ label: "Operator funds", value: "Not checked, the gateway didn't answer" });
     }

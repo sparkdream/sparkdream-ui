@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessStorage, checkpointWallet, readyOperators, type StorageInput } from "./storageStatus";
+import { assessStorage, checkpointWallet, fundedOperators, largestFileBytes, readyOperators, type StorageInput } from "./storageStatus";
 import { OperatorStatus, type Operator } from "@/types/service";
 import type { StorageBackend } from "@/types/storage";
 
@@ -188,4 +188,52 @@ test("a checkpoint root is the wallet address it encodes", () => {
   assert.equal(checkpointWallet("10tJ9DsLQ97USrpb7xKYTW0jwXJ9IGhmjqqce6mcEP0="), WALLET);
   assert.equal(checkpointWallet("uo94t4K0yA6mknk28GwNmOrM/FexblhPbxNdgeTw24g="), "uo94t4K0yA6mknk28GwNmOrM_FexblhPbxNdgeTw24g");
   assert.equal(checkpointWallet("AAAA"), "");
+});
+
+test("funds are set against the price of the largest file the backend takes", () => {
+  // 1.5 AR at 0.02 AR per 10 MiB file.
+  const got = assessStorage(input({ largestFilePrice: "20000000000" }));
+  assert.equal(got.state, "ok");
+  assert.equal(fact(got, "Operator funds"), "1.5 AR, about 75 copies of the largest file (10 MiB)");
+  assert.equal(fact(assessStorage(input({ largestFilePrice: "1500000000000" })), "Operator funds"), "1.5 AR, about 1 copy of the largest file (10 MiB)");
+  assert.match(fact(assessStorage(input({ largestFilePrice: "1000000" })) , "Operator funds") ?? "", /over 1,000 copies/);
+  // An unknown price leaves the balance alone.
+  assert.equal(fact(assessStorage(input({ largestFilePrice: null })), "Operator funds"), "1.5 AR");
+
+  const short = assessStorage(input({ largestFilePrice: "2000000000000" }));
+  assert.equal(short.state, "degraded");
+  assert.equal(fact(short, "Operator funds"), "1.5 AR, less than one copy of the largest file (10 MiB)");
+  assert.match(short.issues[0], /No operator's Arweave wallet can pay for a copy of the largest file \(10 MiB\), so a large request may wait/);
+
+  // Two wallets that each hold less than the price pay for no copy, whatever they hold together.
+  const other = "x".repeat(43);
+  const split = assessStorage(
+    input({
+      operators: [operator({ metadata: meta([WALLET, other]) })],
+      balances: { [WALLET]: "1500000000000", [other]: "1500000000000" },
+      largestFilePrice: "2000000000000",
+    })
+  );
+  assert.equal(fact(split, "Operator funds"), "3 AR, less than one copy of the largest file (10 MiB)");
+  assert.equal(split.state, "degraded");
+  // An empty wallet is said once, as empty.
+  const empty = assessStorage(input({ balances: { [WALLET]: "0" }, largestFilePrice: "20000000000" }));
+  assert.equal(empty.issues.length, 1);
+  assert.match(empty.issues[0], /wallets are empty/);
+});
+
+test("an active operator that isn't approved yet already shows its funds", () => {
+  const got = assessStorage(input({ approvedOperators: [], largestFilePrice: "20000000000" }));
+  assert.equal(got.state, "degraded");
+  assert.equal(got.issues.length, 1);
+  assert.match(got.issues[0], /No storage operator is approved/);
+  assert.equal(fact(got, "Operator funds"), "1.5 AR, about 75 copies of the largest file (10 MiB)");
+  // Without a wallet in its metadata yet, that is not a second problem.
+  const bare = assessStorage(input({ approvedOperators: [], operators: [operator({ metadata: "" })] }));
+  assert.equal(bare.issues.length, 1);
+  assert.equal(fact(bare, "Operator funds"), undefined);
+
+  assert.deepEqual(fundedOperators([operator(), operator({ address: "b", status: OperatorStatus.UNBONDING })], []).map((o) => o.address), ["op"]);
+  assert.equal(largestFileBytes(backend), 10_485_760);
+  assert.equal(largestFileBytes({ ...backend, types: [] }), 0);
 });

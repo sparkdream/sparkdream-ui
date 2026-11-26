@@ -28,7 +28,14 @@ import {
 import { CHAIN_ARCHIVER_SERVICE_TYPE, parseArchiverMetadata } from "@/lib/chainArchiver";
 import { defaults } from "@/lib/chain";
 import { arweaveNodeOf, operatorWallets } from "@/lib/storageFunds";
-import { assessStorage, checkpointWallet, readyOperators, type WorkerEvidence } from "@/lib/storageStatus";
+import {
+  assessStorage,
+  checkpointWallet,
+  fundedOperators,
+  largestFileBytes,
+  readyOperators,
+  type WorkerEvidence,
+} from "@/lib/storageStatus";
 import { assessBridges, BRIDGE_SERVICE_TYPE_PREFIX } from "@/lib/bridgeStatus";
 import type { BridgeBinding } from "@/types/federation";
 import { headPinned, publicHttpsTarget } from "@/lib/publicUrl";
@@ -667,9 +674,18 @@ export async function checkStorage(
   const approvedOperators = approved.operators ?? [];
   const node = arweaveNodeOf(gatewayTemplate);
   const wallets = [
-    ...new Set(readyOperators(operators, approvedOperators).flatMap((o) => operatorWallets(o.metadata, backend.name))),
+    ...new Set(fundedOperators(operators, approvedOperators).flatMap((o) => operatorWallets(o.metadata, backend.name))),
   ].slice(0, 10);
   const balances: Record<string, string | null> = {};
+  // What a file of the largest size the backend takes costs now.
+  const largest = largestFileBytes(backend);
+  const largestFilePriceP =
+    wallets.length > 0 && largest > 0
+      ? reach(`${node}/price/${largest}`).then(async (r) => {
+          const text = r.res?.ok ? (await r.res.text().catch(() => "")).trim() : "";
+          return /^\d+$/.test(text) ? text : null;
+        })
+      : Promise.resolve(null);
   const ready = readyOperators(operators, approvedOperators).slice(0, 5);
   const [, acts] = await Promise.all([
     Promise.all(
@@ -733,6 +749,7 @@ export async function checkStorage(
     pending: total(pendingBody),
     claimed: total(claimedBody),
     balances,
+    largestFilePrice: await largestFilePriceP,
     worker,
     siteOffers: permanentCopiesOn(env),
   }), keys);

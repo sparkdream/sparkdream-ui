@@ -208,6 +208,7 @@ test("storage: the chain's lists and the wallet's balance make one report", asyn
     if (url.includes("/blocks/latest")) return json({ block: { header: { height: "1000" } } });
     if (url.includes("/requests_by_status/arweave/REQUEST_STATUS_CLAIMED")) return json({ requests: [], pagination: { total: "0" } });
     if (url === `https://gw.test/wallet/${wallet}/balance`) return new Response("250000000000");
+    if (url === "https://gw.test/price/1") return new Response("1000000000");
     return new Response("", { status: 404 });
   };
   const got = await withFetch(answer, () => checkStorage("https://lcd.test/", "https://gw.test/{id}", {} as NodeJS.ProcessEnv));
@@ -217,7 +218,7 @@ test("storage: the chain's lists and the wallet's balance make one report", asyn
     { label: "Approved scanners", value: "1, 1 must agree" },
     { label: "Waiting for an operator", value: "3" },
     { label: "Being copied", value: "0" },
-    { label: "Operator funds", value: "0.25 AR" },
+    { label: "Operator funds", value: "0.25 AR, about 250 copies of the largest file (1 KiB)" },
     { label: "Worker last checked in", value: "100 blocks ago, limit 1,800" },
     { label: "Worker last acted", value: "15 blocks ago" },
     { label: "Longest wait", value: "40 blocks" },
