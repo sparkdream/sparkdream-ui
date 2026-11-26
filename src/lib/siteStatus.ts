@@ -25,7 +25,7 @@ import type { BridgeBinding } from "@/types/federation";
 import { headPinned, publicHttpsTarget } from "@/lib/publicUrl";
 import { assessIbc, type IbcChannel, type IbcLink } from "@/lib/ibcStatus";
 import { assessMirror, type MirrorRebuild, type MirrorSync } from "@/lib/mirrorStatus";
-import { assessSession, withSessions, type SessionNote } from "@/lib/sessionStatus";
+import { assessSession, rememberExpiry, withSessions, type ExpiryMemory, type SessionNote } from "@/lib/sessionStatus";
 import type { Session } from "@/types/session";
 import { CONTENT_SCANNER_SERVICE_TYPE, OperatorStatus, OPERATOR_STATUS_LABELS } from "@/types/service";
 import type { Checkpoint, Operator, ServiceTypeConfig } from "@/types/service";
@@ -84,6 +84,10 @@ const CHECKPOINT_MSG = "/sparkdream.service.v1.MsgSubmitCheckpoint";
 // At most this many operators' keys are read for one card.
 const MAX_SESSION_OWNERS = 5;
 
+// The expiry of each worker key this process has seen, so a key the chain
+// has since removed is reported as expired, not as absent.
+const keyExpiries: ExpiryMemory = new Map();
+
 /**
  * The session each of these operators gave its worker for `msgType`
  * (lib/sessionStatus.ts), in the order given. An operator whose sessions
@@ -101,7 +105,9 @@ async function sessionNotes(
       if (!r.res?.ok) return null;
       try {
         const sessions = ((await r.res.json()) as { sessions?: Session[] }).sessions ?? [];
-        return assessSession(sessions, msgType, who, Date.now());
+        const now = Date.now();
+        const note = assessSession(sessions, msgType, who, now);
+        return rememberExpiry(keyExpiries, `${address}|${msgType}`, sessions, msgType, note, who, now);
       } catch {
         return null;
       }

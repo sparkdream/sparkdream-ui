@@ -13,6 +13,14 @@
 // An operator may also run its worker with its own key and no session. The
 // chain can't tell that from a session that was never granted, so a missing
 // session is shown, not counted as a failure.
+//
+// The chain removes a session in the block it expires, so an expired key is
+// not there to be read: it looks like no session at all. A key that spent
+// its budget or its uses stays until its expiry and is read as dead. To
+// report an expiry as one, the caller remembers the expiry of each key it
+// has seen (rememberExpiry); a key that is gone at or after that time has
+// expired. That memory lives in the server process and starts empty, so
+// the warning ahead of the expiry is the one to rely on.
 
 import { formatAge, type ServiceFact, type ServiceReport } from "./serviceStatus";
 import type { Session } from "@/types/session";
@@ -50,7 +58,7 @@ const pct = (v: number) => `${Math.max(0, Math.floor(v * 100))}%`;
 export function assessSession(sessions: Session[], msgType: string, who: string, now: number): SessionNote {
   const covering = sessions.filter((s) => (s.allowed_msg_types || []).includes(msgType));
   if (covering.length === 0) {
-    return { state: "none", value: "None for its messages", issue: null };
+    return { state: "none", value: "None on chain for its messages", issue: null };
   }
   const judged = covering.map((s) => judge(s, who, now));
   const order = { ok: 0, soon: 1, dead: 2, none: 3 };
@@ -96,6 +104,46 @@ function judge(s: Session, who: string, now: number): SessionNote {
   return { state: "ok", value, issue: null };
 }
 
+/** What is remembered of a worker's key between checks: when it expires, epoch ms. */
+export type ExpiryMemory = Map<string, number>;
+
+/**
+ * Turn "no session" into "expired" when the key was seen before and its
+ * expiry has passed, and note the expiry of a key that is there. `key`
+ * identifies the worker (operator and message). A key that vanished before
+ * its expiry was revoked or replaced by the operator's own key: forgotten.
+ */
+export function rememberExpiry(
+  memory: ExpiryMemory,
+  key: string,
+  sessions: Session[],
+  msgType: string,
+  note: SessionNote,
+  who: string,
+  now: number
+): SessionNote {
+  if (note.state !== "none") {
+    const expiries = sessions
+      .filter((s) => (s.allowed_msg_types || []).includes(msgType))
+      .map((s) => Date.parse(s.expiration))
+      .filter(Number.isFinite);
+    if (expiries.length) memory.set(key, Math.max(...expiries));
+    return note;
+  }
+  const expiredAt = memory.get(key);
+  if (expiredAt === undefined) return note;
+  if (expiredAt > now) {
+    memory.delete(key);
+    return note;
+  }
+  const ago = formatAge(now - expiredAt);
+  return {
+    state: "dead",
+    value: `Expired ${ago} ago`,
+    issue: `${who} session key expired ${ago} ago, so the chain refuses what its worker sends.`,
+  };
+}
+
 /**
  * Add the workers' session keys to a card: one row, and an issue for each
  * key that is dead or nearly so. A card that is off or unreadable is left
@@ -110,7 +158,7 @@ export function withSessions(report: ServiceReport, notes: SessionNote[]): Servi
   if (notes.length === 1) {
     fact = { label: "Session key", value: notes[0].value };
   } else if (granted.length === 0) {
-    fact = { label: "Session keys", value: "None for their messages" };
+    fact = { label: "Session keys", value: "None on chain for their messages" };
   } else {
     const usable = granted.filter((n) => n.state !== "dead").length;
     // The row describes the key in the most trouble.

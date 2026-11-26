@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessSession, withSessions, type SessionNote } from "./sessionStatus";
+import { assessSession, rememberExpiry, withSessions, type ExpiryMemory, type SessionNote } from "./sessionStatus";
 import type { ServiceReport } from "./serviceStatus";
 import type { Session } from "@/types/session";
 
@@ -86,6 +86,7 @@ test("a card gains one row, and an issue for a key that is dead or nearly so", (
   const none = withSessions(report(), [note("none", "None for its messages")]);
   assert.equal(none.state, "ok");
   assert.equal(none.facts[1].value, "None for its messages");
+  assert.equal(assessSession([], MSG, "The scanner's", NOW).value, "None on chain for its messages");
 });
 
 test("several keys are counted, the row describes the one nearest its end, and other states are kept", () => {
@@ -97,4 +98,31 @@ test("several keys are counted, the row describes the one nearest its end, and o
   assert.equal(withSessions(report("off"), [note("dead")]).facts.length, 1);
   assert.equal(withSessions(report("degraded"), [note("dead")]).issues.length, 2);
   assert.equal(withSessions(report(), []).facts.length, 1);
+});
+
+test("a key the chain removed at its expiry is reported as expired if it was seen before", () => {
+  const memory: ExpiryMemory = new Map();
+  const check = (sessions: Session[], now: number) =>
+    rememberExpiry(memory, "op|" + MSG, sessions, MSG, assessSession(sessions, MSG, "The scanner's", now), "The scanner's", now);
+  const expiry = Date.parse("2026-12-21T23:06:46Z");
+
+  // Never seen: absent is all that can be said.
+  assert.equal(check([], NOW).state, "none");
+  assert.equal(check([session()], NOW).state, "ok");
+  // The chain removes it in the block it expires.
+  const gone = check([], expiry + 2 * 3_600_000);
+  assert.equal(gone.state, "dead");
+  assert.equal(gone.value, "Expired 2h ago");
+  assert.match(gone.issue ?? "", /The scanner's session key expired 2h ago/);
+  // It stays reported until a new key is granted.
+  assert.equal(check([], expiry + 30 * 3_600_000).state, "dead");
+  assert.equal(check([session({ expiration: "2027-02-01T00:00:00Z" })], expiry + 31 * 3_600_000).state, "ok");
+});
+
+test("a key that vanished before its expiry was revoked or replaced: absent, and forgotten", () => {
+  const memory: ExpiryMemory = new Map();
+  const none = assessSession([], MSG, "The scanner's", NOW);
+  rememberExpiry(memory, "k", [session()], MSG, assessSession([session()], MSG, "The scanner's", NOW), "The scanner's", NOW);
+  assert.equal(rememberExpiry(memory, "k", [], MSG, none, "The scanner's", NOW + 1000).state, "none");
+  assert.equal(memory.has("k"), false);
 });

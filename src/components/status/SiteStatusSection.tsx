@@ -142,8 +142,10 @@ export default function SiteStatusSection() {
         archive mirror is shown as it last reported itself: the results of its hourly sync and its
         weekly rebuild check. A session key is what an operator grants its worker so the
         operator&apos;s own key stays off that machine. When it expires or runs out, the chain
-        refuses what the worker sends, so the cards warn a few days ahead. An operator whose worker
-        signs with its own key has none, which is not a fault.
+        refuses what the worker sends, so the cards warn a few days ahead. The chain removes a key
+        the moment it expires, so a card that shows none may belong to a worker that signs with its
+        operator&apos;s own key, which is not a fault, or to one whose key expired before this site
+        last restarted.
       </p>
     </section>
   );
