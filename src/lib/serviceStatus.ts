@@ -274,6 +274,123 @@ export async function checkChain(input: ChainStatusInput): Promise<ChainStatus> 
   return { lcd, rpc, checkedAt };
 }
 
+// ---- The live connection --------------------------------------------------------
+//
+// The RPC is also what the app's live updates come through: a websocket on
+// the same address, subscribed to new blocks (the activity ticker). It can
+// fail while the RPC's ordinary answers are fine, most often because
+// something in front of the node doesn't pass websockets, and then the app
+// falls back to asking every few seconds. So it is checked the way the
+// ticker uses it: connect, subscribe, and wait for a block to arrive.
+
+/**
+ * blocks: a new block arrived. silent: connected, but none came in time.
+ * dropped: connected, then closed from the other end before a block came.
+ * closed: no connection.
+ */
+export type LiveState = "blocks" | "silent" | "dropped" | "closed";
+
+export interface LiveResult {
+  state: LiveState;
+  /** From opening the connection to the first block, when one arrived. */
+  ms: number | null;
+}
+
+// Blocks arrive every few seconds; this leaves room for a slow round.
+export const LIVE_TIMEOUT_MS = 20_000;
+
+/** The websocket address of an RPC endpoint, as the ticker derives it. */
+export function rpcWebsocketUrl(rpc: string): string {
+  return rpc.replace(/^http/, "ws").replace(/\/+$/, "") + "/websocket";
+}
+
+type SocketLike = Pick<WebSocket, "send" | "close"> & {
+  onopen: ((ev: unknown) => void) | null;
+  onmessage: ((ev: { data: unknown }) => void) | null;
+  onerror: ((ev: unknown) => void) | null;
+  onclose: ((ev: unknown) => void) | null;
+};
+
+/** Open the RPC's websocket, subscribe to new blocks and wait for one. Always closes the socket. */
+export function probeLive(
+  rpcEndpoint: string,
+  opts: { create?: (url: string) => SocketLike; timeoutMs?: number; signal?: AbortSignal } = {}
+): Promise<LiveResult> {
+  const create = opts.create ?? ((url: string) => new WebSocket(url) as unknown as SocketLike);
+  const started = performance.now();
+  return new Promise((resolve) => {
+    let socket: SocketLike;
+    let opened = false;
+    let settled = false;
+    const finish = (state: LiveState) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        socket?.close();
+      } catch {
+        // Already closed.
+      }
+      resolve({ state, ms: state === "blocks" ? Math.round(performance.now() - started) : null });
+    };
+    const timer = setTimeout(() => finish(opened ? "silent" : "closed"), opts.timeoutMs ?? LIVE_TIMEOUT_MS);
+    // The caller has gone (the page was left): close at once and say nothing was learned.
+    if (opts.signal?.aborted) {
+      settled = true;
+      clearTimeout(timer);
+      resolve({ state: "closed", ms: null });
+      return;
+    }
+    opts.signal?.addEventListener("abort", () => finish("closed"), { once: true });
+    try {
+      socket = create(rpcWebsocketUrl(rpcEndpoint));
+    } catch {
+      finish("closed");
+      return;
+    }
+    socket.onopen = () => {
+      opened = true;
+      socket.send(JSON.stringify({ jsonrpc: "2.0", method: "subscribe", id: 0, params: { query: "tm.event='NewBlock'" } }));
+    };
+    socket.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(String(ev.data)) as { result?: { data?: { value?: { block?: { header?: { height?: unknown } } } } } };
+        if (typeof msg?.result?.data?.value?.block?.header?.height === "string") finish("blocks");
+      } catch {
+        // Not a frame of ours.
+      }
+    };
+    socket.onerror = () => {
+      // A connection that never opened has failed; not every runtime follows
+      // the error with a close. Once open, the close that follows decides.
+      if (!opened) finish("closed");
+    };
+    socket.onclose = () => finish(opened ? "dropped" : "closed");
+  });
+}
+
+/** What a live result adds to the RPC's card: a row, and a problem when it isn't delivering. */
+export function describeLive(live: LiveResult | null): { value: string; issue: string | null } {
+  if (!live) return { value: "Checking", issue: null };
+  if (live.state === "blocks") return { value: `Connected, new blocks arriving${live.ms !== null ? ` (first after ${(live.ms / 1000).toFixed(1)}s)` : ""}`, issue: null };
+  if (live.state === "silent") {
+    return {
+      value: "Connected, no block received",
+      issue: `The live connection opened but delivered no block in ${LIVE_TIMEOUT_MS / 1000} seconds, so live updates fall back to asking every few seconds.`,
+    };
+  }
+  if (live.state === "dropped") {
+    return {
+      value: "Connected, then closed",
+      issue: "The live connection opened and was closed from the other end before a block arrived, so live updates fall back to asking every few seconds.",
+    };
+  }
+  return {
+    value: "Not connecting",
+    issue: "The live connection can't be opened, so live updates fall back to asking every few seconds.",
+  };
+}
+
 /** The worst state among the given results. */
 export function worstState(...results: { state: ServiceState }[]): ServiceState {
   if (results.some((r) => r.state === "unreachable")) return "unreachable";

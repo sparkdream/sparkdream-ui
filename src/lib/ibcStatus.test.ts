@@ -243,3 +243,21 @@ test("this chain behind what the peer's light client has seen of it was reset it
   assert.equal(peerReset.issues.length, 1);
   assert.match(peerReset.issues[0], /^Spark Dream Devnet is at block/);
 });
+
+test("newer open channels to the same chain mean the peer's record names a replaced connection", () => {
+  const got = assessIbc(
+    input({ links: [link({ newerChannels: [{ port: "federation", id: "channel-2" }, { port: "transfer", id: "channel-3" }] })] })
+  );
+  assert.equal(got.state, "degraded");
+  assert.equal(got.issues.length, 1);
+  assert.equal(
+    got.issues[0],
+    "The record of Spark Dream Devnet names federation channel-0, transfer channel-1, but newer open channels to the same chain exist (federation channel-2, transfer channel-3). The record most likely still points at a connection that was replaced, and needs updating to the new channels."
+  );
+  assert.equal(fact(got, "Newer channels"), "federation channel-2, transfer channel-3");
+  assert.equal(fact(assessIbc(input({ links: [link({ newerChannels: [] })] })), "Newer channels"), undefined);
+  // Counted out once, with the reset that usually explains it.
+  const both = assessIbc(input({ links: [link(), link({ peer: "Other", clientHeight: 622_608, peerHeight: 211_334, newerChannels: [{ port: "transfer", id: "channel-3" }] })] }));
+  assert.equal(both.issues.length, 2);
+  assert.equal(fact(both, "Peer chains"), "1 of 2 working");
+});

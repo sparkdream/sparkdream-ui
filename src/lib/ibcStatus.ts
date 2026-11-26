@@ -17,6 +17,11 @@
 // fee it last paid, and says when it is running out, since a relayer with
 // nothing to pay with stops as surely as one that has crashed.
 //
+// The federation module's record of a peer names the channels to use, and it
+// can go stale: when a peer chain is reset and a new connection is made, the
+// record still names the old channels. That shows from this chain alone, as
+// open channels to the same chain on a later light client.
+//
 // The relayer has a second account, on the peer chain, which pays for what it
 // delivers there. It is read the same way from the peer chain's own API,
 // where the site knows it (PEER_CHAINS), by the peer's light client of this
@@ -75,6 +80,14 @@ export interface IbcLink {
    */
   clientHeight?: number | null;
   peerHeight?: number | null;
+  /**
+   * Open channels to the same peer chain on a light client created after the
+   * one this link's channels use. The federation's record of a peer names
+   * its channels, and nothing updates it when a new connection is made, so
+   * after a peer is reset and reconnected the record goes on naming the old
+   * ones. Empty or absent when there are none.
+   */
+  newerChannels?: { port: string; id: string }[];
   /** The peer chain's fee denomination and its display name, from the peer's registered identity. */
   peerFee?: { denom: string; symbol: string };
 }
@@ -189,6 +202,15 @@ export function assessIbc(input: IbcInput): ServiceReport {
       issues.push(`The ${c.port} channel to ${link.peer} (${c.id}) is ${stateWord(c.state)}, not open.`);
     }
 
+    // Seen from this chain alone: a later connection to the same chain is in
+    // use beside the one the peer's record names.
+    const newer = link.newerChannels ?? [];
+    if (newer.length > 0) {
+      const list = (cs: { port: string; id: string }[]) => cs.map((c) => `${c.port} ${c.id}`).join(", ");
+      issues.push(
+        `The record of ${link.peer} names ${list(link.channels)}, but newer open channels to the same chain exist (${list(newer)}). The record most likely still points at a connection that was replaced, and needs updating to the new channels.`
+      );
+    }
     // The peer's API may be a node a few blocks behind the one the relayer
     // reads, so a small shortfall proves nothing. The caller gives a height
     // only from a node at the chain's tip, where a large one can't happen.
@@ -258,6 +280,9 @@ export function assessIbc(input: IbcInput): ServiceReport {
       label: label("Light client"),
       value: `${link.clientStatus ?? "Unreadable"}${age !== null ? `, updated ${formatAge(age)} ago` : ""}`,
     });
+    if (newer.length > 0) {
+      listed.push({ label: label("Newer channels"), value: newer.map((c) => `${c.port} ${c.id}`).join(", ") });
+    }
     if (link.peerHeight != null && link.peerHeight > 0) {
       listed.push({
         label: label("Peer chain height"),

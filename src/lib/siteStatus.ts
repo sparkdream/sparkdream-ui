@@ -49,6 +49,11 @@ import { createHash } from "node:crypto";
 import { toBech32 } from "@cosmjs/encoding";
 import { assessValidators, type ActiveValidator } from "@/lib/validatorStatus";
 import { assessGov, type GovProposal } from "@/lib/govStatus";
+import { assessShield } from "@/lib/shieldStatus";
+import { assessCerts, httpsHosts, type CertReading } from "@/lib/certStatus";
+import { connect as tlsConnect } from "node:tls";
+import { stat, readFile } from "node:fs/promises";
+import path from "node:path";
 import { assessIbc, type IbcChannel, type IbcLink, type IbcPeerClient, type IbcRelayer } from "@/lib/ibcStatus";
 import { assessMirror, type MirrorRebuild, type MirrorSync } from "@/lib/mirrorStatus";
 import {
@@ -1033,6 +1038,224 @@ export async function checkGovernance(lcd: string): Promise<ServiceReport> {
   });
 }
 
+// ---- Anonymous actions ----------------------------------------------------------
+
+// What a prover release holds (the chain repo's prepare-release.sh builds them).
+const PROVER_FILES = ["shield.wasm", "wasm_exec.js", "proving_key.raw.bin", "circuit.r1cs"];
+
+/** Whether ZK_DIGESTS pins any file's digest, by the rule /api/config applies before handing them to the browser. */
+function pinsDigests(raw: string | undefined): boolean {
+  if (!raw) return false;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    return Object.values(parsed as Record<string, unknown>).some((v) => typeof v === "string" && /^[0-9a-fA-F]{64}$/.test(v));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether the prover files for `version` are where the browser will look
+ * for them: under ZK_ASSETS_URL when that is an address, or in this site's
+ * own public/zk directory. Returns what is wrong, or null. The files'
+ * contents are not hashed here (the browser does that before using them).
+ */
+export async function proverProblem(
+  version: string,
+  env: NodeJS.ProcessEnv = process.env,
+  publicDir: string = path.join(process.cwd(), "public")
+): Promise<string | null> {
+  // The version becomes part of a path: a plain release name, never "." or "..".
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(version) || version.includes("..")) {
+    return "The chain's version can't be read, so the prover files can't be looked up.";
+  }
+  const base = (env.ZK_ASSETS_URL || env.NEXT_PUBLIC_ZK_ASSETS_URL || "/zk").replace(/\/+$/, "");
+  const missing = `The prover files for ${version} aren't published.`;
+  const wrong = `The prover manifest for ${version} isn't valid.`;
+  // With the files' digests pinned in the site's settings the browser never
+  // reads the manifest, so its absence is not a fault: only the files count.
+  // Read as /api/config reads them for the browser: valid JSON holding at least one digest.
+  const digestsPinned = pinsDigests(env.ZK_DIGESTS || env.NEXT_PUBLIC_ZK_DIGESTS);
+  const checkManifest = (raw: string): string | null => {
+    try {
+      const manifest = JSON.parse(raw) as { version?: string; files?: Record<string, unknown> };
+      if (manifest.version !== version || !manifest.files) return wrong;
+      return PROVER_FILES.every((f) => typeof manifest.files?.[f] === "string") ? null : wrong;
+    } catch {
+      return wrong;
+    }
+  };
+  if (/^https?:\/\//.test(base)) {
+    if (!digestsPinned) {
+      const r = await reach(`${base}/${version}/manifest.json`);
+      if (!r.res?.ok) return missing;
+      const bad = checkManifest(await r.res.text().catch(() => ""));
+      if (bad) return bad;
+    }
+    const heads = await Promise.all(PROVER_FILES.map((f) => reach(`${base}/${version}/${f}`, "HEAD")));
+    if (heads.every((h) => !h.res?.ok)) return missing;
+    return heads.every((h) => h.res?.ok) ? null : `Some prover files for ${version} are missing.`;
+  }
+  // Served by this site from its public directory.
+  const dir = path.join(publicDir, base.replace(/^\/+/, ""), version);
+  if (!digestsPinned) {
+    try {
+      const bad = checkManifest(await readFile(path.join(dir, "manifest.json"), "utf8"));
+      if (bad) return bad;
+    } catch {
+      return missing;
+    }
+  }
+  const present = await Promise.all(PROVER_FILES.map((f) => stat(path.join(dir, f)).then((st) => st.size > 0, () => false)));
+  if (!present.some(Boolean)) return missing;
+  return present.every(Boolean) ? null : `Some prover files for ${version} are missing.`;
+}
+
+/**
+ * Anonymous actions (x/shield): the reserve that pays for them and whether
+ * it can be refilled, the chain's verification key, the prover files for the
+ * chain's version, and the validators' key where encrypted batches are on.
+ * `lcd` is the node this server reads.
+ */
+export async function checkShield(
+  lcd: string,
+  units: ChainUnits = chainUnits(),
+  env: NodeJS.ProcessEnv = process.env
+): Promise<ServiceReport> {
+  const base = lcd.replace(/\/+$/, "");
+  const shield = `${base}/sparkdream/shield/v1`;
+  const day = Math.floor(Date.now() / 86_400_000);
+  const [paramsR, balanceR, fundedR, poolR, keyR, pendingR, keySetR, infoR] = await Promise.all([
+    reach(`${shield}/params`),
+    reach(`${shield}/module_balance`),
+    reach(`${shield}/day_funding/${day}`),
+    reach(`${base}/cosmos/distribution/v1beta1/community_pool`),
+    reach(`${shield}/verification_key/shield_v1`),
+    reach(`${shield}/pending_op_count`),
+    reach(`${shield}/tle_key_set`),
+    reach(`${base}/cosmos/base/tendermint/v1beta1/node_info`),
+  ]);
+  const blank = {
+    balance: null,
+    minReserve: null,
+    maxFeePerExec: null,
+    fundingLeftToday: null,
+    communityPool: null,
+    hasVerificationKey: null,
+    prover: null,
+    batches: null,
+  };
+  if (!paramsR.res || isGatewayStatus(paramsR.res.status)) {
+    return { id: "shield", state: "unreachable", issues: ["The chain couldn't be read, so the state of anonymous actions is unknown."], latency_ms: null, facts: [] };
+  }
+  if (paramsR.res.status === 501 || paramsR.res.status === 404) return assessShield({ ...blank, enabled: null });
+  const params = (
+    await okJson<{
+      params?: {
+        enabled?: boolean;
+        min_gas_reserve?: string;
+        max_funding_per_day?: string;
+        max_fee_per_exec?: string;
+        encrypted_batch_enabled?: boolean;
+      };
+    }>(paramsR)
+  )?.params;
+  if (!params) {
+    return { id: "shield", state: "unreachable", issues: ["The chain's anonymous-action settings couldn't be read."], latency_ms: null, facts: [] };
+  }
+  if (!params.enabled) return assessShield({ ...blank, enabled: false });
+
+  const micro = (v: string | undefined): bigint | null => (v !== undefined && /^\d+$/.test(v) ? BigInt(v) : null);
+  const balance = micro((await okJson<{ balance?: { amount?: string } }>(balanceR))?.balance?.amount);
+  const cap = micro(params.max_funding_per_day);
+  // The chain answers 0 for a day with no funding yet.
+  const funded = micro((await okJson<{ day_funding?: { amount_funded?: string } }>(fundedR))?.day_funding?.amount_funded);
+  const pool = (await okJson<{ pool?: { denom?: string; amount?: string }[] }>(poolR))?.pool;
+  const held = pool ? (pool.find((c) => c.denom === units.denom)?.amount ?? "0") : null;
+
+  // The key answers 404 when the chain has none.
+  const hasVerificationKey = keyR.res?.ok ? true : keyR.res?.status === 404 ? false : null;
+  // The browser loads the prover named by ZK_VERSION, or else the chain's own
+  // version, and then refuses one that isn't built for the version the chain
+  // runs (lib/shieldClient.ts). So a pin that has fallen behind the chain is
+  // a prover nobody can use, however well its files are published.
+  const chainVersion = (await okJson<{ application_version?: { version?: string } }>(infoR))?.application_version?.version || "";
+  const pinned = env.ZK_VERSION || env.NEXT_PUBLIC_ZK_VERSION || "";
+  const version = pinned || chainVersion;
+  const proverOf = async (): Promise<string | null> => {
+    if (pinned && chainVersion && pinned !== chainVersion) {
+      return `This site's prover is pinned to ${pinned}, but the chain runs ${chainVersion}.`;
+    }
+    return proverProblem(version, env);
+  };
+  const pending = (await okJson<{ count?: string }>(pendingR))?.count;
+  const keySet = (await okJson<{ key_set?: { master_public_key?: string | null } }>(keySetR))?.key_set;
+
+  return assessShield({
+    enabled: true,
+    balance,
+    minReserve: micro(params.min_gas_reserve),
+    maxFeePerExec: micro(params.max_fee_per_exec),
+    fundingLeftToday: cap !== null && funded !== null ? (cap > funded ? cap - funded : BigInt(0)) : null,
+    // The pool holds decimal amounts: the whole part is what can be drawn.
+    communityPool: held !== null && /^\d+(\.\d+)?$/.test(held) ? BigInt(held.split(".")[0]) : null,
+    hasVerificationKey,
+    prover: version ? { version, problem: await proverOf() } : null,
+    batches: keySet ? { enabled: params.encrypted_batch_enabled === true, hasKey: !!keySet.master_public_key, pending: pending && /^\d+$/.test(pending) ? Number(pending) : null } : null,
+    symbol: units.symbol,
+  });
+}
+
+// ---- Certificates ---------------------------------------------------------------
+
+export type CertProbe = (host: string) => Promise<CertReading>;
+
+/**
+ * Ask a host for its certificate. The handshake is completed even when the
+ * certificate wouldn't be accepted, so that an expired one can be read and
+ * said to be expired; nothing is sent over the connection.
+ */
+export const readCertificate = (host: string, port = 443, timeoutMs = TIMEOUT_MS): Promise<CertReading> =>
+  new Promise((resolve) => {
+    const none: CertReading = { host, expiresAt: null, refused: null, unreachable: true };
+    let done = false;
+    const finish = (reading: CertReading) => {
+      if (done) return;
+      done = true;
+      socket.destroy();
+      resolve(reading);
+    };
+    const socket = tlsConnect({ host, port, servername: host, rejectUnauthorized: false }, () => {
+      const cert = socket.getPeerCertificate();
+      const expires = Date.parse(cert?.valid_to ?? "");
+      finish({
+        host,
+        expiresAt: Number.isFinite(expires) ? expires : null,
+        refused: socket.authorized ? null : String(socket.authorizationError || "not trusted"),
+        unreachable: false,
+      });
+    });
+    socket.setTimeout(timeoutMs, () => finish(none));
+    socket.on("error", () => finish(none));
+  });
+
+/**
+ * The certificates of the https addresses this site is set up with. Only
+ * addresses from the site's own settings are asked, never one read from the
+ * chain.
+ */
+export async function checkCertificates(
+  urls: (string | undefined)[],
+  probe: CertProbe = (host) => readCertificate(host)
+): Promise<ServiceReport> {
+  const hosts = httpsHosts(urls).slice(0, 8);
+  const readings = await Promise.all(
+    hosts.map((host) => probe(host).catch((): CertReading => ({ host, expiresAt: null, refused: null, unreachable: true })))
+  );
+  return assessCerts(readings, Date.now());
+}
+
 // ---- Federation bridges ---------------------------------------------------------
 
 // The same bound as the rows the card lists (lib/bridgeStatus.ts).
@@ -1412,6 +1635,78 @@ async function ibcRelayer(base: string, clientId: string): Promise<IbcRelayer | 
   };
 }
 
+interface IbcTopology {
+  /** Chain id each light client follows. */
+  clients: Map<string, string>;
+  /** Light client behind each open connection. */
+  connections: Map<string, string>;
+  /** Open channels, with the connection each rides. */
+  channels: { port: string; id: string; connection: string }[];
+}
+
+async function ibcTopology(ibc: string): Promise<IbcTopology | null> {
+  const page = "pagination.limit=500";
+  const [clientsR, connectionsR, channelsR] = await Promise.all([
+    reach(`${ibc}/client/v1/client_states?${page}`),
+    reach(`${ibc}/connection/v1/connections?${page}`),
+    reach(`${ibc}/channel/v1/channels?${page}`),
+  ]);
+  const clients = (await okJson<{ client_states?: { client_id?: string; client_state?: { chain_id?: string } }[] }>(clientsR))?.client_states;
+  const connections = (await okJson<{ connections?: { id?: string; client_id?: string; state?: string }[] }>(connectionsR))?.connections;
+  const channels = (
+    await okJson<{ channels?: { state?: string; port_id?: string; channel_id?: string; connection_hops?: string[] }[] }>(channelsR)
+  )?.channels;
+  if (!clients || !connections || !channels) return null;
+  return {
+    clients: new Map(clients.map((c) => [c.client_id ?? "", c.client_state?.chain_id ?? ""])),
+    connections: new Map(connections.filter((c) => c.state === "STATE_OPEN").map((c) => [c.id ?? "", c.client_id ?? ""])),
+    channels: channels
+      .filter((c) => c.state === "STATE_OPEN")
+      .map((c) => ({ port: c.port_id ?? "", id: c.channel_id ?? "", connection: c.connection_hops?.[0] ?? "" })),
+  };
+}
+
+/** A client id's counter ("07-tendermint-12" is 12): later clients have higher ones. -1 if it has none. */
+function clientNumber(id: string): number {
+  const m = /-(\d+)$/.exec(id);
+  return m ? Number(m[1]) : -1;
+}
+
+/**
+ * The channels that most likely replaced a peer record's: open channels to
+ * `chainId` on one light client created after `clientId`, covering every
+ * port the record names. Exported for its test.
+ *
+ * Anyone may create a client, a connection and a channel, and a client's
+ * chain id is whatever its creator says. So one stray channel proves
+ * nothing: a second relayer's own transfer channel is ordinary. What is
+ * taken as a replaced link is a later client carrying the same set of ports,
+ * the federation port among them, which is what re-making a peer's
+ * connection leaves and nothing else ordinarily does.
+ */
+export function newerChannelsThan(
+  t: IbcTopology,
+  clientId: string,
+  chainId: string,
+  ports: string[],
+  federationPort: string
+): { port: string; id: string }[] {
+  const mine = clientNumber(clientId);
+  if (mine < 0 || !chainId || !ports.includes(federationPort)) return [];
+  const later = [...t.clients]
+    .filter(([id, chain]) => chain === chainId && id !== clientId && clientNumber(id) > mine)
+    .map(([id]) => id)
+    .sort((a, b) => clientNumber(b) - clientNumber(a));
+  // The latest such client that carries them all.
+  for (const client of later) {
+    const onIt = t.channels.filter((c) => t.connections.get(c.connection) === client && ports.includes(c.port));
+    if (ports.every((port) => onIt.some((c) => c.port === port))) {
+      return ports.flatMap((port) => onIt.filter((c) => c.port === port).map((c) => ({ port: c.port, id: c.id })));
+    }
+  }
+  return [];
+}
+
 /**
  * The IBC relayer, judged by this chain's side of each link the federation
  * module names: the channels to every active peer chain, the light client
@@ -1455,6 +1750,11 @@ export async function checkIbc(
   const linked = (peers.peers ?? [])
     .filter((p) => p.status === "PEER_STATUS_ACTIVE" && (p.ibc_channel_id || p.ibc_transfer_channel_id))
     .slice(0, MAX_IBC_PEERS);
+
+  // Every client, connection and channel on this chain, to spot a link that
+  // was replaced: open channels to the same chain on a later light client.
+  // Asked alongside the links' own reads, and awaited by each at its end.
+  const topologyP = linked.length > 0 ? ibcTopology(ibc) : Promise.resolve(null);
 
   const links = await Promise.all(
     linked.map(async (peer): Promise<IbcLink> => {
@@ -1557,6 +1857,7 @@ export async function checkIbc(
         [relayer, peerRelayer, peerHeight, peerClient] = await Promise.all([relayerP, peerRelayerP, peerHeightP, peerClientP]);
       }
       const identity = peer.peer_identity;
+      const topology = await topologyP;
       return {
         peer: peer.display_name || peer.id || "peer",
         channels,
@@ -1566,6 +1867,10 @@ export async function checkIbc(
         relayer,
         peerRelayer,
         peerClient,
+        newerChannels:
+          topology && clientId
+            ? newerChannelsThan(topology, clientId, peerChainId, named.map((c) => c.port), federationPort)
+            : [],
         clientHeight: latest?.revision_height && /^\d+$/.test(latest.revision_height) ? Number(latest.revision_height) : null,
         peerHeight,
         peerFee:
@@ -1649,6 +1954,18 @@ async function runAll(env: NodeJS.ProcessEnv): Promise<ServiceReport[]> {
   const units = chainUnits(env);
   checks.push(checkValidators(lcd));
   checks.push(checkGovernance(lcd));
+  checks.push(checkShield(lcd, units, env));
+  // The addresses a browser reaches the app's services at. SITE_URL, where set, is this site's own.
+  checks.push(
+    checkCertificates([
+      env.SITE_URL,
+      lcd,
+      env.RPC_ENDPOINT || defaults.rpcEndpoint,
+      explorer,
+      uploadConfig(env)?.publicBase,
+      arweaveGateway(env),
+    ])
+  );
   checks.push(checkIbc(lcd, units, peerChainApis(env.PEER_CHAINS)));
   checks.push(checkBridges(lcd, undefined, units));
   checks.push(checkStorage(lcd, arweaveGateway(env), env));

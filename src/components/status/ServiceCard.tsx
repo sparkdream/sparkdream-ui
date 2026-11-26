@@ -68,8 +68,10 @@ export default function ServiceCard({
         <dl className="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
           {rows.map((row) => (
             <div key={row.label} className="flex items-baseline justify-between gap-4 py-1.5">
-              <dt className="text-sm text-zinc-400">{row.label}</dt>
-              <dd className="min-w-0 break-all text-right font-mono text-sm text-zinc-100">{row.value}</dd>
+              {/* The label keeps its words whole; a long value wraps at its spaces, and an
+                  address with none breaks wherever it must. */}
+              <dt className="max-w-[45%] shrink-0 text-sm text-zinc-400 [overflow-wrap:anywhere]">{row.label}</dt>
+              <dd className="min-w-0 text-right font-mono text-sm text-zinc-100 [overflow-wrap:anywhere]">{row.value}</dd>
             </div>
           ))}
         </dl>

@@ -14,11 +14,13 @@ const POLL_MS = 30_000;
 const COPY: Record<string, { name: string; purpose: string }> = {
   validators: { name: "Validators", purpose: "The nodes that make the chain's blocks, behind the node this app reads." },
   governance: { name: "Chain governance", purpose: "Whether a vote, a passed decision or an upgrade needs someone to act." },
+  certificates: { name: "Certificates", purpose: "The TLS certificates of the addresses this app is reached and reads through." },
   explorer: { name: "Block explorer", purpose: "Where transaction, block and account links open." },
   scanners: { name: "Content scanners", purpose: "Check images and flagged posts before they are shown." },
   images: { name: "Image uploads", purpose: "Storing the pictures members add to dreams and profiles." },
   arweave: { name: "Permanent storage gateway", purpose: "Reading permanent copies and ar:// images." },
   relayer: { name: "IBC relayer", purpose: "Carrying transfers and federated posts between this chain and its peer chains." },
+  shield: { name: "Anonymous actions", purpose: "Posting, replying and reacting without revealing who did it." },
   bridges: { name: "Federation bridges", purpose: "Bringing posts in from other networks, such as Mastodon, and verifying them." },
   storage: { name: "Permanent copies", purpose: "Copying scanned images to Arweave when a member asks." },
   mirror: { name: "Archive mirror", purpose: "The copy of every block kept outside the deployment, from which the permanent archive is made." },
@@ -41,7 +43,7 @@ function rows(report: ServiceReport): CardRow[] {
   return out;
 }
 
-/** The Other services section of the Status page, read from /api/status. */
+/** The Network and services section of the Status page, read from /api/status. */
 export default function SiteStatusSection() {
   const { config } = useChainConfig();
   const [data, setData] = useState<SiteStatusResponse | null>(null);
@@ -88,7 +90,7 @@ export default function SiteStatusSection() {
     <section aria-labelledby="site-status" className="mt-10">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h2 id="site-status" className="text-lg font-semibold text-white">
-          Other services
+          Network and services
         </h2>
         <div className="flex items-center gap-3 text-xs text-zinc-500">
           <span aria-live="polite">
@@ -128,36 +130,12 @@ export default function SiteStatusSection() {
 
       <p className="mt-4 text-xs leading-relaxed text-zinc-500">
         These are checked from this site&apos;s server, not your browser, and refreshed about every
-        15 seconds. For image uploads and the explorer, working means the service answered, not that
-        every feature behind it was exercised. For the permanent block archive, working means the
-        archiver&apos;s latest checkpoint is recent and the range it names is on Arweave under the
-        archiver&apos;s wallet, not that the whole copy was downloaded and verified. Its worker is
-        shown by what its wallet has done on Arweave: the newest range uploaded, and whether the
-        wallet can pay for the next. For permanent
-        copies, working means an approved, funded storage operator and enough approved scanners are
-        registered on chain, and that the operator&apos;s worker has checked in there recently. For a
-        worker that has never checked in, the card shows when it last claimed or copied something
-        and flags a request nobody has touched for a long while, which can also mean a file it
-        can&apos;t fetch. For federation
-        bridges, working means each bridge&apos;s operator and peer are active, the peer&apos;s server answers and the bridge
-        brought a post in within the chain&apos;s inactivity limit, not that its daemon is running. A bridged post is
-        not trusted until a verifier, a separate bonded member, has fetched it and found the same
-        content, so the card also says whether a verifier is in good standing and whether posts are
-        left waiting. The IBC relayer
-        has no record on chain, so it is judged by what it leaves there: the light client it must
-        keep updated, the channels, and packets still waiting. Its account is the one that last
-        updated that client, shown with the fees it can still pay. Where this site
-        knows the peer chain&apos;s API, the card also shows the relayer&apos;s account there, the
-        peer&apos;s own light client of this chain, which the relayer must keep updated just the
-        same, and the peer&apos;s height, which reveals a peer that was reset: the link then leads
-        nowhere. The same comparison the other way round reveals a reset of this chain. The
-        archive mirror is shown as it last reported itself: the results of its hourly sync and its
-        weekly rebuild check. A session key is what an operator grants its worker so the
-        operator&apos;s own key stays off that machine. When it expires or runs out, the chain
-        refuses what the worker sends, so the cards warn a few days ahead. The chain removes a key
-        the moment it expires, so a card that shows none may belong to a worker that signs with its
-        operator&apos;s own key, which is not a fault, or to one whose key expired before this site
-        last restarted.
+        15 seconds. Working means the check passed, not that every feature behind a service was
+        exercised. A worker that runs on someone&apos;s own machine (a scanner, a bridge, a relayer,
+        a storage or archive worker) is judged by what it leaves on the chain or publishes, so a
+        card can lag behind a worker that has only just stopped. A session key is what an operator
+        grants its worker; a card that shows none may belong to a worker that signs with its
+        operator&apos;s own key, which is not a fault.
       </p>
     </section>
   );

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessScanners, checkArchive, checkArchiver, checkBridges, checkIbc, checkMirror, checkArweave, checkPage, checkGovernance, checkStorage, checkValidators, chainUnits, peerChainApis, scannerKeys, type ScannerMeta } from "./siteStatus";
+import { assessScanners, checkArchive, checkArchiver, checkBridges, checkIbc, checkMirror, checkArweave, checkPage, checkCertificates, checkGovernance, checkShield, checkStorage, newerChannelsThan, proverProblem, readCertificate, checkValidators, chainUnits, peerChainApis, scannerKeys, type ScannerMeta } from "./siteStatus";
 
 function meta(over: Partial<ScannerMeta> = {}): ScannerMeta {
   return {
@@ -805,4 +805,206 @@ test("governance: proposals, their tally against the bonded power, and the upgra
   assert.equal(off.state, "off");
   const down = await withFetch(() => new Response("", { status: 502 }), () => checkGovernance("https://lcd.test"));
   assert.equal(down.state, "unreachable");
+});
+
+test("relayer: channels on a later client of the same chain are the newer ones", () => {
+  const t = {
+    clients: new Map([
+      ["07-tendermint-0", "peer-1"],
+      ["07-tendermint-1", "peer-1"],
+      ["07-tendermint-2", "other-1"],
+      ["07-tendermint-10", "peer-1"],
+    ]),
+    // connection-2 is still opening: not in the map of open ones.
+    connections: new Map([
+      ["connection-0", "07-tendermint-0"],
+      ["connection-1", "07-tendermint-1"],
+      ["connection-3", "07-tendermint-2"],
+      ["connection-9", "07-tendermint-10"],
+    ]),
+    channels: [
+      { port: "federation", id: "channel-0", connection: "connection-0" },
+      { port: "transfer", id: "channel-1", connection: "connection-0" },
+      { port: "federation", id: "channel-2", connection: "connection-1" },
+      { port: "transfer", id: "channel-3", connection: "connection-1" },
+      { port: "transfer", id: "channel-4", connection: "connection-3" },
+      { port: "transfer", id: "channel-7", connection: "connection-9" },
+      { port: "transfer", id: "channel-8", connection: "connection-2" },
+    ],
+  };
+  const both = ["federation", "transfer"];
+  // The latest client carrying both of the record's ports is client 1; client 10 has only a transfer channel.
+  assert.deepEqual(newerChannelsThan(t, "07-tendermint-0", "peer-1", both, "federation"), [
+    { port: "federation", id: "channel-2" },
+    { port: "transfer", id: "channel-3" },
+  ]);
+  // Counters compare as numbers: client 10 is later than client 1, and it doesn't carry the federation port.
+  assert.deepEqual(newerChannelsThan(t, "07-tendermint-1", "peer-1", both, "federation"), []);
+  // A stray transfer channel on a later client is anyone's to open: it says nothing about a
+  // record that names only a transfer channel, or about one whose federation port has no successor.
+  assert.deepEqual(newerChannelsThan(t, "07-tendermint-0", "peer-1", ["transfer"], "federation"), []);
+  assert.deepEqual(newerChannelsThan(t, "07-tendermint-0", "peer-1", ["federation"], "federation"), [{ port: "federation", id: "channel-2" }]);
+  assert.deepEqual(newerChannelsThan(t, "07-tendermint-10", "peer-1", both, "federation"), []);
+  assert.deepEqual(newerChannelsThan(t, "07-tendermint-0", "", both, "federation"), []);
+  assert.deepEqual(newerChannelsThan(t, "odd", "peer-1", both, "federation"), []);
+});
+
+test("shield: the reserve, its refill, the key and the prover files make one report", async () => {
+  const json = (body: unknown) => new Response(JSON.stringify(body));
+  let balance = "100000000";
+  let hasKey = true;
+  const day = Math.floor(Date.now() / 86_400_000);
+  const answer = (url: string) => {
+    if (url.endsWith("/shield/v1/params")) {
+      return json({ params: { enabled: true, min_gas_reserve: "100000000", max_funding_per_day: "200000000", max_fee_per_exec: "50000", encrypted_batch_enabled: false } });
+    }
+    if (url.endsWith("/shield/v1/module_balance")) return json({ balance: { denom: "uspark", amount: balance } });
+    if (url.endsWith(`/shield/v1/day_funding/${day}`)) return json({ day_funding: { amount_funded: "0" } });
+    if (url.endsWith("/distribution/v1beta1/community_pool")) return json({ pool: [{ denom: "uspark", amount: "0.660000000000000000" }] });
+    if (url.endsWith("/verification_key/shield_v1")) return hasKey ? json({ verification_key: {} }) : new Response("{}", { status: 404 });
+    if (url.endsWith("/pending_op_count")) return json({ count: "0" });
+    if (url.endsWith("/tle_key_set")) return json({ key_set: { master_public_key: null } });
+    if (url.endsWith("/node_info")) return json({ application_version: { version: "v9.9.9" } });
+    return new Response("", { status: 404 });
+  };
+  const units = { denom: "uspark", symbol: "SPARK" };
+  // The prover files are looked for under an address, where none are published for this version.
+  const env = { ZK_ASSETS_URL: "https://zk.test/" } as unknown as NodeJS.ProcessEnv;
+  const got = await withFetch(answer, () => checkShield("https://lcd.test/", units, env));
+  assert.equal(got.facts.find((f) => f.label === "Gas reserve")?.value, "100 SPARK, kept at 100");
+  assert.equal(got.facts.find((f) => f.label === "Prover files")?.value, "v9.9.9, not usable");
+  assert.equal(got.issues.length, 1);
+  assert.match(got.issues[0], /^The prover files for v9\.9\.9 aren't published\./);
+
+  // Below its minimum with an empty community pool, and no verification key.
+  balance = "60000000";
+  hasKey = false;
+  const dry = await withFetch(answer, () => checkShield("https://lcd.test/", units, env));
+  assert.ok(dry.issues.some((i) => /no verification key/.test(i)));
+  assert.ok(dry.issues.some((i) => /isn't being refilled: the community pool/.test(i)));
+
+  // A prover pinned to a version the chain has moved past is one the browser refuses.
+  const pinnedEnv = { ZK_ASSETS_URL: "https://zk.test/", ZK_VERSION: "v9.9.8" } as unknown as NodeJS.ProcessEnv;
+  const stale = await withFetch(answer, () => checkShield("https://lcd.test/", units, pinnedEnv));
+  assert.ok(stale.issues.some((i) => i.startsWith("This site's prover is pinned to v9.9.8, but the chain runs v9.9.9.")), stale.issues.join(" | "));
+
+  const off = await withFetch(() => new Response("{}", { status: 501 }), () => checkShield("https://lcd.test", units, env));
+  assert.equal(off.state, "off");
+  const down = await withFetch(() => new Response("", { status: 502 }), () => checkShield("https://lcd.test", units, env));
+  assert.equal(down.state, "unreachable");
+});
+
+test("prover files: a published release under an address, a wrong manifest, a missing file", async () => {
+  const manifest = (version: string) =>
+    JSON.stringify({ version, files: { "shield.wasm": "a", "wasm_exec.js": "b", "proving_key.raw.bin": "c", "circuit.r1cs": "d" } });
+  const env = { ZK_ASSETS_URL: "https://zk.test" } as unknown as NodeJS.ProcessEnv;
+  let served = manifest("v1.1.1");
+  let missing = "";
+  const answer = (url: string) => {
+    if (url === "https://zk.test/v1.1.1/manifest.json") return new Response(served);
+    if (url.startsWith("https://zk.test/v1.1.1/") && !url.endsWith(missing || "#")) return new Response("");
+    return new Response("", { status: 404 });
+  };
+  assert.equal(await withFetch(answer, () => proverProblem("v1.1.1", env)), null);
+  missing = "circuit.r1cs";
+  assert.equal(await withFetch(answer, () => proverProblem("v1.1.1", env)), "Some prover files for v1.1.1 are missing.");
+  missing = "";
+  served = manifest("v1.0.0");
+  assert.equal(await withFetch(answer, () => proverProblem("v1.1.1", env)), "The prover manifest for v1.1.1 isn't valid.");
+  assert.equal(await withFetch(answer, () => proverProblem("v2.0.0", env)), "The prover files for v2.0.0 aren't published.");
+  // With the digests pinned in the settings the browser never reads the manifest: only the files count.
+  const pinned = { ZK_ASSETS_URL: "https://zk.test", ZK_DIGESTS: JSON.stringify({ "shield.wasm": "a".repeat(64) }) } as unknown as NodeJS.ProcessEnv;
+  assert.equal(await withFetch(answer, () => proverProblem("v1.1.1", pinned)), null);
+  assert.equal(await withFetch(answer, () => proverProblem("v2.0.0", pinned)), "The prover files for v2.0.0 aren't published.");
+  // Digests that aren't valid JSON are ignored by the browser too: the manifest is still needed.
+  const garbled = { ZK_ASSETS_URL: "https://zk.test", ZK_DIGESTS: `{"shield.wasm":"${"a".repeat(64)}"` } as unknown as NodeJS.ProcessEnv;
+  assert.equal(await withFetch(answer, () => proverProblem("v1.1.1", garbled)), "The prover manifest for v1.1.1 isn't valid.");
+  // A version that isn't a plain release name is never put into a path.
+  for (const bad of ["../etc", "..", ".", "v1/../x", ""]) {
+    assert.match((await proverProblem(bad, env)) ?? "", /version can't be read/, bad);
+  }
+
+  // Served by this site: a release in its public directory, whole, then with a file gone.
+  const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const pub = await mkdtemp(join(tmpdir(), "status-zk-"));
+  try {
+    const dir = join(pub, "zk", "v1.1.1");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "manifest.json"), manifest("v1.1.1"));
+    for (const f of ["shield.wasm", "wasm_exec.js", "proving_key.raw.bin", "circuit.r1cs"]) await writeFile(join(dir, f), "x");
+    const local = {} as NodeJS.ProcessEnv;
+    assert.equal(await proverProblem("v1.1.1", local, pub), null);
+    await writeFile(join(dir, "circuit.r1cs"), "");
+    assert.equal(await proverProblem("v1.1.1", local, pub), "Some prover files for v1.1.1 are missing.");
+    assert.equal(await proverProblem("v1.2.0", local, pub), "The prover files for v1.2.0 aren't published.");
+  } finally {
+    await rm(pub, { recursive: true, force: true });
+  }
+  // Served by this site: a release that isn't in its public directory.
+  assert.equal(await proverProblem("v0.0.0-none", {} as NodeJS.ProcessEnv), "The prover files for v0.0.0-none aren't published.");
+});
+
+test("certificates: each configured https host is asked once, and a probe that fails is unreachable", async () => {
+  const asked: string[] = [];
+  const soon = Date.now() + 5 * 86_400_000;
+  const got = await checkCertificates(["https://api.test/x", "https://api.test", "http://plain.test", undefined, "https://rpc.test", "https://down.test"], async (host) => {
+    asked.push(host);
+    if (host === "down.test") throw new Error("boom");
+    return { host, expiresAt: host === "rpc.test" ? soon : Date.now() + 80 * 86_400_000, refused: null, unreachable: false };
+  });
+  assert.deepEqual(asked, ["api.test", "rpc.test", "down.test"]);
+  assert.equal(got.state, "degraded");
+  assert.equal(got.issues.length, 1);
+  assert.match(got.issues[0], /^The certificate of rpc\.test expires in 5d/);
+  assert.equal(got.facts[2].value, "Not checked, the host didn't answer");
+});
+
+test("certificates: the reader against a real TLS server, a closed port and a host that never answers", async (t) => {
+  const { execFileSync } = await import("node:child_process");
+  const { mkdtemp, readFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const tls = await import("node:tls");
+  const net = await import("node:net");
+  const dir = await mkdtemp(join(tmpdir(), "status-cert-"));
+  try {
+    // A self-signed certificate for localhost, good for ten days, made for this run.
+    try {
+      execFileSync(
+        "openssl",
+        ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "10", "-subj", "/CN=localhost", "-keyout", join(dir, "key.pem"), "-out", join(dir, "cert.pem")],
+        { stdio: "ignore" }
+      );
+    } catch {
+      t.skip("openssl isn't available to make a test certificate");
+      return;
+    }
+    const server = tls.createServer({ key: await readFile(join(dir, "key.pem")), cert: await readFile(join(dir, "cert.pem")) });
+    // A port that accepts a connection and then says nothing: no handshake ever completes.
+    const mute = net.createServer(() => {});
+    const listen = (srv: { listen(port: number, host: string, cb: () => void): unknown; address(): unknown }) =>
+      new Promise<number>((resolve) => srv.listen(0, "127.0.0.1", () => resolve((srv.address() as { port: number }).port)));
+    const [port, mutePort] = [await listen(server), await listen(mute)];
+    try {
+      const got = await readCertificate("localhost", port, 3000);
+      assert.equal(got.unreachable, false);
+      // Its end is read even though nobody vouches for it, and that it isn't accepted is said.
+      const days = ((got.expiresAt ?? 0) - Date.now()) / 86_400_000;
+      assert.ok(days > 9 && days <= 10, `expires in ${days} days`);
+      assert.match(got.refused ?? "", /SELF_SIGNED/);
+
+      const silent = await readCertificate("localhost", mutePort, 300);
+      assert.deepEqual(silent, { host: "localhost", expiresAt: null, refused: null, unreachable: true });
+    } finally {
+      server.close();
+      mute.close();
+    }
+    // Nothing listens there any more.
+    const closed = await readCertificate("localhost", port, 3000);
+    assert.equal(closed.unreachable, true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

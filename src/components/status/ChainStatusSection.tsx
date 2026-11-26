@@ -4,9 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useChainConfig } from "@/contexts/ChainConfigContext";
 import {
   checkChain,
+  describeLive,
   formatAge,
+  probeLive,
   worstState,
   type ChainStatus,
+  type LiveResult,
   type ProbeResult,
   type ServiceState,
 } from "@/lib/serviceStatus";
@@ -15,6 +18,10 @@ import ServiceCard, { STATE_STYLE, type CardRow } from "./ServiceCard";
 // Often enough that the page tracks an outage as it happens, rarely enough
 // that leaving it open costs the node four small requests a quarter minute.
 const POLL_MS = 15_000;
+// The live connection is checked less often: each check holds a websocket
+// open until a block arrives, which is more than a status page should ask of
+// the node four times a minute.
+const LIVE_EVERY_MS = 60_000;
 
 const SUMMARY: Record<Exclude<ServiceState, "off">, string> = {
   ok: "The chain node is working",
@@ -70,10 +77,50 @@ function chainRows(result: ProbeResult | null, expectedChainId: string): CardRow
 export default function ChainStatusSection() {
   const { config, ready } = useChainConfig();
   const [status, setStatus] = useState<ChainStatus | null>(null);
+  // The RPC's websocket, checked beside the rest: it waits for a block, which the other checks shouldn't.
+  const [live, setLive] = useState<LiveResult | null>(null);
+  const liveRunning = useRef(false);
+  const liveCheckedAt = useRef(0);
+  const liveAbort = useRef<AbortController | null>(null);
   const [checking, setChecking] = useState(false);
   const running = useRef(false);
 
-  const run = useCallback(async () => {
+  // `force` is the "Check again" button; the timer's own rounds wait out LIVE_EVERY_MS.
+  const runLive = useCallback(
+    async (force: boolean) => {
+      if (liveRunning.current) return;
+      if (!force && Date.now() - liveCheckedAt.current < LIVE_EVERY_MS) return;
+      liveRunning.current = true;
+      liveCheckedAt.current = Date.now();
+      const abort = new AbortController();
+      liveAbort.current = abort;
+      try {
+        const result = await probeLive(config.rpcEndpoint, { signal: abort.signal });
+        // A check cut short by leaving the page, or by a change of endpoint, learned nothing.
+        if (!abort.signal.aborted) setLive(result);
+      } finally {
+        // Only the newest check may say that none is running: one that was cut
+        // short finishes later, when its successor may already be under way.
+        if (liveAbort.current === abort) liveRunning.current = false;
+      }
+    },
+    [config.rpcEndpoint]
+  );
+
+  // A different endpoint is a different connection: forget the old answer and
+  // stop a check still waiting on it. Leaving the page stops it too.
+  useEffect(() => {
+    setLive(null);
+    liveCheckedAt.current = 0;
+    return () => {
+      liveAbort.current?.abort();
+      liveAbort.current = null;
+      liveRunning.current = false;
+    };
+  }, [config.rpcEndpoint]);
+
+  const run = useCallback(async (force = false) => {
+    void runLive(force);
     if (running.current) return;
     running.current = true;
     setChecking(true);
@@ -89,7 +136,7 @@ export default function ChainStatusSection() {
       running.current = false;
       setChecking(false);
     }
-  }, [config.rpcEndpoint, config.chainId]);
+  }, [config.rpcEndpoint, config.chainId, runLive]);
 
   // Wait for the runtime config so the check hits the endpoints the app really
   // uses, then repeat while the tab is visible and once more when it returns.
@@ -107,7 +154,18 @@ export default function ChainStatusSection() {
     };
   }, [ready, run]);
 
-  const overall = status ? worstState(status.lcd, status.rpc) : null;
+  // The live connection is part of the RPC's card. It is only judged when the
+  // RPC itself answers: an unreachable node has already said why.
+  const liveNote = describeLive(live);
+  const rpcAnswers = !!status && status.rpc.state !== "unreachable";
+  const rpc = status
+    ? {
+        ...status.rpc,
+        state: rpcAnswers && liveNote.issue && status.rpc.state === "ok" ? ("degraded" as const) : status.rpc.state,
+        issues: rpcAnswers && liveNote.issue ? [...status.rpc.issues, liveNote.issue] : status.rpc.issues,
+      }
+    : null;
+  const overall = status && rpc ? worstState(status.lcd, rpc) : null;
 
   return (
     <section aria-labelledby="chain-status">
@@ -124,7 +182,7 @@ export default function ChainStatusSection() {
               ? `Checked ${new Date(status.checkedAt).toLocaleTimeString()}`
               : "Checking"}
           </span>
-          <button type="button" className="sd-btn-ghost" onClick={() => void run()} disabled={checking}>
+          <button type="button" className="sd-btn-ghost" onClick={() => void run(true)} disabled={checking}>
             {checking ? "Checking" : "Check again"}
           </button>
         </div>
@@ -149,9 +207,13 @@ export default function ChainStatusSection() {
           name="RPC"
           purpose="Sending transactions and the live activity ticker."
           endpoint={host(config.rpcEndpoint)}
-          state={status?.rpc.state ?? null}
-          issues={status?.rpc.issues ?? []}
-          rows={chainRows(status?.rpc ?? null, config.chainId)}
+          state={rpc?.state ?? null}
+          issues={rpc?.issues ?? []}
+          rows={
+            rpcAnswers
+              ? [...chainRows(status?.rpc ?? null, config.chainId), { label: "Live updates", value: liveNote.value }]
+              : chainRows(status?.rpc ?? null, config.chainId)
+          }
         />
       </div>
 
@@ -159,7 +221,9 @@ export default function ChainStatusSection() {
         These checks cover the public node this app reads from and sends transactions through,
         whichever sentry is serving at the moment. The validators behind it have their own card below.
         These checks run from your browser, so a problem with your own connection shows up here too.
-        The REST API is checked through this site, the way the app reads it.
+        The REST API is checked through this site, the way the app reads it. The live
+        connection is the one the activity ticker uses, and is checked once a minute: each
+        check waits for a block to arrive.
       </p>
     </section>
   );
