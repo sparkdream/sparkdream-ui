@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessScanners, checkArchive, checkArchiver, checkBridges, checkIbc, checkArweave, checkPage, checkStorage, type ScannerMeta } from "./siteStatus";
+import { assessScanners, checkArchive, checkArchiver, checkBridges, checkIbc, checkMirror, checkArweave, checkPage, checkStorage, type ScannerMeta } from "./siteStatus";
 
 function meta(over: Partial<ScannerMeta> = {}): ScannerMeta {
   return {
@@ -292,4 +292,33 @@ test("relayer: the peer's channels, their client and waiting packets make one re
   assert.equal(off.state, "off");
   const down = await withFetch(() => new Response("", { status: 502 }), () => checkIbc("https://lcd.test"));
   assert.equal(down.state, "unreachable");
+});
+
+test("mirror: status.json and the rebuild document beside it make one report", async () => {
+  const at = new Date(Date.now() - 600_000).toISOString();
+  const seen: string[] = [];
+  const answer = (url: string) => {
+    seen.push(url);
+    if (url.endsWith("/mirror/status.json")) {
+      return new Response(JSON.stringify({ finished_at: at, chain_id: "c-1", tip: 100, complete_to: 90, lag_blocks: 2, archiver_ok: true, vault_ok: true }));
+    }
+    if (url.endsWith("/mirror/rebuild-status.json")) {
+      return new Response(JSON.stringify({ finished_at: at, ok: true, rebuilt_height: 90, network_check: "match" }));
+    }
+    return new Response("", { status: 404 });
+  };
+  const got = await withFetch(answer, () => checkMirror("https://b.test/mirror/status.json", "c-1"));
+  assert.equal(got.state, "ok", got.issues.join(" "));
+  assert.deepEqual(seen.sort(), ["https://b.test/mirror/rebuild-status.json", "https://b.test/mirror/status.json"]);
+  assert.equal(got.facts.find((f) => f.label === "Rebuild check")?.value, "Passed 10m ago, through block 90");
+
+  // No rebuild document yet is not a failure; no status document is.
+  const first = await withFetch((url) => (url.includes("rebuild") ? new Response("", { status: 404 }) : answer(url)), () => checkMirror("https://b.test/mirror/status.json", "c-1"));
+  assert.equal(first.state, "ok");
+  assert.equal(first.facts.find((f) => f.label === "Rebuild check")?.value, "Not run yet");
+  const gone = await withFetch(() => new Response("", { status: 404 }), () => checkMirror("https://b.test/mirror/status.json", "c-1"));
+  assert.equal(gone.state, "unreachable");
+  const html = await withFetch(() => new Response("<html>"), () => checkMirror("https://b.test/mirror/status.json", "c-1"));
+  assert.equal(html.state, "unreachable");
+  assert.equal((await checkMirror("not a url", "c-1")).state, "degraded");
 });

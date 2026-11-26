@@ -33,6 +33,9 @@ services:
       # The bucket must CORS-allow this deployment's hostname — see
       # deploy/s3-cors.json for a sample policy.
       # - REMOTE_MANIFEST_URL=https://my-bucket.4everbucket.com/manifests.json
+      # Optional: the archive mirror's published status.json (with
+      # rebuild-status.json beside it), for the /status page.
+      # - ARCHIVE_MIRROR_STATUS_URL=https://my-bucket.4everbucket.com/mirror/status.json
       # Anonymous prover: the image serves each chain release's prover from
       # public/zk/<version>/ (or set ZK_ASSETS_URL to a bucket). Pin the
       # release and its files' sha256 (the "files" of that release's

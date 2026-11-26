@@ -24,6 +24,7 @@ import { assessBridges, BRIDGE_SERVICE_TYPE_PREFIX } from "@/lib/bridgeStatus";
 import type { BridgeBinding } from "@/types/federation";
 import { headPinned, publicHttpsTarget } from "@/lib/publicUrl";
 import { assessIbc, type IbcChannel, type IbcLink } from "@/lib/ibcStatus";
+import { assessMirror, type MirrorRebuild, type MirrorSync } from "@/lib/mirrorStatus";
 import { CONTENT_SCANNER_SERVICE_TYPE, OperatorStatus, OPERATOR_STATUS_LABELS } from "@/types/service";
 import type { Checkpoint, Operator, ServiceTypeConfig } from "@/types/service";
 import type { ApprovedOperator, ApprovedScanner, StorageBackend } from "@/types/storage";
@@ -698,6 +699,33 @@ export async function checkIbc(lcd: string): Promise<ServiceReport> {
   return assessIbc({ links, now: Date.now() });
 }
 
+// ---- Archive mirror -------------------------------------------------------------
+
+/**
+ * The off-fleet archive mirror, from the two status documents its operator
+ * publishes. `statusUrl` is the address of status.json; rebuild-status.json
+ * is read from beside it. The mirror runs outside the deployment and has no
+ * other way to be seen from here.
+ */
+export async function checkMirror(statusUrl: string, chainId: string): Promise<ServiceReport> {
+  const id = "mirror";
+  let rebuildUrl: string;
+  try {
+    rebuildUrl = new URL("rebuild-status.json", statusUrl).toString();
+  } catch {
+    return { id, state: "degraded", issues: ["The mirror's status address isn't a valid URL."], latency_ms: null, facts: [] };
+  }
+  const [syncR, rebuildR] = await Promise.all([reach(statusUrl), reach(rebuildUrl)]);
+  const cantRead = (issue: string): ServiceReport => ({ id, state: "unreachable", issues: [issue], latency_ms: null, facts: [] });
+  if (!syncR.res) return cantRead(syncR.reason);
+  if (!syncR.res.ok) return cantRead(`The mirror's published status answered with HTTP ${syncR.res.status}.`);
+  const sync = await okJson<MirrorSync>(syncR);
+  if (!sync || typeof sync !== "object") return cantRead("The mirror's published status can't be read.");
+  // No rebuild document yet is a mirror in its first week, not a failure.
+  const rebuild = await okJson<MirrorRebuild>(rebuildR);
+  return assessMirror({ chainId, sync, rebuild: rebuild && typeof rebuild === "object" ? rebuild : null, now: Date.now() });
+}
+
 // ---- Archive snapshots ----------------------------------------------------------
 
 /** The remote snapshot list, when the site uses one. */
@@ -742,7 +770,10 @@ async function runAll(env: NodeJS.ProcessEnv): Promise<ServiceReport[]> {
   checks.push(checkIbc(lcd));
   checks.push(checkBridges(lcd));
   checks.push(checkStorage(lcd, arweaveGateway(env), env));
-  checks.push(checkArchiver(lcd, env.CHAIN_ID || defaults.chainId, arweaveGateway(env)));
+  const chainId = env.CHAIN_ID || defaults.chainId;
+  // The mirror is seen only through what its operator publishes: no address, no card.
+  if (env.ARCHIVE_MIRROR_STATUS_URL) checks.push(checkMirror(env.ARCHIVE_MIRROR_STATUS_URL, chainId));
+  checks.push(checkArchiver(lcd, chainId, arweaveGateway(env)));
   // Without a remote list, snapshots are files on this server: nothing to reach.
   if (manifest) checks.push(checkArchive(manifest));
   return Promise.all(checks);

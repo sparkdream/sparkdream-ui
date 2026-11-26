@@ -19,6 +19,7 @@ const COPY: Record<string, { name: string; purpose: string }> = {
   relayer: { name: "IBC relayer", purpose: "Carrying transfers and federated posts between this chain and its peer chains." },
   bridges: { name: "Federation bridges", purpose: "Bringing posts in from other networks, such as Mastodon." },
   storage: { name: "Permanent copies", purpose: "Copying scanned images to Arweave when a member asks." },
+  mirror: { name: "Archive mirror", purpose: "The copy of every block kept outside the deployment, from which the permanent archive is made." },
   archiver: { name: "Permanent block archive", purpose: "The copy of this chain's block history kept on Arweave." },
   archive: { name: "Archive snapshots", purpose: "The list of read-only snapshots on the Archive page." },
 };
@@ -79,7 +80,7 @@ export default function SiteStatusSection() {
   const byId = new Map((data?.services ?? []).map((s) => [s.id, s]));
   // Before the first answer, show the services every site has so the page
   // doesn't jump; afterwards, exactly the ones the server reported.
-  const ids = data ? ORDER.filter((id) => byId.has(id)) : ORDER.filter((id) => id !== "archive");
+  const ids = data ? ORDER.filter((id) => byId.has(id)) : ORDER.filter((id) => id !== "archive" && id !== "mirror");
 
   return (
     <section aria-labelledby="site-status" className="mt-10">
@@ -134,7 +135,9 @@ export default function SiteStatusSection() {
         bridges, working means each bridge&apos;s operator and peer are active, the peer&apos;s server answers and the bridge
         brought a post in within the chain&apos;s inactivity limit, not that its daemon is running. The IBC relayer
         has no record on chain, so it is judged by what it leaves there: the light client it must
-        keep updated, the channels, and packets still waiting. Only this chain&apos;s side is read.
+        keep updated, the channels, and packets still waiting. Only this chain&apos;s side is read. The
+        archive mirror is shown as it last reported itself: the results of its hourly sync and its
+        weekly rebuild check.
       </p>
     </section>
   );
