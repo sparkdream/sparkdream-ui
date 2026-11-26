@@ -140,7 +140,10 @@ export default function SiteStatusSection() {
         has no record on chain, so it is judged by what it leaves there: the light client it must
         keep updated, the channels, and packets still waiting. Only this chain&apos;s side is read. The
         archive mirror is shown as it last reported itself: the results of its hourly sync and its
-        weekly rebuild check.
+        weekly rebuild check. A session key is what an operator grants its worker so the
+        operator&apos;s own key stays off that machine. When it expires or runs out, the chain
+        refuses what the worker sends, so the cards warn a few days ahead. An operator whose worker
+        signs with its own key has none, which is not a fault.
       </p>
     </section>
   );

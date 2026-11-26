@@ -222,6 +222,21 @@ test("bridges: bindings, peers, operators and the chain's inactivity limit make 
     }
     if (url.includes("/list_peers")) return json({ peers: [{ id: "mstdn.test", status: "PEER_STATUS_ACTIVE" }] });
     if (url.endsWith("/federation/v1/params")) return json({ params: { rate_limit_window: "43200s", bridge_inactivity_threshold: "100" } });
+    if (url.endsWith("/session/v1/sessions_by_granter/op?pagination.limit=100")) {
+      return json({
+        sessions: [
+          {
+            allowed_msg_types: ["/sparkdream.federation.v1.MsgSubmitFederatedContent"],
+            spend_limit: { amount: "100" },
+            spent: { amount: "10" },
+            expiration: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+            last_used_at: new Date(Date.now() - 3_600_000).toISOString(),
+            exec_count: "1",
+            max_exec_count: "100",
+          },
+        ],
+      });
+    }
     if (url.includes("/service/v1/operators")) {
       return json({
         operators: [
@@ -243,6 +258,7 @@ test("bridges: bindings, peers, operators and the chain's inactivity limit make 
   assert.equal(got.facts[0].value, "1 of 1 working");
   assert.equal(got.facts[1].value, "activitypub, last post 60m ago");
   assert.deepEqual(got.facts[2], { label: "mstdn.test endpoint", value: "Answering" });
+  assert.match(got.facts.at(-1)?.value ?? "", /^Expires in 30d, last used 60m ago, 90% of its fee budget and 99% of its uses left$/);
 
   // An endpoint this server won't contact is left unchecked; one that fails is not answering.
   const unchecked = await withFetch(answer, () => checkBridges("https://lcd.test/", async () => null));

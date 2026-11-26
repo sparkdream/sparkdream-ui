@@ -25,6 +25,8 @@ import type { BridgeBinding } from "@/types/federation";
 import { headPinned, publicHttpsTarget } from "@/lib/publicUrl";
 import { assessIbc, type IbcChannel, type IbcLink } from "@/lib/ibcStatus";
 import { assessMirror, type MirrorRebuild, type MirrorSync } from "@/lib/mirrorStatus";
+import { assessSession, withSessions, type SessionNote } from "@/lib/sessionStatus";
+import type { Session } from "@/types/session";
 import { CONTENT_SCANNER_SERVICE_TYPE, OperatorStatus, OPERATOR_STATUS_LABELS } from "@/types/service";
 import type { Checkpoint, Operator, ServiceTypeConfig } from "@/types/service";
 import type { ApprovedOperator, ApprovedScanner, StorageBackend } from "@/types/storage";
@@ -74,6 +76,38 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
     const timer = setTimeout(() => reject(new Error("timed out")), ms);
     p.then(resolve, reject).finally(() => clearTimeout(timer));
   });
+}
+
+// ---- Session keys ---------------------------------------------------------------
+
+const CHECKPOINT_MSG = "/sparkdream.service.v1.MsgSubmitCheckpoint";
+// At most this many operators' keys are read for one card.
+const MAX_SESSION_OWNERS = 5;
+
+/**
+ * The session each of these operators gave its worker for `msgType`
+ * (lib/sessionStatus.ts), in the order given. An operator whose sessions
+ * can't be read is left out: nothing is known of its key.
+ */
+async function sessionNotes(
+  lcd: string,
+  owners: { address: string; who: string }[],
+  msgType: string
+): Promise<SessionNote[]> {
+  const base = `${lcd.replace(/\/+$/, "")}/sparkdream/session/v1/sessions_by_granter`;
+  const notes = await Promise.all(
+    owners.slice(0, MAX_SESSION_OWNERS).map(async ({ address, who }) => {
+      const r = await reach(`${base}/${encodeURIComponent(address)}?pagination.limit=100`);
+      if (!r.res?.ok) return null;
+      try {
+        const sessions = ((await r.res.json()) as { sessions?: Session[] }).sessions ?? [];
+        return assessSession(sessions, msgType, who, Date.now());
+      } catch {
+        return null;
+      }
+    })
+  );
+  return notes.filter((n): n is SessionNote => n !== null);
 }
 
 // ---- A plain web address --------------------------------------------------------
@@ -223,7 +257,13 @@ async function checkScanners(lcd: string): Promise<ServiceReport> {
   try {
     const snap = await withTimeout(getVerdictIndex(), TIMEOUT_MS);
     const trusted = new Set(snap.setup.workers.map((w) => w.address));
-    return assessScanners({
+    const many = snap.setup.workers.length > 1;
+    const keys = await sessionNotes(
+      lcd,
+      snap.setup.workers.map((w) => ({ address: w.address, who: many ? "A scanner's" : "The scanner's" })),
+      CHECKPOINT_MSG
+    );
+    return withSessions(assessScanners({
       feedHosts: [...new Set(snap.setup.workers.map((w) => hostOf(w.feedUrl)).filter(Boolean))],
       checkpoints: snap.setup.checkpoints,
       ...(snap.setup.quorum > 0 ? await scannerRegistrations(lcd, trusted) : {}),
@@ -234,7 +274,7 @@ async function checkScanners(lcd: string): Promise<ServiceReport> {
       maxLagBlocks: snap.maxLagBlocks,
       errors: snap.errors,
       imagesDisabled: imagesDisabled(),
-    });
+    }), keys);
   } catch {
     return {
       id: "scanners",
@@ -398,7 +438,11 @@ export async function checkArchiver(lcd: string, chainId: string, gatewayTemplat
       // Not a URL: checkArweave reports that.
     }
   }
-  return assessArchiver({ chainId, maxLagBlocks, operators, checkpoints, latestHeight, tx, now: Date.now() });
+  const leader = maxLagBlocks !== null ? leadingArchiver(operators, checkpoints) : null;
+  const keys = leader
+    ? await sessionNotes(lcd, [{ address: leader.operator.address, who: "The archiver's" }], CHECKPOINT_MSG)
+    : [];
+  return withSessions(assessArchiver({ chainId, maxLagBlocks, operators, checkpoints, latestHeight, tx, now: Date.now() }), keys);
 }
 
 // ---- Permanent copies -----------------------------------------------------------
@@ -554,7 +598,12 @@ export async function checkStorage(
         }
       : undefined;
 
-  return assessStorage({
+  const keys = await sessionNotes(
+    lcd,
+    ready.map((o) => ({ address: o.address, who: ready.length > 1 ? "A storage worker's" : "The storage worker's" })),
+    "/sparkdream.storage.v1.MsgClaimRequest"
+  );
+  return withSessions(assessStorage({
     enabled,
     backend,
     operators,
@@ -567,7 +616,7 @@ export async function checkStorage(
     balances,
     worker,
     siteOffers: permanentCopiesOn(env),
-  });
+  }), keys);
 }
 
 // ---- Federation bridges ---------------------------------------------------------
@@ -645,14 +694,21 @@ export async function checkBridges(lcd: string, probe: EndpointProbe = probeEndp
     })
   );
 
-  return assessBridges({
+  // One key per bridge operator, however many peers it is bound to.
+  const owners = [...new Set(all.map((b) => b.address))];
+  const keys = await sessionNotes(
+    lcd,
+    owners.map((address) => ({ address, who: owners.length > 1 ? "A bridge's" : "The bridge's" })),
+    "/sparkdream.federation.v1.MsgSubmitFederatedContent"
+  );
+  return withSessions(assessBridges({
     bindings: all,
     reachable,
     peers,
     operators: (ops.operators ?? []).filter((o) => o.service_type.startsWith(BRIDGE_SERVICE_TYPE_PREFIX)),
     inactivitySeconds,
     now: Date.now(),
-  });
+  }), keys);
 }
 
 // ---- IBC relayer ----------------------------------------------------------------
