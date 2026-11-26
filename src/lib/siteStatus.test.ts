@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessScanners, checkArchive, checkArchiver, checkBridges, checkIbc, checkMirror, checkArweave, checkPage, checkStorage, chainUnits, peerChainApis, scannerKeys, type ScannerMeta } from "./siteStatus";
+import { assessScanners, checkArchive, checkArchiver, checkBridges, checkIbc, checkMirror, checkArweave, checkPage, checkStorage, checkValidators, chainUnits, peerChainApis, scannerKeys, type ScannerMeta } from "./siteStatus";
 
 function meta(over: Partial<ScannerMeta> = {}): ScannerMeta {
   return {
@@ -683,4 +683,84 @@ test("relayer: the peer chain's API gives its height and the relayer's account t
 test("PEER_CHAINS: a JSON object of chain id to API address, anything else ignored", () => {
   assert.deepEqual(peerChainApis('{"a-1":"https://a.test","b-1":"ftp://b","c-1":5}'), { "a-1": "https://a.test" });
   for (const raw of [undefined, "", "nope", "[]", '"x"']) assert.deepEqual(peerChainApis(raw), {});
+});
+
+test("validators: the set, the last commit and the slashing record make one report", async () => {
+  const json = (body: unknown) => new Response(JSON.stringify(body));
+  // CometBFT signs a commit under the first 20 bytes of the consensus key's sha256.
+  const keyA = Buffer.from("a".repeat(32)).toString("base64");
+  const keyB = Buffer.from("b".repeat(32)).toString("base64");
+  const { createHash } = await import("node:crypto");
+  const addr = (key: string) => createHash("sha256").update(Buffer.from(key, "base64")).digest().subarray(0, 20).toString("base64");
+  const { toBech32 } = await import("@cosmjs/encoding");
+  const keyGone = Buffer.from("g".repeat(32)).toString("base64");
+  const valcons = (key: string) => toBech32("testvalcons", createHash("sha256").update(Buffer.from(key, "base64")).digest().subarray(0, 20));
+  const committed = [
+    { address: valcons(keyA), pub_key: { key: keyA }, voting_power: "70" },
+    { address: valcons(keyB), pub_key: { key: keyB }, voting_power: "30" },
+  ];
+  // Whether the node still has the set of the height the last commit was for.
+  let pruned = false;
+  const answer = (url: string) => {
+    // The commit in block 500 is of block 499, signed by the set of that height.
+    if (url.includes("/validatorsets/499")) return pruned ? new Response("", { status: 400 }) : json({ validators: committed });
+    if (url.includes("/validatorsets/latest")) {
+      // A validator that joined since: it could not have signed block 499.
+      return json({ validators: [...committed, { address: "testvalcons1new", pub_key: { key: "bmV3" }, voting_power: "900" }] });
+    }
+    if (url.endsWith("/blocks/latest")) {
+      return json({
+        block: {
+          last_commit: {
+            height: "499",
+            signatures: [
+              { block_id_flag: "BLOCK_ID_FLAG_COMMIT", validator_address: addr(keyA) },
+              { block_id_flag: "BLOCK_ID_FLAG_ABSENT", validator_address: addr(keyB) },
+            ],
+          },
+        },
+      });
+    }
+    if (url.includes("/staking/v1beta1/validators")) {
+      return json({
+        validators: [
+          { description: { moniker: "alpha" }, jailed: false, consensus_pubkey: { key: keyA } },
+          { description: { moniker: "beta" }, jailed: false, consensus_pubkey: { key: keyB } },
+          { description: { moniker: "gone" }, jailed: true, consensus_pubkey: { key: keyGone } },
+        ],
+      });
+    }
+    if (url.endsWith("/staking/v1beta1/params")) return json({ params: { max_validators: 100 } });
+    if (url.includes("/slashing/v1beta1/signing_infos")) {
+      return json({
+        info: [
+          { address: valcons(keyA), missed_blocks_counter: "0" },
+          { address: valcons(keyB), missed_blocks_counter: "40" },
+          // Jailed and out of the set: found by the address its key gives.
+          { address: valcons(keyGone), missed_blocks_counter: "0", tombstoned: true },
+        ],
+      });
+    }
+    if (url.endsWith("/slashing/v1beta1/params")) return json({ params: { signed_blocks_window: "100", min_signed_per_window: "0.500000000000000000" } });
+    return new Response("", { status: 404 });
+  };
+  const got = await withFetch(answer, () => checkValidators("https://lcd.test/"));
+  const byLabel = (label: string) => got.facts.find((f) => f.label === label)?.value;
+  assert.equal(byLabel("Active validators"), "2, of at most 100");
+  // beta didn't sign: 70% did, which is thin, and it has used most of its allowed misses.
+  assert.equal(byLabel("Signed the last block"), "1 of 2, 70% of the voting power");
+  assert.equal(byLabel("Largest validator"), "alpha, 70% of the voting power");
+  assert.equal(byLabel("Jailed"), "1, 1 for good after signing twice");
+  assert.equal(got.state, "degraded");
+  assert.equal(got.issues.length, 2);
+  assert.match(got.issues[1], /^beta has missed 40 of the last 100 blocks and is jailed past 50\.$/);
+
+  // A node that has pruned that height: the newest set is shown, and who signed is left unsaid.
+  pruned = true;
+  const newest = await withFetch(answer, () => checkValidators("https://lcd.test/"));
+  assert.equal(newest.facts.find((f) => f.label === "Active validators")?.value, "3, of at most 100");
+  assert.equal(newest.facts.find((f) => f.label === "Signed the last block"), undefined);
+
+  const down = await withFetch(() => new Response("", { status: 502 }), () => checkValidators("https://lcd.test"));
+  assert.equal(down.state, "unreachable");
 });

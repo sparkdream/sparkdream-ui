@@ -45,6 +45,9 @@ import {
 } from "@/lib/bridgeStatus";
 import type { BridgeBinding } from "@/types/federation";
 import { headPinned, publicHttpsTarget } from "@/lib/publicUrl";
+import { createHash } from "node:crypto";
+import { toBech32 } from "@cosmjs/encoding";
+import { assessValidators, type ActiveValidator } from "@/lib/validatorStatus";
 import { assessIbc, type IbcChannel, type IbcLink, type IbcPeerClient, type IbcRelayer } from "@/lib/ibcStatus";
 import { assessMirror, type MirrorRebuild, type MirrorSync } from "@/lib/mirrorStatus";
 import {
@@ -833,6 +836,117 @@ export async function checkStorage(
   }), keys);
 }
 
+// ---- Validators -----------------------------------------------------------------
+
+interface PubKey {
+  key?: string;
+}
+
+/** The address CometBFT signs a commit under: the first 20 bytes of the key's sha256. */
+function consensusBytes(pubkeyBase64: string): Buffer {
+  return createHash("sha256").update(Buffer.from(pubkeyBase64, "base64")).digest().subarray(0, 20);
+}
+
+// A moniker is whatever its validator typed: shown as text, and not at any length.
+function moniker(text: string | undefined): string {
+  const clean = (text ?? "").replace(/\s+/g, " ").trim();
+  return clean.length > 40 ? `${clean.slice(0, 39)}…` : clean;
+}
+
+/**
+ * The validator set behind the node this server reads: the active set and
+ * its voting power, who signed the last block, the record of missed blocks,
+ * and who is jailed. `lcd` is that node.
+ */
+export async function checkValidators(lcd: string): Promise<ServiceReport> {
+  const base = lcd.replace(/\/+$/, "");
+  const tm = `${base}/cosmos/base/tendermint/v1beta1`;
+  const page = "pagination.limit=500";
+  const [blockR, latestSetR, stakingR, stakingParamsR, signingR, slashingParamsR] = await Promise.all([
+    reach(`${tm}/blocks/latest`),
+    reach(`${tm}/validatorsets/latest?${page}`),
+    reach(`${base}/cosmos/staking/v1beta1/validators?${page}`),
+    reach(`${base}/cosmos/staking/v1beta1/params`),
+    reach(`${base}/cosmos/slashing/v1beta1/signing_infos?${page}`),
+    reach(`${base}/cosmos/slashing/v1beta1/params`),
+  ]);
+  type SetBody = { validators?: { address?: string; pub_key?: PubKey; voting_power?: string }[] };
+
+  // Who signed the last block, by the address CometBFT records. The block
+  // carries the commit of the one before it, signed by the set of that
+  // height: the signatures are held against that set, not the newest, so a
+  // validator that has just joined is not counted as having missed it.
+  const commit = (
+    await okJson<{
+      block?: { last_commit?: { height?: string; signatures?: { block_id_flag?: string; validator_address?: string }[] } };
+    }>(blockR)
+  )?.block?.last_commit;
+  let signers = commit?.signatures
+    ? new Set(commit.signatures.filter((sig) => sig.block_id_flag === "BLOCK_ID_FLAG_COMMIT").map((sig) => sig.validator_address ?? ""))
+    : null;
+  let set = commit?.height && /^\d+$/.test(commit.height)
+    ? (await okJson<SetBody>(await reach(`${tm}/validatorsets/${commit.height}?${page}`)))?.validators
+    : undefined;
+  if (!set) {
+    // The set of that height can't be had (a pruned node): the newest stands in, without the signatures.
+    set = (await okJson<SetBody>(latestSetR))?.validators;
+    signers = null;
+  }
+  if (!set) return assessValidators({ active: [], jailed: [], maxValidators: 0, window: 0, maxMissed: 0 });
+
+  // Names come from x/staking, matched by consensus key.
+  const staking =
+    (
+      await okJson<{
+        validators?: { description?: { moniker?: string }; jailed?: boolean; consensus_pubkey?: PubKey }[];
+      }>(stakingR)
+    )?.validators ?? [];
+  const monikers = new Map(staking.map((v) => [v.consensus_pubkey?.key ?? "", moniker(v.description?.moniker)]));
+
+  // Missed blocks and tombstones, by the validator's consensus address (the set's own).
+  const infos =
+    (await okJson<{ info?: { address?: string; missed_blocks_counter?: string; tombstoned?: boolean }[] }>(signingR))?.info ?? null;
+  const missed = new Map((infos ?? []).map((i) => [i.address ?? "", Number(i.missed_blocks_counter) || 0]));
+  const tombstoned = new Set((infos ?? []).filter((i) => i.tombstoned).map((i) => i.address ?? ""));
+
+  const active: ActiveValidator[] = set.map((v) => {
+    const key = v.pub_key?.key ?? "";
+    return {
+      moniker: monikers.get(key) ?? "",
+      power: Number(v.voting_power) || 0,
+      signed: signers && key ? signers.has(consensusBytes(key).toString("base64")) : null,
+      missed: infos ? (missed.get(v.address ?? "") ?? 0) : null,
+    };
+  });
+
+  const slashing = (await okJson<{ params?: { signed_blocks_window?: string; min_signed_per_window?: string } }>(slashingParamsR))?.params;
+  const window = Number(slashing?.signed_blocks_window) || 0;
+  const minSigned = Number(slashing?.min_signed_per_window);
+  // A jailed validator has left the set, so its consensus address is worked
+  // out from its key, under the prefix the chain's own addresses carry.
+  const sample = set[0]?.address ?? infos?.[0]?.address ?? "";
+  const prefix = sample.slice(0, sample.lastIndexOf("1"));
+  const consensusAddress = (key: string): string => {
+    try {
+      return prefix && key ? toBech32(prefix, consensusBytes(key)) : "";
+    } catch {
+      return "";
+    }
+  };
+  return assessValidators({
+    active,
+    jailed: staking
+      .filter((v) => v.jailed)
+      .map((v) => ({
+        moniker: moniker(v.description?.moniker),
+        tombstoned: tombstoned.has(consensusAddress(v.consensus_pubkey?.key ?? "")),
+      })),
+    maxValidators: Number((await okJson<{ params?: { max_validators?: number } }>(stakingParamsR))?.params?.max_validators) || 0,
+    window,
+    maxMissed: window > 0 && Number.isFinite(minSigned) ? Math.floor(window * (1 - minSigned)) : 0,
+  });
+}
+
 // ---- Federation bridges ---------------------------------------------------------
 
 // The same bound as the rows the card lists (lib/bridgeStatus.ts).
@@ -1447,6 +1561,7 @@ async function runAll(env: NodeJS.ProcessEnv): Promise<ServiceReport[]> {
   const lcd = env.LCD_ENDPOINT || defaults.lcdEndpoint;
   checks.push(checkScanners(lcd), checkImages(env), checkArweave(arweaveGateway(env)));
   const units = chainUnits(env);
+  checks.push(checkValidators(lcd));
   checks.push(checkIbc(lcd, units, peerChainApis(env.PEER_CHAINS)));
   checks.push(checkBridges(lcd, undefined, units));
   checks.push(checkStorage(lcd, arweaveGateway(env), env));

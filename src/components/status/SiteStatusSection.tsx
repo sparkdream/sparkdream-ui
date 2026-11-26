@@ -12,6 +12,7 @@ const POLL_MS = 30_000;
 // Reports arrive by id. An id this build doesn't know (a newer server) is
 // left out, never shown as a bare key.
 const COPY: Record<string, { name: string; purpose: string }> = {
+  validators: { name: "Validators", purpose: "The nodes that make the chain's blocks, behind the node this app reads." },
   explorer: { name: "Block explorer", purpose: "Where transaction, block and account links open." },
   scanners: { name: "Content scanners", purpose: "Check images and flagged posts before they are shown." },
   images: { name: "Image uploads", purpose: "Storing the pictures members add to dreams and profiles." },

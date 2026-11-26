@@ -157,8 +157,8 @@ export default function ChainStatusSection() {
 
       <p className="mt-4 text-xs leading-relaxed text-zinc-500">
         These checks cover the public node this app reads from and sends transactions through,
-        whichever sentry is serving at the moment. They do not measure the validators behind it,
-        and they run from your browser, so a problem with your own connection shows up here too.
+        whichever sentry is serving at the moment. The validators behind it have their own card below.
+        These checks run from your browser, so a problem with your own connection shows up here too.
         The REST API is checked through this site, the way the app reads it.
       </p>
     </section>
