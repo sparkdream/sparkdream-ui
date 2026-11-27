@@ -6,6 +6,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useIsRepMember } from "@/hooks/useIsRepMember";
 import { buildImageMarkdown } from "@/lib/contentScan/bodyImages";
 import { loadUploadPolicy, uploadBlob, uploadImage, type UploadPolicy } from "@/lib/imageUpload/client";
+import { sessionAllowsUpload } from "@/lib/imageUpload/policy";
 import { fitImage, type PreparedImage, type ProfileType } from "@/lib/imagePrepare";
 import { getStorageRequestByHash, invalidateStorage, quoteStorageFee } from "@/lib/storageApi";
 import { requestCopyMsg } from "@/lib/storageMsgs";
@@ -65,7 +66,7 @@ export default function ImageInsert({
    *  word, so the form holds its publish button until it is added or cancelled. */
   onPendingChange?: (pending: boolean) => void;
 }) {
-  const { address, signerAddress, sessionActive, signAndBroadcast } = useWallet();
+  const { address, signerAddress, sessionActive, activeSession, signAndBroadcast } = useWallet();
   const { config } = useChainConfig();
   const isMember = useIsRepMember(address);
   const [open, setOpen] = useState(false);
@@ -105,10 +106,14 @@ export default function ImageInsert({
     return () => reportPending.current?.(false);
   }, [pending]);
 
-  // Uploading is signed by the member's own wallet, so it isn't offered to a
-  // session key acting for them, or to someone who isn't a member.
+  // An upload is signed for by the member's own wallet, or by a session key
+  // the member lets publish dreams: it sends nothing onchain, so the key's
+  // signature and the session onchain are enough. It isn't offered to
+  // someone who isn't a member.
   const uploadsOn = !!policy?.enabled;
-  const canUpload = uploadsOn && !!address && isMember === true && !sessionActive && signerAddress === address;
+  const ownWallet = !sessionActive && !!signerAddress && signerAddress === address;
+  const viaSession = sessionActive && !!signerAddress && sessionAllowsUpload(activeSession?.allowed_msg_types);
+  const canUpload = uploadsOn && !!address && isMember === true && (ownWallet || viaSession);
   // Whether uploading is on offer isn't known until the policy and the
   // membership have been read. Until then neither form is shown, so the one
   // being typed in is never swapped for the other.
@@ -121,7 +126,9 @@ export default function ImageInsert({
   // keeps only until the copy exists; the dream shows the usual small image.
   const copyMaxBytes = policy?.copy_max_bytes ?? 0;
   const copiesOn = !!backend && storageParams?.enabled !== false && policy?.permanent_copies !== false && copyMaxBytes > 0;
-  const permanentOffered = canUpload && copiesOn && !anonymous;
+  // The request for a permanent copy pays a fee, which a session key can
+  // never sign (x/session forbids it), so copies need the member's own wallet.
+  const permanentOffered = canUpload && ownWallet && copiesOn && !anonymous;
   const keepForever = permanent && permanentOffered;
 
   // With "keep a permanent copy" ticked, the picked file is prepared for the
@@ -154,8 +161,8 @@ export default function ImageInsert({
   let uploadNote: string | null = null;
   if (uploadsOn && !canUpload) {
     if (!address) uploadNote = "Connect your wallet to upload images.";
-    else if (sessionActive || signerAddress !== address) {
-      uploadNote = "Uploading needs your own wallet, not a session key.";
+    else if (!ownWallet && !viaSession) {
+      uploadNote = "This session key can't publish dreams, so it can't upload images for them.";
     } else if (isMember === false) uploadNote = "Uploading images is for members. You can still link to one.";
   }
 
@@ -201,7 +208,7 @@ export default function ImageInsert({
     setBusy(true);
     setError(null);
     let copyNote: string | null = null;
-    const who = { chainId: config.chainId, address };
+    const who = { chainId: config.chainId, address, signer: signerAddress ?? undefined };
     try {
       setStep("Checking and uploading…");
       // The dream always shows the small image, so it loads quickly for
@@ -398,7 +405,9 @@ export default function ImageInsert({
             <span>
               Keep a permanent copy on {backend.name === "arweave" ? "Arweave" : backend.name}.{" "}
               <span className="text-zinc-500">
-                {anonymous
+                {!ownWallet
+                  ? "Not available with a session key: the request pays a fee, which needs your own wallet."
+                  : anonymous
                   ? "Not available for anonymous dreams: the request would show your address."
                   : "The copy keeps the picture at its full size, while your dream shows a smaller version right away. A bonded operator makes the copy in the background. You sign the request with your wallet, which is public. A permanent copy can never be deleted or changed, by you or anyone else."}
               </span>

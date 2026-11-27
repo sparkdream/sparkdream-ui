@@ -107,11 +107,21 @@ interface StoredAuth {
   expires: number;
 }
 
-const authKey = (chainId: string, address: string) => `image-upload-auth:${chainId}:${address}`;
+/** Who an upload is for, and whose key signs for it. */
+export interface Uploader {
+  chainId: string;
+  /** The member the image is uploaded for. */
+  address: string;
+  /** The session key acting for the member, when it isn't their own wallet. */
+  signer?: string;
+}
 
-function storedAuth(chainId: string, address: string): StoredAuth | null {
+const signerOf = (who: Uploader) => (who.signer && who.signer !== who.address ? who.signer : null);
+const authKey = (who: Uploader) => `image-upload-auth:${who.chainId}:${who.address}:${signerOf(who) ?? ""}`;
+
+function storedAuth(who: Uploader): StoredAuth | null {
   try {
-    const raw = sessionStorage.getItem(authKey(chainId, address));
+    const raw = sessionStorage.getItem(authKey(who));
     const auth = raw ? (JSON.parse(raw) as StoredAuth) : null;
     // Leave a margin so it doesn't lapse while the upload is on its way.
     return auth && auth.expires - serverNow() > 5 * 60 * 1000 ? auth : null;
@@ -120,35 +130,46 @@ function storedAuth(chainId: string, address: string): StoredAuth | null {
   }
 }
 
-export function forgetUploadAuth(chainId: string, address: string): void {
+export function forgetUploadAuth(who: Uploader): void {
   try {
-    sessionStorage.removeItem(authKey(chainId, address));
+    sessionStorage.removeItem(authKey(who));
   } catch {
     // Nothing stored, nothing to forget.
   }
 }
 
-/** The member's upload authorisation: asked of the wallet once, then kept for the tab. */
-async function uploadAuth(chainId: string, address: string): Promise<StoredAuth> {
-  const cached = storedAuth(chainId, address);
+/**
+ * The upload authorisation: asked of the wallet once, then kept for the tab.
+ * It is signed by the member's own wallet, or by the session key acting for
+ * them, which the server checks against the chain.
+ */
+async function uploadAuth(who: Uploader): Promise<StoredAuth> {
+  const { chainId, address } = who;
+  const sessionKey = signerOf(who);
+  const cached = storedAuth(who);
   if (cached) return cached;
   if (!window.keplr) throw new Error("Keplr is needed to upload images.");
   // The policy read sets the clock offset; a minute is left for the trip.
   await loadUploadPolicy();
   const expires = serverNow() + AUTH_MAX_AGE_MS - 60_000;
-  const message = uploadAuthMessage({ chainId, address, expires: new Date(expires).toISOString() });
-  const signature = await window.keplr.signArbitrary(chainId, address, message);
+  const message = uploadAuthMessage({
+    chainId,
+    address,
+    ...(sessionKey ? { sessionKey } : {}),
+    expires: new Date(expires).toISOString(),
+  });
+  const signature = await window.keplr.signArbitrary(chainId, sessionKey ?? address, message);
   const auth = { message, signature, expires };
   try {
-    sessionStorage.setItem(authKey(chainId, address), JSON.stringify(auth));
+    sessionStorage.setItem(authKey(who), JSON.stringify(auth));
   } catch {
     // Storage blocked: the wallet is just asked again next time.
   }
   return auth;
 }
 
-async function authHeader(chainId: string, address: string): Promise<string> {
-  const auth = await uploadAuth(chainId, address);
+async function authHeader(who: Uploader): Promise<string> {
+  const auth = await uploadAuth(who);
   return btoa(
     String.fromCharCode(...new TextEncoder().encode(JSON.stringify({ message: auth.message, signature: auth.signature })))
   );
@@ -164,7 +185,8 @@ export interface Uploaded {
 }
 
 /**
- * Send bytes that are ready to store for `address`: a dream's image, already
+ * Send bytes that are ready to store for `address`, signed for by `signer`
+ * when a session key acts for the member: a dream's image, already
  * shrunk, or with `kind: "copy"` the full-size file a permanent copy is made
  * from, already prepared for the storage profile. The server stores them
  * only once a content scanner has cleared them, so this can take several
@@ -172,12 +194,12 @@ export interface Uploaded {
  */
 export async function uploadBlob(
   blob: Blob,
-  opts: { chainId: string; address: string; kind?: "image" | "copy" }
+  opts: Uploader & { kind?: "image" | "copy" }
 ): Promise<Uploaded> {
   const policy = await loadUploadPolicy();
   if (!policy.enabled) throw new Error("Image uploads aren't available on this site.");
   const send = async () => {
-    const header = await authHeader(opts.chainId, opts.address);
+    const header = await authHeader(opts);
     return fetch(opts.kind === "copy" ? "/api/images?kind=copy" : "/api/images", {
       method: "POST",
       headers: { "content-type": blob.type || "application/octet-stream", "x-upload-auth": header },
@@ -190,7 +212,7 @@ export async function uploadBlob(
     res = await send();
     if (res.status === 401) {
       // A stale or rejected authorisation: sign a fresh one, once.
-      forgetUploadAuth(opts.chainId, opts.address);
+      forgetUploadAuth(opts);
       res = await send();
     }
   } catch (err) {
@@ -203,7 +225,7 @@ export async function uploadBlob(
 }
 
 /** Shrink a picture to a small still WebP and upload it for `address`. */
-export async function uploadImage(file: Blob, opts: { chainId: string; address: string }): Promise<Uploaded> {
+export async function uploadImage(file: Blob, opts: Uploader): Promise<Uploaded> {
   const policy = await loadUploadPolicy();
   if (!policy.enabled) throw new Error("Image uploads aren't available on this site.");
   const done = await uploadBlob(await shrinkImage(file, policy), opts);

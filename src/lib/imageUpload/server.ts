@@ -2,7 +2,7 @@
 // in the Next server only: it holds the storage keys and the scanner token.
 
 import { createHash, createHmac } from "node:crypto";
-import { getRepMember } from "@/lib/api";
+import { getRepMember, getSession } from "@/lib/api";
 import { defaults } from "@/lib/chain";
 import { MemberStatus } from "@/types/rep";
 import { verifyUploadAuth, type SignedUploadAuth } from "./auth";
@@ -13,6 +13,7 @@ import {
   copySourceProblem,
   imageInfo,
   quotaWeek,
+  sessionAllowsUpload,
   uploadProblem,
   weeklyQuota,
 } from "./policy";
@@ -116,11 +117,31 @@ export async function activeMember(
   now: Date
 ): Promise<{ ok: true; address: string; trustLevel: string } | { ok: false; status: number; message: string }> {
   const who = await verifyUploadAuth(auth, { chainId: cfg.chainId, bech32Prefix: cfg.bech32Prefix, now });
-  if (!who.ok) return { ok: false, status: 401, message: UNSIGNED };
+  // A session key's signature is taken for uploads only (acceptUpload).
+  if (!who.ok || who.sessionKey) return { ok: false, status: 401, message: UNSIGNED };
   return activeMemberAt(who.address);
 }
 
 const UNSIGNED = "Your upload permission is missing or has expired. Try again to sign a new one.";
+const NO_SESSION = "This session key can't upload images for that member. It needs a current session that may publish dreams.";
+
+/**
+ * Whether `member` has given `sessionKey` a session, still running, that may
+ * publish dreams. Read from the chain on every upload, so revoking the
+ * session ends the key's uploads at once.
+ */
+async function sessionMayUpload(member: string, sessionKey: string, now: Date): Promise<boolean> {
+  let session;
+  try {
+    session = (await getSession(member, sessionKey)).session;
+  } catch {
+    return false;
+  }
+  if (!session || session.granter !== member || session.grantee !== sessionKey) return false;
+  const expires = Date.parse(session.expiration);
+  if (!Number.isFinite(expires) || expires <= now.getTime()) return false;
+  return sessionAllowsUpload(session.allowed_msg_types);
+}
 
 /** The active member at an address whose signature has already been checked. */
 async function activeMemberAt(
@@ -252,8 +273,9 @@ function sha256Hex(bytes: Uint8Array): string {
 }
 
 /**
- * Accept one image: signed by an active member, inside the limits and their
- * weekly allowance, and cleared by the scanner before it is stored.
+ * Accept one image: signed by an active member, or by a session key the
+ * member lets publish dreams, inside the limits and the member's weekly
+ * allowance, and cleared by the scanner before it is stored.
  */
 export async function acceptUpload(
   cfg: UploadConfig,
@@ -266,11 +288,17 @@ export async function acceptUpload(
   const signed = await verifyUploadAuth(auth, { chainId: cfg.chainId, bech32Prefix: cfg.bech32Prefix, now });
   if (!signed.ok) return refuse(401, UNSIGNED);
 
+  // The request for a permanent copy pays a fee, which a session key can
+  // never sign, so its full-size source isn't taken from one either.
+  if (kind === "copy" && signed.sessionKey) return refuse(403, "A permanent copy needs your own wallet, not a session key.");
   if (kind === "copy" && !permanentCopiesOn()) return refuse(403, "Permanent copies are switched off on this site.");
   const problem = kind === "copy" ? copySourceProblem(bytes, cfg.copyMaxBytes) : uploadProblem(bytes, cfg.maxBytes);
   if (problem) return refuse(400, problem);
   const info = imageInfo(bytes)!;
 
+  if (signed.sessionKey && !(await sessionMayUpload(signed.address, signed.sessionKey, now))) {
+    return refuse(403, NO_SESSION);
+  }
   const who = await activeMemberAt(signed.address);
   if (!who.ok) return refuse(who.status, who.message);
   const quota = weeklyQuota(who.trustLevel);

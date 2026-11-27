@@ -7,6 +7,7 @@ import {
   imageInfo,
   parseUploadAuthMessage,
   quotaWeek,
+  sessionAllowsUpload,
   uploadAuthMessage,
   uploadProblem,
   weeklyQuota,
@@ -107,6 +108,18 @@ test("the upload message round-trips and nothing else parses", () => {
   assert.equal(parseUploadAuthMessage(msg.replace("image upload", "image upload!")), null);
   assert.equal(parseUploadAuthMessage(msg.replace("move any funds", "move all funds")), null);
   assert.equal(parseUploadAuthMessage(""), null);
+
+  // Signed by a session key acting for the member.
+  const viaKey = { ...a, sessionKey: "sprkdrm1phoenix" };
+  const keyMsg = uploadAuthMessage(viaKey);
+  assert.deepEqual(parseUploadAuthMessage(keyMsg), viaKey);
+  assert.equal(parseUploadAuthMessage(keyMsg + "\nSession key: sprkdrm1aurora"), null);
+  assert.equal(parseUploadAuthMessage(uploadAuthMessage({ ...a, sessionKey: a.address })), null);
+  assert.equal(parseUploadAuthMessage(msg + "\nSession key: "), null);
+
+  assert.ok(sessionAllowsUpload(["/sparkdream.blog.v1.MsgReact", "/sparkdream.blog.v1.MsgCreatePost"]));
+  assert.ok(!sessionAllowsUpload(["/sparkdream.blog.v1.MsgReact", "/sparkdream.forum.v1.MsgCreatePost"]));
+  assert.ok(!sessionAllowsUpload(undefined));
 });
 
 test("verifyUploadAuth accepts only this app's unexpired message signed by the address it names", async () => {
@@ -148,6 +161,15 @@ test("verifyUploadAuth accepts only this app's unexpired message signed by the a
   assert.equal(await reason({ message: message({ expires: new Date(now.getTime() + 7200_000).toISOString() }), signature: good.signature }), "bad signature");
   assert.equal(await reason({ message: "hello", signature: good.signature }), "not an upload authorisation");
   assert.equal(await reason({ message: good.message, signature: { ...good.signature, signature: "AAAA" } }), "bad signature");
+
+  // A session key signs a message naming itself and the member it acts for.
+  // The result carries the key, so the caller knows to check the session.
+  const viaKey = await sign(other, otherAddress, message({ sessionKey: otherAddress }));
+  assert.deepEqual(await verifyUploadAuth(viaKey, expected), { ok: true, address, sessionKey: otherAddress });
+  // The member's own signature doesn't stand in for the key's, nor a third key's.
+  assert.equal(await reason(await sign(wallet, address, message({ sessionKey: otherAddress }))), "signed by another address");
+  // The key's signature on the plain message is the forgery refused above.
+  assert.equal(await reason({ message: message(), signature: viaKey.signature }), "signed by another address");
 });
 
 test("uploads are off unless the image bucket, its address and a pre-check are all set", () => {
@@ -227,6 +249,7 @@ test("acceptUpload stores an image only for an active member, within quota, afte
 
   const world = {
     member: { address, status: "MEMBER_STATUS_ACTIVE", trust_level: "TRUST_LEVEL_NEW" } as Record<string, string> | null,
+    session: null as { granter: string; grantee: string; allowed_msg_types: string[]; expiration: string } | null,
     verdict: "clean",
     objects: new Map<string, Uint8Array>(),
     prechecks: 0,
@@ -237,6 +260,11 @@ test("acceptUpload stores an image only for an active member, within quota, afte
     const method = init?.method || "GET";
     const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
     if (url.pathname.includes("/rep/v1/member/")) return world.member ? json(200, { member: world.member }) : json(404, { code: 5 });
+    if (url.pathname.includes("/session/v1/session/")) {
+      const [granter, grantee] = url.pathname.split("/").slice(-2);
+      const s = world.session;
+      return s && s.granter === granter && s.grantee === grantee ? json(200, { session: s }) : json(404, { code: 5 });
+    }
     if (url.host === "scan.test") {
       world.prechecks++;
       assert.equal((init?.headers as Record<string, string>).authorization, `Bearer ${"t".repeat(40)}`);
@@ -322,6 +350,33 @@ test("acceptUpload stores an image only for an active member, within quota, afte
     assert.ok(!asImage.ok && asImage.status !== 200);
     const webpSource = await acceptUpload(cfg, next.auth, picture(20), next.later, "copy");
     assert.ok(!webpSource.ok && webpSource.status === 400);
+
+    // A session key the member lets publish dreams uploads for them, against
+    // the member's own allowance, for as long as the session stands onchain.
+    const keyWallet = await Secp256k1Wallet.fromKey(Uint8Array.from({ length: 32 }, (_, i) => i + 9), "sprkdrm");
+    const [{ address: key }] = await keyWallet.getAccounts();
+    const keyMessage = uploadAuthMessage({ chainId: cfg.chainId, address, sessionKey: key, expires: new Date(next.later.getTime() + 3600_000).toISOString() });
+    const keyAuth = { message: keyMessage, signature: (await keyWallet.signAmino(key, adr36SignDoc(key, keyMessage))).signature };
+    const viaKey = (n: number, kind?: "copy") => acceptUpload(cfg, keyAuth, picture(n), next.later, kind);
+    const session = (types: string[], expiration: string) => ({ granter: address, grantee: key, allowed_msg_types: types, expiration });
+    const live = new Date(next.later.getTime() + 86_400_000).toISOString();
+    const unchecked = world.prechecks;
+    const noSession = await viaKey(5);
+    assert.ok(!noSession.ok && noSession.status === 403 && /session/.test(noSession.message));
+    world.session = session(["/sparkdream.blog.v1.MsgReact"], live);
+    assert.ok(!(await viaKey(5)).ok, "a session that can't publish dreams");
+    world.session = session(["/sparkdream.blog.v1.MsgCreatePost"], new Date(next.later.getTime() - 1000).toISOString());
+    assert.ok(!(await viaKey(5)).ok, "an expired session");
+    world.session = { ...session(["/sparkdream.blog.v1.MsgCreatePost"], live), granter: key };
+    assert.ok(!(await viaKey(5)).ok, "a session from someone else");
+    world.session = session(["/sparkdream.blog.v1.MsgCreatePost"], live);
+    const asCopy = await viaKey(5, "copy");
+    assert.ok(!asCopy.ok && asCopy.status === 403 && /own wallet/.test(asCopy.message));
+    assert.equal(world.prechecks, unchecked);
+    // Already stored by the member this week, so it is theirs and counts once.
+    const sameMember = await viaKey(5);
+    assert.ok(sameMember.ok && sameMember.used >= 1, JSON.stringify(sameMember));
+    world.session = null;
 
     // Refusals that never reach the scanner or the bucket.
     const before = world.prechecks;

@@ -424,7 +424,7 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
                 );
               })()}
               <p className="text-xs text-zinc-600">
-                A new member starts with no {dream} and needs some to register a name. A gift cannot be sent with the invitation: once they accept, use the Gift {dream} button on their row below.
+                A new member starts with no {dream}. A gift cannot be sent with the invitation: once they accept, use the Gift {dream} button on their row below.
               </p>
               <p className="text-xs text-zinc-600">
                 {canCreateTags

@@ -44,7 +44,14 @@ export function quotaWeek(now: Date): number {
 
 export interface UploadAuth {
   chainId: string;
+  /** The member the images are uploaded for. */
   address: string;
+  /**
+   * Set when a session key signs for the member instead of the member's own
+   * wallet: the key's address. The server then checks onchain that the member
+   * gave this key a session that may publish dreams (sessionAllowsUpload).
+   */
+  sessionKey?: string;
   /** ISO time after which the authorisation is no longer accepted. */
   expires: string;
 }
@@ -66,6 +73,7 @@ export function uploadAuthMessage(a: UploadAuth): string {
     "",
     `Chain: ${a.chainId}`,
     `Address: ${a.address}`,
+    ...(a.sessionKey ? [`Session key: ${a.sessionKey}`] : []),
     `Expires: ${a.expires}`,
   ].join("\n");
 }
@@ -83,8 +91,26 @@ export function parseUploadAuthMessage(message: string): UploadAuth | null {
   const expires = field("Expires");
   if (!chainId || !address || !expires) return null;
   const parsed: UploadAuth = { chainId, address, expires };
+  // Optional, but never repeated and never the member's own address.
+  if (lines.some((l) => l.startsWith("Session key: "))) {
+    const sessionKey = field("Session key");
+    if (!sessionKey || sessionKey === address) return null;
+    parsed.sessionKey = sessionKey;
+  }
   // Only the exact text this app would have produced is accepted.
   return uploadAuthMessage(parsed) === message ? parsed : null;
+}
+
+/**
+ * The messages that publish or edit a dream. A session key that holds one of
+ * them may upload a dream's images for the member who granted it: it can
+ * already publish as them, and an upload sends nothing onchain and moves no
+ * funds. It counts against the member's own weekly allowance.
+ */
+export const UPLOAD_SESSION_MSG_TYPES = ["/sparkdream.blog.v1.MsgCreatePost", "/sparkdream.blog.v1.MsgUpdatePost"];
+
+export function sessionAllowsUpload(allowedMsgTypes: readonly string[] | undefined): boolean {
+  return !!allowedMsgTypes?.some((t) => UPLOAD_SESSION_MSG_TYPES.includes(t));
 }
 
 // ---- What kind of image the bytes are -------------------------------------------
