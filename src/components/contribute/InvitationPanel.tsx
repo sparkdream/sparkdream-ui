@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useWallet } from "@/contexts/WalletContext";
-import { getRequiredInvitationStake, invitationsByInviter, listRepInvitations } from "@/lib/api";
+import { getRepParams, getRequiredInvitationStake, invitationsByInviter, listRepInvitations } from "@/lib/api";
 import { buildCreateTagMsgs, useCanCreateTags, useTagRegistry } from "@/lib/tags";
 import TagPicker from "@/components/contribute/TagPicker";
 import { RepMsgTypeUrls } from "@/lib/tx";
@@ -18,6 +18,9 @@ import { useDreamDenom } from "@/hooks/useDreamDenom";
 import { useContentLicense } from "@/hooks/useContentLicense";
 import Link from "next/link";
 import RecoveryCodeSetup from "@/components/identity/RecoveryCodeSetup";
+import GiftDreamForm from "@/components/contribute/GiftDreamForm";
+import ActionBanner from "@/components/ActionBanner";
+import { useTxAction } from "@/hooks/useTxAction";
 
 function statusColor(status: string): string {
   switch (status) {
@@ -68,6 +71,25 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
   const [formInvitee, setFormInvitee] = useState("");
   const [formStake, setFormStake] = useState("");
   const [formTags, setFormTags] = useState<string[]>([]);
+  const [giftOpenFor, setGiftOpenFor] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [repParams, setRepParams] = useState<Record<string, unknown> | null>(null);
+  const inviteTx = useTxAction();
+
+  useEffect(() => {
+    if (!canInvite) return;
+    let cancelled = false;
+    getRepParams()
+      .then((res) => {
+        if (!cancelled) setRepParams(res.params);
+      })
+      .catch(() => {
+        // The gift form still works without params; the chain enforces the cap.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canInvite]);
   const [requiredStake, setRequiredStake] = useState<RequiredInvitationStakeResponse | null>(null);
   const { tags: availableTags, loading: loadingTags, refresh: refreshTags } = useTagRegistry();
   const canCreateTags = useCanCreateTags(address);
@@ -164,33 +186,43 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
 
   const handleInvite = async () => {
     if (!address || !formInvitee.trim() || !formStake || parseFloat(formStake) <= 0 || isNaN(parseFloat(formStake))) return;
-    try {
-      setSubmitting(true);
-      const stakeAmount = (BigInt(Math.floor(parseFloat(formStake) * 1e6))).toString();
-      const tagMsgs = canCreateTags ? buildCreateTagMsgs(address, formTags, availableTags) : [];
-      await signAndBroadcast([
-        ...tagMsgs,
-        {
-          typeUrl: RepMsgTypeUrls.InviteMember,
-          value: {
-            inviter: address,
-            inviteeAddress: formInvitee.trim(),
-            stakedDream: stakeAmount,
-            vouchedTags: formTags,
+    const invitee = formInvitee.trim();
+    setSubmitting(true);
+    setNotice(null);
+    const sent = await inviteTx.run(
+      "invite",
+      async () => {
+        const stakeAmount = (BigInt(Math.floor(parseFloat(formStake) * 1e6))).toString();
+        const tagMsgs = canCreateTags ? buildCreateTagMsgs(address, formTags, availableTags) : [];
+        await signAndBroadcast([
+          ...tagMsgs,
+          {
+            typeUrl: RepMsgTypeUrls.InviteMember,
+            value: {
+              inviter: address,
+              inviteeAddress: invitee,
+              stakedDream: stakeAmount,
+              vouchedTags: formTags,
+            },
           },
-        },
-      ]);
-      if (tagMsgs.length > 0) refreshTags();
-      setShowForm(false);
-      setFormInvitee("");
-      setFormStake("");
-      setFormTags([]);
-      await fetchInvitations();
-    } catch (err) {
-      console.error("Invite failed:", err);
-    } finally {
-      setSubmitting(false);
-    }
+        ]);
+        if (tagMsgs.length > 0) refreshTags();
+      },
+      (raw) => `Invitation not sent: ${raw}`,
+    );
+    setSubmitting(false);
+    if (!sent) return;
+    setNotice("Invitation sent.");
+    setShowForm(false);
+    setFormInvitee("");
+    setFormStake("");
+    setFormTags([]);
+    await fetchInvitations();
+  };
+
+  const handleGiftSent = (amountMicro: bigint) => {
+    setGiftOpenFor(null);
+    setNotice(`Gift of ${formatDream(amountMicro.toString())} ${dream} sent.`);
   };
 
   const handleAccept = async (invitationId: string) => {
@@ -333,6 +365,9 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
           )}
         </div>
 
+        <ActionBanner message={inviteTx.error} onDismiss={inviteTx.clearError} className="mb-3" />
+        <ActionBanner message={notice} tone="success" onDismiss={() => setNotice(null)} className="mb-3" />
+
         {isMember === false && (
           <p className="mb-3 text-xs text-zinc-500">
             Only existing members can send invitations. Accept a pending invitation above to join; joining
@@ -389,6 +424,9 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
                 );
               })()}
               <p className="text-xs text-zinc-600">
+                A new member starts with no {dream} and needs some to register a name. A gift cannot be sent with the invitation: once they accept, use the Gift {dream} button on their row below.
+              </p>
+              <p className="text-xs text-zinc-600">
                 {canCreateTags
                   ? `New tags burn a small ${dream} fee per tag and are added to the shared registry.`
                   : "Tag creation requires Established trust. Pick from existing tags only."}
@@ -423,9 +461,11 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
           </div>
         ) : (
           <div className="space-y-2">
-            {sentInvitations.map((inv) => (
+            {sentInvitations.map((inv) => {
+              const accepted = inv.status === InvitationStatus.ACCEPTED;
+              return (
               <div key={inv.id} className="rounded-xl sd-hull-tile px-4 py-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <CopyableAddress className="font-mono text-sm text-zinc-300" address={inv.invitee_address} />
@@ -438,9 +478,27 @@ export default function InvitationPanel({ defaultShowForm = false }: InvitationP
                       {inv.vouched_tags?.length > 0 && <span>Tags: {inv.vouched_tags.join(", ")}</span>}
                     </div>
                   </div>
+                  {accepted && giftOpenFor !== inv.id && (
+                    <button
+                      type="button"
+                      onClick={() => setGiftOpenFor(inv.id)}
+                      className="sd-btn sd-btn-secondary shrink-0"
+                    >
+                      Gift {dream}
+                    </button>
+                  )}
                 </div>
+                {accepted && giftOpenFor === inv.id && (
+                  <GiftDreamForm
+                    recipient={inv.invitee_address}
+                    params={repParams}
+                    onSent={handleGiftSent}
+                    onCancel={() => setGiftOpenFor(null)}
+                  />
+                )}
               </div>
-            ))}
+              );
+            })}
             {sentNextKey && (
               <button
                 onClick={loadMoreSent}
